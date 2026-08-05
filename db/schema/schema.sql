@@ -1,0 +1,3 @@
+-- Global LibreVita schema (SQLite).
+-- Domain tables and triggers will be defined here.
+-- This is the schema source for sqlc (see sqlc.yaml).

@@ -1,0 +1,362 @@
+// Package config loads LibreVita configuration.
+//
+// Sources are merged by Koanf in this order: defaults, file, environment/.env,
+// and flags.
+package config
+
+import (
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"github.com/joho/godotenv"
+	"github.com/knadh/koanf/parsers/json"
+	"github.com/knadh/koanf/parsers/yaml"
+	"github.com/knadh/koanf/providers/env"
+	"github.com/knadh/koanf/providers/file"
+	"github.com/knadh/koanf/providers/posflag"
+	"github.com/knadh/koanf/v2"
+	"github.com/spf13/pflag"
+)
+
+// Supported persistence drivers.
+const (
+	DriverSQLite = "sqlite" // Embedded SQLite for the monolith and edge deployments.
+	DriverRqlite = "rqlite" // rqlite cluster for distributed deployments.
+)
+
+// Supported production log destinations.
+const (
+	LogModeConsole  = "console"
+	LogModeFile     = "file"
+	LogModeRotating = "rotating"
+)
+
+const (
+	envPrefix = "LIBREVITA_"
+
+	keyConfigFile = "config_file"
+
+	defaultEnv        = "development"
+	defaultHTTPAddr   = ":8080"
+	defaultDataDir    = "./data"
+	defaultRqliteAddr = "http://localhost:4001"
+	defaultLogMode    = LogModeConsole
+	defaultLogSizeMB  = 100
+	defaultLogBackups = 3
+	defaultLogAgeDays = 28
+)
+
+// Config is the application configuration root.
+type Config struct {
+	// ConfigFile is the file that was loaded, if any.
+	ConfigFile string `koanf:"config_file"`
+
+	// Env is the runtime environment, such as "development" or "production".
+	Env string `koanf:"env"`
+
+	// HTTPAddr is the Echo bind address, for example ":8080".
+	HTTPAddr string `koanf:"http_addr"`
+
+	// DataDir is the base directory for default database and log files.
+	DataDir string `koanf:"data_dir"`
+
+	// Database selects the persistence backend.
+	Database DatabaseConfig `koanf:"database"`
+
+	// Logging controls the production log destination and rotation policy.
+	Logging LoggingConfig `koanf:"logging"`
+}
+
+// DatabaseConfig defines the active persistence backend.
+type DatabaseConfig struct {
+	// Driver is DriverSQLite or DriverRqlite.
+	Driver string `koanf:"driver"`
+
+	// Path is the SQLite database path.
+	Path string `koanf:"path"`
+
+	// RqliteAddr is the rqlite node URL.
+	RqliteAddr string `koanf:"rqlite_addr"`
+}
+
+// LoggingConfig controls production logging.
+type LoggingConfig struct {
+	Mode       string `koanf:"mode"`
+	Path       string `koanf:"path"`
+	MaxSizeMB  int    `koanf:"max_size_mb"`
+	MaxBackups int    `koanf:"max_backups"`
+	MaxAgeDays int    `koanf:"max_age_days"`
+	Compress   bool   `koanf:"compress"`
+}
+
+// RegisterFlags registers the application flags. It is safe to call more
+// than once.
+func RegisterFlags(fs *pflag.FlagSet) {
+	stringFlag(fs, "config", "", "configuration file (.yaml, .yml, or .json)")
+	stringFlag(fs, "env", defaultEnv, "runtime environment")
+	stringFlag(fs, "http-addr", defaultHTTPAddr, "HTTP bind address")
+	stringFlag(fs, "data-dir", defaultDataDir, "base directory for database and logs")
+	stringFlag(fs, "db-driver", DriverSQLite, "database backend: sqlite or rqlite")
+	stringFlag(fs, "db-path", "", "SQLite database path")
+	stringFlag(fs, "rqlite-addr", defaultRqliteAddr, "rqlite node URL")
+	stringFlag(fs, "log-mode", defaultLogMode, "production log mode: console, file, or rotating")
+	stringFlag(fs, "log-path", "", "log file path")
+	intFlag(fs, "log-max-size", defaultLogSizeMB, "rotating log maximum size in MB")
+	intFlag(fs, "log-max-backups", defaultLogBackups, "rotating log backup count")
+	intFlag(fs, "log-max-age", defaultLogAgeDays, "rotating log maximum age in days")
+	boolFlag(fs, "log-compress", true, "compress rotated log files")
+}
+
+// IsProduction reports whether the application runs in production.
+func (c *Config) IsProduction() bool {
+	return strings.EqualFold(c.Env, "production")
+}
+
+// New is the Fx configuration provider.
+func New() (*Config, error) {
+	RegisterFlags(pflag.CommandLine)
+
+	// Keep support for .env files. Existing process variables take precedence.
+	if err := godotenv.Load(".env"); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return nil, fmt.Errorf("config: failed to read .env: %w", err)
+	}
+
+	cfg, err := load(pflag.CommandLine)
+	if err != nil {
+		return nil, err
+	}
+	if err := os.MkdirAll(cfg.DataDir, 0o750); err != nil {
+		return nil, fmt.Errorf("config: failed to create data directory %q: %w", cfg.DataDir, err)
+	}
+	return cfg, nil
+}
+
+func load(fs *pflag.FlagSet) (*Config, error) {
+	// Resolve the configuration file before loading the remaining sources.
+	bootstrap := koanf.New(".")
+	if err := loadEnvironment(bootstrap); err != nil {
+		return nil, fmt.Errorf("config: environment: %w", err)
+	}
+	if err := loadFlags(bootstrap, fs); err != nil {
+		return nil, fmt.Errorf("config: flags: %w", err)
+	}
+
+	configFile := bootstrap.String(keyConfigFile)
+	if configFile == "" {
+		configFile = discoverConfigFile()
+	}
+
+	k := koanf.New(".")
+	if configFile != "" {
+		parser, err := parserFor(configFile)
+		if err != nil {
+			return nil, err
+		}
+		if err := k.Load(file.Provider(configFile), parser); err != nil {
+			return nil, fmt.Errorf("config: failed to read %q: %w", configFile, err)
+		}
+	}
+	if err := loadEnvironment(k); err != nil {
+		return nil, fmt.Errorf("config: environment: %w", err)
+	}
+	if err := loadFlags(k, fs); err != nil {
+		return nil, fmt.Errorf("config: flags: %w", err)
+	}
+
+	var cfg Config
+	if err := k.Unmarshal("", &cfg); err != nil {
+		return nil, fmt.Errorf("config: decode: %w", err)
+	}
+
+	cfg.ConfigFile = configFile
+	cfg.normalize()
+	if err := cfg.validate(); err != nil {
+		return nil, err
+	}
+	return &cfg, nil
+}
+
+func loadEnvironment(k *koanf.Koanf) error {
+	return k.Load(env.Provider(envPrefix, ".", mapEnvironmentKey), nil)
+}
+
+func loadFlags(k *koanf.Koanf, fs *pflag.FlagSet) error {
+	return k.Load(posflag.ProviderWithFlag(fs, ".", k, func(f *pflag.Flag) (string, any) {
+		key := mapFlagKey(f.Name)
+		if key == "" {
+			return "", nil
+		}
+		return key, posflag.FlagVal(fs, f)
+	}), nil)
+}
+
+func (c *Config) normalize() {
+	c.Env = strings.TrimSpace(c.Env)
+	if c.Env == "" {
+		c.Env = defaultEnv
+	}
+
+	c.HTTPAddr = strings.TrimSpace(c.HTTPAddr)
+	if c.HTTPAddr == "" {
+		c.HTTPAddr = defaultHTTPAddr
+	}
+
+	c.DataDir = strings.TrimSpace(c.DataDir)
+	if c.DataDir == "" {
+		c.DataDir = defaultDataDir
+	}
+
+	c.Database.Driver = strings.ToLower(strings.TrimSpace(c.Database.Driver))
+	if c.Database.Driver == "" {
+		c.Database.Driver = DriverSQLite
+	}
+	if strings.TrimSpace(c.Database.Path) == "" {
+		c.Database.Path = filepath.Join(c.DataDir, "librevita.db")
+	}
+	if strings.TrimSpace(c.Database.RqliteAddr) == "" {
+		c.Database.RqliteAddr = defaultRqliteAddr
+	}
+
+	c.Logging.Mode = strings.ToLower(strings.TrimSpace(c.Logging.Mode))
+	if c.Logging.Mode == "" {
+		c.Logging.Mode = defaultLogMode
+	}
+	if strings.TrimSpace(c.Logging.Path) == "" {
+		c.Logging.Path = filepath.Join(c.DataDir, "librevita.log")
+	}
+	if c.Logging.MaxSizeMB <= 0 {
+		c.Logging.MaxSizeMB = defaultLogSizeMB
+	}
+	if c.Logging.MaxBackups < 0 {
+		c.Logging.MaxBackups = defaultLogBackups
+	}
+	if c.Logging.MaxAgeDays < 0 {
+		c.Logging.MaxAgeDays = defaultLogAgeDays
+	}
+}
+
+func (c *Config) validate() error {
+	switch c.Database.Driver {
+	case DriverSQLite, DriverRqlite:
+	default:
+		return fmt.Errorf("config: invalid database.driver %q (use %q or %q)",
+			c.Database.Driver, DriverSQLite, DriverRqlite)
+	}
+
+	switch c.Logging.Mode {
+	case LogModeConsole, LogModeFile, LogModeRotating:
+		return nil
+	default:
+		return fmt.Errorf("config: invalid logging.mode %q (use %q, %q, or %q)",
+			c.Logging.Mode, LogModeConsole, LogModeFile, LogModeRotating)
+	}
+}
+
+func stringFlag(fs *pflag.FlagSet, name, value, usage string) {
+	if fs.Lookup(name) == nil {
+		fs.String(name, value, usage)
+	}
+}
+
+func intFlag(fs *pflag.FlagSet, name string, value int, usage string) {
+	if fs.Lookup(name) == nil {
+		fs.Int(name, value, usage)
+	}
+}
+
+func boolFlag(fs *pflag.FlagSet, name string, value bool, usage string) {
+	if fs.Lookup(name) == nil {
+		fs.Bool(name, value, usage)
+	}
+}
+
+func mapFlagKey(name string) string {
+	switch strings.ToLower(name) {
+	case "config", "config-file", "config_file":
+		return keyConfigFile
+	case "env":
+		return "env"
+	case "http-addr", "http_addr":
+		return "http_addr"
+	case "data-dir", "data_dir":
+		return "data_dir"
+	case "db-driver", "db_driver":
+		return "database.driver"
+	case "db-path", "db_path":
+		return "database.path"
+	case "rqlite-addr", "rqlite_addr":
+		return "database.rqlite_addr"
+	case "log-mode", "log_mode":
+		return "logging.mode"
+	case "log-path", "log_path":
+		return "logging.path"
+	case "log-max-size", "log_max_size":
+		return "logging.max_size_mb"
+	case "log-max-backups", "log_max_backups":
+		return "logging.max_backups"
+	case "log-max-age", "log_max_age":
+		return "logging.max_age_days"
+	case "log-compress", "log_compress":
+		return "logging.compress"
+	default:
+		return ""
+	}
+}
+
+func mapEnvironmentKey(key string) string {
+	key = strings.ToLower(strings.TrimPrefix(key, envPrefix))
+	switch key {
+	case "config", "config_file":
+		return keyConfigFile
+	case "env":
+		return "env"
+	case "http_addr":
+		return "http_addr"
+	case "data_dir":
+		return "data_dir"
+	case "db_driver", "database_driver":
+		return "database.driver"
+	case "db_path", "database_path":
+		return "database.path"
+	case "rqlite_addr", "database_rqlite_addr":
+		return "database.rqlite_addr"
+	case "log_mode", "logging_mode":
+		return "logging.mode"
+	case "log_path", "logging_path":
+		return "logging.path"
+	case "log_max_size_mb", "logging_max_size_mb":
+		return "logging.max_size_mb"
+	case "log_max_backups", "logging_max_backups":
+		return "logging.max_backups"
+	case "log_max_age_days", "logging_max_age_days":
+		return "logging.max_age_days"
+	case "log_compress", "logging_compress":
+		return "logging.compress"
+	default:
+		return ""
+	}
+}
+
+func discoverConfigFile() string {
+	for _, path := range []string{"config.yaml", "config.yml", "config.json"} {
+		info, err := os.Stat(path)
+		if err == nil && !info.IsDir() {
+			return path
+		}
+	}
+	return ""
+}
+
+func parserFor(path string) (koanf.Parser, error) {
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".yaml", ".yml":
+		return yaml.Parser(), nil
+	case ".json":
+		return json.Parser(), nil
+	default:
+		return nil, fmt.Errorf("config: unsupported extension in %q (use .yaml, .yml, or .json)", path)
+	}
+}
