@@ -1,4 +1,4 @@
-// LibreVita API.
+// LibreVita web application.
 //
 // The entrypoint only assembles the Fx dependency graph.
 package main
