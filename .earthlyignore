@@ -1,0 +1,10 @@
+.git
+.env
+.earthlyignore
+bin
+node_modules
+*.db
+*.db-shm
+*.db-wal
+static/css/*.css
+static/js/*.js

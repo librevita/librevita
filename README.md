@@ -1,0 +1,196 @@
+# LibreVita
+
+Self-hosted medical clinic management software built in Go. The module path is
+`librevita.org`.
+
+## Requirements
+
+- Earthly 0.8 or newer
+- Podman or Docker for the Earthly BuildKit daemon
+
+There is no Makefile. Earthly is the build and development interface.
+
+## Earthly Targets
+
+```sh
+earthly +generate
+earthly +build-dev
+earthly +build
+earthly +image --IMAGE_TAG=librevita:latest
+earthly +test
+earthly +vet
+earthly +tidy
+earthly +build-cross --GOOS=linux --GOARCH=riscv64
+earthly +build-cross --GOOS=linux --GOARCH=loong64
+earthly +build-cross --GOOS=linux --GOARCH=mips64
+```
+
+`+build-dev` writes the fast, unoptimized `bin/librevita-dev` binary. `+build`
+writes the optimized production binary to `bin/librevita`. Cross builds write
+files such as `bin/librevita-linux-riscv64`.
+
+SQLC and templ output is not committed. `+generate` writes generated files to
+the workspace when needed for editor support; build, test, and vet targets
+generate them inside Earthly.
+
+## Container Image
+
+`+image` builds the production binary and packages it in a `scratch` OCI image.
+The image runs as non-root UID/GID `65532:65532` and sets
+`LIBREVITA_DATA_DIR=/data/librevita`. Go creates that directory and its files
+at startup.
+
+Docker and Podman use the same commands:
+
+```sh
+earthly +image --IMAGE_TAG=librevita:latest
+podman run --rm \
+  -p 8080:8080 \
+  -v librevita-data:/data \
+  -e LIBREVITA_ENV=production \
+  librevita:latest
+```
+
+Replace `podman` with `docker` when using Docker. Timezone data is embedded by
+Go through `time/tzdata`, and the CA bundle is embedded through `rootcerts`.
+The image has no shell, package manager, or pre-created data directory. The
+mounted `/data` volume must be writable by UID/GID `65532:65532`.
+
+The Earthfile uses `golang:1.26.5-alpine3.24` and sets `CGO_ENABLED=0` for
+every Go build. This keeps the binaries statically linkable across supported
+architectures.
+
+The build cache is split into three layers:
+
+- Go module downloads
+- `templ` and `sqlc` installation
+- Project source files
+
+Changing application source does not invalidate the dependency or tool layers.
+
+If a rootful Earthly BuildKit daemon already occupies ports `8371` and `8372`,
+configure the client to reuse it:
+
+```sh
+earthly config global.buildkit_host 'tcp://localhost.:8372'
+```
+
+The trailing dot prevents Earthly from treating the existing TLS endpoint as a
+local daemon that it should manage itself.
+
+## Configuration
+
+Configuration is loaded by Koanf with this precedence, from lowest to highest:
+
+1. Built-in defaults
+2. `config.yaml`, `config.yml`, `config.json`, or the file passed with `--config`
+3. `.env` and `LIBREVITA_*` environment variables
+4. Command-line flags
+
+Example `config.yaml`:
+
+```yaml
+env: production
+http_addr: ":8080"
+data_dir: ./data
+database:
+  driver: sqlite
+  path: ./librevita.db
+  rqlite_addr: http://localhost:4001
+logging:
+  mode: console
+  path: ./librevita.log
+  max_size_mb: 100
+  max_backups: 3
+  max_age_days: 28
+  compress: true
+```
+
+The main flags are:
+
+| Flag | Environment variable | Purpose |
+| --- | --- | --- |
+| `--config` | `LIBREVITA_CONFIG_FILE` | Configuration file path |
+| `--env` | `LIBREVITA_ENV` | Runtime environment |
+| `--http-addr` | `LIBREVITA_HTTP_ADDR` | HTTP bind address |
+| `--data-dir` | `LIBREVITA_DATA_DIR` | Base directory for default database and logs |
+| `--db-driver` | `LIBREVITA_DB_DRIVER` | `sqlite` or `rqlite` |
+| `--db-path` | `LIBREVITA_DB_PATH` | SQLite file path |
+| `--rqlite-addr` | `LIBREVITA_RQLITE_ADDR` | rqlite node URL |
+| `--log-mode` | `LIBREVITA_LOG_MODE` | `console`, `file`, or `rotating` |
+| `--log-path` | `LIBREVITA_LOG_PATH` | File destination |
+| `--log-max-size` | `LIBREVITA_LOG_MAX_SIZE_MB` | Rotating file size in MB |
+| `--log-max-backups` | `LIBREVITA_LOG_MAX_BACKUPS` | Number of rotated files |
+| `--log-max-age` | `LIBREVITA_LOG_MAX_AGE_DAYS` | Maximum rotated file age |
+| `--log-compress` | `LIBREVITA_LOG_COMPRESS` | Compress rotated files |
+
+`LIBREVITA_DATABASE_*` names are also accepted for database settings.
+
+## Logging
+
+The application uses `log/slog` with Zap and `zapslog`. Fx and Goose use the
+same logger.
+
+Development output is human-readable text with one record per line. Records
+are emitted as columns, not JSON. The source path is shortened to
+`file.go:line`, and lines are truncated to the terminal width. Set `COLUMNS` to
+override the detected width; the fallback is 120 columns.
+
+Production output is always JSON. The selected mode controls the destination:
+
+- `console` writes JSON to stderr
+- `file` appends JSON to the configured file
+- `rotating` uses `lumberjack` with the configured size, backup count, age, and compression settings
+
+Example production commands:
+
+```sh
+LIBREVITA_ENV=production \
+LIBREVITA_LOG_MODE=file \
+LIBREVITA_LOG_PATH=./librevita.log \
+./bin/librevita
+
+LIBREVITA_ENV=production \
+LIBREVITA_LOG_MODE=rotating \
+LIBREVITA_LOG_PATH=./librevita.log \
+LIBREVITA_LOG_MAX_SIZE_MB=100 \
+LIBREVITA_LOG_MAX_BACKUPS=3 \
+LIBREVITA_LOG_MAX_AGE_DAYS=28 \
+LIBREVITA_LOG_COMPRESS=true \
+./bin/librevita
+```
+
+## Database
+
+SQLite uses `modernc.org/sqlite`, so it does not require CGO. The connection
+factory enables WAL mode, a busy timeout, foreign keys, and synchronous mode.
+The SQL pool is limited to one open connection because SQLite has a single
+writer.
+
+Go creates `data_dir` at startup. If database or log paths are not set
+explicitly, they are created as `data_dir/librevita.db` and
+`data_dir/librevita.log`.
+
+The default driver is embedded SQLite. Set `LIBREVITA_DB_DRIVER=rqlite` to use
+the `gorqlite` client for a distributed deployment. Goose migrations run on
+the embedded SQLite backend; rqlite schema management remains a cluster-level
+operation.
+
+## Migrations
+
+Migration files live in `db/migrations` and are embedded into the binary. The
+Fx database lifecycle applies pending Goose migrations before the HTTP server
+starts. Goose logs use the same structured logger as the rest of the process.
+
+Generated repository code is not a source artifact. Edit the SQL under
+`db/schema` or `db/query`, then run `earthly +generate` when local generated
+files are needed.
+
+## HTTP Server
+
+Echo is created and managed by Fx. The foundation currently exposes:
+
+- `GET /healthz`
+
+The endpoint returns `{"status":"ok"}`. Business routes are not registered yet.
+HTTP errors use RFC 7807 `application/problem+json` responses.

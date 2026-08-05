@@ -1,0 +1,48 @@
+# Generate typed Go repositories from SQL.
+# SQLite uses modernc.org/sqlite; CGO is disabled.
+# Each domain has an isolated query package.
+version: "2"
+sql:
+  - name: "patient"
+    engine: "sqlite"
+    schema: "db/schema/"
+    queries: "db/query/patient.sql"
+    gen:
+      go:
+        package: "repository"
+        out: "internal/domain/patient/repository"
+        sql_package: "database/sql"
+        emit_empty_slices: true
+
+  - name: "appointment"
+    engine: "sqlite"
+    schema: "db/schema/"
+    queries: "db/query/appointment.sql"
+    gen:
+      go:
+        package: "repository"
+        out: "internal/domain/appointment/repository"
+        sql_package: "database/sql"
+        emit_empty_slices: true
+
+  - name: "episode"
+    engine: "sqlite"
+    schema: "db/schema/"
+    queries: "db/query/episode.sql"
+    gen:
+      go:
+        package: "repository"
+        out: "internal/domain/episode/repository"
+        sql_package: "database/sql"
+        emit_empty_slices: true
+
+  - name: "calendar"
+    engine: "sqlite"
+    schema: "db/schema/"
+    queries: "db/query/calendar.sql"
+    gen:
+      go:
+        package: "repository"
+        out: "internal/domain/calendar/repository"
+        sql_package: "database/sql"
+        emit_empty_slices: true
