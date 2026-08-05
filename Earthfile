@@ -43,14 +43,14 @@ generate:
 build-dev:
     FROM +go-generated
     RUN mkdir -p /out
-    RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build go build -o /out/librevita-dev ./cmd/api
+    RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build go build -o /out/librevita-dev ./cmd/web
     SAVE ARTIFACT /out/librevita-dev AS LOCAL ./bin/librevita-dev
 
 # Stripped production binary.
 build:
     FROM +go-generated
     RUN mkdir -p /out
-    RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build go build -trimpath -ldflags="-s -w -buildid=" -o /out/librevita ./cmd/api
+    RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build go build -trimpath -ldflags="-s -w -buildid=" -o /out/librevita ./cmd/web
     SAVE ARTIFACT /out/librevita AS LOCAL ./bin/librevita
 
 # Minimal non-root production image.
@@ -72,7 +72,7 @@ build-cross:
     ARG GOARCH=amd64
     FROM +go-generated
     RUN mkdir -p /out
-    RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build GOOS=$GOOS GOARCH=$GOARCH go build -trimpath -ldflags="-s -w -buildid=" -o /out/librevita-$GOOS-$GOARCH ./cmd/api
+    RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build GOOS=$GOOS GOARCH=$GOARCH go build -trimpath -ldflags="-s -w -buildid=" -o /out/librevita-$GOOS-$GOARCH ./cmd/web
     SAVE ARTIFACT /out/librevita-$GOOS-$GOARCH AS LOCAL ./bin/librevita-$GOOS-$GOARCH
 
 # Run the complete test suite against generated sources.
