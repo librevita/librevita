@@ -1,9 +1,11 @@
+import type { Config } from 'npm:tailwindcss@3.4.17';
+
 // Palette override: Tailwind 3.4 defaults to oklch colors, which XP-era
 // browsers cannot parse. The values below are the classic hex palette.
-module.exports = {
+const config: Config = {
   content: [
     './internal/**/*.templ',
-    './frontend/src/**/*.js',
+    './internal/ui/src/**/*.ts',
   ],
   theme: {
     colors: {
@@ -51,3 +53,5 @@ module.exports = {
   },
   plugins: [],
 };
+
+export default config;
