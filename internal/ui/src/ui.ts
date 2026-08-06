@@ -24,7 +24,32 @@ document.addEventListener('htmx:configRequest', (evt) => {
 // so components must register before that happens. The alpine:init event
 // fires at the start of Alpine initialization.
 document.addEventListener('alpine:init', () => {
-  // Widget components are registered here as they are introduced.
+  const alpine = window.Alpine;
+  if (!alpine) {
+    return;
+  }
+  // Mobile navigation drawer. The aside is always visible from md up via
+  // md:flex! (important beats the x-show inline style).
+  alpine.data('sidebar', () => ({
+    open: false,
+    toggle() {
+      this.open = !this.open;
+    },
+    close() {
+      this.open = false;
+    },
+  }));
+
+  // Topbar user menu.
+  alpine.data('userMenu', () => ({
+    open: false,
+    toggle() {
+      this.open = !this.open;
+    },
+    close() {
+      this.open = false;
+    },
+  }));
 });
 
 function readCookie(name: string): string {

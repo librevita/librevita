@@ -21,6 +21,11 @@ LIMIT 1;
 SELECT COUNT(*)
 FROM users;
 
+-- name: CountUsersByRole :one
+SELECT COUNT(*)
+FROM users
+WHERE role = ?;
+
 -- name: GetMetaValue :one
 SELECT value
 FROM meta

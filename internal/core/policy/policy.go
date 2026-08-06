@@ -283,6 +283,15 @@ func (pe *PolicyEngine) List(ctx context.Context) ([]repository.ListPoliciesRow,
 	return rows, nil
 }
 
+// Count returns the number of stored policies.
+func (pe *PolicyEngine) Count(ctx context.Context) (int64, error) {
+	count, err := repository.New(pe.db).CountPolicies(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("policy: count: %w", err)
+	}
+	return count, nil
+}
+
 // Allowed evaluates the named policy for p and req.
 func (pe *PolicyEngine) Allowed(ctx context.Context, name string, p *auth.Principal, req RequestInfo) (bool, error) {
 	pe.mu.RLock()

@@ -186,6 +186,24 @@ func (s *Service) IsOnboarded(ctx context.Context) (bool, error) {
 	return count > 0, nil
 }
 
+// UserCountByRole counts accounts with the given role (e.g. "patient").
+func (s *Service) UserCountByRole(ctx context.Context, role string) (int64, error) {
+	count, err := s.users.CountUsersByRole(ctx, role)
+	if err != nil {
+		return 0, fmt.Errorf("usecase: count users by role: %w", err)
+	}
+	return count, nil
+}
+
+// UserCount counts all accounts.
+func (s *Service) UserCount(ctx context.Context) (int64, error) {
+	count, err := s.users.CountUsers(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("usecase: count users: %w", err)
+	}
+	return count, nil
+}
+
 // Onboard creates the initial admin account and the clinic profile in one
 // transaction. It succeeds only on a system that has never been set up;
 // concurrent setup attempts are serialized by the single SQLite connection,
