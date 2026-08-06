@@ -32,6 +32,13 @@ var DefaultPolicies = map[string]string{
 
 	// Admin area, restricted to the admin role.
 	"admin.view": `principal.role == 'admin'`,
+
+	// Account creation. Registration is never public: the policy decides
+	// who may create accounts. The default restricts it to admins; an
+	// operator may tighten it to a single user, for example
+	// `principal.email == 'hr@example.org'`, or close it entirely with
+	// `false`.
+	"users.register": `principal.role == 'admin'`,
 }
 
 // RequestInfo is the request side of the policy evaluation context.

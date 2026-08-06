@@ -14,6 +14,7 @@ import (
 
 	"librevita.org/internal/core/audit"
 	"librevita.org/internal/core/auth"
+	clinicrepo "librevita.org/internal/domain/clinic/repository"
 	"librevita.org/internal/domain/user/repository"
 )
 
@@ -21,6 +22,7 @@ import (
 var (
 	ErrEmailTaken         = errors.New("usecase: email is already registered")
 	ErrInvalidCredentials = errors.New("usecase: invalid email or password")
+	ErrAlreadyOnboarded   = errors.New("usecase: system is already onboarded")
 )
 
 // Input field limits.
@@ -29,6 +31,16 @@ const (
 	maxEmailLen    = 254
 	minPasswordLen = 8
 	maxPasswordLen = 128
+
+	maxClinicNameLen = 200
+	maxTaxIDLen      = 30
+	maxPhoneLen      = 30
+	maxStreetLen     = 200
+	maxCityLen       = 100
+	maxStateLen      = 50
+	maxPostalCodeLen = 20
+	maxCountryLen    = 2
+	maxTimezoneLen   = 64
 )
 
 // ValidationError reports invalid registration input.
@@ -43,19 +55,33 @@ type RegisterInput struct {
 	Password string
 }
 
+// ClinicInput is the clinic profile collected during onboarding.
+type ClinicInput struct {
+	Name       string
+	TaxID      string
+	Phone      string
+	Email      string
+	Street     string
+	City       string
+	State      string
+	PostalCode string
+	Country    string
+	Timezone   string
+}
+
 // Credentials is the login request.
 type Credentials struct {
 	Email    string
 	Password string
 }
 
-// Service is the authentication use case. The first registered account
-// becomes an admin; subsequent registrations are patients. The first-admin
-// decision is atomic: concurrent registrations on an empty database never
-// produce more than one admin.
+// Service implements authentication workflows. Public registration always
+// creates patient accounts; the admin and clinic profile are created
+// together by Onboard, which is only possible on an empty system.
 type Service struct {
 	db        *sql.DB
 	users     *repository.Queries
+	clinics   *clinicrepo.Queries
 	sessions  *auth.SessionManager
 	audit     *audit.Logger
 	log       *slog.Logger
@@ -75,6 +101,7 @@ func NewService(db *sql.DB, sessions *auth.SessionManager, auditLogger *audit.Lo
 	return &Service{
 		db:        db,
 		users:     repository.New(db),
+		clinics:   clinicrepo.New(db),
 		sessions:  sessions,
 		audit:     auditLogger,
 		log:       log,
@@ -97,27 +124,8 @@ func (s *Service) Register(ctx context.Context, in RegisterInput) (*auth.Princip
 		return nil, "", err
 	}
 
-	// The whole first-admin decision and insert run inside one transaction
-	// on the single SQLite connection, so concurrent registrations are
-	// serialized and exactly one account can become admin.
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return nil, "", fmt.Errorf("usecase: begin register: %w", err)
-	}
-	defer tx.Rollback()
-
-	qtx := s.users.WithTx(tx)
-
-	count, err := qtx.CountUsers(ctx)
-	if err != nil {
-		return nil, "", fmt.Errorf("usecase: count users: %w", err)
-	}
-
-	role := auth.RolePatient
-	if count == 0 {
-		role = auth.RoleAdmin
-	}
-
+	// Public registration always creates a patient account. The admin
+	// account is created exclusively by Onboard.
 	hash, err := auth.HashPassword(password)
 	if err != nil {
 		return nil, "", err
@@ -128,20 +136,16 @@ func (s *Service) Register(ctx context.Context, in RegisterInput) (*auth.Princip
 		return nil, "", fmt.Errorf("usecase: generate user id: %w", err)
 	}
 
-	user, err := qtx.CreateUser(ctx, repository.CreateUserParams{
+	user, err := s.users.CreateUser(ctx, repository.CreateUserParams{
 		ID:           userID.String(),
 		Email:        email,
 		PasswordHash: hash,
 		DisplayName:  name,
-		Role:         role.String(),
+		Role:         auth.RolePatient.String(),
 	})
 	if err != nil {
 		// The UNIQUE COLLATE NOCASE constraint maps to a duplicate email.
 		return nil, "", ErrEmailTaken
-	}
-
-	if err := tx.Commit(); err != nil {
-		return nil, "", fmt.Errorf("usecase: commit register: %w", err)
 	}
 
 	principal, token, err := s.startSession(ctx, user)
@@ -154,6 +158,133 @@ func (s *Service) Register(ctx context.Context, in RegisterInput) (*auth.Princip
 	s.audit.Record(ctx, audit.Event{
 		ActorID: user.ID, ActorMail: user.Email,
 		Action: "register", Resource: "user", Result: result, Detail: detail,
+	})
+	return principal, token, err
+}
+
+// setupMetaKey marks a completed onboarding. The marker is written in the
+// same transaction as the admin account, so setup can run exactly once even
+// if every account and the clinic are later removed.
+const setupMetaKey = "setup_completed"
+
+// IsOnboarded reports whether the system has already been set up. The
+// persisted marker is authoritative; the user count is a second guard
+// against a deleted marker.
+func (s *Service) IsOnboarded(ctx context.Context) (bool, error) {
+	_, err := s.users.GetMetaValue(ctx, setupMetaKey)
+	if err == nil {
+		return true, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return false, fmt.Errorf("usecase: read setup marker: %w", err)
+	}
+	count, err := s.users.CountUsers(ctx)
+	if err != nil {
+		return false, fmt.Errorf("usecase: count users: %w", err)
+	}
+	return count > 0, nil
+}
+
+// Onboard creates the initial admin account and the clinic profile in one
+// transaction. It succeeds only on a system that has never been set up;
+// concurrent setup attempts are serialized by the single SQLite connection,
+// so exactly one can win. It returns the principal and the raw session
+// token.
+func (s *Service) Onboard(ctx context.Context, admin RegisterInput, clinic ClinicInput) (*auth.Principal, string, error) {
+	name := strings.TrimSpace(admin.Name)
+	email := normalizeEmail(admin.Email)
+
+	if err := validateRegistration(name, email, admin.Password); err != nil {
+		s.auditOnboard(ctx, err.Error())
+		return nil, "", err
+	}
+	if err := validateClinic(clinic); err != nil {
+		s.auditOnboard(ctx, err.Error())
+		return nil, "", err
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, "", fmt.Errorf("usecase: begin onboard: %w", err)
+	}
+	defer tx.Rollback()
+
+	qtx := s.users.WithTx(tx)
+
+	if _, err := qtx.GetMetaValue(ctx, setupMetaKey); err == nil {
+		return nil, "", ErrAlreadyOnboarded
+	} else if !errors.Is(err, sql.ErrNoRows) {
+		return nil, "", fmt.Errorf("usecase: read setup marker: %w", err)
+	}
+
+	count, err := qtx.CountUsers(ctx)
+	if err != nil {
+		return nil, "", fmt.Errorf("usecase: count users: %w", err)
+	}
+	if count > 0 {
+		return nil, "", ErrAlreadyOnboarded
+	}
+
+	clinicID, err := uuid.NewV7()
+	if err != nil {
+		return nil, "", fmt.Errorf("usecase: generate clinic id: %w", err)
+	}
+	if _, err := s.clinics.WithTx(tx).CreateClinic(ctx, clinicrepo.CreateClinicParams{
+		ID:         clinicID.String(),
+		Name:       strings.TrimSpace(clinic.Name),
+		TaxID:      strPtr(clinic.TaxID),
+		Phone:      strPtr(clinic.Phone),
+		Email:      strPtr(normalizeEmail(clinic.Email)),
+		Street:     strPtr(strings.TrimSpace(clinic.Street)),
+		City:       strPtr(strings.TrimSpace(clinic.City)),
+		State:      strPtr(strings.TrimSpace(clinic.State)),
+		PostalCode: strPtr(strings.TrimSpace(clinic.PostalCode)),
+		Country:    strings.ToUpper(strings.TrimSpace(orDefault(clinic.Country, "BR"))),
+		Timezone:   strings.TrimSpace(orDefault(clinic.Timezone, "America/Sao_Paulo")),
+	}); err != nil {
+		return nil, "", fmt.Errorf("usecase: create clinic: %w", err)
+	}
+
+	hash, err := auth.HashPassword(admin.Password)
+	if err != nil {
+		return nil, "", err
+	}
+
+	adminID, err := uuid.NewV7()
+	if err != nil {
+		return nil, "", fmt.Errorf("usecase: generate admin id: %w", err)
+	}
+
+	user, err := qtx.CreateUser(ctx, repository.CreateUserParams{
+		ID:           adminID.String(),
+		Email:        email,
+		PasswordHash: hash,
+		DisplayName:  name,
+		Role:         auth.RoleAdmin.String(),
+	})
+	if err != nil {
+		// Unreachable on an empty system, but keep the mapping honest.
+		return nil, "", ErrEmailTaken
+	}
+
+	if err := qtx.SetMeta(ctx, repository.SetMetaParams{Key: setupMetaKey, Value: "1"}); err != nil {
+		return nil, "", fmt.Errorf("usecase: mark setup complete: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, "", fmt.Errorf("usecase: commit onboard: %w", err)
+	}
+
+	principal, token, err := s.startSession(ctx, user)
+	result := audit.ResultSuccess
+	detail := ""
+	if err != nil {
+		result = audit.ResultFailure
+		detail = err.Error()
+	}
+	s.audit.Record(ctx, audit.Event{
+		ActorID: user.ID, ActorMail: user.Email,
+		Action: "onboard", Resource: "setup", Result: result, Detail: detail,
 	})
 	return principal, token, err
 }
@@ -279,4 +410,57 @@ func validateRegistration(name, email, password string) error {
 		return &ValidationError{Msg: "password must be at most 128 characters"}
 	}
 	return nil
+}
+
+func (s *Service) auditOnboard(ctx context.Context, failure string) {
+	s.audit.Record(ctx, audit.Event{
+		Action: "onboard", Resource: "setup", Result: audit.ResultFailure, Detail: failure,
+	})
+}
+
+func validateClinic(c ClinicInput) error {
+	name := strings.TrimSpace(c.Name)
+	if name == "" {
+		return &ValidationError{Msg: "clinic name is required"}
+	}
+	if len(name) > maxClinicNameLen {
+		return &ValidationError{Msg: "clinic name is too long"}
+	}
+	if len(c.TaxID) > maxTaxIDLen {
+		return &ValidationError{Msg: "tax id is too long"}
+	}
+	if len(c.Phone) > maxPhoneLen {
+		return &ValidationError{Msg: "phone is too long"}
+	}
+	if email := normalizeEmail(c.Email); email != "" {
+		addr, err := mail.ParseAddress(email)
+		if err != nil || addr.Address != email {
+			return &ValidationError{Msg: "enter a valid clinic email address"}
+		}
+	}
+	if len(c.Street) > maxStreetLen || len(c.City) > maxCityLen ||
+		len(c.State) > maxStateLen || len(c.PostalCode) > maxPostalCodeLen {
+		return &ValidationError{Msg: "address fields are too long"}
+	}
+	if country := strings.ToUpper(strings.TrimSpace(c.Country)); country != "" && len(country) > maxCountryLen {
+		return &ValidationError{Msg: "country must be a two-letter code"}
+	}
+	if len(c.Timezone) > maxTimezoneLen {
+		return &ValidationError{Msg: "timezone is too long"}
+	}
+	return nil
+}
+
+func orDefault(value, fallback string) string {
+	if strings.TrimSpace(value) == "" {
+		return fallback
+	}
+	return value
+}
+
+func strPtr(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
 }

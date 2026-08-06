@@ -34,7 +34,7 @@ func openHandlerDB(t *testing.T) *sql.DB {
 	return db
 }
 
-func newHandler(t *testing.T, db *sql.DB) (*httphandler.Handler, *auth.SessionManager) {
+func newHandler(t *testing.T, db *sql.DB) (*httphandler.Handler, *auth.SessionManager, *usecase.Service) {
 	t.Helper()
 	log := slog.New(slog.DiscardHandler)
 	sessions, err := auth.NewSessionManager(db, &config.Config{Env: "test"}, log)
@@ -47,12 +47,12 @@ func newHandler(t *testing.T, db *sql.DB) (*httphandler.Handler, *auth.SessionMa
 	}
 	svc := usecase.NewService(db, sessions, auditLogger, log)
 	csrf := auth.NewCSRF(&config.Config{Env: "test"})
-	return httphandler.NewHandler(svc, csrf, sessions), sessions
+	return httphandler.NewHandler(svc, csrf, sessions), sessions, svc
 }
 
 func TestLogoutSurfacesRevocationFailure(t *testing.T) {
 	db := openHandlerDB(t)
-	h, sessions := newHandler(t, db)
+	h, sessions, _ := newHandler(t, db)
 
 	token, err := sessions.Create(context.Background(), auth.Principal{
 		ID: "01990000-0000-7000-8000-000000000001", Email: "ana@example.org", Name: "Ana", Role: auth.RoleAdmin,

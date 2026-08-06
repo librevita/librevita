@@ -16,11 +16,12 @@ import (
 	"librevita.org/internal/domain/user/usecase"
 )
 
-// Per-client rate limits. The register endpoint is deliberately stricter:
-// a public registration is the only way to become the initial admin.
+// Per-client rate limits. Setup is the only way to become the initial
+// admin, so it is deliberately strict.
 const (
 	loginLimit    = 10
 	registerLimit = 5
+	setupLimit    = 5
 	limitWindow   = time.Minute
 )
 
@@ -36,13 +37,19 @@ func registerRoutes(e *echo.Echo, h *httphandler.Handler, sessions *auth.Session
 
 	loginLimiter := server.NewRateLimiter(loginLimit, limitWindow)
 	registerLimiter := server.NewRateLimiter(registerLimit, limitWindow)
+	setupLimiter := server.NewRateLimiter(setupLimit, limitWindow)
+	gate := h.SetupGate()
 
-	e.GET("/auth/login", h.LoginPage)
-	e.POST("/auth/login", h.Login, server.RateLimit(loginLimiter))
-	e.GET("/auth/register", h.RegisterPage)
-	e.POST("/auth/register", h.Register, server.RateLimit(registerLimiter))
-	e.POST("/auth/logout", h.Logout, server.RequireAuth(sessions, log))
+	e.GET("/setup", h.SetupPage)
+	e.POST("/setup", h.Setup, server.RateLimit(setupLimiter))
+	e.GET("/auth/login", h.LoginPage, gate)
+	e.POST("/auth/login", h.Login, gate, server.RateLimit(loginLimiter))
+	// Registration is never public; the users.register policy decides who
+	// may create accounts.
+	e.GET("/auth/register", h.RegisterPage, gate, server.RequireAuth(sessions, log), server.RequirePolicy(policies, auditLogger, log, "users.register"))
+	e.POST("/auth/register", h.Register, gate, server.RequireAuth(sessions, log), server.RequirePolicy(policies, auditLogger, log, "users.register"), server.RateLimit(registerLimiter))
+	e.POST("/auth/logout", h.Logout, gate, server.RequireAuth(sessions, log))
 
-	e.GET("/", h.Home, server.RequireAuth(sessions, log), server.RequirePolicy(policies, auditLogger, log, "dashboard.view"))
-	e.GET("/admin", h.Admin, server.RequireAuth(sessions, log), server.RequirePolicy(policies, auditLogger, log, "admin.view"))
+	e.GET("/", h.Home, gate, server.RequireAuth(sessions, log), server.RequirePolicy(policies, auditLogger, log, "dashboard.view"))
+	e.GET("/admin", h.Admin, gate, server.RequireAuth(sessions, log), server.RequirePolicy(policies, auditLogger, log, "admin.view"))
 }

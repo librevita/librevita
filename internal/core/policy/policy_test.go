@@ -43,6 +43,9 @@ func TestPolicyEvaluation(t *testing.T) {
 		{"receptionist denied", auth.RoleReceptionist, "admin.view", false},
 		{"patient denied", auth.RolePatient, "admin.view", false},
 		{"patient dashboard", auth.RolePatient, "dashboard.view", true},
+		{"admin may register", auth.RoleAdmin, "users.register", true},
+		{"physician may not register", auth.RolePhysician, "users.register", false},
+		{"patient may not register", auth.RolePatient, "users.register", false},
 	}
 
 	for _, tc := range cases {
