@@ -47,6 +47,8 @@ const (
 	defaultLogSizeMB  = 100
 	defaultLogBackups = 3
 	defaultLogAgeDays = 28
+
+	defaultMaxConcurrentHashes = 4
 )
 
 // Config is the application configuration root.
@@ -69,9 +71,19 @@ type Config struct {
 	// Logging controls the production log destination and rotation policy.
 	Logging LoggingConfig `koanf:"logging"`
 
+	// Auth tunes authentication behavior.
+	Auth AuthConfig `koanf:"auth"`
+
 	// PasetoKey is the base64-encoded 32-byte key for PASETO v4.local
-	// session tokens. Required in production; generated at startup otherwise.
+	// session tokens. Required outside development; generated at startup
+	// otherwise.
 	PasetoKey string `koanf:"paseto_key"`
+}
+
+// AuthConfig controls authentication behavior.
+type AuthConfig struct {
+	// MaxConcurrentHashes bounds concurrent Argon2id operations.
+	MaxConcurrentHashes int `koanf:"max_concurrent_hashes"`
 }
 
 // DatabaseConfig defines the active persistence backend.
@@ -113,11 +125,21 @@ func RegisterFlags(fs *pflag.FlagSet) {
 	intFlag(fs, "log-max-age", defaultLogAgeDays, "rotating log maximum age in days")
 	boolFlag(fs, "log-compress", true, "compress rotated log files")
 	stringFlag(fs, "paseto-key", "", "PASETO v4.local session key (base64, 32 bytes)")
+	intFlag(fs, "auth-max-concurrent-hashes", defaultMaxConcurrentHashes, "bound on concurrent Argon2id operations")
 }
 
 // IsProduction reports whether the application runs in production.
 func (c *Config) IsProduction() bool {
 	return strings.EqualFold(c.Env, "production")
+}
+
+// IsDevelopment reports whether the application runs in the explicit
+// development environment. Every other environment is treated as a
+// persistent deployment: the PASETO key is required and cookies use the
+// Secure flag, so a deployment labeled "staging" or "prod" never falls
+// back to ephemeral keys or insecure cookies.
+func (c *Config) IsDevelopment() bool {
+	return strings.EqualFold(c.Env, "development")
 }
 
 // New is the Fx configuration provider.
@@ -241,6 +263,10 @@ func (c *Config) normalize() {
 	if c.Logging.MaxAgeDays < 0 {
 		c.Logging.MaxAgeDays = defaultLogAgeDays
 	}
+
+	if c.Auth.MaxConcurrentHashes <= 0 {
+		c.Auth.MaxConcurrentHashes = defaultMaxConcurrentHashes
+	}
 }
 
 func (c *Config) validate() error {
@@ -308,6 +334,8 @@ func mapFlagKey(name string) string {
 		return "logging.compress"
 	case "paseto-key", "paseto_key":
 		return "paseto_key"
+	case "auth-max-concurrent-hashes", "auth_max_concurrent_hashes":
+		return "auth.max_concurrent_hashes"
 	default:
 		return ""
 	}
@@ -344,6 +372,8 @@ func mapEnvironmentKey(key string) string {
 		return "logging.compress"
 	case "paseto_key":
 		return "paseto_key"
+	case "auth_max_concurrent_hashes":
+		return "auth.max_concurrent_hashes"
 	default:
 		return ""
 	}

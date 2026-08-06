@@ -63,6 +63,22 @@ const (
 	OriginSystem = "system"
 )
 
+// criticalPolicies guard their own management: if an admin saved an
+// expression that denies the admin role, the admin panel would become
+// unreachable with no recovery path. Set validates changes to these
+// policies against an admin fixture and rejects self-lockout.
+var criticalPolicies = map[string]bool{
+	"admin.view": true,
+}
+
+// adminFixture is the representative principal used to reject self-lockout.
+var adminFixture = auth.Principal{
+	ID:    "00000000-0000-7000-8000-000000000000",
+	Email: "admin@librevita.example",
+	Name:  "Administrator",
+	Role:  auth.RoleAdmin,
+}
+
 // ErrPolicyNotFound is returned when a route references an unknown policy.
 var ErrPolicyNotFound = errors.New("policy: policy not found")
 
@@ -170,6 +186,18 @@ func (pe *PolicyEngine) Set(ctx context.Context, name, expression string, actor 
 		return err
 	}
 
+	// Critical policies must never deny the admin role; the admin panel
+	// is the only place that could restore them.
+	if criticalPolicies[name] {
+		allowed, err := evaluate(prog, &adminFixture, RequestInfo{Method: "GET", Path: "/admin"})
+		if err != nil {
+			return fmt.Errorf("policy: %q would break admin access: %w", name, err)
+		}
+		if !allowed {
+			return fmt.Errorf("policy: change to %q would deny access to the admin panel (self-lockout rejected)", name)
+		}
+	}
+
 	pe.setMu.Lock()
 	defer pe.setMu.Unlock()
 
@@ -264,6 +292,16 @@ func (pe *PolicyEngine) Allowed(ctx context.Context, name string, p *auth.Princi
 		return false, fmt.Errorf("%w: %q", ErrPolicyNotFound, name)
 	}
 
+	allowed, err := evaluate(prog, p, req)
+	if err != nil {
+		return false, fmt.Errorf("policy: %q evaluation: %w", name, err)
+	}
+	return allowed, nil
+}
+
+// evaluate runs prog against a principal/request activation and requires a
+// boolean result.
+func evaluate(prog cel.Program, p *auth.Principal, req RequestInfo) (bool, error) {
 	out, _, err := prog.Eval(map[string]any{
 		"principal": map[string]any{
 			"id":    p.ID,
@@ -277,7 +315,7 @@ func (pe *PolicyEngine) Allowed(ctx context.Context, name string, p *auth.Princi
 		},
 	})
 	if err != nil {
-		return false, fmt.Errorf("policy: %q evaluation: %w", name, err)
+		return false, err
 	}
 
 	switch out {
@@ -286,7 +324,7 @@ func (pe *PolicyEngine) Allowed(ctx context.Context, name string, p *auth.Princi
 	case types.False:
 		return false, nil
 	default:
-		return false, fmt.Errorf("policy: %q did not evaluate to bool", name)
+		return false, fmt.Errorf("did not evaluate to bool")
 	}
 }
 

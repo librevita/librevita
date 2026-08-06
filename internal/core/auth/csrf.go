@@ -27,7 +27,7 @@ type CSRF struct {
 
 // NewCSRF is the Fx provider.
 func NewCSRF(cfg *config.Config) *CSRF {
-	return &CSRF{secure: cfg.IsProduction()}
+	return &CSRF{secure: !cfg.IsDevelopment()}
 }
 
 // NewToken returns a fresh random token.

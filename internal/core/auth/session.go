@@ -53,9 +53,10 @@ type SessionManager struct {
 // NewSessionManager is the Fx provider. The SQLite backend is required
 // because session revocation lives in the embedded database.
 //
-// The PASETO key comes from config.PasetoKey (base64, 32 bytes). In
-// production the key is mandatory; in development an ephemeral key is
-// generated, which invalidates sessions on restart.
+// The PASETO key comes from config.PasetoKey (base64, 32 bytes). Every
+// environment except the explicit "development" requires the key; in
+// development an ephemeral key is generated, which invalidates sessions on
+// restart.
 func NewSessionManager(db *sql.DB, cfg *config.Config, log *slog.Logger) (*SessionManager, error) {
 	if db == nil {
 		return nil, errors.New("auth: sessions require the SQLite backend")
@@ -66,8 +67,8 @@ func NewSessionManager(db *sql.DB, cfg *config.Config, log *slog.Logger) (*Sessi
 		return nil, err
 	}
 	if raw == nil {
-		if cfg.IsProduction() {
-			return nil, errors.New("auth: paseto key is required in production (LIBREVITA_PASETO_KEY)")
+		if !cfg.IsDevelopment() {
+			return nil, errors.New("auth: paseto key is required outside development (LIBREVITA_PASETO_KEY)")
 		}
 		log.Warn("no paseto key configured; using an ephemeral key (sessions reset on restart)")
 		raw = make([]byte, 32)
@@ -86,7 +87,7 @@ func NewSessionManager(db *sql.DB, cfg *config.Config, log *slog.Logger) (*Sessi
 		queries: repository.New(db),
 		key:     key,
 		ttl:     sessionTTL,
-		secure:  cfg.IsProduction(),
+		secure:  !cfg.IsDevelopment(),
 		log:     log,
 	}, nil
 }
