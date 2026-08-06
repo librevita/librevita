@@ -38,6 +38,7 @@ templ Admin(token string, p *auth.Principal) {
 			<main>
 				<h1>Admin area</h1>
 				<p>Only users with the <strong>admin</strong> role can see this page.</p>
+				<p><a href="/admin/policies">Access policies</a></p>
 				<p><a href="/">Back to dashboard</a></p>
 				<form method="post" action="/auth/logout">
 					<input type="hidden" name="_csrf" value={ token }>

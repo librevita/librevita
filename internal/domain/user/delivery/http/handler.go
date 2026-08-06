@@ -1,14 +1,18 @@
-// Package http exposes the authentication web routes.
+// Package http exposes the authentication and admin web routes.
 package http
 
 import (
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/a-h/templ"
 	"github.com/labstack/echo/v4"
 
+	"librevita.org/internal/core/audit"
 	"librevita.org/internal/core/auth"
+	"librevita.org/internal/core/policy"
+	"librevita.org/internal/core/policy/repository"
 	"librevita.org/internal/core/server"
 	"librevita.org/internal/domain/user/delivery/views"
 	"librevita.org/internal/domain/user/usecase"
@@ -19,11 +23,14 @@ type Handler struct {
 	svc      *usecase.Service
 	csrf     *auth.CSRF
 	sessions *auth.SessionManager
+	policies *policy.PolicyEngine
+	audit    *audit.Logger
 }
 
 // NewHandler is the Fx provider.
-func NewHandler(svc *usecase.Service, csrf *auth.CSRF, sessions *auth.SessionManager) *Handler {
-	return &Handler{svc: svc, csrf: csrf, sessions: sessions}
+func NewHandler(svc *usecase.Service, csrf *auth.CSRF, sessions *auth.SessionManager,
+	policies *policy.PolicyEngine, auditLogger *audit.Logger) *Handler {
+	return &Handler{svc: svc, csrf: csrf, sessions: sessions, policies: policies, audit: auditLogger}
 }
 
 // SetupGate redirects navigation to /setup while the system is not yet
@@ -179,6 +186,70 @@ func (h *Handler) Home(c echo.Context) error {
 // Admin renders the admin-only area.
 func (h *Handler) Admin(c echo.Context) error {
 	return render(c, http.StatusOK, views.Admin(server.CSRFToken(c, h.csrf), server.Principal(c)))
+}
+
+// AdminPoliciesPage lists the dynamic CEL policies for editing, each with
+// its recent change history.
+func (h *Handler) AdminPoliciesPage(c echo.Context) error {
+	policies, err := h.policies.List(c.Request().Context())
+	if err != nil {
+		return err
+	}
+	viewsList, err := h.policyViews(c, policies)
+	if err != nil {
+		return err
+	}
+	return render(c, http.StatusOK, views.AdminPolicies(server.CSRFToken(c, h.csrf), viewsList, ""))
+}
+
+// AdminPolicySave validates and persists a policy expression. Invalid
+// expressions are rejected and the previous policy stays active.
+func (h *Handler) AdminPolicySave(c echo.Context) error {
+	name := strings.TrimSpace(c.FormValue("name"))
+	expression := c.FormValue("expression")
+
+	actor := policy.Actor{}
+	if p := server.Principal(c); p != nil {
+		actor = policy.Actor{ID: p.ID, Email: p.Email}
+	}
+
+	err := h.policies.Set(c.Request().Context(), name, expression, actor)
+	result := audit.ResultSuccess
+	detail := ""
+	if err != nil {
+		result = audit.ResultFailure
+		detail = err.Error()
+	}
+
+	h.audit.Record(c.Request().Context(), audit.Event{
+		ActorID: actor.ID, ActorMail: actor.Email,
+		Action: "policy.update", Resource: "policy:" + name,
+		Result: result, Detail: detail,
+		IP: c.RealIP(), RequestID: c.Response().Header().Get(echo.HeaderXRequestID),
+	})
+
+	policies, listErr := h.policies.List(c.Request().Context())
+	if listErr != nil {
+		return listErr
+	}
+	viewsList, listErr := h.policyViews(c, policies)
+	if listErr != nil {
+		return listErr
+	}
+	return render(c, http.StatusOK, views.AdminPolicies(server.CSRFToken(c, h.csrf), viewsList, detail))
+}
+
+// policyViews decorates the stored policies with their change history.
+func (h *Handler) policyViews(c echo.Context, policies []repository.ListPoliciesRow) ([]views.PolicyView, error) {
+	out := make([]views.PolicyView, 0, len(policies))
+	for _, p := range policies {
+		history, err := h.policies.History(c.Request().Context(), p.Name, 5)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, views.PolicyView{Name: p.Name, Expression: p.Expression, History: history})
+	}
+	return out, nil
 }
 
 func render(c echo.Context, status int, comp templ.Component) error {
