@@ -123,6 +123,7 @@ The main flags are:
 | `--log-max-backups` | `LIBREVITA_LOG_MAX_BACKUPS` | Number of rotated files |
 | `--log-max-age` | `LIBREVITA_LOG_MAX_AGE_DAYS` | Maximum rotated file age |
 | `--log-compress` | `LIBREVITA_LOG_COMPRESS` | Compress rotated files |
+| `--paseto-key` | `LIBREVITA_PASETO_KEY` | Session key (base64, 32 bytes; required in production) |
 
 `LIBREVITA_DATABASE_*` names are also accepted for database settings.
 
@@ -191,6 +192,54 @@ files are needed.
 Echo is created and managed by Fx. The foundation currently exposes:
 
 - `GET /healthz`
+- `GET /auth/login`, `POST /auth/login`
+- `GET /auth/register`, `POST /auth/register`
+- `POST /auth/logout`
+- `GET /` (authenticated dashboard)
+- `GET /admin` (admin role only)
 
 The endpoint returns `{"status":"ok"}`. Business routes are not registered yet.
 HTTP errors use RFC 7807 `application/problem+json` responses.
+
+## Authentication and Authorization
+
+Authentication lives in `internal/core/auth` (transport-agnostic) with HTTP
+adapters in `internal/core/server`:
+
+- Passwords are hashed with Argon2id (`golang.org/x/crypto/argon2`)
+- Sessions are PASETO v4.local tokens (`aidanwoods.dev/go-paseto`): the
+  payload is encrypted with XChaCha20-Poly1305 under a single server key and
+  validated cryptographically on every request. The `sessions` table holds
+  only the token id (SHA-256) for revocation, logout, and account
+  deactivation checks. The cookie is `HttpOnly` and `SameSite=Lax`, with the
+  `Secure` flag enabled in production
+- The session key is `LIBREVITA_PASETO_KEY` (base64, 32 bytes). It is
+  mandatory in production; in development an ephemeral key is generated and
+  sessions reset on restart
+- CSRF uses the double-submit cookie pattern. Forms embed the token in the
+  `_csrf` field; HTMX and fetch requests send it in the `X-CSRF-Token` header
+- Authorization is policy-based and lives in `internal/core/policy`. Roles
+  (`admin`, `physician`, `receptionist`, `patient`) are principal attributes;
+  permissions are CEL expressions compiled once at startup and evaluated per
+  request. `RequireAuth` redirects anonymous browsers to the login page, and
+  `RequirePolicy(name)` returns an RFC 7807 `403` when the policy denies
+
+CEL (`github.com/google/cel-go`) is a non-Turing-complete expression
+language: it has no loops, recursion, or side effects, so authorization
+rules are bounded, safe to evaluate, and auditable. Policies receive two
+variables:
+
+- `principal` — `id`, `email`, `name`, `role`
+- `request` — `method`, `path`
+
+Default policies live in `DefaultPolicies` in
+`internal/core/policy/policy.go`:
+
+| Policy | Expression |
+| --- | --- |
+| `dashboard.view` | `principal.role in ['admin', 'physician', 'receptionist', 'patient']` |
+| `admin.view` | `principal.role == 'admin'` |
+
+The first registered account becomes an `admin`; subsequent registrations are
+`patient` accounts. Sessions require the SQLite backend; rqlite deployments
+must provide their own authentication layer.

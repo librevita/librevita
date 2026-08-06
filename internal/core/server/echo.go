@@ -1,4 +1,6 @@
-// Package server provides the Echo HTTP server managed by Fx.
+// Package server provides the Echo HTTP server managed by Fx. It hosts the
+// transport adapters for authentication and authorization middleware;
+// business logic stays in the auth and policy packages.
 package server
 
 import (
@@ -6,10 +8,12 @@ import (
 
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
+
+	"librevita.org/internal/core/auth"
 )
 
 // New creates the Echo instance and installs global middleware.
-func New() *echo.Echo {
+func New(csrf *auth.CSRF) *echo.Echo {
 	e := echo.New()
 
 	e.HideBanner = true
@@ -20,6 +24,7 @@ func New() *echo.Echo {
 	e.Use(middleware.RequestID())
 	e.Use(middleware.Recover())
 	e.Use(middleware.CORS())
+	e.Use(CSRFMiddleware(csrf))
 
 	// Infrastructure endpoint for load balancers and process probes.
 	e.GET("/healthz", func(c echo.Context) error {

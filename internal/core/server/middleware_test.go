@@ -1,0 +1,144 @@
+package server
+
+import (
+	"context"
+	"database/sql"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+
+	"github.com/labstack/echo/v4"
+	_ "modernc.org/sqlite"
+
+	"librevita.org/internal/core/auth"
+	"librevita.org/internal/core/config"
+	"librevita.org/internal/core/database"
+	"librevita.org/internal/core/policy"
+)
+
+func openTestDB(t *testing.T) *sql.DB {
+	t.Helper()
+	db, err := sql.Open("sqlite", "file:server-test?mode=memory&cache=shared")
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	db.SetMaxOpenConns(1)
+	t.Cleanup(func() { db.Close() })
+
+	if err := database.Migrate(context.Background(), db, slog.New(slog.DiscardHandler)); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	return db
+}
+
+func testLogger() *slog.Logger { return slog.New(slog.DiscardHandler) }
+
+func TestRequireAuthRedirectsAnonymous(t *testing.T) {
+	db := openTestDB(t)
+	sessions, err := auth.NewSessionManager(db, &config.Config{Env: "test"}, testLogger())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	e := echo.New()
+	e.GET("/", func(c echo.Context) error { return c.String(http.StatusOK, "ok") }, RequireAuth(sessions, testLogger()))
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+	if rec.Code != http.StatusFound || rec.Header().Get("Location") != LoginPath {
+		t.Fatalf("anonymous request = %d %q, want 302 %q", rec.Code, rec.Header().Get("Location"), LoginPath)
+	}
+}
+
+func TestRequireAuthAcceptsValidSession(t *testing.T) {
+	db := openTestDB(t)
+	sessions, err := auth.NewSessionManager(db, &config.Config{Env: "test"}, testLogger())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	hash, err := auth.HashPassword("test-password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO users (email, password_hash, display_name, role) VALUES (?, ?, ?, ?)`,
+		"user@example.org", hash, "Test User", auth.RoleAdmin.String()); err != nil {
+		t.Fatal(err)
+	}
+
+	token, err := sessions.Create(context.Background(), auth.Principal{ID: 1, Email: "user@example.org", Name: "Test User", Role: auth.RoleAdmin})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	e := echo.New()
+	e.GET("/", func(c echo.Context) error {
+		if Principal(c) == nil {
+			t.Fatal("principal missing from context")
+		}
+		return c.String(http.StatusOK, "ok")
+	}, RequireAuth(sessions, testLogger()))
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.AddCookie(sessions.Cookie(token))
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("authenticated request = %d, want 200", rec.Code)
+	}
+}
+
+func TestRequirePolicyAllowsAndDenies(t *testing.T) {
+	pe, err := policy.NewPolicyEngine(testLogger())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tc := range []struct {
+		name string
+		role auth.Role
+		code int
+	}{
+		{"admin allowed", auth.RoleAdmin, http.StatusOK},
+		{"patient denied", auth.RolePatient, http.StatusForbidden},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			e := echo.New()
+			e.GET("/admin", func(c echo.Context) error { return c.String(http.StatusOK, "ok") },
+				func(next echo.HandlerFunc) echo.HandlerFunc {
+					return func(c echo.Context) error {
+						c.Set(principalKey, &auth.Principal{ID: 1, Email: "u@example.org", Name: "User", Role: tc.role})
+						return next(c)
+					}
+				},
+				RequirePolicy(pe, testLogger(), "admin.view"))
+
+			req := httptest.NewRequest(http.MethodGet, "/admin", nil)
+			rec := httptest.NewRecorder()
+			e.ServeHTTP(rec, req)
+			if rec.Code != tc.code {
+				t.Fatalf("GET /admin = %d, want %d", rec.Code, tc.code)
+			}
+		})
+	}
+}
+
+func TestRequirePolicyRedirectsWithoutPrincipal(t *testing.T) {
+	pe, err := policy.NewPolicyEngine(testLogger())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	e := echo.New()
+	e.GET("/admin", func(c echo.Context) error { return c.String(http.StatusOK, "ok") },
+		RequirePolicy(pe, testLogger(), "admin.view"))
+
+	req := httptest.NewRequest(http.MethodGet, "/admin", nil)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+	if rec.Code != http.StatusFound {
+		t.Fatalf("GET /admin without principal = %d, want 302", rec.Code)
+	}
+}

@@ -1,0 +1,49 @@
+package views
+
+import "librevita.org/internal/core/auth"
+
+templ Home(token string, p *auth.Principal) {
+	<!DOCTYPE html>
+	<html lang="en">
+		<head>
+			<meta charset="utf-8">
+			<meta name="viewport" content="width=device-width, initial-scale=1">
+			<title>Dashboard - LibreVita</title>
+		</head>
+		<body>
+			<main>
+				<h1>Welcome, { p.Name }</h1>
+				<p>Signed in as <strong>{ p.Role.String() }</strong> ({ p.Email })</p>
+				if p.Role == auth.RoleAdmin {
+					<p><a href="/admin">Admin area</a></p>
+				}
+				<form method="post" action="/auth/logout">
+					<input type="hidden" name="_csrf" value={ token }>
+					<button type="submit">Sign out</button>
+				</form>
+			</main>
+		</body>
+	</html>
+}
+
+templ Admin(token string, p *auth.Principal) {
+	<!DOCTYPE html>
+	<html lang="en">
+		<head>
+			<meta charset="utf-8">
+			<meta name="viewport" content="width=device-width, initial-scale=1">
+			<title>Admin - LibreVita</title>
+		</head>
+		<body>
+			<main>
+				<h1>Admin area</h1>
+				<p>Only users with the <strong>admin</strong> role can see this page.</p>
+				<p><a href="/">Back to dashboard</a></p>
+				<form method="post" action="/auth/logout">
+					<input type="hidden" name="_csrf" value={ token }>
+					<button type="submit">Sign out</button>
+				</form>
+			</main>
+		</body>
+	</html>
+}

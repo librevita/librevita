@@ -2,6 +2,7 @@ package database
 
 import (
 	"context"
+	"database/sql"
 	"log/slog"
 
 	"go.uber.org/fx"
@@ -10,8 +11,13 @@ import (
 // Module provides the main store and manages its lifecycle.
 var Module = fx.Module("database",
 	fx.Provide(NewStore),
+	fx.Provide(sqlDB),
 	fx.Invoke(registerLifecycle),
 )
+
+// sqlDB exposes the embedded SQLite handle. It is nil in rqlite mode;
+// consumers that require local storage must reject nil themselves.
+func sqlDB(store *Store) *sql.DB { return store.SQL() }
 
 func registerLifecycle(lc fx.Lifecycle, store *Store, log *slog.Logger) {
 	lc.Append(fx.Hook{

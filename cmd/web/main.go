@@ -12,10 +12,13 @@ import (
 	"go.uber.org/fx"
 	"go.uber.org/fx/fxevent"
 
+	"librevita.org/internal/core/auth"
 	"librevita.org/internal/core/config"
 	"librevita.org/internal/core/database"
+	"librevita.org/internal/core/policy"
 	"librevita.org/internal/core/server"
 	"librevita.org/internal/core/telemetry"
+	"librevita.org/internal/domain/user"
 )
 
 func main() {
@@ -32,6 +35,9 @@ func main() {
 			return fxLogger
 		}),
 		database.Module, // Runs embedded migrations during OnStart.
+		auth.Module,
+		policy.Module,
 		server.Module,
+		user.Module,
 	).Run()
 }

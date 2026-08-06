@@ -13,7 +13,6 @@ sql:
         out: "internal/domain/patient/repository"
         sql_package: "database/sql"
         emit_empty_slices: true
-
   - name: "appointment"
     engine: "sqlite"
     schema: "db/schema/"
@@ -24,7 +23,6 @@ sql:
         out: "internal/domain/appointment/repository"
         sql_package: "database/sql"
         emit_empty_slices: true
-
   - name: "episode"
     engine: "sqlite"
     schema: "db/schema/"
@@ -35,7 +33,6 @@ sql:
         out: "internal/domain/episode/repository"
         sql_package: "database/sql"
         emit_empty_slices: true
-
   - name: "calendar"
     engine: "sqlite"
     schema: "db/schema/"
@@ -44,5 +41,15 @@ sql:
       go:
         package: "repository"
         out: "internal/domain/calendar/repository"
+        sql_package: "database/sql"
+        emit_empty_slices: true
+  - name: "user"
+    engine: "sqlite"
+    schema: "db/schema/"
+    queries: "db/query/user.sql"
+    gen:
+      go:
+        package: "repository"
+        out: "internal/domain/user/repository"
         sql_package: "database/sql"
         emit_empty_slices: true
