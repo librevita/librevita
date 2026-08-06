@@ -401,6 +401,7 @@ func TestOnboardValidation(t *testing.T) {
 		{"short password", func(a *usecase.RegisterInput, c *usecase.ClinicInput) { a.Password = "short" }, "at least 8"},
 		{"missing clinic name", func(a *usecase.RegisterInput, c *usecase.ClinicInput) { c.Name = "" }, "clinic name"},
 		{"bad clinic email", func(a *usecase.RegisterInput, c *usecase.ClinicInput) { c.Email = "not-an-email" }, "clinic email"},
+		{"invalid timezone", func(a *usecase.RegisterInput, c *usecase.ClinicInput) { c.Timezone = "Mars/Olympus" }, "from the list"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

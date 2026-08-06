@@ -14,6 +14,7 @@ import (
 
 	"librevita.org/internal/core/audit"
 	"librevita.org/internal/core/auth"
+	clinicdomain "librevita.org/internal/domain/clinic"
 	clinicrepo "librevita.org/internal/domain/clinic/repository"
 	"librevita.org/internal/domain/user/repository"
 )
@@ -240,7 +241,7 @@ func (s *Service) Onboard(ctx context.Context, admin RegisterInput, clinic Clini
 		State:      strPtr(strings.TrimSpace(clinic.State)),
 		PostalCode: strPtr(strings.TrimSpace(clinic.PostalCode)),
 		Country:    strings.ToUpper(strings.TrimSpace(orDefault(clinic.Country, "BR"))),
-		Timezone:   strings.TrimSpace(orDefault(clinic.Timezone, "America/Sao_Paulo")),
+		Timezone:   strings.TrimSpace(orDefault(clinic.Timezone, clinicdomain.DefaultTimezone)),
 	}); err != nil {
 		return nil, "", fmt.Errorf("usecase: create clinic: %w", err)
 	}
@@ -447,6 +448,9 @@ func validateClinic(c ClinicInput) error {
 	}
 	if len(c.Timezone) > maxTimezoneLen {
 		return &ValidationError{Msg: "timezone is too long"}
+	}
+	if tz := strings.TrimSpace(c.Timezone); tz != "" && !clinicdomain.ValidTimezone(tz) {
+		return &ValidationError{Msg: "pick a timezone from the list"}
 	}
 	return nil
 }
