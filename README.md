@@ -45,17 +45,23 @@ progressive. Assets are embedded in the binary (`internal/ui`, served under
   (menus, modals, tabs); clinical state always lives on the server. The
   CSP build disables `x-html` and keeps the strict Content-Security-Policy
   (`script-src 'self'`, no `unsafe-eval`)
-- **Tailwind CSS 3.4.17** compiled at build time by the `+frontend` Earthly
-  target using the pinned standalone CLI (verified by SHA-256); the palette
-  is overridden to hex colors because the v3.4 default (`oklch`) is not
-  parseable by XP-era browsers
-- Frontend JavaScript is authored in **modern syntax** under
-  `frontend/src` and bundled by esbuild (`target=firefox52`, pinned
-  binary, verified by SHA-256) with a small feature-detected
-  compatibility layer (`frontend/src/compat.js`); no one writes ES5
+- **Tailwind CSS 3.4.17** compiled at build time with a hex palette
+  override (the v3.4 default `oklch` colors are unparseable by XP-era
+  browsers)
+- The frontend build is driven by **Deno** (`denoland/deno:alpine-2.9.5`):
+  `deno.json` declares the dependencies (esbuild, tailwindcss,
+  htmx.org, @alpinejs/csp) and tasks, and `deno.lock` pins them
+  with integrity hashes — nothing is versioned inside the Earthfile.
+  esbuild (via npm:) bundles the TypeScript source to the XP floor
+  (`target=firefox52`) with the feature-detected compatibility polyfills;
+  no one writes ES5
+- **TypeScript** in `internal/ui/src` with strict checking (`deno check`,
+  `lib: ES2017+DOM` aligned to the XP floor, so APIs missing from Firefox
+  52 are compile errors)
 
-Vendored runtime versions and their hashes are recorded in
-`internal/ui/static/js/VENDOR.md`. The compatibility floor is Windows
+The runtime assets (HTMX, its SSE extension, Alpine CSP) come from npm
+packages pinned in `deno.lock` and are documented in
+`VENDOR.md`. The compatibility floor is Windows
 XP-era browsers (Pale Moon 28.8, Basilisk 55, K-Meleon 74G/76, Firefox 52
 ESR); newer engines are covered automatically. The server applies a strict
 CSP, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`,

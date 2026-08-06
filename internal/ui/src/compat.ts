@@ -2,9 +2,20 @@
 // Every polyfill is feature-detected and removable when the floor moves
 // on. Do not add core-js: keep this file small and auditable.
 //
-// The rest of the frontend may use modern syntax freely; esbuild
-// transpiles it (target=firefox52). API usage must stay within this
-// baseline or be polyfilled here.
+// The ambient declarations below are required because the TS lib (ES2017)
+// does not know these APIs; the polyfill and its declaration must always
+// change together.
+
+declare global {
+  interface Window {
+    globalThis: Window & typeof globalThis;
+    queueMicrotask: (callback: () => void) => void;
+  }
+  interface Array<T> {
+    flat<U>(this: U[], depth?: number): U[];
+    flatMap<U, R>(this: U[], mapper: (value: U, index: number, array: U[]) => R, thisArg?: unknown): R[];
+  }
+}
 
 if (typeof window !== 'undefined') {
   if (typeof window.globalThis === 'undefined') {
@@ -21,8 +32,8 @@ if (typeof window !== 'undefined') {
 if (typeof Array.prototype.flat !== 'function') {
   Array.prototype.flat = function (depth) {
     const maxDepth = depth === undefined ? 1 : depth;
-    const result = [];
-    const flatten = (list, level) => {
+    const result: unknown[] = [];
+    const flatten = (list: unknown[], level: number) => {
       for (let i = 0; i < list.length; i++) {
         const item = list[i];
         if (Array.isArray(item) && level > 0) {
@@ -34,7 +45,7 @@ if (typeof Array.prototype.flat !== 'function') {
     };
     flatten(this, maxDepth);
     return result;
-  };
+  } as Array<unknown>['flat'];
 }
 
 if (typeof Array.prototype.flatMap !== 'function') {
@@ -42,3 +53,5 @@ if (typeof Array.prototype.flatMap !== 'function') {
     return this.map(mapper, thisArg).flat();
   };
 }
+
+export {};
