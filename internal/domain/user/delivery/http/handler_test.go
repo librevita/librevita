@@ -38,7 +38,7 @@ func openHandlerDB(t *testing.T) *sql.DB {
 func newHandler(t *testing.T, db *sql.DB) (*httphandler.Handler, *auth.SessionManager, *usecase.Service) {
 	t.Helper()
 	log := slog.New(slog.DiscardHandler)
-	sessions, err := auth.NewSessionManager(db, &config.Config{Env: "test"}, log)
+	sessions, err := auth.NewSessionManager(db, &config.Config{Env: "development"}, log)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,7 +47,7 @@ func newHandler(t *testing.T, db *sql.DB) (*httphandler.Handler, *auth.SessionMa
 		t.Fatal(err)
 	}
 	svc := usecase.NewService(db, sessions, auditLogger, log)
-	csrf := auth.NewCSRF(&config.Config{Env: "test"})
+	csrf := auth.NewCSRF(&config.Config{Env: "development"})
 	policies, err := policy.NewPolicyEngine(db, log)
 	if err != nil {
 		t.Fatal(err)

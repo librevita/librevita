@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 
 	"golang.org/x/crypto/argon2"
 )
@@ -18,12 +19,47 @@ const (
 	argonThreads uint8  = 2
 	argonKeyLen  uint32 = 32
 	argonSaltLen        = 16
+
+	// defaultMaxConcurrentHashes bounds concurrent Argon2 operations
+	// (~64 MiB and multiple threads each) to protect the process from
+	// memory exhaustion under concurrent login attempts.
+	defaultMaxConcurrentHashes = 4
 )
 
 var errInvalidHash = errors.New("auth: malformed password hash")
 
+var (
+	hashSemMu sync.RWMutex
+	hashSem   = make(chan struct{}, defaultMaxConcurrentHashes)
+)
+
+// SetMaxConcurrentHashes bounds concurrent Argon2 work. Values below one
+// are clamped to one. Call it once at startup from configuration.
+func SetMaxConcurrentHashes(n int) {
+	if n < 1 {
+		n = 1
+	}
+	hashSemMu.Lock()
+	hashSem = make(chan struct{}, n)
+	hashSemMu.Unlock()
+}
+
+// acquireHashSlot blocks until an Argon2 slot is free and returns the
+// release function. Argon2 is not cancelable, so this bounds peak memory
+// instead of relying on request timeouts.
+func acquireHashSlot() func() {
+	hashSemMu.RLock()
+	sem := hashSem
+	hashSemMu.RUnlock()
+	sem <- struct{}{}
+	return func() { <-sem }
+}
+
 // HashPassword derives an Argon2id PHC string from plain.
 func HashPassword(plain string) (string, error) {
+	release := acquireHashSlot()
+	defer release()
+
 	salt := make([]byte, argonSaltLen)
 	if _, err := rand.Read(salt); err != nil {
 		return "", fmt.Errorf("auth: password salt: %w", err)
@@ -42,6 +78,9 @@ func HashPassword(plain string) (string, error) {
 // VerifyPassword checks plain against a stored Argon2id PHC string.
 // A malformed stored hash is an error, not a mismatch.
 func VerifyPassword(hash, plain string) (bool, error) {
+	release := acquireHashSlot()
+	defer release()
+
 	memory, time, threads, keyLen, salt, key, err := decodeHash(hash)
 	if err != nil {
 		return false, err

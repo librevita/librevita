@@ -202,7 +202,7 @@ func TestSetPersistsAcrossRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := pe.Set(context.Background(), "admin.view", `false`, Actor{ID: "u1", Email: "admin@example.org"}); err != nil {
+	if err := pe.Set(context.Background(), "users.register", `false`, Actor{ID: "u1", Email: "admin@example.org"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -215,7 +215,7 @@ func TestSetPersistsAcrossRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	p := &auth.Principal{ID: "id", Email: "u@example.org", Name: "User", Role: auth.RoleAdmin}
-	if allowed, _ := pe2.Allowed(context.Background(), "admin.view", p, RequestInfo{}); allowed {
+	if allowed, _ := pe2.Allowed(context.Background(), "users.register", p, RequestInfo{}); allowed {
 		t.Fatal("stored policy `false` must survive a restart")
 	}
 }
@@ -259,7 +259,7 @@ func TestSetRecordsVersionWithActor(t *testing.T) {
 	}
 
 	// Seeding records one initial version with origin "seed".
-	rows, err := pe.History(context.Background(), "admin.view", 10)
+	rows, err := pe.History(context.Background(), "users.register", 10)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -270,14 +270,14 @@ func TestSetRecordsVersionWithActor(t *testing.T) {
 		t.Fatalf("seed version must have origin seed and no actor: %+v", rows[0])
 	}
 
-	if err := pe.Set(context.Background(), "admin.view", `principal.role == 'admin'`, Actor{ID: "u-1", Email: "ana@example.org"}); err != nil {
+	if err := pe.Set(context.Background(), "users.register", `principal.role == 'admin'`, Actor{ID: "u-1", Email: "ana@example.org"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := pe.Set(context.Background(), "admin.view", `false`, Actor{ID: "u-2", Email: "bruno@example.org"}); err != nil {
+	if err := pe.Set(context.Background(), "users.register", `false`, Actor{ID: "u-2", Email: "bruno@example.org"}); err != nil {
 		t.Fatal(err)
 	}
 
-	rows, err = pe.History(context.Background(), "admin.view", 10)
+	rows, err = pe.History(context.Background(), "users.register", 10)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -335,7 +335,7 @@ func TestPolicyIDIsStableUUIDv7(t *testing.T) {
 	if err := pe.Set(context.Background(), "admin.view", `principal.role == 'admin'`, Actor{ID: "u-1", Email: "a@example.org"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := pe.Set(context.Background(), "admin.view", `false`, Actor{ID: "u-1", Email: "a@example.org"}); err != nil {
+	if err := pe.Set(context.Background(), "admin.view", `principal.role in ['admin','physician']`, Actor{ID: "u-1", Email: "a@example.org"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -374,5 +374,57 @@ func TestPolicyIDIsStableUUIDv7(t *testing.T) {
 		if row.Name == "admin.view" && row.ID != firstID {
 			t.Fatalf("policy id changed across updates: %q -> %q", firstID, row.ID)
 		}
+	}
+}
+
+func TestSetRejectsSelfLockout(t *testing.T) {
+	db := openPolicyDB(t)
+	pe, err := NewPolicyEngine(db, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := pe.Load(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	actor := Actor{ID: "u-1", Email: "admin@example.org"}
+
+	// Deny-everything and deny-admin expressions must be rejected.
+	for _, expr := range []string{`false`, `principal.role == 'physician'`, `principal.email == 'other@example.org'`} {
+		if err := pe.Set(context.Background(), "admin.view", expr, actor); err == nil {
+			t.Fatalf("Set(admin.view, %q) must be rejected as self-lockout", expr)
+		}
+	}
+
+	// Expressions that keep allowing the admin role are fine.
+	for _, expr := range []string{`principal.role == 'admin'`, `principal.role in ['admin','physician']`, `true`} {
+		if err := pe.Set(context.Background(), "admin.view", expr, actor); err != nil {
+			t.Fatalf("Set(admin.view, %q) failed: %v", expr, err)
+		}
+	}
+
+	// Non-critical policies are not guarded.
+	if err := pe.Set(context.Background(), "users.register", `false`, actor); err != nil {
+		t.Fatalf("Set(users.register, false) must be allowed: %v", err)
+	}
+}
+
+func TestRejectedSelfLockoutKeepsPreviousPolicy(t *testing.T) {
+	db := openPolicyDB(t)
+	pe, err := NewPolicyEngine(db, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := pe.Load(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := pe.Set(context.Background(), "admin.view", `false`, Actor{ID: "u-1", Email: "a@example.org"}); err == nil {
+		t.Fatal("self-lockout must be rejected")
+	}
+
+	p := &auth.Principal{ID: "id", Email: "u@example.org", Name: "User", Role: auth.RoleAdmin}
+	if allowed, _ := pe.Allowed(context.Background(), "admin.view", p, RequestInfo{}); !allowed {
+		t.Fatal("rejected change must keep the admin allowed")
 	}
 }

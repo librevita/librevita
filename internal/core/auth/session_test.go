@@ -130,7 +130,7 @@ func TestSessionRejectsDeactivatedUser(t *testing.T) {
 }
 
 func TestSessionManagerRequiresSQLite(t *testing.T) {
-	if _, err := NewSessionManager(nil, &config.Config{Env: "test"}, slog.New(slog.DiscardHandler)); err == nil {
+	if _, err := NewSessionManager(nil, &config.Config{Env: "development"}, slog.New(slog.DiscardHandler)); err == nil {
 		t.Fatal("NewSessionManager(nil) should fail")
 	}
 }
@@ -206,4 +206,32 @@ func flipByte(b byte) byte {
 		return 1
 	}
 	return b ^ 0x01
+}
+
+func TestSessionManagerKeyBoundary(t *testing.T) {
+	db := openTestDB(t)
+	log := slog.New(slog.DiscardHandler)
+
+	// Only the explicit development environment may run without a key.
+	for _, env := range []string{"production", "staging", "prod", "test"} {
+		if _, err := NewSessionManager(db, &config.Config{Env: env}, log); err == nil {
+			t.Fatalf("env %q must require a paseto key", env)
+		}
+	}
+
+	m, err := NewSessionManager(db, &config.Config{Env: "development"}, log)
+	if err != nil {
+		t.Fatalf("development env must allow an ephemeral key: %v", err)
+	}
+	if m.secure {
+		t.Fatal("development cookies must not use Secure")
+	}
+
+	m, err = NewSessionManager(db, &config.Config{Env: "staging", PasetoKey: base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{0x42}, 32))}, log)
+	if err != nil {
+		t.Fatalf("staging with a key must work: %v", err)
+	}
+	if !m.secure {
+		t.Fatal("non-development cookies must use Secure")
+	}
 }

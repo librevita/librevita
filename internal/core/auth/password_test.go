@@ -1,6 +1,9 @@
 package auth
 
-import "testing"
+import (
+	"sync"
+	"testing"
+)
 
 func TestHashPasswordAndVerify(t *testing.T) {
 	hash, err := HashPassword("correct horse battery staple")
@@ -47,5 +50,41 @@ func TestHashesAreUnique(t *testing.T) {
 	}
 	if a == b {
 		t.Fatal("two hashes of the same password must differ (salt)")
+	}
+}
+
+func TestConcurrentHashesRespectSemaphore(t *testing.T) {
+	SetMaxConcurrentHashes(2)
+	defer SetMaxConcurrentHashes(defaultMaxConcurrentHashes)
+
+	const workers = 6
+	var wg sync.WaitGroup
+	errs := make([]error, workers)
+	for i := range workers {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			_, errs[i] = HashPassword("concurrent-password")
+		}(i)
+	}
+	wg.Wait()
+
+	for i, err := range errs {
+		if err != nil {
+			t.Fatalf("worker %d failed: %v", i, err)
+		}
+	}
+}
+
+func TestSetMaxConcurrentHashesClampsToMinimum(t *testing.T) {
+	SetMaxConcurrentHashes(0)
+	defer SetMaxConcurrentHashes(defaultMaxConcurrentHashes)
+
+	hash, err := HashPassword("still-works")
+	if err != nil {
+		t.Fatalf("HashPassword: %v", err)
+	}
+	if ok, _ := VerifyPassword(hash, "still-works"); !ok {
+		t.Fatal("verify failed")
 	}
 }

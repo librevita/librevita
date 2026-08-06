@@ -123,7 +123,8 @@ The main flags are:
 | `--log-max-backups` | `LIBREVITA_LOG_MAX_BACKUPS` | Number of rotated files |
 | `--log-max-age` | `LIBREVITA_LOG_MAX_AGE_DAYS` | Maximum rotated file age |
 | `--log-compress` | `LIBREVITA_LOG_COMPRESS` | Compress rotated files |
-| `--paseto-key` | `LIBREVITA_PASETO_KEY` | Session key (base64, 32 bytes; required in production) |
+| `--paseto-key` | `LIBREVITA_PASETO_KEY` | Session key (base64, 32 bytes; required outside development) |
+| `--auth-max-concurrent-hashes` | `LIBREVITA_AUTH_MAX_CONCURRENT_HASHES` | Bound on concurrent Argon2id operations |
 
 `LIBREVITA_DATABASE_*` names are also accepted for database settings.
 
@@ -243,9 +244,14 @@ adapters in `internal/core/server`:
   only the token id (SHA-256) for revocation, logout, and account
   deactivation checks. The cookie is `HttpOnly` and `SameSite=Lax`, with the
   `Secure` flag enabled in production
-- The session key is `LIBREVITA_PASETO_KEY` (base64, 32 bytes). It is
-  mandatory in production; in development an ephemeral key is generated and
-  sessions reset on restart
+- The session key is `LIBREVITA_PASETO_KEY` (base64, 32 bytes). Every
+  environment except the explicit `development` requires the key and sets
+  the `Secure` flag on cookies; only `development` falls back to an
+  ephemeral key (sessions reset on restart). Deployments labeled
+  `staging`, `prod`, or any other value are treated as persistent
+- Concurrent Argon2id operations are bounded by
+  `--auth-max-concurrent-hashes` (default 4, ~64 MiB each) to protect the
+  process from memory exhaustion under abusive login traffic
 - CSRF uses the double-submit cookie pattern. Forms embed the token in the
   `_csrf` field; HTMX and fetch requests send it in the `X-CSRF-Token` header
 - Authorization is policy-based and lives in `internal/core/policy`. Roles
@@ -269,6 +275,10 @@ compile and evaluate to a boolean; a broken policy is rejected and the
 previous one stays active), takes effect immediately, and is written to the
 audit trail. Each change is also versioned in `policy_versions` with the
 acting user and timestamp; the panel shows the latest versions per policy.
+
+Critical policies (`admin.view`) are protected against self-lockout: a
+change that would deny the admin role is rejected, because the admin panel
+is the only place that could restore it.
 
 | Policy | Expression |
 | --- | --- |

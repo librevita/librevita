@@ -38,7 +38,7 @@ func testLogger() *slog.Logger { return slog.New(slog.DiscardHandler) }
 
 func TestRequireAuthRedirectsAnonymous(t *testing.T) {
 	db := openTestDB(t)
-	sessions, err := auth.NewSessionManager(db, &config.Config{Env: "test"}, testLogger())
+	sessions, err := auth.NewSessionManager(db, &config.Config{Env: "development"}, testLogger())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -56,7 +56,7 @@ func TestRequireAuthRedirectsAnonymous(t *testing.T) {
 
 func TestRequireAuthAcceptsValidSession(t *testing.T) {
 	db := openTestDB(t)
-	sessions, err := auth.NewSessionManager(db, &config.Config{Env: "test"}, testLogger())
+	sessions, err := auth.NewSessionManager(db, &config.Config{Env: "development"}, testLogger())
 	if err != nil {
 		t.Fatal(err)
 	}
