@@ -1,6 +1,9 @@
 package views
 
-import "librevita.org/internal/ui/layouts"
+import (
+	"librevita.org/internal/domain/clinic"
+	"librevita.org/internal/ui/layouts"
+)
 
 templ Setup(token string, errMsg string) {
 	@layouts.Base("Initial setup") {
@@ -69,7 +72,19 @@ templ Setup(token string, errMsg string) {
 						</div>
 						<div>
 							<label class="label" for="clinic_timezone">Timezone</label>
-							<input class="input" id="clinic_timezone" type="text" name="clinic_timezone" value="America/Sao_Paulo">
+							<select class="input" id="clinic_timezone" name="clinic_timezone">
+								for _, g := range clinic.TimeZones {
+									<optgroup label={ g.Label }>
+										for _, zone := range g.Zones {
+											if zone == clinic.DefaultTimezone {
+												<option value={ zone } selected>{ zone }</option>
+											} else {
+												<option value={ zone }>{ zone }</option>
+											}
+										}
+									</optgroup>
+								}
+							</select>
 						</div>
 					</fieldset>
 					<button class="btn w-full" type="submit">Create account and clinic</button>
