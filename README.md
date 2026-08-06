@@ -201,6 +201,7 @@ files are needed.
 Echo is created and managed by Fx. The foundation currently exposes:
 
 - `GET /healthz`
+- `GET /setup`, `POST /setup` (initial onboarding)
 - `GET /auth/login`, `POST /auth/login`
 - `GET /auth/register`, `POST /auth/register`
 - `POST /auth/logout`
@@ -209,6 +210,26 @@ Echo is created and managed by Fx. The foundation currently exposes:
 
 The endpoint returns `{"status":"ok"}`. Business routes are not registered yet.
 HTTP errors use RFC 7807 `application/problem+json` responses.
+
+## Onboarding
+
+A fresh installation has no accounts. Any navigation while the system is
+not onboarded (login, dashboard, register) is redirected to `GET /setup`,
+which creates the initial `admin` account and the clinic profile (name, tax
+id, contact, and address) in a single atomic transaction. Setup runs exactly
+once: the transaction also persists a `setup_completed` marker in the `meta`
+table, so the system stays onboarded even if every account and the clinic
+are later removed. Onboarded systems redirect setup requests to the login
+page, and concurrent setup attempts never produce more than one admin:
+exactly one wins, the rest receive the redirect. Setup is rate-limited to 5
+attempts per minute per IP.
+
+After onboarding, account creation is never public: `RequireAuth` plus the
+`users.register` policy guard the registration routes. The default policy
+restricts registration to the `admin` role; an operator can tighten it to a
+single user (`principal.email == 'hr@example.org'`) or close it entirely
+(`false`). The created accounts are `patient` by default; role assignment is
+an admin responsibility.
 
 ## Authentication and Authorization
 
@@ -248,18 +269,11 @@ Default policies live in `DefaultPolicies` in
 | --- | --- |
 | `dashboard.view` | `principal.role in ['admin', 'physician', 'receptionist', 'patient']` |
 | `admin.view` | `principal.role == 'admin'` |
-
-The first registered account becomes an `admin`; subsequent registrations are
-`patient` accounts. The first-admin decision is atomic: concurrent
-registrations on an empty database never yield more than one admin.
-Registration stays open so that self-hosted operators can bootstrap the
-system; deployments exposed to the internet should sit behind an
-authenticated reverse proxy.
+| `users.register` | `principal.role == 'admin'` |
 
 Abuse controls:
 
-- Login is rate-limited to 10 attempts per minute per IP; registration to 5
-  per minute per IP (`429` beyond that)
+- Login is rate-limited to 10 attempts per minute per IP (`429` beyond that)
 - The request body is limited to 1 MiB, and input fields have explicit
   length limits
 - Login runs an Argon2id verification even for unknown or deactivated

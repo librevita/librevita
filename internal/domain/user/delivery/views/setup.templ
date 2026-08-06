@@ -1,0 +1,80 @@
+package views
+
+templ Setup(token string, errMsg string) {
+	<!DOCTYPE html>
+	<html lang="en">
+		<head>
+			<meta charset="utf-8">
+			<meta name="viewport" content="width=device-width, initial-scale=1">
+			<title>Initial setup - LibreVita</title>
+		</head>
+		<body>
+			<main>
+				<h1>LibreVita</h1>
+				<h2>Initial setup</h2>
+				<p>Create the administrator account and the clinic profile.</p>
+				if errMsg != "" {
+					<p role="alert">{ errMsg }</p>
+				}
+				<form method="post" action="/setup">
+					<input type="hidden" name="_csrf" value={ token }>
+					<fieldset>
+						<legend>Administrator</legend>
+						<label>
+							Name
+							<input type="text" name="admin_name" required autofocus>
+						</label>
+						<label>
+							Email
+							<input type="email" name="admin_email" required>
+						</label>
+						<label>
+							Password
+							<input type="password" name="admin_password" minlength="8" required>
+						</label>
+					</fieldset>
+					<fieldset>
+						<legend>Clinic</legend>
+						<label>
+							Name
+							<input type="text" name="clinic_name" required>
+						</label>
+						<label>
+							Tax ID
+							<input type="text" name="clinic_tax_id">
+						</label>
+						<label>
+							Phone
+							<input type="tel" name="clinic_phone">
+						</label>
+						<label>
+							Email
+							<input type="email" name="clinic_email">
+						</label>
+						<label>
+							Street
+							<input type="text" name="clinic_street">
+						</label>
+						<label>
+							City
+							<input type="text" name="clinic_city">
+						</label>
+						<label>
+							State
+							<input type="text" name="clinic_state">
+						</label>
+						<label>
+							Postal code
+							<input type="text" name="clinic_postal_code">
+						</label>
+						<label>
+							Timezone
+							<input type="text" name="clinic_timezone" value="America/Sao_Paulo">
+						</label>
+					</fieldset>
+					<button type="submit">Create account and clinic</button>
+				</form>
+			</main>
+		</body>
+	</html>
+}

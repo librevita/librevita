@@ -26,6 +26,84 @@ func NewHandler(svc *usecase.Service, csrf *auth.CSRF, sessions *auth.SessionMan
 	return &Handler{svc: svc, csrf: csrf, sessions: sessions}
 }
 
+// SetupGate redirects navigation to /setup while the system is not yet
+// onboarded. The setup routes themselves are exempt.
+func (h *Handler) SetupGate() echo.MiddlewareFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			if c.Path() == "/setup" {
+				return next(c)
+			}
+			onboarded, err := h.svc.IsOnboarded(c.Request().Context())
+			if err != nil {
+				return err
+			}
+			if !onboarded {
+				return c.Redirect(http.StatusFound, "/setup")
+			}
+			return next(c)
+		}
+	}
+}
+
+// SetupPage renders the onboarding form. Onboarded systems redirect to the
+// login page.
+func (h *Handler) SetupPage(c echo.Context) error {
+	onboarded, err := h.svc.IsOnboarded(c.Request().Context())
+	if err != nil {
+		return err
+	}
+	if onboarded {
+		return c.Redirect(http.StatusFound, "/auth/login")
+	}
+	return render(c, http.StatusOK, views.Setup(server.CSRFToken(c, h.csrf), ""))
+}
+
+// Setup creates the initial admin account and the clinic profile, then
+// starts a session.
+func (h *Handler) Setup(c echo.Context) error {
+	onboarded, err := h.svc.IsOnboarded(c.Request().Context())
+	if err != nil {
+		return err
+	}
+	if onboarded {
+		return c.Redirect(http.StatusFound, "/auth/login")
+	}
+
+	_, token, err := h.svc.Onboard(c.Request().Context(),
+		usecase.RegisterInput{
+			Name:     c.FormValue("admin_name"),
+			Email:    c.FormValue("admin_email"),
+			Password: c.FormValue("admin_password"),
+		},
+		usecase.ClinicInput{
+			Name:       c.FormValue("clinic_name"),
+			TaxID:      c.FormValue("clinic_tax_id"),
+			Phone:      c.FormValue("clinic_phone"),
+			Email:      c.FormValue("clinic_email"),
+			Street:     c.FormValue("clinic_street"),
+			City:       c.FormValue("clinic_city"),
+			State:      c.FormValue("clinic_state"),
+			PostalCode: c.FormValue("clinic_postal_code"),
+			Country:    c.FormValue("clinic_country"),
+			Timezone:   c.FormValue("clinic_timezone"),
+		})
+	if err != nil {
+		var v *usecase.ValidationError
+		switch {
+		case errors.As(err, &v):
+			return render(c, http.StatusBadRequest, views.Setup(server.CSRFToken(c, h.csrf), v.Msg))
+		case errors.Is(err, usecase.ErrAlreadyOnboarded):
+			return c.Redirect(http.StatusFound, "/auth/login")
+		default:
+			return err
+		}
+	}
+
+	c.SetCookie(h.sessions.Cookie(token))
+	return c.Redirect(http.StatusFound, "/")
+}
+
 // LoginPage renders the sign-in form.
 func (h *Handler) LoginPage(c echo.Context) error {
 	return render(c, http.StatusOK, views.Login(server.CSRFToken(c, h.csrf), ""))
