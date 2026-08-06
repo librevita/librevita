@@ -262,8 +262,13 @@ variables:
 - `principal` — `id`, `email`, `name`, `role`
 - `request` — `method`, `path`
 
-Default policies live in `DefaultPolicies` in
-`internal/core/policy/policy.go`:
+Default policies are seeded into the `policies` table on startup. The stored
+expression always wins, and the admin panel (`/admin/policies`) edits them at
+runtime: every change is validated before activation (the expression must
+compile and evaluate to a boolean; a broken policy is rejected and the
+previous one stays active), takes effect immediately, and is written to the
+audit trail. Each change is also versioned in `policy_versions` with the
+acting user and timestamp; the panel shows the latest versions per policy.
 
 | Policy | Expression |
 | --- | --- |

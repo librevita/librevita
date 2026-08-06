@@ -55,3 +55,24 @@ key        TEXT    PRIMARY KEY,
 value      TEXT    NOT NULL,
 updated_at TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
+
+-- Dynamic CEL authorization policies, owned by internal/core/policy.
+-- See db/migrations/00005_policy.sql and 00006_policy_version.sql.
+CREATE TABLE policies (
+id         TEXT    PRIMARY KEY,
+name       TEXT    NOT NULL UNIQUE,
+expression TEXT    NOT NULL,
+updated_at TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+
+CREATE TABLE policy_versions (
+id               INTEGER PRIMARY KEY AUTOINCREMENT,
+policy_id        TEXT    NOT NULL REFERENCES policies(id) ON DELETE RESTRICT,
+expression       TEXT    NOT NULL,
+changed_by       TEXT,
+changed_by_email TEXT,
+origin           TEXT    NOT NULL DEFAULT 'system'
+CHECK (origin IN ('seed', 'admin', 'system')),
+created_at       TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ',
+'now'))
+);

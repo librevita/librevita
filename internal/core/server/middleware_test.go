@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 	_ "modernc.org/sqlite"
 
@@ -20,7 +21,7 @@ import (
 
 func openTestDB(t *testing.T) *sql.DB {
 	t.Helper()
-	db, err := sql.Open("sqlite", "file:server-test?mode=memory&cache=shared")
+	db, err := sql.Open("sqlite", "file:server-test-"+uuid.NewString()+"?mode=memory&cache=shared")
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
@@ -92,8 +93,11 @@ func TestRequireAuthAcceptsValidSession(t *testing.T) {
 }
 
 func TestRequirePolicyAllowsAndDenies(t *testing.T) {
-	pe, err := policy.NewPolicyEngine(testLogger())
+	pe, err := policy.NewPolicyEngine(openTestDB(t), testLogger())
 	if err != nil {
+		t.Fatal(err)
+	}
+	if err := pe.Load(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	auditLogger := newTestAudit(t)
@@ -128,8 +132,11 @@ func TestRequirePolicyAllowsAndDenies(t *testing.T) {
 }
 
 func TestRequirePolicyRedirectsWithoutPrincipal(t *testing.T) {
-	pe, err := policy.NewPolicyEngine(testLogger())
+	pe, err := policy.NewPolicyEngine(openTestDB(t), testLogger())
 	if err != nil {
+		t.Fatal(err)
+	}
+	if err := pe.Load(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 
@@ -151,8 +158,11 @@ func TestRequirePolicyDenialIsAudited(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pe, err := policy.NewPolicyEngine(testLogger())
+	pe, err := policy.NewPolicyEngine(openTestDB(t), testLogger())
 	if err != nil {
+		t.Fatal(err)
+	}
+	if err := pe.Load(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 

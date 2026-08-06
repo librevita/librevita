@@ -14,6 +14,7 @@ import (
 	"librevita.org/internal/core/audit"
 	"librevita.org/internal/core/auth"
 	"librevita.org/internal/core/config"
+	"librevita.org/internal/core/policy"
 	"librevita.org/internal/core/database"
 	httphandler "librevita.org/internal/domain/user/delivery/http"
 	"librevita.org/internal/domain/user/usecase"
@@ -47,7 +48,15 @@ func newHandler(t *testing.T, db *sql.DB) (*httphandler.Handler, *auth.SessionMa
 	}
 	svc := usecase.NewService(db, sessions, auditLogger, log)
 	csrf := auth.NewCSRF(&config.Config{Env: "test"})
-	return httphandler.NewHandler(svc, csrf, sessions), sessions, svc
+	policies, err := policy.NewPolicyEngine(db, log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := policies.Load(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	h := httphandler.NewHandler(svc, csrf, sessions, policies, auditLogger)
+	return h, sessions, svc
 }
 
 func TestLogoutSurfacesRevocationFailure(t *testing.T) {

@@ -1,0 +1,81 @@
+package views
+
+import "librevita.org/internal/core/policy/repository"
+
+// PolicyView is a stored policy decorated with its recent change history.
+type PolicyView struct {
+	Name       string
+	Expression string
+	History    []repository.ListPolicyVersionsRow
+}
+
+templ AdminPolicies(token string, policies []PolicyView, errMsg string) {
+	<!DOCTYPE html>
+	<html lang="en">
+		<head>
+			<meta charset="utf-8">
+			<meta name="viewport" content="width=device-width, initial-scale=1">
+			<title>Policies - LibreVita</title>
+		</head>
+		<body>
+			<main>
+				<h1>Access policies</h1>
+				<p><a href="/admin">Back to admin area</a></p>
+				if errMsg != "" {
+					<p role="alert">{ errMsg }</p>
+				}
+				<p>
+					Policies are CEL expressions evaluated with the
+					<code>principal</code> and <code>request</code> variables.
+					They take effect immediately after saving.
+				</p>
+				for _, p := range policies {
+					<section>
+						<form method="post" action="/admin/policies">
+							<input type="hidden" name="_csrf" value={ token }>
+							<input type="hidden" name="name" value={ p.Name }>
+							<label>
+								<strong>{ p.Name }</strong>
+								<textarea name="expression" rows="3" required>{ p.Expression }</textarea>
+							</label>
+							<button type="submit">Save</button>
+						</form>
+						if len(p.History) > 0 {
+							<table>
+								<caption>Change history</caption>
+								<thead>
+									<tr>
+										<th>Expression</th>
+										<th>Changed by</th>
+										<th>Origin</th>
+										<th>When</th>
+									</tr>
+								</thead>
+								<tbody>
+									for _, v := range p.History {
+										<tr>
+											<td><code>{ v.Expression }</code></td>
+											<td>{ changedBy(v.ChangedBy, v.ChangedByEmail) }</td>
+											<td>{ v.Origin }</td>
+											<td>{ v.CreatedAt }</td>
+										</tr>
+									}
+								</tbody>
+							</table>
+						}
+					</section>
+				}
+			</main>
+		</body>
+	</html>
+}
+
+func changedBy(id, email *string) string {
+	if email != nil && *email != "" {
+		return *email
+	}
+	if id != nil && *id != "" {
+		return *id
+	}
+	return "system"
+}
