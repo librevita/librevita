@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/a-h/templ"
 	"github.com/labstack/echo/v4"
@@ -14,9 +15,14 @@ import (
 	"librevita.org/internal/core/policy"
 	"librevita.org/internal/core/policy/repository"
 	"librevita.org/internal/core/server"
+	"librevita.org/internal/domain/clinic"
 	"librevita.org/internal/domain/user/delivery/views"
 	"librevita.org/internal/domain/user/usecase"
 )
+
+// utcMilliLayout matches the timestamps written by the database
+// (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')).
+const utcMilliLayout = "2006-01-02T15:04:05.000Z"
 
 // Handler renders the auth pages and processes form submissions.
 type Handler struct {
@@ -25,12 +31,13 @@ type Handler struct {
 	sessions *auth.SessionManager
 	policies *policy.PolicyEngine
 	audit    *audit.Logger
+	clocks   *clinic.ClockProvider
 }
 
 // NewHandler is the Fx provider.
 func NewHandler(svc *usecase.Service, csrf *auth.CSRF, sessions *auth.SessionManager,
-	policies *policy.PolicyEngine, auditLogger *audit.Logger) *Handler {
-	return &Handler{svc: svc, csrf: csrf, sessions: sessions, policies: policies, audit: auditLogger}
+	policies *policy.PolicyEngine, auditLogger *audit.Logger, clocks *clinic.ClockProvider) *Handler {
+	return &Handler{svc: svc, csrf: csrf, sessions: sessions, policies: policies, audit: auditLogger, clocks: clocks}
 }
 
 // SetupGate redirects navigation to /setup while the system is not yet
@@ -239,17 +246,42 @@ func (h *Handler) AdminPolicySave(c echo.Context) error {
 	return render(c, http.StatusOK, views.AdminPolicies(server.CSRFToken(c, h.csrf), viewsList, detail))
 }
 
-// policyViews decorates the stored policies with their change history.
+// policyViews decorates the stored policies with their change history,
+// rendering timestamps in the clinic's timezone.
 func (h *Handler) policyViews(c echo.Context, policies []repository.ListPoliciesRow) ([]views.PolicyView, error) {
+	clock, err := h.clocks.Clock(c.Request().Context())
+	if err != nil {
+		return nil, err
+	}
 	out := make([]views.PolicyView, 0, len(policies))
 	for _, p := range policies {
 		history, err := h.policies.History(c.Request().Context(), p.Name, 5)
 		if err != nil {
 			return nil, err
 		}
-		out = append(out, views.PolicyView{Name: p.Name, Expression: p.Expression, History: history})
+		rows := make([]views.PolicyHistoryRow, 0, len(history))
+		for _, v := range history {
+			rows = append(rows, views.PolicyHistoryRow{
+				Expression:     v.Expression,
+				ChangedBy:      v.ChangedBy,
+				ChangedByEmail: v.ChangedByEmail,
+				Origin:         v.Origin,
+				When:           formatWhen(clock, v.CreatedAt),
+			})
+		}
+		out = append(out, views.PolicyView{Name: p.Name, Expression: p.Expression, History: rows})
 	}
 	return out, nil
+}
+
+// formatWhen converts a database timestamp into the clinic's timezone,
+// keeping the raw value when it cannot be parsed.
+func formatWhen(clock *clinic.Clock, stored string) string {
+	t, err := time.Parse(utcMilliLayout, stored)
+	if err != nil {
+		return stored
+	}
+	return clock.FormatUI(t)
 }
 
 func render(c echo.Context, status int, comp templ.Component) error {
