@@ -2,9 +2,11 @@ package telemetry
 
 import (
 	"bytes"
+	"context"
 	"log/slog"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestConsoleWriterTruncatesEachLine(t *testing.T) {
@@ -38,5 +40,26 @@ func TestConsoleHandlerFormatsColumns(t *testing.T) {
 	}
 	if strings.Contains(got, `"using SQLite/WAL persistence"`) || strings.Contains(got, "msg=") || strings.Contains(got, "{") {
 		t.Fatalf("output = %q, contains structured text or JSON columns", got)
+	}
+}
+
+func TestConsoleHandlerWritesUTC(t *testing.T) {
+	var output bytes.Buffer
+	handler := &consoleHandler{
+		writer: &consoleWriter{dst: &output, width: 200},
+		level:  slog.LevelDebug,
+	}
+	loc := time.FixedZone("BRT", -3*60*60)
+	handler.Handle(context.Background(), slog.NewRecord(
+		time.Date(2026, 8, 6, 15, 4, 5, 0, loc), slog.LevelInfo, "test message", 0,
+	))
+
+	got := output.String()
+	want := "2026-08-06T18:04:05.000+00:00"
+	if !strings.HasPrefix(got, want) {
+		t.Fatalf("output = %q, want UTC prefix %q", got, want)
+	}
+	if strings.HasPrefix(got, "2026-08-06T15:04:05") {
+		t.Fatalf("output = %q, wrote local time instead of UTC", got)
 	}
 }

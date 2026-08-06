@@ -48,7 +48,7 @@ func (h *consoleHandler) Enabled(_ context.Context, level slog.Level) bool {
 
 func (h *consoleHandler) Handle(_ context.Context, record slog.Record) error {
 	var line strings.Builder
-	line.WriteString(record.Time.Format("2006-01-02T15:04:05.000-07:00"))
+	line.WriteString(record.Time.UTC().Format("2006-01-02T15:04:05.000-07:00"))
 	line.WriteString("   ")
 	line.WriteString(fmt.Sprintf("%-5s", strings.ToUpper(record.Level.String())))
 	line.WriteByte(' ')
@@ -145,7 +145,7 @@ func formatConsoleValue(value slog.Value) string {
 	case slog.KindDuration:
 		return value.Duration().String()
 	case slog.KindTime:
-		return value.Time().Format(time.RFC3339Nano)
+		return value.Time().UTC().Format(time.RFC3339Nano)
 	case slog.KindAny:
 		if value.Any() == nil {
 			return "nil"
