@@ -34,20 +34,20 @@ func TestRecordPersistsEvent(t *testing.T) {
 	}
 
 	logger.Record(context.Background(), Event{
-		ActorID: 7, ActorMail: "ana@example.org",
+		ActorID: "01990000-0000-7000-8000-000000000001", ActorMail: "ana@example.org",
 		Action: "login", Resource: "user", Result: ResultSuccess,
 		IP: "127.0.0.1", RequestID: "req-123", Detail: "",
 	})
 
-	var actorID int64
+	var actorID string
 	var action, result, requestID string
 	err = db.QueryRow(`SELECT actor_id, action, result, request_id FROM audit_log`).
 		Scan(&actorID, &action, &result, &requestID)
 	if err != nil {
 		t.Fatalf("read audit_log: %v", err)
 	}
-	if actorID != 7 || action != "login" || result != ResultSuccess || requestID != "req-123" {
-		t.Fatalf("unexpected row: %d %q %q %q", actorID, action, result, requestID)
+	if actorID != "01990000-0000-7000-8000-000000000001" || action != "login" || result != ResultSuccess || requestID != "req-123" {
+		t.Fatalf("unexpected row: %q %q %q %q", actorID, action, result, requestID)
 	}
 }
 

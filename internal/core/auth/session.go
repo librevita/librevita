@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"strconv"
 	"time"
 
 	"aidanwoods.dev/go-paseto"
@@ -31,7 +30,7 @@ var ErrNoSession = errors.New("auth: no valid session")
 
 // Principal is the authenticated identity carried by a session.
 type Principal struct {
-	ID    int64
+	ID    string // UUIDv7 of the user account.
 	Email string
 	Name  string
 	Role  Role
@@ -107,7 +106,7 @@ func (m *SessionManager) Create(ctx context.Context, p Principal) (string, error
 	jtiHex := hex.EncodeToString(jti)
 
 	token := paseto.NewToken()
-	token.SetSubject(strconv.FormatInt(p.ID, 10))
+	token.SetSubject(p.ID)
 	token.SetJti(jtiHex)
 	token.SetIssuedAt(now)
 	token.SetExpiration(expires)

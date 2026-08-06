@@ -10,6 +10,8 @@ import (
 	"net/mail"
 	"strings"
 
+	"github.com/google/uuid"
+
 	"librevita.org/internal/core/audit"
 	"librevita.org/internal/core/auth"
 	"librevita.org/internal/domain/user/repository"
@@ -121,7 +123,13 @@ func (s *Service) Register(ctx context.Context, in RegisterInput) (*auth.Princip
 		return nil, "", err
 	}
 
+	userID, err := uuid.NewV7()
+	if err != nil {
+		return nil, "", fmt.Errorf("usecase: generate user id: %w", err)
+	}
+
 	user, err := qtx.CreateUser(ctx, repository.CreateUserParams{
+		ID:           userID.String(),
 		Email:        email,
 		PasswordHash: hash,
 		DisplayName:  name,
@@ -158,7 +166,7 @@ func (s *Service) Login(ctx context.Context, c Credentials) (*auth.Principal, st
 	user, err := s.users.GetUserByEmail(ctx, email)
 	if errors.Is(err, sql.ErrNoRows) {
 		s.timingDummy(c.Password)
-		s.auditLogin(ctx, 0, email, "unknown email")
+		s.auditLogin(ctx, "", email, "unknown email")
 		return nil, "", ErrInvalidCredentials
 	}
 	if err != nil {
@@ -233,7 +241,7 @@ func (s *Service) timingDummy(password string) {
 	}
 }
 
-func (s *Service) auditLogin(ctx context.Context, userID int64, email, failure string) {
+func (s *Service) auditLogin(ctx context.Context, userID string, email, failure string) {
 	result := audit.ResultSuccess
 	if failure != "" {
 		result = audit.ResultFailure

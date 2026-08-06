@@ -47,7 +47,7 @@ func TestPolicyEvaluation(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			p := &auth.Principal{ID: 1, Email: "u@example.org", Name: "User", Role: tc.role}
+			p := &auth.Principal{ID: "01990000-0000-7000-8000-000000000001", Email: "u@example.org", Name: "User", Role: tc.role}
 			got, err := pe.Allowed(context.Background(), tc.policy, p, RequestInfo{Method: "GET", Path: "/"})
 			if err != nil {
 				t.Fatalf("Allowed: %v", err)
@@ -61,7 +61,7 @@ func TestPolicyEvaluation(t *testing.T) {
 
 func TestPolicyUnknown(t *testing.T) {
 	pe := testPolicyEngine(t)
-	p := &auth.Principal{ID: 1, Email: "u@example.org", Name: "User", Role: auth.RoleAdmin}
+	p := &auth.Principal{ID: "01990000-0000-7000-8000-000000000001", Email: "u@example.org", Name: "User", Role: auth.RoleAdmin}
 
 	_, err := pe.Allowed(context.Background(), "does.not.exist", p, RequestInfo{})
 	if !errors.Is(err, ErrPolicyNotFound) {
@@ -88,7 +88,7 @@ func TestPolicyRejectsNonBoolean(t *testing.T) {
 	}
 
 	pe := &PolicyEngine{progs: map[string]cel.Program{"weird": prog}, log: slog.New(slog.DiscardHandler)}
-	p := &auth.Principal{ID: 1, Email: "u@example.org", Name: "User", Role: auth.RoleAdmin}
+	p := &auth.Principal{ID: "01990000-0000-7000-8000-000000000001", Email: "u@example.org", Name: "User", Role: auth.RoleAdmin}
 
 	if _, err := pe.Allowed(context.Background(), "weird", p, RequestInfo{}); err == nil {
 		t.Fatal("Allowed of non-bool policy should fail")

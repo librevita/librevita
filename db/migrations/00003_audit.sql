@@ -2,12 +2,13 @@
 -- +goose NO TRANSACTION
 -- Durable audit trail. Every entry records who did what, when, and with
 -- what outcome. Passwords, tokens, and CSRF values are never stored.
+-- actor_id holds the UUIDv7 user id and is nullable for anonymous events.
 -- The table is owned by internal/core/audit and is intentionally absent
 -- from db/schema/schema.sql (no sqlc queries).
 
 CREATE TABLE audit_log (
 id          INTEGER PRIMARY KEY AUTOINCREMENT,
-actor_id    INTEGER,
+actor_id    TEXT,
 actor_email TEXT,
 action      TEXT    NOT NULL,
 resource    TEXT    NOT NULL,

@@ -10,6 +10,8 @@ import (
 
 	_ "modernc.org/sqlite"
 
+	"github.com/google/uuid"
+
 	"librevita.org/internal/core/audit"
 	"librevita.org/internal/core/auth"
 	"librevita.org/internal/core/config"
@@ -150,7 +152,7 @@ func TestLoginSuccessAndFailure(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Login: %v", err)
 	}
-	if p.ID == 0 || token == "" {
+	if p.ID == "" || token == "" {
 		t.Fatalf("Login returned incomplete result: %+v", p)
 	}
 
@@ -230,5 +232,23 @@ func TestDuplicateEmailMapsToDomainError(t *testing.T) {
 	input.Email = "ANA@example.org" // NOCASE duplicate
 	if _, _, err := svc.Register(context.Background(), input); !errors.Is(err, usecase.ErrEmailTaken) {
 		t.Fatalf("duplicate register = %v, want ErrEmailTaken", err)
+	}
+}
+
+func TestRegisterUsesUUIDv7ID(t *testing.T) {
+	db := openAuthDB(t)
+	svc := newService(t, db)
+
+	p, _, err := svc.Register(context.Background(), validInput())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	id, err := uuid.Parse(p.ID)
+	if err != nil {
+		t.Fatalf("principal id %q is not a UUID: %v", p.ID, err)
+	}
+	if id.Version() != 7 {
+		t.Fatalf("principal id %q is not UUIDv7 (version %d)", p.ID, id.Version())
 	}
 }
