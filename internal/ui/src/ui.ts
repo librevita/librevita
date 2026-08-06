@@ -1,7 +1,7 @@
 // LibreVita frontend bootstrap.
 // Written in TypeScript; esbuild bundles it to the XP floor
-// (target=firefox52). Load order in base.templ: htmx, sse extension,
-// alpine-csp, then this bundle.
+// (target=firefox58). Load order in base.templ: htmx, sse extension,
+// ui.js, then alpine-csp.
 
 import './compat.ts';
 
@@ -20,15 +20,12 @@ document.addEventListener('htmx:configRequest', (evt) => {
   }
 });
 
-// The Alpine CSP build does not auto-start. Components register on the
-// alpine:init event, which fires before the reactive tree initializes.
+// The Alpine CSP cdn build auto-starts when it loads (after this bundle),
+// so components must register before that happens. The alpine:init event
+// fires at the start of Alpine initialization.
 document.addEventListener('alpine:init', () => {
   // Widget components are registered here as they are introduced.
 });
-
-if (window.Alpine) {
-  Alpine.start();
-}
 
 function readCookie(name: string): string {
   const parts = document.cookie.split(';');
