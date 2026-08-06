@@ -55,7 +55,7 @@ func TestLogoutSurfacesRevocationFailure(t *testing.T) {
 	h, sessions := newHandler(t, db)
 
 	token, err := sessions.Create(context.Background(), auth.Principal{
-		ID: 1, Email: "ana@example.org", Name: "Ana", Role: auth.RoleAdmin,
+		ID: "01990000-0000-7000-8000-000000000001", Email: "ana@example.org", Name: "Ana", Role: auth.RoleAdmin,
 	})
 	if err != nil {
 		t.Fatal(err)

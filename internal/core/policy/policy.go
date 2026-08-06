@@ -21,7 +21,7 @@ import (
 
 // Every expression receives the same variables:
 //
-//	principal  map[string]any  id (int), email (string), name (string), role (string)
+//	principal  map[string]any  id (string UUIDv7), email (string), name (string), role (string)
 //	request    map[string]any  method (string), path (string)
 //
 // Policy names are permissions. Routes reference them with Require(name) in

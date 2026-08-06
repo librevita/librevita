@@ -23,7 +23,7 @@ const (
 // Event is one audit record. Sensitive values (passwords, tokens, CSRF)
 // must never be placed in Detail.
 type Event struct {
-	ActorID   int64  // 0 when anonymous.
+	ActorID   string // UUIDv7 of the user account; empty when anonymous.
 	ActorMail string // Best-effort actor identity.
 	Action    string // e.g. "register", "login", "logout", "authorize".
 	Resource  string // e.g. "user", "session", "policy:admin.view".
@@ -52,7 +52,7 @@ func NewLogger(db *sql.DB, log *slog.Logger) (*Logger, error) {
 // never breaks the audited operation.
 func (l *Logger) Record(ctx context.Context, ev Event) {
 	var actorID any
-	if ev.ActorID != 0 {
+	if ev.ActorID != "" {
 		actorID = ev.ActorID
 	}
 

@@ -64,12 +64,12 @@ func TestRequireAuthAcceptsValidSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.Exec(`INSERT INTO users (email, password_hash, display_name, role) VALUES (?, ?, ?, ?)`,
-		"user@example.org", hash, "Test User", auth.RoleAdmin.String()); err != nil {
+	if _, err := db.Exec(`INSERT INTO users (id, email, password_hash, display_name, role) VALUES (?, ?, ?, ?, ?)`,
+		"01990000-0000-7000-8000-000000000001", "user@example.org", hash, "Test User", auth.RoleAdmin.String()); err != nil {
 		t.Fatal(err)
 	}
 
-	token, err := sessions.Create(context.Background(), auth.Principal{ID: 1, Email: "user@example.org", Name: "Test User", Role: auth.RoleAdmin})
+	token, err := sessions.Create(context.Background(), auth.Principal{ID: "01990000-0000-7000-8000-000000000001", Email: "user@example.org", Name: "Test User", Role: auth.RoleAdmin})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -111,7 +111,7 @@ func TestRequirePolicyAllowsAndDenies(t *testing.T) {
 			e.GET("/admin", func(c echo.Context) error { return c.String(http.StatusOK, "ok") },
 				func(next echo.HandlerFunc) echo.HandlerFunc {
 					return func(c echo.Context) error {
-						c.Set(principalKey, &auth.Principal{ID: 1, Email: "u@example.org", Name: "User", Role: tc.role})
+						c.Set(principalKey, &auth.Principal{ID: "01990000-0000-7000-8000-000000000001", Email: "u@example.org", Name: "User", Role: tc.role})
 						return next(c)
 					}
 				},
@@ -160,7 +160,7 @@ func TestRequirePolicyDenialIsAudited(t *testing.T) {
 	e.GET("/admin", func(c echo.Context) error { return c.String(http.StatusOK, "ok") },
 		func(next echo.HandlerFunc) echo.HandlerFunc {
 			return func(c echo.Context) error {
-				c.Set(principalKey, &auth.Principal{ID: 1, Email: "u@example.org", Name: "User", Role: auth.RolePatient})
+				c.Set(principalKey, &auth.Principal{ID: "01990000-0000-7000-8000-000000000001", Email: "u@example.org", Name: "User", Role: auth.RolePatient})
 				return next(c)
 			}
 		},

@@ -16,6 +16,8 @@ import (
 	"librevita.org/internal/core/database"
 )
 
+const testUserID = "01990000-0000-7000-8000-000000000001"
+
 func openTestDB(t *testing.T) *sql.DB {
 	t.Helper()
 	db, err := sql.Open("sqlite", "file:session-test?mode=memory&cache=shared")
@@ -32,14 +34,14 @@ func openTestDB(t *testing.T) *sql.DB {
 	return db
 }
 
-func seedUser(t *testing.T, db *sql.DB, id int64) {
+func seedUser(t *testing.T, db *sql.DB, id string) {
 	t.Helper()
 	hash, err := HashPassword("test-password")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.Exec(`INSERT INTO users (email, password_hash, display_name, role) VALUES (?, ?, ?, ?)`,
-		"user@example.org", hash, "Test User", RoleAdmin.String()); err != nil {
+	if _, err := db.Exec(`INSERT INTO users (id, email, password_hash, display_name, role) VALUES (?, ?, ?, ?, ?)`,
+		id, "user@example.org", hash, "Test User", RoleAdmin.String()); err != nil {
 		t.Fatalf("seed user: %v", err)
 	}
 }
@@ -57,10 +59,10 @@ func newManager(t *testing.T, db *sql.DB, ttl time.Duration) *SessionManager {
 
 func TestSessionLifecycle(t *testing.T) {
 	db := openTestDB(t)
-	seedUser(t, db, 1)
+	seedUser(t, db, testUserID)
 	m := newManager(t, db, time.Hour)
 
-	token, err := m.Create(context.Background(), Principal{ID: 1, Email: "user@example.org", Name: "Test User", Role: RoleAdmin})
+	token, err := m.Create(context.Background(), Principal{ID: testUserID, Email: "user@example.org", Name: "Test User", Role: RoleAdmin})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -72,7 +74,7 @@ func TestSessionLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Authenticate: %v", err)
 	}
-	if p.ID != 1 || p.Role != RoleAdmin || p.Email != "user@example.org" {
+	if p.ID != testUserID || p.Role != RoleAdmin || p.Email != "user@example.org" {
 		t.Fatalf("unexpected principal: %+v", p)
 	}
 
@@ -86,7 +88,7 @@ func TestSessionLifecycle(t *testing.T) {
 
 func TestSessionUnknownToken(t *testing.T) {
 	db := openTestDB(t)
-	seedUser(t, db, 1)
+	seedUser(t, db, testUserID)
 	m := newManager(t, db, time.Hour)
 
 	if _, err := m.Authenticate(context.Background(), "bogus"); err != ErrNoSession {
@@ -96,10 +98,10 @@ func TestSessionUnknownToken(t *testing.T) {
 
 func TestSessionExpiry(t *testing.T) {
 	db := openTestDB(t)
-	seedUser(t, db, 1)
+	seedUser(t, db, testUserID)
 	m := newManager(t, db, -time.Hour) // Already expired.
 
-	token, err := m.Create(context.Background(), Principal{ID: 1, Email: "user@example.org", Name: "Test User", Role: RoleAdmin})
+	token, err := m.Create(context.Background(), Principal{ID: testUserID, Email: "user@example.org", Name: "Test User", Role: RoleAdmin})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -110,13 +112,13 @@ func TestSessionExpiry(t *testing.T) {
 
 func TestSessionRejectsDeactivatedUser(t *testing.T) {
 	db := openTestDB(t)
-	seedUser(t, db, 1)
+	seedUser(t, db, testUserID)
 	if _, err := db.Exec(`UPDATE users SET active = 0 WHERE email = 'user@example.org'`); err != nil {
 		t.Fatal(err)
 	}
 	m := newManager(t, db, time.Hour)
 
-	token, err := m.Create(context.Background(), Principal{ID: 1, Email: "user@example.org", Name: "Test User", Role: RoleAdmin})
+	token, err := m.Create(context.Background(), Principal{ID: testUserID, Email: "user@example.org", Name: "Test User", Role: RoleAdmin})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -156,8 +158,8 @@ func TestSessionManagerAcceptsConfiguredKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewSessionManager: %v", err)
 	}
-	seedUser(t, db, 1)
-	token, err := m.Create(context.Background(), Principal{ID: 1, Email: "user@example.org", Name: "Test User", Role: RoleAdmin})
+	seedUser(t, db, testUserID)
+	token, err := m.Create(context.Background(), Principal{ID: testUserID, Email: "user@example.org", Name: "Test User", Role: RoleAdmin})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -168,10 +170,10 @@ func TestSessionManagerAcceptsConfiguredKey(t *testing.T) {
 
 func TestSessionRejectsTamperedToken(t *testing.T) {
 	db := openTestDB(t)
-	seedUser(t, db, 1)
+	seedUser(t, db, testUserID)
 	m := newManager(t, db, time.Hour)
 
-	token, err := m.Create(context.Background(), Principal{ID: 1, Email: "user@example.org", Name: "Test User", Role: RoleAdmin})
+	token, err := m.Create(context.Background(), Principal{ID: testUserID, Email: "user@example.org", Name: "Test User", Role: RoleAdmin})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
@@ -185,10 +187,10 @@ func TestSessionRejectsTamperedToken(t *testing.T) {
 
 func TestSessionTokenIsPaseto(t *testing.T) {
 	db := openTestDB(t)
-	seedUser(t, db, 1)
+	seedUser(t, db, testUserID)
 	m := newManager(t, db, time.Hour)
 
-	token, err := m.Create(context.Background(), Principal{ID: 1, Email: "user@example.org", Name: "Test User", Role: RoleAdmin})
+	token, err := m.Create(context.Background(), Principal{ID: testUserID, Email: "user@example.org", Name: "Test User", Role: RoleAdmin})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
