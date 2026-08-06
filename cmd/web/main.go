@@ -19,8 +19,9 @@ import (
 	"librevita.org/internal/core/policy"
 	"librevita.org/internal/core/server"
 	"librevita.org/internal/core/telemetry"
-	"librevita.org/internal/ui"
+	"librevita.org/internal/domain/clinic"
 	"librevita.org/internal/domain/user"
+	"librevita.org/internal/ui"
 )
 
 func main() {
@@ -39,6 +40,7 @@ func main() {
 		database.Module, // Runs embedded migrations during OnStart.
 		audit.Module,
 		auth.Module,
+		clinic.Module,
 		policy.Module,
 		server.Module,
 		ui.Module,
