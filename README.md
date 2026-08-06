@@ -33,8 +33,36 @@ SQLC and templ output is not committed. `+generate` writes generated files to
 the workspace when needed for editor support; build, test, and vet targets
 generate them inside Earthly.
 
-## Container Image
+## Frontend
 
+The UI follows the GOTH stack: Go + templ + HTMX, server-driven and
+progressive. Assets are embedded in the binary (`internal/ui`, served under
+`/static`) — there is no CDN, npm, or Node at runtime:
+
+- **HTMX 1.9.12** for hypermedia interactions (`allowEval=false`,
+  `allowScriptTags=false`), with the SSE extension for agenda live updates
+- **Alpine.js CSP build 3.15.12** restricted to ephemeral client state
+  (menus, modals, tabs); clinical state always lives on the server. The
+  CSP build disables `x-html` and keeps the strict Content-Security-Policy
+  (`script-src 'self'`, no `unsafe-eval`)
+- **Tailwind CSS 3.4.17** compiled at build time by the `+frontend` Earthly
+  target using the pinned standalone CLI (verified by SHA-256); the palette
+  is overridden to hex colors because the v3.4 default (`oklch`) is not
+  parseable by XP-era browsers
+- Frontend JavaScript is authored in **modern syntax** under
+  `frontend/src` and bundled by esbuild (`target=firefox52`, pinned
+  binary, verified by SHA-256) with a small feature-detected
+  compatibility layer (`frontend/src/compat.js`); no one writes ES5
+
+Vendored runtime versions and their hashes are recorded in
+`internal/ui/static/js/VENDOR.md`. The compatibility floor is Windows
+XP-era browsers (Pale Moon 28.8, Basilisk 55, K-Meleon 74G/76, Firefox 52
+ESR); newer engines are covered automatically. The server applies a strict
+CSP, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`,
+`X-Frame-Options: DENY`, and `Cache-Control: no-store` on all non-static
+responses; the application is same-origin and no CORS is configured.
+
+## Container Image
 `+image` builds the production binary and packages it in a `scratch` OCI image.
 The image runs as non-root UID/GID `65532:65532` and sets
 `LIBREVITA_DATA_DIR=/data/librevita`. Go creates that directory and its files
