@@ -23,6 +23,10 @@ SELECT id, name, expression
 FROM policies
 ORDER BY name;
 
+-- name: CountPolicies :one
+SELECT count(*)
+FROM policies;
+
 -- name: CreatePolicyVersion :exec
 INSERT INTO policy_versions (
     policy_id, expression, changed_by, changed_by_email, origin

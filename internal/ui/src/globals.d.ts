@@ -18,7 +18,7 @@ declare interface HtmxRequestDetail {
 
 declare const Alpine: {
   start: () => void;
-  data: (name: string, factory: () => unknown) => void;
+  data: <T>(name: string, factory: () => T) => void;
 };
 
 interface Window {

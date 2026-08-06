@@ -18,3 +18,11 @@ with `target=firefox58` and is not committed.
 The Alpine CSP cdn build auto-starts when it loads; `ui.js` is loaded
 before it and registers components on `alpine:init`. The CSP build
 disables `x-html` and keeps the strict Content-Security-Policy intact.
+
+## Design references
+
+The authenticated shell layout (sidebar, topbar, stat cards) is inspired
+by the MIT-licensed
+[flowbite-admin-dashboard](https://github.com/themesberg/flowbite-admin-dashboard)
+design language. No code is copied; markup is rendered server-side with
+templ and interaction stays with htmx/Alpine as progressive enhancement.

@@ -187,7 +187,25 @@ func (h *Handler) Logout(c echo.Context) error {
 
 // Home renders the authenticated dashboard.
 func (h *Handler) Home(c echo.Context) error {
-	return render(c, http.StatusOK, views.Home(server.CSRFToken(c, h.csrf), server.Principal(c)))
+	ctx := c.Request().Context()
+	patients, err := h.svc.UserCountByRole(ctx, "patient")
+	if err != nil {
+		return err
+	}
+	total, err := h.svc.UserCount(ctx)
+	if err != nil {
+		return err
+	}
+	policies, err := h.policies.Count(ctx)
+	if err != nil {
+		return err
+	}
+	return render(c, http.StatusOK, views.Home(server.CSRFToken(c, h.csrf), server.Principal(c), views.DashboardStats{
+		Patients: patients,
+		Staff:    total - patients,
+		Users:    total,
+		Policies: policies,
+	}))
 }
 
 // Admin renders the admin-only area.
@@ -206,7 +224,7 @@ func (h *Handler) AdminPoliciesPage(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-	return render(c, http.StatusOK, views.AdminPolicies(server.CSRFToken(c, h.csrf), viewsList, ""))
+	return render(c, http.StatusOK, views.AdminPolicies(server.CSRFToken(c, h.csrf), server.Principal(c), viewsList, ""))
 }
 
 // AdminPolicySave validates and persists a policy expression. Invalid
@@ -243,7 +261,7 @@ func (h *Handler) AdminPolicySave(c echo.Context) error {
 	if listErr != nil {
 		return listErr
 	}
-	return render(c, http.StatusOK, views.AdminPolicies(server.CSRFToken(c, h.csrf), viewsList, detail))
+	return render(c, http.StatusOK, views.AdminPolicies(server.CSRFToken(c, h.csrf), server.Principal(c), viewsList, detail))
 }
 
 // policyViews decorates the stored policies with their change history,
