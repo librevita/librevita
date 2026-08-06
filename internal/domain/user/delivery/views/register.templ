@@ -1,38 +1,33 @@
 package views
 
+import "librevita.org/internal/ui/layouts"
+
 templ Register(token string, errMsg string) {
-	<!DOCTYPE html>
-	<html lang="en">
-		<head>
-			<meta charset="utf-8">
-			<meta name="viewport" content="width=device-width, initial-scale=1">
-			<title>Create account - LibreVita</title>
-		</head>
-		<body>
-			<main>
-				<h1>LibreVita</h1>
-				<h2>Create account</h2>
+	@layouts.Base("Create account") {
+		<main class="flex min-h-full items-center justify-center px-4">
+			<div class="card w-full max-w-md">
+				<h1 class="text-2xl font-semibold text-gray-900">LibreVita</h1>
+				<h2 class="mt-1 text-sm text-gray-500">Create account</h2>
 				if errMsg != "" {
-					<p role="alert">{ errMsg }</p>
+					<div class="alert mt-4" role="alert">{ errMsg }</div>
 				}
-				<form method="post" action="/auth/register">
+				<form method="post" action="/auth/register" class="mt-6 space-y-4">
 					<input type="hidden" name="_csrf" value={ token }>
-					<label>
-						Name
-						<input type="text" name="name" required autofocus>
-					</label>
-					<label>
-						Email
-						<input type="email" name="email" required>
-					</label>
-					<label>
-						Password
-						<input type="password" name="password" minlength="8" required>
-					</label>
-					<button type="submit">Create account</button>
+					<div>
+						<label class="label" for="name">Name</label>
+						<input class="input" id="name" type="text" name="name" required autofocus>
+					</div>
+					<div>
+						<label class="label" for="email">Email</label>
+						<input class="input" id="email" type="email" name="email" required>
+					</div>
+					<div>
+						<label class="label" for="password">Password</label>
+						<input class="input" id="password" type="password" name="password" minlength="8" required>
+					</div>
+					<button class="btn w-full" type="submit">Create account</button>
 				</form>
-				<p><a href="/auth/login">Already have an account?</a></p>
-			</main>
-		</body>
-	</html>
+			</div>
+		</main>
+	}
 }

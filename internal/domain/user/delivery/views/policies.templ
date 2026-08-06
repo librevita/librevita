@@ -1,6 +1,9 @@
 package views
 
-import "librevita.org/internal/core/policy/repository"
+import (
+	"librevita.org/internal/core/policy/repository"
+	"librevita.org/internal/ui/layouts"
+)
 
 // PolicyView is a stored policy decorated with its recent change history.
 type PolicyView struct {
@@ -10,64 +13,61 @@ type PolicyView struct {
 }
 
 templ AdminPolicies(token string, policies []PolicyView, errMsg string) {
-	<!DOCTYPE html>
-	<html lang="en">
-		<head>
-			<meta charset="utf-8">
-			<meta name="viewport" content="width=device-width, initial-scale=1">
-			<title>Policies - LibreVita</title>
-		</head>
-		<body>
-			<main>
-				<h1>Access policies</h1>
-				<p><a href="/admin">Back to admin area</a></p>
-				if errMsg != "" {
-					<p role="alert">{ errMsg }</p>
-				}
-				<p>
-					Policies are CEL expressions evaluated with the
-					<code>principal</code> and <code>request</code> variables.
-					They take effect immediately after saving.
-				</p>
+	@layouts.Base("Policies") {
+		<main class="mx-auto max-w-4xl px-4 py-8">
+			<header class="flex items-center justify-between">
+				<h1 class="text-2xl font-semibold text-gray-900">Access policies</h1>
+				<a class="btn-secondary" href="/admin">Back to admin area</a>
+			</header>
+			if errMsg != "" {
+				<div class="alert mt-4" role="alert">{ errMsg }</div>
+			}
+			<p class="mt-4 text-sm text-gray-600">
+				Policies are CEL expressions evaluated with the <code class="rounded bg-gray-100 px-1">principal</code>
+				and <code class="rounded bg-gray-100 px-1">request</code> variables. They take effect immediately after saving.
+			</p>
+			<div class="mt-6 space-y-8">
 				for _, p := range policies {
-					<section>
-						<form method="post" action="/admin/policies">
+					<section class="card">
+						<form method="post" action="/admin/policies" class="space-y-3">
 							<input type="hidden" name="_csrf" value={ token }>
 							<input type="hidden" name="name" value={ p.Name }>
-							<label>
-								<strong>{ p.Name }</strong>
-								<textarea name="expression" rows="3" required>{ p.Expression }</textarea>
+							<label class="label" for={ "policy-" + p.Name }>
+								<span class="font-semibold text-gray-900">{ p.Name }</span>
+								<textarea class="input font-mono" id={ "policy-" + p.Name } name="expression" rows="3" required>{ p.Expression }</textarea>
 							</label>
-							<button type="submit">Save</button>
+							<button class="btn" type="submit">Save</button>
 						</form>
 						if len(p.History) > 0 {
-							<table>
-								<caption>Change history</caption>
-								<thead>
-									<tr>
-										<th>Expression</th>
-										<th>Changed by</th>
-										<th>Origin</th>
-										<th>When</th>
-									</tr>
-								</thead>
-								<tbody>
-									for _, v := range p.History {
+							<div class="mt-6 overflow-x-auto">
+								<table class="table-base">
+									<caption class="text-left text-sm font-semibold text-gray-900 py-2">Change history</caption>
+									<thead class="bg-gray-50">
 										<tr>
-											<td><code>{ v.Expression }</code></td>
-											<td>{ changedBy(v.ChangedBy, v.ChangedByEmail) }</td>
-											<td>{ v.Origin }</td>
-											<td>{ v.CreatedAt }</td>
+											<th class="px-3 py-2 text-left font-medium text-gray-500">Expression</th>
+											<th class="px-3 py-2 text-left font-medium text-gray-500">Changed by</th>
+											<th class="px-3 py-2 text-left font-medium text-gray-500">Origin</th>
+											<th class="px-3 py-2 text-left font-medium text-gray-500">When</th>
 										</tr>
-									}
-								</tbody>
-							</table>
+									</thead>
+									<tbody class="divide-y divide-gray-200">
+										for _, v := range p.History {
+											<tr>
+												<td class="px-3 py-2 font-mono text-xs">{ v.Expression }</td>
+												<td class="px-3 py-2">{ changedBy(v.ChangedBy, v.ChangedByEmail) }</td>
+												<td class="px-3 py-2">{ v.Origin }</td>
+												<td class="px-3 py-2 text-xs text-gray-500">{ v.CreatedAt }</td>
+											</tr>
+										}
+									</tbody>
+								</table>
+							</div>
 						}
 					</section>
 				}
-			</main>
-		</body>
-	</html>
+			</div>
+		</main>
+	}
 }
 
 func changedBy(id, email *string) string {

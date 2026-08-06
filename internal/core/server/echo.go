@@ -24,7 +24,9 @@ func New(csrf *auth.CSRF) *echo.Echo {
 	// Middleware order is significant.
 	e.Use(middleware.RequestID())
 	e.Use(middleware.Recover())
-	e.Use(middleware.CORS())
+	// Same-origin application; no CORS is configured. Do not add a
+	// permissive CORS middleware for future authenticated endpoints.
+	e.Use(SecurityHeaders)
 	e.Use(middleware.BodyLimit("1M"))
 	e.Use(CSRFMiddleware(csrf))
 

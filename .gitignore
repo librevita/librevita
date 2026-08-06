@@ -41,6 +41,10 @@ static/css/*.css
 static/js/*.js
 node_modules/
 
+# Generated frontend assets (build-time, see Earthfile +frontend)
+internal/ui/static/css/*.css
+internal/ui/static/js/*.js
+
 # Generated sqlc repositories
 **/repository/*.sql.go
 **/repository/db.go

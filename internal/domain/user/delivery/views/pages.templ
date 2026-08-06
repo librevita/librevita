@@ -1,50 +1,49 @@
 package views
 
-import "librevita.org/internal/core/auth"
+import (
+	"librevita.org/internal/core/auth"
+	"librevita.org/internal/ui/layouts"
+)
 
 templ Home(token string, p *auth.Principal) {
-	<!DOCTYPE html>
-	<html lang="en">
-		<head>
-			<meta charset="utf-8">
-			<meta name="viewport" content="width=device-width, initial-scale=1">
-			<title>Dashboard - LibreVita</title>
-		</head>
-		<body>
-			<main>
-				<h1>Welcome, { p.Name }</h1>
-				<p>Signed in as <strong>{ p.Role.String() }</strong> ({ p.Email })</p>
-				if p.Role == auth.RoleAdmin {
-					<p><a href="/admin">Admin area</a></p>
-				}
+	@layouts.Base("Dashboard") {
+		<main class="mx-auto max-w-4xl px-4 py-8">
+			<header class="flex items-center justify-between">
+				<h1 class="text-2xl font-semibold text-gray-900">Welcome, { p.Name }</h1>
 				<form method="post" action="/auth/logout">
 					<input type="hidden" name="_csrf" value={ token }>
-					<button type="submit">Sign out</button>
+					<button class="btn-secondary" type="submit">Sign out</button>
 				</form>
-			</main>
-		</body>
-	</html>
+			</header>
+			<p class="mt-2 text-sm text-gray-600">
+				Signed in as <strong class="text-gray-900">{ p.Role.String() }</strong> ({ p.Email })
+			</p>
+			if p.Role == auth.RoleAdmin {
+				<nav class="mt-6 flex space-x-3">
+					<a class="btn" href="/admin">Admin area</a>
+				</nav>
+			}
+		</main>
+	}
 }
 
 templ Admin(token string, p *auth.Principal) {
-	<!DOCTYPE html>
-	<html lang="en">
-		<head>
-			<meta charset="utf-8">
-			<meta name="viewport" content="width=device-width, initial-scale=1">
-			<title>Admin - LibreVita</title>
-		</head>
-		<body>
-			<main>
-				<h1>Admin area</h1>
-				<p>Only users with the <strong>admin</strong> role can see this page.</p>
-				<p><a href="/admin/policies">Access policies</a></p>
-				<p><a href="/">Back to dashboard</a></p>
+	@layouts.Base("Admin") {
+		<main class="mx-auto max-w-4xl px-4 py-8">
+			<header class="flex items-center justify-between">
+				<h1 class="text-2xl font-semibold text-gray-900">Admin area</h1>
 				<form method="post" action="/auth/logout">
 					<input type="hidden" name="_csrf" value={ token }>
-					<button type="submit">Sign out</button>
+					<button class="btn-secondary" type="submit">Sign out</button>
 				</form>
-			</main>
-		</body>
-	</html>
+			</header>
+			<p class="mt-2 text-sm text-gray-600">
+				Only users with the <strong class="text-gray-900">admin</strong> role can see this page.
+			</p>
+			<nav class="mt-6 flex space-x-3">
+				<a class="btn" href="/admin/policies">Access policies</a>
+				<a class="btn-secondary" href="/">Back to dashboard</a>
+			</nav>
+		</main>
+	}
 }

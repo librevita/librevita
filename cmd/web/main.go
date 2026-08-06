@@ -19,6 +19,7 @@ import (
 	"librevita.org/internal/core/policy"
 	"librevita.org/internal/core/server"
 	"librevita.org/internal/core/telemetry"
+	"librevita.org/internal/ui"
 	"librevita.org/internal/domain/user"
 )
 
@@ -40,6 +41,7 @@ func main() {
 		auth.Module,
 		policy.Module,
 		server.Module,
+		ui.Module,
 		user.Module,
 	).Run()
 }
