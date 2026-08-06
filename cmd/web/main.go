@@ -12,6 +12,7 @@ import (
 	"go.uber.org/fx"
 	"go.uber.org/fx/fxevent"
 
+	"librevita.org/internal/core/audit"
 	"librevita.org/internal/core/auth"
 	"librevita.org/internal/core/config"
 	"librevita.org/internal/core/database"
@@ -35,6 +36,7 @@ func main() {
 			return fxLogger
 		}),
 		database.Module, // Runs embedded migrations during OnStart.
+		audit.Module,
 		auth.Module,
 		policy.Module,
 		server.Module,

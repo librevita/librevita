@@ -11,6 +11,7 @@ import (
 	"github.com/labstack/echo/v4"
 	_ "modernc.org/sqlite"
 
+	"librevita.org/internal/core/audit"
 	"librevita.org/internal/core/auth"
 	"librevita.org/internal/core/config"
 	"librevita.org/internal/core/database"
@@ -95,6 +96,7 @@ func TestRequirePolicyAllowsAndDenies(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	auditLogger := newTestAudit(t)
 
 	for _, tc := range []struct {
 		name string
@@ -113,7 +115,7 @@ func TestRequirePolicyAllowsAndDenies(t *testing.T) {
 						return next(c)
 					}
 				},
-				RequirePolicy(pe, testLogger(), "admin.view"))
+				RequirePolicy(pe, auditLogger, testLogger(), "admin.view"))
 
 			req := httptest.NewRequest(http.MethodGet, "/admin", nil)
 			rec := httptest.NewRecorder()
@@ -133,7 +135,7 @@ func TestRequirePolicyRedirectsWithoutPrincipal(t *testing.T) {
 
 	e := echo.New()
 	e.GET("/admin", func(c echo.Context) error { return c.String(http.StatusOK, "ok") },
-		RequirePolicy(pe, testLogger(), "admin.view"))
+		RequirePolicy(pe, newTestAudit(t), testLogger(), "admin.view"))
 
 	req := httptest.NewRequest(http.MethodGet, "/admin", nil)
 	rec := httptest.NewRecorder()
@@ -141,4 +143,52 @@ func TestRequirePolicyRedirectsWithoutPrincipal(t *testing.T) {
 	if rec.Code != http.StatusFound {
 		t.Fatalf("GET /admin without principal = %d, want 302", rec.Code)
 	}
+}
+
+func TestRequirePolicyDenialIsAudited(t *testing.T) {
+	db := openTestDB(t)
+	auditLogger, err := audit.NewLogger(db, testLogger())
+	if err != nil {
+		t.Fatal(err)
+	}
+	pe, err := policy.NewPolicyEngine(testLogger())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	e := echo.New()
+	e.GET("/admin", func(c echo.Context) error { return c.String(http.StatusOK, "ok") },
+		func(next echo.HandlerFunc) echo.HandlerFunc {
+			return func(c echo.Context) error {
+				c.Set(principalKey, &auth.Principal{ID: 1, Email: "u@example.org", Name: "User", Role: auth.RolePatient})
+				return next(c)
+			}
+		},
+		RequirePolicy(pe, auditLogger, testLogger(), "admin.view"))
+
+	req := httptest.NewRequest(http.MethodGet, "/admin", nil)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("GET /admin = %d, want 403", rec.Code)
+	}
+
+	var action, resource, result string
+	if err := db.QueryRow(`SELECT action, resource, result FROM audit_log`).
+		Scan(&action, &resource, &result); err != nil {
+		t.Fatalf("read audit_log: %v", err)
+	}
+	if action != "authorize" || resource != "policy:admin.view" || result != audit.ResultFailure {
+		t.Fatalf("unexpected audit row: %q %q %q", action, resource, result)
+	}
+}
+
+func newTestAudit(t *testing.T) *audit.Logger {
+	t.Helper()
+	db := openTestDB(t)
+	l, err := audit.NewLogger(db, testLogger())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return l
 }
