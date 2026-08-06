@@ -5,13 +5,15 @@ import (
 	"database/sql"
 	"errors"
 	"log/slog"
+	"sync"
 	"testing"
 
 	_ "modernc.org/sqlite"
 
+	"librevita.org/internal/core/audit"
+	"librevita.org/internal/core/auth"
 	"librevita.org/internal/core/config"
 	"librevita.org/internal/core/database"
-	"librevita.org/internal/core/auth"
 	"librevita.org/internal/domain/user/usecase"
 )
 
@@ -43,7 +45,11 @@ func newServiceWithSessions(t *testing.T, db *sql.DB) (*usecase.Service, *auth.S
 	if err != nil {
 		t.Fatal(err)
 	}
-	return usecase.NewService(db, sessions, log), sessions
+	auditLogger, err := audit.NewLogger(db, log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return usecase.NewService(db, sessions, auditLogger, log), sessions
 }
 
 func validInput() usecase.RegisterInput {
@@ -176,5 +182,53 @@ func TestLogoutInvalidatesSession(t *testing.T) {
 	}
 	if _, err := sessions.Authenticate(context.Background(), token); err != auth.ErrNoSession {
 		t.Fatalf("session after logout = %v, want ErrNoSession", err)
+	}
+}
+
+func TestConcurrentRegistrationYieldsSingleAdmin(t *testing.T) {
+	db := openAuthDB(t)
+	svc := newService(t, db)
+
+	const users = 8
+	var wg sync.WaitGroup
+	errs := make([]error, users)
+	for i := range users {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			input := validInput()
+			input.Email = "user" + string(rune('a'+i)) + "@example.org"
+			_, _, errs[i] = svc.Register(context.Background(), input)
+		}(i)
+	}
+	wg.Wait()
+
+	for i, err := range errs {
+		if err != nil {
+			t.Fatalf("register %d failed: %v", i, err)
+		}
+	}
+
+	var admins int
+	if err := db.QueryRow(`SELECT COUNT(*) FROM users WHERE role = 'admin'`).Scan(&admins); err != nil {
+		t.Fatal(err)
+	}
+	if admins != 1 {
+		t.Fatalf("concurrent bootstrap produced %d admins, want exactly 1", admins)
+	}
+}
+
+func TestDuplicateEmailMapsToDomainError(t *testing.T) {
+	db := openAuthDB(t)
+	svc := newService(t, db)
+
+	if _, _, err := svc.Register(context.Background(), validInput()); err != nil {
+		t.Fatal(err)
+	}
+
+	input := validInput()
+	input.Email = "ANA@example.org" // NOCASE duplicate
+	if _, _, err := svc.Register(context.Background(), input); !errors.Is(err, usecase.ErrEmailTaken) {
+		t.Fatalf("duplicate register = %v, want ErrEmailTaken", err)
 	}
 }

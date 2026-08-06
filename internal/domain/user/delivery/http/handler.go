@@ -77,11 +77,17 @@ func (h *Handler) Register(c echo.Context) error {
 	return c.Redirect(http.StatusFound, "/")
 }
 
-// Logout destroys the session and redirects to the login page.
+// Logout destroys the session and redirects to the login page. A failed
+// revocation is returned as an error so the client knows the session may
+// still be valid.
 func (h *Handler) Logout(c echo.Context) error {
 	cookie, err := c.Cookie(auth.SessionCookieName)
-	if err == nil {
-		_ = h.svc.Logout(c.Request().Context(), cookie.Value)
+	if err != nil {
+		c.SetCookie(h.sessions.ClearCookie())
+		return c.Redirect(http.StatusFound, server.LoginPath)
+	}
+	if err := h.svc.Logout(c.Request().Context(), cookie.Value); err != nil {
+		return err
 	}
 	c.SetCookie(h.sessions.ClearCookie())
 	return c.Redirect(http.StatusFound, server.LoginPath)

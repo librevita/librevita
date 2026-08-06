@@ -5,6 +5,7 @@ package server
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
@@ -24,7 +25,13 @@ func New(csrf *auth.CSRF) *echo.Echo {
 	e.Use(middleware.RequestID())
 	e.Use(middleware.Recover())
 	e.Use(middleware.CORS())
+	e.Use(middleware.BodyLimit("1M"))
 	e.Use(CSRFMiddleware(csrf))
+
+	// Read timeouts protect against slow-loris attacks. WriteTimeout stays
+	// zero so that future Server-Sent Events are not interrupted.
+	e.Server.ReadHeaderTimeout = 5 * time.Second
+	e.Server.ReadTimeout = 15 * time.Second
 
 	// Infrastructure endpoint for load balancers and process probes.
 	e.GET("/healthz", func(c echo.Context) error {

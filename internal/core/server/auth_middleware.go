@@ -7,6 +7,7 @@ import (
 
 	"github.com/labstack/echo/v4"
 
+	"librevita.org/internal/core/audit"
 	"librevita.org/internal/core/auth"
 	"librevita.org/internal/core/policy"
 )
@@ -52,8 +53,9 @@ func RequireAuth(s *auth.SessionManager, log *slog.Logger) echo.MiddlewareFunc {
 }
 
 // RequirePolicy guards a route with the named CEL policy. It must run after
-// RequireAuth, which stores the principal in the request context.
-func RequirePolicy(pe *policy.PolicyEngine, log *slog.Logger, name string) echo.MiddlewareFunc {
+// RequireAuth, which stores the principal in the request context. Denials
+// are written to the audit trail.
+func RequirePolicy(pe *policy.PolicyEngine, auditLogger *audit.Logger, log *slog.Logger, name string) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(ctx echo.Context) error {
 			p := Principal(ctx)
@@ -70,6 +72,12 @@ func RequirePolicy(pe *policy.PolicyEngine, log *slog.Logger, name string) echo.
 				return echo.NewHTTPError(http.StatusInternalServerError, "authorization failure")
 			}
 			if !allowed {
+				auditLogger.Record(ctx.Request().Context(), audit.Event{
+					ActorID: p.ID, ActorMail: p.Email,
+					Action: "authorize", Resource: "policy:" + name, Result: audit.ResultFailure,
+					IP: ctx.RealIP(), RequestID: ctx.Response().Header().Get(echo.HeaderXRequestID),
+					Detail: "denied",
+				})
 				return echo.NewHTTPError(http.StatusForbidden, "insufficient permissions")
 			}
 			return next(ctx)

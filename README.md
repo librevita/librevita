@@ -241,5 +241,28 @@ Default policies live in `DefaultPolicies` in
 | `admin.view` | `principal.role == 'admin'` |
 
 The first registered account becomes an `admin`; subsequent registrations are
-`patient` accounts. Sessions require the SQLite backend; rqlite deployments
-must provide their own authentication layer.
+`patient` accounts. The first-admin decision is atomic: concurrent
+registrations on an empty database never yield more than one admin.
+Registration stays open so that self-hosted operators can bootstrap the
+system; deployments exposed to the internet should sit behind an
+authenticated reverse proxy.
+
+Abuse controls:
+
+- Login is rate-limited to 10 attempts per minute per IP; registration to 5
+  per minute per IP (`429` beyond that)
+- The request body is limited to 1 MiB, and input fields have explicit
+  length limits
+- Login runs an Argon2id verification even for unknown or deactivated
+  accounts, so response timing does not reveal whether an email exists
+- The HTTP server enforces read timeouts
+
+All authentication and authorization outcomes (register, login, logout,
+policy denials) are written to the durable `audit_log` table by
+`internal/core/audit`. The trail records actor, action, resource, result,
+IP, request id, and a detail message; passwords, tokens, and CSRF values are
+never stored. Recording is best-effort and never breaks the audited
+operation.
+
+Sessions require the SQLite backend; rqlite deployments must provide their
+own authentication layer.
