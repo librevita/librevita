@@ -42,9 +42,9 @@ static/js/*.js
 node_modules/
 
 # Generated sqlc repositories
-internal/domain/**/repository/*.sql.go
-internal/domain/**/repository/db.go
-internal/domain/**/repository/models.go
+**/repository/*.sql.go
+**/repository/db.go
+**/repository/models.go
 
 # Generated templ views
 **/*_templ.go
