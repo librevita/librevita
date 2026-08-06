@@ -86,3 +86,13 @@ sql:
         sql_package: "database/sql"
         emit_empty_slices: true
         emit_pointers_for_null_types: true
+  - name: "session"
+    engine: "sqlite"
+    schema: "db/schema/"
+    queries: "db/query/session.sql"
+    gen:
+      go:
+        package: "repository"
+        out: "internal/core/auth/repository"
+        sql_package: "database/sql"
+        emit_empty_slices: true
