@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"aidanwoods.dev/go-paseto"
+	"librevita.org/internal/core/auth/repository"
 	"librevita.org/internal/core/config"
 )
 
@@ -41,11 +42,12 @@ type Principal struct {
 // expiration date, validated cryptographically on every request; the
 // sessions table exists only to support logout and account deactivation.
 type SessionManager struct {
-	db     *sql.DB
-	key    paseto.V4SymmetricKey
-	ttl    time.Duration
-	secure bool
-	log    *slog.Logger
+	db      *sql.DB
+	queries *repository.Queries
+	key     paseto.V4SymmetricKey
+	ttl     time.Duration
+	secure  bool
+	log     *slog.Logger
 }
 
 // NewSessionManager is the Fx provider. The SQLite backend is required
@@ -80,11 +82,12 @@ func NewSessionManager(db *sql.DB, cfg *config.Config, log *slog.Logger) (*Sessi
 	}
 
 	return &SessionManager{
-		db:     db,
-		key:    key,
-		ttl:    sessionTTL,
-		secure: cfg.IsProduction(),
-		log:    log,
+		db:      db,
+		queries: repository.New(db),
+		key:     key,
+		ttl:     sessionTTL,
+		secure:  cfg.IsProduction(),
+		log:     log,
 	}, nil
 }
 
@@ -94,8 +97,7 @@ func (m *SessionManager) Create(ctx context.Context, p Principal) (string, error
 	now := time.Now().UTC()
 	expires := now.Add(m.ttl)
 
-	if _, err := m.db.ExecContext(ctx,
-		`DELETE FROM sessions WHERE expires_at <= ?`, formatTime(now)); err != nil {
+	if err := m.queries.DeleteExpiredSessions(ctx, formatTime(now)); err != nil {
 		return "", fmt.Errorf("auth: expire sessions: %w", err)
 	}
 
@@ -112,9 +114,9 @@ func (m *SessionManager) Create(ctx context.Context, p Principal) (string, error
 	token.SetExpiration(expires)
 	rawToken := token.V4Encrypt(m.key, nil)
 
-	if _, err := m.db.ExecContext(ctx,
-		`INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)`,
-		hashToken(jtiHex), p.ID, formatTime(expires)); err != nil {
+	if err := m.queries.CreateSession(ctx, repository.CreateSessionParams{
+		TokenHash: hashToken(jtiHex), UserID: p.ID, ExpiresAt: formatTime(expires),
+	}); err != nil {
 		return "", fmt.Errorf("auth: store session: %w", err)
 	}
 	return rawToken, nil
@@ -133,15 +135,7 @@ func (m *SessionManager) Authenticate(ctx context.Context, token string) (*Princ
 		return nil, ErrNoSession
 	}
 
-	var p Principal
-	var role string
-	err = m.db.QueryRowContext(ctx, `
-		SELECT u.id, u.email, u.display_name, u.role
-		FROM sessions s
-		JOIN users u ON u.id = s.user_id
-		WHERE s.token_hash = ? AND u.active = 1`,
-		hashToken(jti),
-	).Scan(&p.ID, &p.Email, &p.Name, &role)
+	row, err := m.queries.GetSessionUser(ctx, hashToken(jti))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNoSession
 	}
@@ -149,11 +143,11 @@ func (m *SessionManager) Authenticate(ctx context.Context, token string) (*Princ
 		return nil, fmt.Errorf("auth: resolve session: %w", err)
 	}
 
-	p.Role, err = ParseRole(role)
+	role, err := ParseRole(row.Role)
 	if err != nil {
 		return nil, err
 	}
-	return &p, nil
+	return &Principal{ID: row.ID, Email: row.Email, Name: row.DisplayName, Role: role}, nil
 }
 
 // Destroy revokes the session behind token.
@@ -170,8 +164,7 @@ func (m *SessionManager) Destroy(ctx context.Context, token string) error {
 	if err != nil {
 		return nil
 	}
-	if _, err := m.db.ExecContext(ctx,
-		`DELETE FROM sessions WHERE token_hash = ?`, hashToken(jti)); err != nil {
+	if err := m.queries.DeleteSession(ctx, hashToken(jti)); err != nil {
 		return fmt.Errorf("auth: delete session: %w", err)
 	}
 	return nil

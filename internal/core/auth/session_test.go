@@ -12,6 +12,7 @@ import (
 
 	_ "modernc.org/sqlite"
 
+	"librevita.org/internal/core/auth/repository"
 	"librevita.org/internal/core/config"
 	"librevita.org/internal/core/database"
 )
@@ -49,10 +50,11 @@ func seedUser(t *testing.T, db *sql.DB, id string) {
 func newManager(t *testing.T, db *sql.DB, ttl time.Duration) *SessionManager {
 	t.Helper()
 	m := &SessionManager{
-		db:     db,
-		ttl:    ttl,
-		secure: false,
-		log:    slog.New(slog.DiscardHandler),
+		db:      db,
+		queries: repository.New(db),
+		ttl:     ttl,
+		secure:  false,
+		log:     slog.New(slog.DiscardHandler),
 	}
 	return m
 }

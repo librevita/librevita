@@ -37,6 +37,7 @@ generate:
     FROM +go-generated
     SAVE ARTIFACT internal/domain AS LOCAL ./internal/domain
     SAVE ARTIFACT internal/core/audit/repository AS LOCAL ./internal/core/audit/repository
+    SAVE ARTIFACT internal/core/auth/repository AS LOCAL ./internal/core/auth/repository
     SAVE ARTIFACT internal/core/policy/repository AS LOCAL ./internal/core/policy/repository
     SAVE ARTIFACT internal/ui AS LOCAL ./internal/ui
     SAVE ARTIFACT pkg AS LOCAL ./pkg
