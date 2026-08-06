@@ -68,6 +68,10 @@ type Config struct {
 
 	// Logging controls the production log destination and rotation policy.
 	Logging LoggingConfig `koanf:"logging"`
+
+	// PasetoKey is the base64-encoded 32-byte key for PASETO v4.local
+	// session tokens. Required in production; generated at startup otherwise.
+	PasetoKey string `koanf:"paseto_key"`
 }
 
 // DatabaseConfig defines the active persistence backend.
@@ -108,6 +112,7 @@ func RegisterFlags(fs *pflag.FlagSet) {
 	intFlag(fs, "log-max-backups", defaultLogBackups, "rotating log backup count")
 	intFlag(fs, "log-max-age", defaultLogAgeDays, "rotating log maximum age in days")
 	boolFlag(fs, "log-compress", true, "compress rotated log files")
+	stringFlag(fs, "paseto-key", "", "PASETO v4.local session key (base64, 32 bytes)")
 }
 
 // IsProduction reports whether the application runs in production.
@@ -301,6 +306,8 @@ func mapFlagKey(name string) string {
 		return "logging.max_age_days"
 	case "log-compress", "log_compress":
 		return "logging.compress"
+	case "paseto-key", "paseto_key":
+		return "paseto_key"
 	default:
 		return ""
 	}
@@ -335,6 +342,8 @@ func mapEnvironmentKey(key string) string {
 		return "logging.max_age_days"
 	case "log_compress", "logging_compress":
 		return "logging.compress"
+	case "paseto_key":
+		return "paseto_key"
 	default:
 		return ""
 	}

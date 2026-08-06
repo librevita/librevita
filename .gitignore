@@ -25,6 +25,9 @@ go.work.sum
 # env file
 .env
 
+# Editor/tool-specific configuration
+opencode.json
+
 # LibreVita: binários e dados locais
 bin/
 *.db
@@ -42,3 +45,6 @@ node_modules/
 internal/domain/**/repository/*.sql.go
 internal/domain/**/repository/db.go
 internal/domain/**/repository/models.go
+
+# Generated templ views
+**/*_templ.go

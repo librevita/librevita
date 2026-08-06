@@ -1,3 +1,17 @@
 -- Global LibreVita schema (SQLite).
--- Domain tables and triggers will be defined here.
+-- Domain tables and triggers are defined here.
 -- This is the schema source for sqlc (see sqlc.yaml).
+-- The sessions table belongs to internal/core/security and is intentionally
+-- absent; keep it in sync with db/migrations/00002_auth.sql.
+
+CREATE TABLE users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    email TEXT NOT NULL UNIQUE COLLATE nocase,
+    password_hash TEXT NOT NULL,
+    display_name TEXT NOT NULL,
+    role TEXT NOT NULL DEFAULT 'patient'
+    CHECK (role IN ('admin', 'physician', 'receptionist', 'patient')),
+    active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
