@@ -50,6 +50,18 @@ document.addEventListener('alpine:init', () => {
       this.open = false;
     },
   }));
+
+  // Card tab switcher. Active tab classes are produced by a method so the
+  // CSP build does not evaluate inline object literals.
+  alpine.data('tabs', () => ({
+    active: 'users',
+    set(name: string) {
+      this.active = name;
+    },
+    tabClass(name: string, activeClass: string) {
+      return this.active === name ? activeClass : '';
+    },
+  }));
 });
 
 function readCookie(name: string): string {

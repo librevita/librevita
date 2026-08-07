@@ -52,3 +52,12 @@ func (p *ClockProvider) Clock(ctx context.Context) (*Clock, error) {
 	p.exp = now.Add(clockCacheTTL)
 	return NewClock(zone), nil
 }
+
+// Profile returns the clinic profile row.
+func (p *ClockProvider) Profile(ctx context.Context) (*repository.Clinic, error) {
+	row, err := repository.New(p.db).GetClinic(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return &row, nil
+}

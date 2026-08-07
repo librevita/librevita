@@ -185,9 +185,11 @@ func (h *Handler) Logout(c echo.Context) error {
 	return c.Redirect(http.StatusFound, server.LoginPath)
 }
 
-// Home renders the authenticated dashboard.
+// Home renders the authenticated dashboard with real counters, recent
+// activity, latest users, and the clinic profile.
 func (h *Handler) Home(c echo.Context) error {
 	ctx := c.Request().Context()
+
 	patients, err := h.svc.UserCountByRole(ctx, "patient")
 	if err != nil {
 		return err
@@ -196,16 +198,86 @@ func (h *Handler) Home(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-	policies, err := h.policies.Count(ctx)
+	policiesCount, err := h.policies.Count(ctx)
 	if err != nil {
 		return err
 	}
-	return render(c, http.StatusOK, views.Home(server.CSRFToken(c, h.csrf), server.Principal(c), views.DashboardStats{
+	users, err := h.svc.ListRecentUsers(ctx, 8)
+	if err != nil {
+		return err
+	}
+	activity, err := h.audit.Recent(ctx, 8)
+	if err != nil {
+		return err
+	}
+	policies, err := h.policies.List(ctx)
+	if err != nil {
+		return err
+	}
+	clinicRow, err := h.clocks.Profile(ctx)
+	if err != nil {
+		return err
+	}
+	clock, err := h.clocks.Clock(ctx)
+	if err != nil {
+		return err
+	}
+
+	stats := views.DashboardStats{
 		Patients: patients,
 		Staff:    total - patients,
 		Users:    total,
-		Policies: policies,
-	}))
+		Policies: policiesCount,
+		Clinic: views.ClinicInfo{
+			Name:     clinicRow.Name,
+			Timezone: clinicRow.Timezone,
+			City:     orEmpty(clinicRow.City),
+			State:    orEmpty(clinicRow.State),
+			TaxID:    orEmpty(clinicRow.TaxID),
+			Phone:    orEmpty(clinicRow.Phone),
+			Email:    orEmpty(clinicRow.Email),
+		},
+	}
+	for _, u := range users {
+		stats.LatestUsers = append(stats.LatestUsers, views.UserRow{
+			Name:   u.DisplayName,
+			Email:  u.Email,
+			Role:   u.Role,
+			Joined: formatWhen(clock, u.CreatedAt),
+		})
+	}
+	for _, pl := range policies {
+		if len(stats.LatestPolicies) >= 5 {
+			break
+		}
+		stats.LatestPolicies = append(stats.LatestPolicies, views.PolicyRow{
+			Name: pl.Name, Expression: pl.Expression,
+		})
+	}
+	for _, ev := range activity {
+		row := views.ActivityRow{
+			When:     formatWhen(clock, ev.CreatedAt),
+			Action:   ev.Action,
+			Resource: ev.Resource,
+			Result:   ev.Result,
+		}
+		if ev.ActorEmail != nil {
+			row.Actor = *ev.ActorEmail
+		}
+		if ev.Detail != nil {
+			row.Detail = *ev.Detail
+		}
+		stats.Activity = append(stats.Activity, row)
+	}
+
+	return render(c, http.StatusOK, views.Home(server.CSRFToken(c, h.csrf), server.Principal(c), stats))
+}
+
+func orEmpty(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
 }
 
 // Admin renders the admin-only area.

@@ -17,6 +17,12 @@ FROM users
 WHERE id = ?
 LIMIT 1;
 
+-- name: ListRecentUsers :many
+SELECT display_name, email, role, created_at
+FROM users
+ORDER BY created_at DESC, id DESC
+LIMIT ?;
+
 -- name: CountUsers :one
 SELECT COUNT(*)
 FROM users;
