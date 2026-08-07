@@ -32,3 +32,17 @@ func (c *Clock) Format(t time.Time, layout string) string {
 func (c *Clock) FormatUI(t time.Time) string {
 	return c.Format(t, TimeLayout)
 }
+
+// utcMilliLayout matches the timestamps written by the database
+// (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')).
+const utcMilliLayout = "2006-01-02T15:04:05.000Z"
+
+// FormatStored renders a database timestamp in the clinic's timezone,
+// keeping the raw value when it cannot be parsed.
+func (c *Clock) FormatStored(stored string) string {
+	t, err := time.Parse(utcMilliLayout, stored)
+	if err != nil {
+		return stored
+	}
+	return c.FormatUI(t)
+}

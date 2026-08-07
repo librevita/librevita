@@ -34,3 +34,14 @@
     @apply min-w-full divide-y divide-gray-200 text-sm dark:divide-gray-700;
   }
 }
+
+/* htmx loading indicators (includeIndicatorStyles is disabled in ui.ts,
+   so these rules replace the default stylesheet). */
+.htmx-indicator {
+  display: none;
+}
+
+.htmx-request .htmx-indicator,
+.htmx-request.htmx-indicator {
+  display: inline-flex;
+}

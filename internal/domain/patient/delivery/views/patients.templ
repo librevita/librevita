@@ -1,6 +1,8 @@
 package views
 
 import (
+	"net/url"
+
 	"librevita.org/internal/core/auth"
 	"librevita.org/internal/ui/components"
 	"librevita.org/internal/ui/layouts"
@@ -23,7 +25,7 @@ type PatientRow struct {
 // PatientListPage renders the patient registry with search. The search
 // input targets the list fragment, so the page body and the fragment
 // share the same table markup.
-templ PatientListPage(token string, p *auth.Principal, q string, status string, sortParam string, patients []PatientRow, errMsg string) {
+templ PatientListPage(token string, p *auth.Principal, q string, status string, sortParam string, patients []PatientRow, nextCursor string, errMsg string) {
 	@layouts.App("Patients", token, p, "patients") {
 		<div class="mx-auto max-w-6xl">
 			<div class="flex items-center justify-between">
@@ -39,10 +41,16 @@ templ PatientListPage(token string, p *auth.Principal, q string, status string, 
 					@statusOption("active", "Active", status)
 					@statusOption("inactive", "Inactive", status)
 				</select>
-				<button type="button" class="btn-secondary" hx-post="/patients/bulk-archive" hx-include="input[name='ids']:checked" hx-target="#patient-list" hx-swap="innerHTML">Archive selected</button>
+				<button type="button" class="btn-secondary" hx-post="/patients/bulk-archive" hx-include="input[name='ids']:checked" hx-target="#patient-list" hx-swap="innerHTML">
+					Archive selected
+					<svg class="htmx-indicator h-4 w-4 animate-spin text-gray-500" fill="none" viewBox="0 0 24 24" aria-hidden="true">
+						<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+						<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+					</svg>
+				</button>
 			</div>
 			<div id="patient-list" class="mt-4">
-				@PatientListTable(patients, errMsg)
+				@PatientListTable(patients, nextCursor, errMsg)
 			</div>
 		</div>
 	}
@@ -56,9 +64,9 @@ templ statusOption(value string, label string, selected string) {
 	}
 }
 
-// PatientListTable is the fragment swapped by the search input and the
-// archive actions.
-templ PatientListTable(patients []PatientRow, errMsg string) {
+// PatientListTable is the fragment swapped by the search input, filters,
+// and bulk archive. nextCursor drives the Load more button.
+templ PatientListTable(patients []PatientRow, nextCursor string, errMsg string) {
 	if errMsg != "" {
 		@components.Alert(errMsg, false)
 	}
@@ -67,13 +75,21 @@ templ PatientListTable(patients []PatientRow, errMsg string) {
 			<p class="text-sm text-gray-500 dark:text-gray-400">No patients found.</p>
 		</div>
 	} else {
-		<div class="overflow-x-auto rounded-lg">
-			<table class="min-w-full divide-y divide-gray-200 text-sm">
+		@PatientListRows(patients, nextCursor)
+	}
+}
+
+// PatientListRows renders the table body rows plus the Load more button.
+// Load-more responses append the rows into #patient-tbody and refresh the
+// button out of band with the next cursor.
+templ PatientListRows(patients []PatientRow, nextCursor string) {
+	<div x-data="tableSelect" class="overflow-x-auto rounded-lg">
+		<table class="min-w-full divide-y divide-gray-200 text-sm">
 				@components.Thead() {
 					<tr>
 						<th scope="col" class="w-12 p-4">
 							<span class="sr-only">Select</span>
-							<input type="checkbox" name="ids" value="all" class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" aria-label="Select all">
+							<input type="checkbox" name="select_all" @click="toggleAll()" :checked="all" class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" aria-label="Select all">
 						</th>
 						<th scope="col" class="p-4"><a href="#" hx-get="/patients" hx-include="#patient-search, #status-filter" hx-target="#patient-list" hx-swap="innerHTML" class="text-xs font-medium uppercase tracking-wider text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white">Patient</a></th>
 						<th scope="col" class="p-4"><a href="#" hx-get="/patients?sort=birth_date" hx-include="#patient-search, #status-filter" hx-target="#patient-list" hx-swap="innerHTML" class="text-xs font-medium uppercase tracking-wider text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white">Birth date</a></th>
@@ -83,43 +99,89 @@ templ PatientListTable(patients []PatientRow, errMsg string) {
 						@components.Th("Actions", "p-4")
 					</tr>
 				}
-				<tbody class="divide-y divide-gray-200 bg-white dark:divide-gray-700 dark:bg-gray-800">
+				<tbody id="patient-tbody" class="divide-y divide-gray-200 bg-white dark:divide-gray-700 dark:bg-gray-800">
 					for _, pt := range patients {
-						<tr>
-							<td class="whitespace-nowrap p-4">
-								<input type="checkbox" name="ids" value={ pt.ID } class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" aria-label={ "Select " + pt.DisplayName }>
-							</td>
-							<td class="whitespace-nowrap p-4">
-								<div class="flex items-center gap-3">
-									@components.Avatar(components.Initials(pt.DisplayName), "h-8 w-8 bg-indigo-100 text-indigo-700 dark:bg-indigo-900 dark:text-indigo-300")
-									<div class="min-w-0">
-										<a class="truncate font-medium text-gray-900 hover:text-indigo-600 dark:text-white dark:hover:text-indigo-400" href={ "/patients/" + pt.ID }>{ pt.DisplayName }</a>
-										if pt.Email != "" {
-											<p class="truncate text-xs text-gray-500 dark:text-gray-400">{ pt.Email }</p>
-										}
-									</div>
-								</div>
-							</td>
-							<td class="whitespace-nowrap p-4 font-normal text-gray-500 dark:text-gray-400">{ orDash(pt.BirthDate) }</td>
-							<td class="whitespace-nowrap p-4 font-normal text-gray-500 dark:text-gray-400">{ orDash(pt.Document) }</td>
-							<td class="whitespace-nowrap p-4 font-normal text-gray-500 dark:text-gray-400">{ orDash(pt.Phone) }</td>
-							<td class="whitespace-nowrap p-4">@statusBadge(pt.Status)</td>
-							<td class="whitespace-nowrap p-4">
-								<div class="flex items-center gap-2">
-									<a class="inline-flex items-center rounded-md px-2 py-1 text-sm font-medium text-indigo-700 hover:bg-gray-100 dark:text-indigo-400 dark:hover:bg-gray-700" href={ "/patients/" + pt.ID + "/edit" }>Edit</a>
-									if pt.Status == "active" {
-										<button type="button" hx-post={ "/patients/" + pt.ID + "/archive" } hx-target="closest tr" hx-swap="outerHTML" class="inline-flex items-center rounded-md px-2 py-1 text-sm font-medium text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-700">Archive</button>
-									} else {
-										<button type="button" hx-post={ "/patients/" + pt.ID + "/restore" } hx-target="closest tr" hx-swap="outerHTML" class="inline-flex items-center rounded-md px-2 py-1 text-sm font-medium text-green-700 hover:bg-gray-100 dark:text-green-400 dark:hover:bg-gray-700">Restore</button>
-									}
-								</div>
-							</td>
-						</tr>
+						<tr>@PatientRowCells(pt)</tr>
 					}
 				</tbody>
 			</table>
 		</div>
+		if nextCursor != "" {
+			@loadMoreButton(nextCursor, false)
+		}
+}
+
+// PatientRowCells renders one row of the registry table.
+templ PatientRowCells(pt PatientRow) {
+	<td class="whitespace-nowrap p-4">
+		<input type="checkbox" name="ids" value={ pt.ID } @change="updateAll()" class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" aria-label={ "Select " + pt.DisplayName }>
+	</td>
+	<td class="whitespace-nowrap p-4">
+		<div class="flex items-center gap-3">
+			@components.Avatar(components.Initials(pt.DisplayName), "h-8 w-8 bg-indigo-100 text-indigo-700 dark:bg-indigo-900 dark:text-indigo-300")
+			<div class="min-w-0">
+				<a class="truncate font-medium text-gray-900 hover:text-indigo-600 dark:text-white dark:hover:text-indigo-400" href={ "/patients/" + pt.ID }>{ pt.DisplayName }</a>
+				if pt.Email != "" {
+					<p class="truncate text-xs text-gray-500 dark:text-gray-400">{ pt.Email }</p>
+				}
+			</div>
+		</div>
+	</td>
+	<td class="whitespace-nowrap p-4 font-normal text-gray-500 dark:text-gray-400">{ orDash(pt.BirthDate) }</td>
+	<td class="whitespace-nowrap p-4 font-normal text-gray-500 dark:text-gray-400">{ orDash(pt.Document) }</td>
+	<td class="whitespace-nowrap p-4 font-normal text-gray-500 dark:text-gray-400">{ orDash(pt.Phone) }</td>
+	<td class="whitespace-nowrap p-4">@statusBadge(pt.Status)</td>
+	<td class="whitespace-nowrap p-4">
+		<div class="flex items-center gap-2">
+			<a class="inline-flex items-center rounded-md px-2 py-1 text-sm font-medium text-indigo-700 hover:bg-gray-100 dark:text-indigo-400 dark:hover:bg-gray-700" href={ "/patients/" + pt.ID + "/edit" }>Edit</a>
+			if pt.Status == "active" {
+				<button type="button" hx-post={ "/patients/" + pt.ID + "/archive" } hx-target="closest tr" hx-swap="outerHTML" class="inline-flex items-center rounded-md px-2 py-1 text-sm font-medium text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-700">Archive</button>
+			} else {
+				<button type="button" hx-post={ "/patients/" + pt.ID + "/restore" } hx-target="closest tr" hx-swap="outerHTML" class="inline-flex items-center rounded-md px-2 py-1 text-sm font-medium text-green-700 hover:bg-gray-100 dark:text-green-400 dark:hover:bg-gray-700">Restore</button>
+			}
+		</div>
+	</td>
+}
+
+// PatientListMoreRows is the Load more response: only the next rows,
+// appended into #patient-tbody, plus the cursor button refreshed OOB.
+templ PatientListMoreRows(rows []PatientRow, nextCursor string) {
+	for _, pt := range rows {
+		<tr>@PatientRowCells(pt)</tr>
 	}
+	if nextCursor != "" {
+		@loadMoreButton(nextCursor, true)
+	} else {
+		<button type="button" id="load-more-btn" hx-swap-oob="true" class="hidden"></button>
+	}
+}
+
+templ loadMoreButton(cursor string, oob bool) {
+	<button type="button" id="load-more-btn" hx-swap-oob={ boolAttr(oob) } hx-get={ "/patients?after=" + urlQuery(cursor) } hx-include="#patient-search, #status-filter" hx-target="#patient-tbody" hx-swap="beforeend" class="mt-4 inline-flex items-center gap-2 rounded-lg p-2 text-sm font-medium text-indigo-700 hover:bg-gray-100 dark:text-indigo-400 dark:hover:bg-gray-700">
+		Load more
+		<svg class="htmx-indicator h-4 w-4 animate-spin text-indigo-600" fill="none" viewBox="0 0 24 24" aria-hidden="true">
+			<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+			<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+		</svg>
+	</button>
+}
+
+func boolAttr(oob bool) string {
+	if oob {
+		return "true"
+	}
+	return "false"
+}
+
+// PatientListTableWithAlert composes the refreshed table with the OOB
+// alert in one response, used by the bulk archive.
+templ PatientListTableWithAlert(patients []PatientRow, nextCursor string, alertMsg string) {
+	@PatientListTable(patients, nextCursor, "")
+	@components.Alert(alertMsg, true)
+}
+
+func urlQuery(s string) string {
+	return url.QueryEscape(s)
 }
 
 templ patientSearchInput(q string) {
@@ -138,6 +200,13 @@ func orDash(s string) string {
 		return "-"
 	}
 	return s
+}
+
+func orEmpty(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
 }
 
 templ statusBadge(status string) {

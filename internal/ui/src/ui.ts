@@ -76,7 +76,6 @@ document.addEventListener('alpine:init', () => {
       return this.active === name ? activeClass : '';
     },
   }));
-
   // Color scheme preference on the profile page. The initial class comes
   // from theme.js (head); this persists the user choice. 'system' removes
   // the stored value so theme.js follows the OS scheme again.
@@ -99,7 +98,39 @@ document.addEventListener('alpine:init', () => {
       return this.pref === name ? activeClass : '';
     },
   }));
+
+  // Registry table selection: the header checkbox toggles every visible
+  // row and reflects whether all of them are checked.
+  alpine.data('tableSelect', () => ({
+    all: false,
+    toggleAll() {
+      this.all = !this.all;
+      const boxes = rowBoxes();
+      for (let i = 0; i < boxes.length; i++) {
+        boxes[i].checked = this.all;
+      }
+    },
+    updateAll() {
+      const boxes = rowBoxes();
+      let checked = 0;
+      for (let i = 0; i < boxes.length; i++) {
+        if (boxes[i].checked) {
+          checked++;
+        }
+      }
+      this.all = boxes.length > 0 && checked === boxes.length;
+    },
+  }));
 });
+
+function rowBoxes(): HTMLInputElement[] {
+  const out: HTMLInputElement[] = [];
+  const nodes = document.querySelectorAll('input[name="ids"]:not([value="all"])');
+  for (let i = 0; i < nodes.length; i++) {
+    out.push(nodes[i] as HTMLInputElement);
+  }
+  return out;
+}
 
 function readThemePref(): string {
   try {

@@ -33,6 +33,13 @@ func newService(t *testing.T, db *sql.DB) *usecase.Service {
 	return usecase.NewService(db, slog.New(slog.DiscardHandler))
 }
 
+func orEmpty(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
+}
+
 func validInput() usecase.PatientInput {
 	return usecase.PatientInput{
 		DisplayName: "Maria Oliveira",
@@ -62,7 +69,7 @@ func TestCreateAndGet(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.DisplayName != "Maria Oliveira" || got.Document.String != "123.456.789-00" {
+	if got.DisplayName != "Maria Oliveira" || orEmpty(got.Document) != "123.456.789-00" {
 		t.Fatalf("Get = %+v", got)
 	}
 }
@@ -128,7 +135,7 @@ func TestListAndSearch(t *testing.T) {
 		}
 	}
 
-	all, err := svc.List(context.Background(), "clinic-1", "", "", 50)
+	all, err := svc.List(context.Background(), "clinic-1", "", "", "", 50)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -136,7 +143,7 @@ func TestListAndSearch(t *testing.T) {
 		t.Fatalf("List = %d patients, want 3", len(all))
 	}
 
-	hit, err := svc.List(context.Background(), "clinic-1", "bruno", "", 50)
+	hit, err := svc.List(context.Background(), "clinic-1", "bruno", "", "", 50)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -144,7 +151,7 @@ func TestListAndSearch(t *testing.T) {
 		t.Fatalf("search 'bruno' = %+v, want only Bruno Lima", hit)
 	}
 
-	none, err := svc.List(context.Background(), "clinic-1", "zzz", "", 50)
+	none, err := svc.List(context.Background(), "clinic-1", "zzz", "", "", 50)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -160,14 +167,14 @@ func TestListAndSearch(t *testing.T) {
 	if err := svc.SetStatus(context.Background(), pt.ID, usecase.StatusInactive); err != nil {
 		t.Fatal(err)
 	}
-	active, err := svc.List(context.Background(), "clinic-1", "", usecase.StatusActive, 50)
+	active, err := svc.List(context.Background(), "clinic-1", "", usecase.StatusActive, "", 50)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(active) != 2 {
 		t.Fatalf("active = %d, want 2", len(active))
 	}
-	inactive, err := svc.List(context.Background(), "clinic-1", "", usecase.StatusInactive, 50)
+	inactive, err := svc.List(context.Background(), "clinic-1", "", usecase.StatusInactive, "", 50)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -228,11 +235,11 @@ func TestCreateRecordsRegistrar(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if row.CreatedBy.String != "user-1" {
-		t.Fatalf("CreatedBy = %q, want user-1", row.CreatedBy.String)
+	if orEmpty(row.CreatedBy) != "user-1" {
+		t.Fatalf("CreatedBy = %q, want user-1", orEmpty(row.CreatedBy))
 	}
-	if row.CreatedByEmail.String != "ana@example.org" {
-		t.Fatalf("CreatedByEmail = %q, want ana@example.org", row.CreatedByEmail.String)
+	if orEmpty(row.CreatedByEmail) != "ana@example.org" {
+		t.Fatalf("CreatedByEmail = %q, want ana@example.org", orEmpty(row.CreatedByEmail))
 	}
 }
 
@@ -248,7 +255,7 @@ func TestGetWithCreatorMissingUser(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if row.CreatedByEmail.Valid {
-		t.Fatalf("CreatedByEmail = %q, want empty for unknown user", row.CreatedByEmail.String)
+	if row.CreatedByEmail != nil {
+		t.Fatalf("CreatedByEmail = %q, want empty for unknown user", *row.CreatedByEmail)
 	}
 }

@@ -4,14 +4,11 @@ package http
 import (
 	"context"
 	"errors"
-	"io"
 	"net/http"
 	"sort"
 	"strconv"
 	"strings"
-	"time"
 
-	"github.com/a-h/templ"
 	"github.com/labstack/echo/v4"
 
 	"librevita.org/internal/core/audit"
@@ -53,26 +50,41 @@ func (h *Handler) List(c echo.Context) error {
 	}
 	q := c.QueryParam("q")
 	status := c.QueryParam("status")
-	patients, err := h.svc.List(ctx, clinicID, q, status, patientListLimit)
+	after := c.QueryParam("after")
+	sortParam := c.QueryParam("sort")
+
+	// Load-more requests append rows and refresh the cursor button via
+	// OOB; they must not re-render the whole table.
+	if server.IsHtmx(c) && c.Request().Header.Get("HX-Boosted") != "true" && after != "" {
+		return h.moreRows(c, ctx, clinicID, q, status, after, sortParam)
+	}
+
+	limit := patientListLimit + 1
+	patients, err := h.svc.List(ctx, clinicID, q, status, after, limit)
 	if err != nil {
 		return err
 	}
-	h.sort(patients, c.QueryParam("sort"))
+	hasMore := len(patients) > patientListLimit
+	if hasMore {
+		patients = patients[:patientListLimit]
+	}
+	h.sort(patients, sortParam)
 	rows := h.rows(c.Request().Context(), patients)
 
 	// The search input and filters request fragments; boosted navigation
 	// (sidebar links) also arrives with HX-Request but must render the
 	// full page, so only non-boosted htmx requests get the fragment.
 	if server.IsHtmx(c) && c.Request().Header.Get("HX-Boosted") != "true" {
-		return render(c, http.StatusOK, views.PatientListTable(rows, ""))
+		return server.Render(c, http.StatusOK, views.PatientListTable(rows, cursor(sortParam, rows, hasMore), ""))
 	}
-	return render(c, http.StatusOK, views.PatientListPage(
-		server.CSRFToken(c, h.csrf), server.Principal(c), q, status, c.QueryParam("sort"), rows, ""))
+	return server.Render(c, http.StatusOK, views.PatientListPage(
+		server.CSRFToken(c, h.csrf), server.Principal(c), q, status, sortParam, rows,
+		cursor(sortParam, rows, hasMore), ""))
 }
 
 // NewPage renders the create form.
 func (h *Handler) NewPage(c echo.Context) error {
-	return render(c, http.StatusOK, views.PatientFormPage(
+	return server.Render(c, http.StatusOK, views.PatientFormPage(
 		server.CSRFToken(c, h.csrf), server.Principal(c), "", views.PatientFormValues{}, ""))
 }
 
@@ -84,7 +96,7 @@ func (h *Handler) Create(c echo.Context) error {
 		return err
 	}
 	input := h.input(c)
-	patient, err := h.svc.Create(ctx, clinicID, actorID(c), input)
+	patient, err := h.svc.Create(ctx, clinicID, server.ActorID(c), input)
 	if err != nil {
 		var v *usecase.ValidationError
 		if errors.As(err, &v) {
@@ -93,7 +105,7 @@ func (h *Handler) Create(c echo.Context) error {
 		return err
 	}
 	h.audit.Record(ctx, audit.Event{
-		ActorID: actorID(c), ActorMail: actorMail(c),
+		ActorID: server.ActorID(c), ActorMail: server.ActorMail(c),
 		Action: "patient.create", Resource: "patient:" + patient.ID,
 		Result: audit.ResultSuccess,
 		IP:     c.RealIP(), RequestID: c.Response().Header().Get(echo.HeaderXRequestID),
@@ -115,27 +127,24 @@ func (h *Handler) Detail(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-	createdBy := ""
-	if row.CreatedByEmail.Valid {
-		createdBy = row.CreatedByEmail.String
-	}
-	pt := h.detailView(patientFromRow(row), clock)
-	return render(c, http.StatusOK, views.PatientDetailPage(
+	createdBy := orEmpty(row.CreatedByEmail)
+	pt := h.detailView(row, clock)
+	return server.Render(c, http.StatusOK, views.PatientDetailPage(
 		server.CSRFToken(c, h.csrf), server.Principal(c), pt, createdBy, ""))
 }
 
 // EditPage renders the edit form with the stored values.
 func (h *Handler) EditPage(c echo.Context) error {
 	ctx := c.Request().Context()
-	patient, err := h.svc.Get(ctx, c.Param("id"))
+	row, err := h.svc.GetWithCreator(ctx, c.Param("id"))
 	if err != nil {
 		if errors.Is(err, usecase.ErrNotFound) {
 			return echo.NewHTTPError(http.StatusNotFound)
 		}
 		return err
 	}
-	return render(c, http.StatusOK, views.PatientFormPage(
-		server.CSRFToken(c, h.csrf), server.Principal(c), patient.ID, values(patientInput(patient)), ""))
+	return server.Render(c, http.StatusOK, views.PatientFormPage(
+		server.CSRFToken(c, h.csrf), server.Principal(c), row.ID, values(patientInput(row)), ""))
 }
 
 // Update applies the edited values and navigates to the detail page.
@@ -155,7 +164,7 @@ func (h *Handler) Update(c echo.Context) error {
 		}
 	}
 	h.audit.Record(ctx, audit.Event{
-		ActorID: actorID(c), ActorMail: actorMail(c),
+		ActorID: server.ActorID(c), ActorMail: server.ActorMail(c),
 		Action: "patient.update", Resource: "patient:" + patient.ID,
 		Result: audit.ResultSuccess,
 		IP:     c.RealIP(), RequestID: c.Response().Header().Get(echo.HeaderXRequestID),
@@ -179,6 +188,9 @@ func (h *Handler) Restore(c echo.Context) error {
 // archived rows disappear at once.
 func (h *Handler) BulkArchive(c echo.Context) error {
 	ctx := c.Request().Context()
+	q := c.QueryParam("q")
+	status := c.QueryParam("status")
+	sortParam := c.QueryParam("sort")
 	ids := c.Request().PostForm["ids"]
 	archived := 0
 	for _, id := range ids {
@@ -188,7 +200,7 @@ func (h *Handler) BulkArchive(c echo.Context) error {
 	}
 	if archived > 0 {
 		h.audit.Record(ctx, audit.Event{
-			ActorID: actorID(c), ActorMail: actorMail(c),
+			ActorID: server.ActorID(c), ActorMail: server.ActorMail(c),
 			Action: "patient.status", Resource: "patient:bulk",
 			Result: audit.ResultSuccess, Detail: "archived " + strconv.Itoa(archived),
 			IP: c.RealIP(), RequestID: c.Response().Header().Get(echo.HeaderXRequestID),
@@ -199,33 +211,20 @@ func (h *Handler) BulkArchive(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-	patients, err := h.svc.List(ctx, clinicID, c.QueryParam("q"), c.QueryParam("status"), patientListLimit)
+	patients, err := h.svc.List(ctx, clinicID, q, status, "", patientListLimit+1)
 	if err != nil {
 		return err
+	}
+	hasMore := len(patients) > patientListLimit
+	if hasMore {
+		patients = patients[:patientListLimit]
 	}
 	rows := h.rows(ctx, patients)
 	msg := "No patients selected"
 	if archived > 0 {
 		msg = strconv.Itoa(archived) + " patient(s) archived"
 	}
-	return render(c, http.StatusOK, templList{
-		table: views.PatientListTable(rows, ""),
-		alert: components.Alert(msg, true),
-	})
-}
-
-// templList renders a table fragment followed by an OOB alert in one
-// response.
-type templList struct {
-	table templ.Component
-	alert templ.Component
-}
-
-func (t templList) Render(ctx context.Context, w io.Writer) error {
-	if err := t.table.Render(ctx, w); err != nil {
-		return err
-	}
-	return t.alert.Render(ctx, w)
+	return server.Render(c, http.StatusOK, views.PatientListTableWithAlert(rows, cursor(sortParam, rows, hasMore), msg))
 }
 
 func (h *Handler) setStatus(c echo.Context, status, successMsg string) error {
@@ -234,7 +233,7 @@ func (h *Handler) setStatus(c echo.Context, status, successMsg string) error {
 	err := h.svc.SetStatus(ctx, id, status)
 	if err == nil {
 		h.audit.Record(ctx, audit.Event{
-			ActorID: actorID(c), ActorMail: actorMail(c),
+			ActorID: server.ActorID(c), ActorMail: server.ActorMail(c),
 			Action: "patient.status", Resource: "patient:" + id,
 			Result: audit.ResultSuccess, Detail: status,
 			IP: c.RealIP(), RequestID: c.Response().Header().Get(echo.HeaderXRequestID),
@@ -242,9 +241,9 @@ func (h *Handler) setStatus(c echo.Context, status, successMsg string) error {
 	}
 	if server.IsHtmx(c) {
 		if err != nil {
-			return render(c, http.StatusBadRequest, components.Alert("Could not update the patient", true))
+			return server.Render(c, http.StatusBadRequest, components.Alert("Could not update the patient", true))
 		}
-		return render(c, http.StatusOK, components.Alert(successMsg, true))
+		return server.Render(c, http.StatusOK, components.Alert(successMsg, true))
 	}
 	if err != nil {
 		var v *usecase.ValidationError
@@ -257,11 +256,7 @@ func (h *Handler) setStatus(c echo.Context, status, successMsg string) error {
 }
 
 func (h *Handler) clinicID(ctx context.Context) (string, error) {
-	profile, err := h.clocks.Profile(ctx)
-	if err != nil {
-		return "", err
-	}
-	return profile.ID, nil
+	return h.clocks.ClinicID(ctx)
 }
 
 func (h *Handler) input(c echo.Context) usecase.PatientInput {
@@ -280,6 +275,34 @@ func (h *Handler) input(c echo.Context) usecase.PatientInput {
 	}
 }
 
+// moreRows answers the Load more button: only the next rows plus an OOB
+// refresh of the cursor button.
+func (h *Handler) moreRows(c echo.Context, ctx context.Context, clinicID, q, status, after, sortParam string) error {
+	patients, err := h.svc.List(ctx, clinicID, q, status, after, patientListLimit+1)
+	if err != nil {
+		return err
+	}
+	hasMore := len(patients) > patientListLimit
+	if hasMore {
+		patients = patients[:patientListLimit]
+	}
+	h.sort(patients, sortParam)
+	rows := h.rows(ctx, patients)
+	return server.Render(c, http.StatusOK, views.PatientListMoreRows(rows, cursor(sortParam, rows, hasMore)))
+}
+
+// cursor builds the next Load more cursor from the last visible row. It
+// is empty when the page is exhausted or the sort order is not by name.
+func cursor(sortParam string, rows []views.PatientRow, hasMore bool) string {
+	if sortParam != "" && sortParam != "name" {
+		return ""
+	}
+	if !hasMore || len(rows) == 0 {
+		return ""
+	}
+	return rows[len(rows)-1].DisplayName
+}
+
 func (h *Handler) rows(ctx context.Context, patients []repository.Patient) []views.PatientRow {
 	clock, err := h.clocks.Clock(ctx)
 	if err != nil {
@@ -290,23 +313,23 @@ func (h *Handler) rows(ctx context.Context, patients []repository.Patient) []vie
 		out = append(out, views.PatientRow{
 			ID:          pt.ID,
 			DisplayName: pt.DisplayName,
-			BirthDate:   pt.BirthDate.String,
+			BirthDate:   orEmpty(pt.BirthDate),
 			Sex:         pt.Sex,
-			Document:    pt.Document.String,
-			Phone:       pt.Phone.String,
-			Email:       pt.Email.String,
-			City:        pt.City.String,
+			Document:    orEmpty(pt.Document),
+			Phone:       orEmpty(pt.Phone),
+			Email:       orEmpty(pt.Email),
+			City:        orEmpty(pt.City),
 			Status:      pt.Status,
-			CreatedAt:   formatStored(clock, pt.CreatedAt),
+			CreatedAt:   clock.FormatStored(pt.CreatedAt),
 		})
 	}
 	return out
 }
 
-func (h *Handler) detailView(patient *repository.Patient, clock *clinic.Clock) *repository.Patient {
-	clone := *patient
-	clone.CreatedAt = formatStored(clock, clone.CreatedAt)
-	clone.UpdatedAt = formatStored(clock, clone.UpdatedAt)
+func (h *Handler) detailView(row *repository.GetPatientWithCreatorRow, clock *clinic.Clock) *repository.GetPatientWithCreatorRow {
+	clone := *row
+	clone.CreatedAt = clock.FormatStored(clone.CreatedAt)
+	clone.UpdatedAt = clock.FormatStored(clone.UpdatedAt)
 	return &clone
 }
 
@@ -326,43 +349,27 @@ func values(in usecase.PatientInput) views.PatientFormValues {
 	}
 }
 
-// formatStored renders a database timestamp in the clinic timezone,
-// keeping the raw value when it cannot be parsed.
-func formatStored(clock *clinic.Clock, stored string) string {
-	t, err := time.Parse(utcMilliLayout, stored)
-	if err != nil {
-		return stored
-	}
-	return clock.FormatUI(t)
-}
-
-// patientFromRow converts the creator-joined row into the plain patient
-// model used by the detail view.
-func patientFromRow(row *repository.GetPatientWithCreatorRow) *repository.Patient {
-	return &repository.Patient{
-		ID: row.ID, ClinicID: row.ClinicID, DisplayName: row.DisplayName,
-		BirthDate: row.BirthDate, Sex: row.Sex, Document: row.Document,
-		Phone: row.Phone, Email: row.Email, Street: row.Street,
-		City: row.City, State: row.State, PostalCode: row.PostalCode,
-		Notes: row.Notes, Status: row.Status, CreatedBy: row.CreatedBy,
-		CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
-	}
-}
-
-func patientInput(pt *repository.Patient) usecase.PatientInput {
+func patientInput(pt *repository.GetPatientWithCreatorRow) usecase.PatientInput {
 	return usecase.PatientInput{
 		DisplayName: pt.DisplayName,
-		BirthDate:   pt.BirthDate.String,
+		BirthDate:   orEmpty(pt.BirthDate),
 		Sex:         pt.Sex,
-		Document:    pt.Document.String,
-		Phone:       pt.Phone.String,
-		Email:       pt.Email.String,
-		Street:      pt.Street.String,
-		City:        pt.City.String,
-		State:       pt.State.String,
-		PostalCode:  pt.PostalCode.String,
-		Notes:       pt.Notes.String,
+		Document:    orEmpty(pt.Document),
+		Phone:       orEmpty(pt.Phone),
+		Email:       orEmpty(pt.Email),
+		Street:      orEmpty(pt.Street),
+		City:        orEmpty(pt.City),
+		State:       orEmpty(pt.State),
+		PostalCode:  orEmpty(pt.PostalCode),
+		Notes:       orEmpty(pt.Notes),
 	}
+}
+
+func orEmpty(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
 }
 
 // sort orders the rows by the sort query parameter:
@@ -378,11 +385,11 @@ func (h *Handler) sort(patients []repository.Patient, sortParam string) {
 		}
 	case "birth_date":
 		less = func(i, j int) bool {
-			return patients[i].BirthDate.String < patients[j].BirthDate.String
+			return orEmpty(patients[i].BirthDate) < orEmpty(patients[j].BirthDate)
 		}
 	case "-birth_date":
 		less = func(i, j int) bool {
-			return patients[i].BirthDate.String > patients[j].BirthDate.String
+			return orEmpty(patients[i].BirthDate) > orEmpty(patients[j].BirthDate)
 		}
 	}
 	sort.SliceStable(patients, less)
@@ -394,9 +401,9 @@ func (h *Handler) formError(c echo.Context, id string, input usecase.PatientInpu
 	if server.IsHtmx(c) {
 		// htmx only swaps 2xx/3xx responses, so the inline error must
 		// arrive with 200.
-		return render(c, http.StatusOK, views.PatientForm("", id, values(input), msg))
+		return server.Render(c, http.StatusOK, views.PatientForm("", id, values(input), msg))
 	}
-	return render(c, http.StatusBadRequest, views.PatientFormPage(
+	return server.Render(c, http.StatusBadRequest, views.PatientFormPage(
 		server.CSRFToken(c, h.csrf), server.Principal(c), id, values(input), msg))
 }
 
@@ -406,7 +413,7 @@ func (h *Handler) formError(c echo.Context, id string, input usecase.PatientInpu
 func (h *Handler) CheckDocument(c echo.Context) error {
 	document := strings.TrimSpace(c.FormValue("document"))
 	if document == "" {
-		return render(c, http.StatusOK, views.PatientDocumentError(""))
+		return server.Render(c, http.StatusOK, views.PatientDocumentError(""))
 	}
 	clinicID, err := h.clinicID(c.Request().Context())
 	if err != nil {
@@ -417,26 +424,7 @@ func (h *Handler) CheckDocument(c echo.Context) error {
 		return err
 	}
 	if exists {
-		return render(c, http.StatusOK, views.PatientDocumentError("This document is already registered"))
+		return server.Render(c, http.StatusOK, views.PatientDocumentError("This document is already registered"))
 	}
-	return render(c, http.StatusOK, views.PatientDocumentError(""))
-}
-
-func actorID(c echo.Context) string {
-	if p := server.Principal(c); p != nil {
-		return p.ID
-	}
-	return ""
-}
-
-func actorMail(c echo.Context) string {
-	if p := server.Principal(c); p != nil {
-		return p.Email
-	}
-	return ""
-}
-
-func render(c echo.Context, status int, comp templ.Component) error {
-	c.Response().Status = status
-	return comp.Render(c.Request().Context(), c.Response())
+	return server.Render(c, http.StatusOK, views.PatientDocumentError(""))
 }

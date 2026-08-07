@@ -7,9 +7,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"time"
 
-	"github.com/a-h/templ"
 	"github.com/labstack/echo/v4"
 
 	"librevita.org/internal/core/audit"
@@ -21,10 +19,6 @@ import (
 	"librevita.org/internal/domain/user/delivery/views"
 	"librevita.org/internal/domain/user/usecase"
 )
-
-// utcMilliLayout matches the timestamps written by the database
-// (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')).
-const utcMilliLayout = "2006-01-02T15:04:05.000Z"
 
 // Handler renders the auth pages and processes form submissions.
 type Handler struct {
@@ -74,7 +68,7 @@ func (h *Handler) SetupPage(c echo.Context) error {
 	if onboarded {
 		return c.Redirect(http.StatusFound, "/auth/login")
 	}
-	return render(c, http.StatusOK, views.Setup(server.CSRFToken(c, h.csrf), ""))
+	return server.Render(c, http.StatusOK, views.Setup(server.CSRFToken(c, h.csrf), ""))
 }
 
 // Setup creates the initial admin account and the clinic profile, then
@@ -110,7 +104,7 @@ func (h *Handler) Setup(c echo.Context) error {
 		var v *usecase.ValidationError
 		switch {
 		case errors.As(err, &v):
-			return render(c, http.StatusBadRequest, views.Setup(server.CSRFToken(c, h.csrf), v.Msg))
+			return server.Render(c, http.StatusBadRequest, views.Setup(server.CSRFToken(c, h.csrf), v.Msg))
 		case errors.Is(err, usecase.ErrAlreadyOnboarded):
 			return c.Redirect(http.StatusFound, "/auth/login")
 		default:
@@ -124,7 +118,7 @@ func (h *Handler) Setup(c echo.Context) error {
 
 // LoginPage renders the sign-in form.
 func (h *Handler) LoginPage(c echo.Context) error {
-	return render(c, http.StatusOK, views.Login(server.CSRFToken(c, h.csrf), ""))
+	return server.Render(c, http.StatusOK, views.Login(server.CSRFToken(c, h.csrf), ""))
 }
 
 // Login validates credentials and starts a session.
@@ -135,7 +129,7 @@ func (h *Handler) Login(c echo.Context) error {
 	})
 	if err != nil {
 		if errors.Is(err, usecase.ErrInvalidCredentials) {
-			return render(c, http.StatusUnauthorized,
+			return server.Render(c, http.StatusUnauthorized,
 				views.Login(server.CSRFToken(c, h.csrf), "Invalid email or password"))
 		}
 		return err
@@ -147,7 +141,7 @@ func (h *Handler) Login(c echo.Context) error {
 
 // RegisterPage renders the account creation form.
 func (h *Handler) RegisterPage(c echo.Context) error {
-	return render(c, http.StatusOK, views.Register(server.CSRFToken(c, h.csrf), ""))
+	return server.Render(c, http.StatusOK, views.Register(server.CSRFToken(c, h.csrf), ""))
 }
 
 // Register creates the account and starts a session.
@@ -161,9 +155,9 @@ func (h *Handler) Register(c echo.Context) error {
 		var v *usecase.ValidationError
 		switch {
 		case errors.As(err, &v):
-			return render(c, http.StatusBadRequest, views.Register(server.CSRFToken(c, h.csrf), v.Msg))
+			return server.Render(c, http.StatusBadRequest, views.Register(server.CSRFToken(c, h.csrf), v.Msg))
 		case errors.Is(err, usecase.ErrEmailTaken):
-			return render(c, http.StatusConflict, views.Register(server.CSRFToken(c, h.csrf), "That email is already registered"))
+			return server.Render(c, http.StatusConflict, views.Register(server.CSRFToken(c, h.csrf), "That email is already registered"))
 		default:
 			return err
 		}
@@ -206,10 +200,6 @@ func (h *Handler) Home(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-	policiesCount, err := h.policies.Count(ctx)
-	if err != nil {
-		return err
-	}
 	users, err := h.svc.ListRecentUsers(ctx, 8)
 	if err != nil {
 		return err
@@ -231,7 +221,7 @@ func (h *Handler) Home(c echo.Context) error {
 		Patients: patients,
 		Staff:    total - patients,
 		Users:    total,
-		Policies: policiesCount,
+		Policies: int64(len(policies)),
 		Clinic: views.ClinicInfo{
 			Name:     clinicRow.Name,
 			Timezone: clinicRow.Timezone,
@@ -247,7 +237,7 @@ func (h *Handler) Home(c echo.Context) error {
 			Name:   u.DisplayName,
 			Email:  u.Email,
 			Role:   u.Role,
-			Joined: formatWhen(clock, u.CreatedAt),
+			Joined: clock.FormatStored(u.CreatedAt),
 		})
 	}
 	for _, pl := range policies {
@@ -263,7 +253,7 @@ func (h *Handler) Home(c echo.Context) error {
 		stats.ActivityCursor = stats.Activity[len(stats.Activity)-1].ID
 	}
 
-	return render(c, http.StatusOK, views.Home(server.CSRFToken(c, h.csrf), server.Principal(c), stats))
+	return server.Render(c, http.StatusOK, views.Home(server.CSRFToken(c, h.csrf), server.Principal(c), stats))
 }
 
 // HomeActivity serves the dashboard activity feed fragment: the timeline
@@ -295,7 +285,7 @@ func (h *Handler) HomeActivity(c echo.Context) error {
 	} else if len(rows) == 8 {
 		cursor = rows[len(rows)-1].ID
 	}
-	return render(c, http.StatusOK, views.ActivityFeed(rows, cursor))
+	return server.Render(c, http.StatusOK, views.ActivityFeed(rows, cursor))
 }
 
 func (h *Handler) activityRows(ctx context.Context, activity []audit.EventRow, clock *clinic.Clock) []views.ActivityRow {
@@ -303,7 +293,7 @@ func (h *Handler) activityRows(ctx context.Context, activity []audit.EventRow, c
 	for _, ev := range activity {
 		row := views.ActivityRow{
 			ID:       ev.ID,
-			When:     formatWhen(clock, ev.CreatedAt),
+			When:     clock.FormatStored(ev.CreatedAt),
 			Action:   ev.Action,
 			Resource: ev.Resource,
 			Result:   ev.Result,
@@ -342,12 +332,12 @@ func (h *Handler) ProfilePage(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-	return render(c, http.StatusOK, views.Profile(server.CSRFToken(c, h.csrf), p, formatWhen(clock, user.CreatedAt)))
+	return server.Render(c, http.StatusOK, views.Profile(server.CSRFToken(c, h.csrf), p, clock.FormatStored(user.CreatedAt)))
 }
 
 // Admin renders the admin-only area.
 func (h *Handler) Admin(c echo.Context) error {
-	return render(c, http.StatusOK, views.Admin(server.CSRFToken(c, h.csrf), server.Principal(c)))
+	return server.Render(c, http.StatusOK, views.Admin(server.CSRFToken(c, h.csrf), server.Principal(c)))
 }
 
 // AdminPoliciesPage lists the dynamic CEL policies for editing, each with
@@ -425,7 +415,7 @@ func (h *Handler) policyCardFragment(c echo.Context, name, errMsg string) error 
 	}
 	for _, pv := range viewsList {
 		if pv.Name == name {
-			return render(c, http.StatusOK, views.PolicyCard(server.CSRFToken(c, h.csrf), pv, errMsg))
+			return server.Render(c, http.StatusOK, views.PolicyCard(server.CSRFToken(c, h.csrf), pv, errMsg))
 		}
 	}
 	return echo.NewHTTPError(http.StatusNotFound, "unknown policy")
@@ -437,7 +427,7 @@ func (h *Handler) policiesPage(c echo.Context, errMsg string) error {
 	if err != nil {
 		return err
 	}
-	return render(c, http.StatusOK, views.AdminPolicies(server.CSRFToken(c, h.csrf), server.Principal(c), viewsList, errMsg))
+	return server.Render(c, http.StatusOK, views.AdminPolicies(server.CSRFToken(c, h.csrf), server.Principal(c), viewsList, errMsg))
 }
 
 // policyViews decorates the stored policies with their change history,
@@ -464,7 +454,7 @@ func (h *Handler) policyViews(c echo.Context, ctx context.Context) ([]views.Poli
 				ChangedBy:      v.ChangedBy,
 				ChangedByEmail: v.ChangedByEmail,
 				Origin:         v.Origin,
-				When:           formatWhen(clock, v.CreatedAt),
+				When:           clock.FormatStored(v.CreatedAt),
 			})
 		}
 		out = append(out, views.PolicyView{Name: p.Name, Expression: p.Expression, History: rows})
@@ -472,17 +462,4 @@ func (h *Handler) policyViews(c echo.Context, ctx context.Context) ([]views.Poli
 	return out, nil
 }
 
-// formatWhen converts a database timestamp into the clinic's timezone,
-// keeping the raw value when it cannot be parsed.
-func formatWhen(clock *clinic.Clock, stored string) string {
-	t, err := time.Parse(utcMilliLayout, stored)
-	if err != nil {
-		return stored
-	}
-	return clock.FormatUI(t)
-}
 
-func render(c echo.Context, status int, comp templ.Component) error {
-	c.Response().Status = status
-	return comp.Render(c.Request().Context(), c.Response())
-}
