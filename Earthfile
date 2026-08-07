@@ -26,16 +26,17 @@ go-source-tools:
     FROM +tools
     COPY . .
 
-# Frontend build driven by Deno. The manifest (deno.json) declares the
-# dependencies and tasks; deno.lock pins them with integrity hashes, so no
-# version or checksum is hard-coded here. The alpine image ships the Deno
-# binary with busybox (shell and coreutils) included.
+# Frontend build driven by Node. The manifest (package.json) declares the
+# dependencies and scripts; package-lock.json pins them with integrity
+# hashes, so no version or checksum is hard-coded here. npm ci installs
+# exactly what the lock file describes.
 frontend:
-    FROM denoland/deno:alpine-2.9.5
-    ENV DENO_DIR=/root/.cache/deno
+    FROM node:26.7-alpine3.24
     WORKDIR /src
+    COPY package.json package-lock.json ./
+    RUN --mount=type=cache,target=/root/.npm npm ci
     COPY . .
-    RUN --mount=type=cache,target=/root/.cache/deno deno task build
+    RUN --mount=type=cache,target=/root/.npm npm run build
     RUN mkdir -p /static-out/js && cp /out/ui.js /out/theme.js /out/vendor/* /static-out/js/
     SAVE ARTIFACT /out/app.css AS LOCAL ./internal/ui/static/css/app.css
     SAVE ARTIFACT /static-out/js /static-js
@@ -118,3 +119,4 @@ all:
     BUILD +vet
     BUILD +build
     BUILD +image
+

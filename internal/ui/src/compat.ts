@@ -49,7 +49,11 @@ if (typeof Array.prototype.flat !== 'function') {
 }
 
 if (typeof Array.prototype.flatMap !== 'function') {
-  Array.prototype.flatMap = function (this: unknown[], mapper: (value: unknown, index: number, array: unknown[]) => unknown, thisArg?: unknown) {
+  Array.prototype.flatMap = function <U, R>(
+    this: U[],
+    mapper: (value: U, index: number, array: U[]) => R,
+    thisArg?: unknown,
+  ): R[] {
     return this.map(mapper, thisArg).flat();
   };
 }

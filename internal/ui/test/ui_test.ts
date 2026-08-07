@@ -1,15 +1,15 @@
-/// <reference lib="deno.ns" />
 // Unit tests for the component modules. linkedom provides the DOM shim;
 // the modules under test only touch the DOM inside init()/refresh(), so
 // the pure helpers are asserted directly.
 
-import { assertEquals } from 'jsr:@std/assert';
-import { parseHTML } from 'npm:linkedom';
-import { selectTab } from './tabs.ts';
-import { rowBoxes } from './table-select.ts';
-import { applyThemeClass, readStored } from './theme-pref.ts';
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+import { parseHTML } from 'linkedom';
+import { selectTab } from '../src/tabs.ts';
+import { rowBoxes } from '../src/table-select.ts';
+import { applyThemeClass, readStored } from '../src/theme-pref.ts';
 
-Deno.test('tabs.selectTab toggles panels and active classes', () => {
+test('tabs.selectTab toggles panels and active classes', () => {
   const { document } = parseHTML(
     '<div data-lv-tabs data-lv-active-class="act">' +
       '<button data-lv-tab="users" class="act">Users</button>' +
@@ -22,14 +22,14 @@ Deno.test('tabs.selectTab toggles panels and active classes', () => {
   selectTab(group, 'policies');
 
   const tabs = group.querySelectorAll('[data-lv-tab]');
-  assertEquals(tabs[0].className, '');
-  assertEquals(tabs[1].className, 'act');
+  assert.equal(tabs[0].className, '');
+  assert.equal(tabs[1].className, 'act');
   const panels = group.querySelectorAll('[data-lv-panel]');
-  assertEquals(panels[0].classList.contains('hidden'), true);
-  assertEquals(panels[1].classList.contains('hidden'), false);
+  assert.equal(panels[0].classList.contains('hidden'), true);
+  assert.equal(panels[1].classList.contains('hidden'), false);
 });
 
-Deno.test('tableSelect.rowBoxes excludes the select-all box', () => {
+test('tableSelect.rowBoxes excludes the select-all box', () => {
   const { document } = parseHTML(
     '<div data-lv-table-select>' +
       '<input type="checkbox" name="select_all">' +
@@ -38,26 +38,26 @@ Deno.test('tableSelect.rowBoxes excludes the select-all box', () => {
       '</div>',
   );
   const group = document.querySelector('[data-lv-table-select]') as Element;
-  assertEquals(rowBoxes(group).length, 2);
+  assert.equal(rowBoxes(group).length, 2);
 });
 
-Deno.test('themePref.readStored falls back to system', () => {
-  assertEquals(readStored(), 'system');
+test('themePref.readStored falls back to system', () => {
+  assert.equal(readStored(), 'system');
 });
 
-Deno.test('themePref.applyThemeClass sets the dark class', () => {
+test('themePref.applyThemeClass sets the dark class', () => {
   const { document, window } = parseHTML('<html></html>');
-  const orig = globalThis.document;
+  const origDocument = globalThis.document;
   const origWindow = globalThis.window;
   (globalThis as Record<string, unknown>).document = document;
   (globalThis as Record<string, unknown>).window = window;
   try {
     applyThemeClass('dark');
-    assertEquals(document.documentElement.classList.contains('dark'), true);
+    assert.equal(document.documentElement.classList.contains('dark'), true);
     applyThemeClass('light');
-    assertEquals(document.documentElement.classList.contains('dark'), false);
+    assert.equal(document.documentElement.classList.contains('dark'), false);
   } finally {
-    (globalThis as Record<string, unknown>).document = orig;
+    (globalThis as Record<string, unknown>).document = origDocument;
     (globalThis as Record<string, unknown>).window = origWindow;
   }
 });

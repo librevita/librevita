@@ -1,11 +1,14 @@
-// LibreVita frontend build, driven by Deno.
-// Manifest: deno.json + deno.lock (no version pinning in Earthly).
-// Produces /out/app.css, /out/ui.js, and /out/vendor/*.
+// LibreVita frontend build, driven by Node.
+// Manifest: package.json + package-lock.json (no version pinning in
+// Earthly). Produces /out/app.css, /out/ui.js, /out/theme.js, and
+// /out/vendor/*.
 
 import * as esbuild from 'esbuild';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { readFileSync } from 'node:fs';
 
 // Output root; Earthly provides /out, local runs may override with OUT.
-const out = Deno.env.get('OUT') ?? '/out';
+const out = process.env.OUT ?? '/out';
 
 // Browser floor: Firefox 52 ESR / Goanna. esbuild's firefox52 target
 // rejects for-of and destructuring (its feature matrix is conservative,
@@ -21,12 +24,12 @@ const xpForbidden = /\?\.|\?\?=|\?\?|\bcatch\s*\{/;
 // a binding so the floor can parse the file.
 const xpSupported = { 'optional-catch-binding': false };
 
-function assertXpFloor(path: string): void {
-  const code = Deno.readTextFileSync(path);
+function assertXpFloor(file) {
+  const code = readFileSync(file, 'utf8');
   const offenders = code.match(xpForbidden) ?? [];
   if (offenders.length > 0) {
     throw new Error(
-      `${path} contains syntax the XP floor cannot parse ` +
+      `${file} contains syntax the XP floor cannot parse ` +
         `(${offenders.length} matches of ?./??): lower it or drop the dependency`,
     );
   }
@@ -58,19 +61,18 @@ await esbuild.build({
 });
 assertXpFloor(`${out}/theme.js`);
 
-// Runtime assets from the pinned npm packages. HTMX 1.9 is IE11-compatible
-// and is copied verbatim; the Alpine CSP bundle uses ES2020 syntax
-// (`?.`/`??`), so it is lowered to the XP floor first.
-await Deno.mkdir(`${out}/vendor`, { recursive: true });
+// Runtime assets from the pinned npm packages. HTMX 1.9 is
+// IE11-compatible and is copied verbatim.
+await mkdir(`${out}/vendor`, { recursive: true });
 
-async function copyAsset(specifier: string, dest: string): Promise<void> {
+async function copyAsset(specifier, dest) {
   const url = import.meta.resolve(specifier);
-  const data = await Deno.readFile(new URL(url));
-  await Deno.writeFile(dest, data);
+  const data = await readFile(new URL(url));
+  await writeFile(dest, data);
   assertXpFloor(dest);
 }
 
-await copyAsset('htmx/dist/htmx.min.js', `${out}/vendor/htmx-1.9.12.min.js`);
-await copyAsset('htmx/dist/ext/sse.js', `${out}/vendor/htmx-sse-1.9.12.js`);
+await copyAsset('htmx.org/dist/htmx.min.js', `${out}/vendor/htmx-1.9.12.min.js`);
+await copyAsset('htmx.org/dist/ext/sse.js', `${out}/vendor/htmx-sse-1.9.12.js`);
 
 await esbuild.stop();
