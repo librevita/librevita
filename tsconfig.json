@@ -10,6 +10,6 @@
     "skipLibCheck": true,
     "types": []
   },
-  "include": ["internal/ui/src/**/*.ts"],
-  "exclude": ["internal/ui/build.ts", "internal/ui/src/**/*.test.ts"]
+  "include": ["internal/ui/ts/**/*.ts"],
+  "exclude": ["internal/ui/build.ts", "internal/ui/ts/ui_test.ts", "internal/ui/ts/**/*.test.ts"]
 }
