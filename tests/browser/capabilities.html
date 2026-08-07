@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>LibreVita browser capability matrix</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 2rem; background: #f9fafb; color: #111827; }
+  table { border-collapse: collapse; width: 100%; max-width: 720px; background: #fff; }
+  th, td { border: 1px solid #e5e7eb; padding: .5rem .75rem; text-align: left; font-size: .875rem; }
+  th { background: #f3f4f6; }
+  .pass { color: #059669; font-weight: 700; }
+  .fail { color: #dc2626; font-weight: 700; }
+  .warn { color: #d97706; font-weight: 700; }
+  #summary { margin-top: 1rem; font-weight: 700; }
+</style>
+</head>
+<body>
+<h1>LibreVita browser capability matrix</h1>
+<p>Feature checks for the Windows XP-era floor (Firefox 52 ESR / Goanna).
+Open this file directly (file://) so syntax tests are not blocked by the
+app's Content-Security-Policy. CSS-only checks are safe to run served.</p>
+<table id="results">
+  <thead><tr><th>Feature</th><th>Status</th><th>Required for LibreVita</th></tr></thead>
+  <tbody></tbody>
+</table>
+<p id="summary"></p>
+<script>
+var tests = [];
+var required = 0;
+var passed = 0;
+
+function add(name, ok, needed) {
+  tests.push({ name: name, ok: ok, needed: needed });
+  if (needed) { required++; if (ok) { passed++; } }
+}
+
+// --- JavaScript syntax (parses in the current engine) ---
+function parses(code) {
+  try { new Function(code); return true; } catch (e) { return false; }
+}
+add("optional chaining (?.)", parses("var a = b ?. c;"), false);
+add("nullish coalescing (??)", parses("var a = b ?? c;"), false);
+add("optional catch binding (catch {})", parses("try {} catch {}"), true);
+add("destructuring + for-of", parses("for (var [a] of []) {}"), true);
+add("spread / rest", parses("function f(...a) { return [...a]; }"), true);
+add("template literals", parses("var s = `x ${1}`;"), true);
+add("arrow functions", parses("var f = (a) => a;"), true);
+add("class syntax", parses("class A { m() {} }"), true);
+add("let/const", parses("let a = 1; const b = 2;"), true);
+
+// --- JavaScript APIs ---
+add("localStorage", typeof window.localStorage !== "undefined", true);
+add("matchMedia", typeof window.matchMedia === "function", false);
+add("addEventListener", typeof document.addEventListener === "function", true);
+add("classList.toggle", typeof document.documentElement.classList.toggle === "function", true);
+add("querySelectorAll", typeof document.querySelectorAll === "function", true);
+
+// --- CSS ---
+function supports(prop, value) {
+  if (typeof CSS === "undefined" || typeof CSS.supports !== "function") { return false; }
+  return CSS.supports(prop, value);
+}
+add("CSS custom properties", supports("--x", "1"), true);
+add("flexbox gap", supports("gap", "1rem") && CSS.supports("display", "flex"), true);
+add("CSS grid", supports("display", "grid"), true);
+add(":is() selector", CSS.supports("selector", ":is(a)"), true);
+add(":where() selector", CSS.supports("selector", ":where(a)"), true);
+add(":focus-visible", CSS.supports("selector", "a:focus-visible"), false);
+add("prefers-color-scheme media", CSS.supports("(prefers-color-scheme: dark)", "background: #000"), false);
+add("media queries", CSS.supports("(min-width: 768px)", "display: block"), true);
+
+// --- Render ---
+var tbody = document.querySelector("#results tbody");
+for (var i = 0; i < tests.length; i++) {
+  var tr = document.createElement("tr");
+  var ok = tests[i].ok;
+  var status = ok ? "pass" : "fail";
+  var label = ok ? "PASS" : "FAIL";
+  if (!tests[i].needed && !ok) { status = "warn"; label = "OPTIONAL"; }
+  tr.innerHTML = "<td>" + tests[i].name + "</td>" +
+    "<td class=\"" + status + "\">" + label + "</td>" +
+    "<td>" + (tests[i].needed ? "yes" : "no") + "</td>";
+  tbody.appendChild(tr);
+}
+document.getElementById("summary").textContent =
+  "Floor verdict: " + passed + " / " + required + " required features " +
+  (passed === required ? "PASS — LibreVita runs on this browser." : "FAIL — some features are missing.");
+</script>
+</body>
+</html>

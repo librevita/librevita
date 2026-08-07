@@ -20,6 +20,7 @@ import (
 	"librevita.org/internal/core/server"
 	"librevita.org/internal/core/telemetry"
 	"librevita.org/internal/domain/clinic"
+	"librevita.org/internal/domain/patient"
 	"librevita.org/internal/domain/user"
 	"librevita.org/internal/ui"
 )
@@ -45,5 +46,6 @@ func main() {
 		server.Module,
 		ui.Module,
 		user.Module,
+		patient.Module,
 	).Run()
 }

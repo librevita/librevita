@@ -1,0 +1,208 @@
+package views
+
+import (
+	"librevita.org/internal/core/auth"
+	"librevita.org/internal/domain/patient/repository"
+	"librevita.org/internal/ui/components"
+	"librevita.org/internal/ui/layouts"
+)
+
+// PatientFormValues carries the current field values, so the form can
+// redraw with the user's input after a validation error.
+type PatientFormValues struct {
+	DisplayName string
+	BirthDate   string
+	Sex         string
+	Document    string
+	Phone       string
+	Email       string
+	Street      string
+	City        string
+	State       string
+	PostalCode  string
+	Notes       string
+}
+
+// PatientFormPage renders the create (patient nil) or edit form.
+templ PatientFormPage(token string, p *auth.Principal, id string, values PatientFormValues, errMsg string) {
+	@layouts.App(patientFormTitle(id), token, p, "patients") {
+		<div class="mx-auto max-w-3xl">
+			@components.Card() {
+				@components.CardHeader(patientFormTitle(id)) {
+					<a class="inline-flex items-center rounded-lg p-2 text-sm font-medium text-indigo-700 hover:bg-gray-100 dark:text-indigo-400 dark:hover:bg-gray-700" href="/patients">Back to registry</a>
+				}
+				if errMsg != "" {
+					<div class="mb-4">@components.Alert(errMsg, false)</div>
+				}
+				<form method="post" action={ patientFormAction(id) } class="space-y-6">
+					<input type="hidden" name="_csrf" value={ token }>
+					<fieldset class="space-y-4">
+						<legend class="text-sm font-semibold text-gray-900 dark:text-white">Identity</legend>
+						<div>
+							<label class="label" for="display_name">Full name</label>
+							<input class="input" id="display_name" type="text" name="display_name" value={ values.DisplayName } required autofocus>
+						</div>
+						<div class="flex flex-wrap gap-4">
+							<div class="flex-1">
+								<label class="label" for="birth_date">Birth date</label>
+								<input class="input" id="birth_date" type="date" name="birth_date" value={ values.BirthDate }>
+							</div>
+							<div class="flex-1">
+								<label class="label" for="sex">Sex</label>
+								<select class="input" id="sex" name="sex">
+									@sexOption("unknown", "Not specified", values.Sex)
+									@sexOption("female", "Female", values.Sex)
+									@sexOption("male", "Male", values.Sex)
+									@sexOption("other", "Other", values.Sex)
+								</select>
+							</div>
+						</div>
+						<div class="flex flex-wrap gap-4">
+							<div class="flex-1">
+								<label class="label" for="document">Document</label>
+								<input class="input" id="document" type="text" name="document" value={ values.Document }>
+							</div>
+							<div class="flex-1">
+								<label class="label" for="phone">Phone</label>
+								<input class="input" id="phone" type="tel" name="phone" value={ values.Phone }>
+							</div>
+						</div>
+						<div>
+							<label class="label" for="email">Email</label>
+							<input class="input" id="email" type="email" name="email" value={ values.Email }>
+						</div>
+					</fieldset>
+					<fieldset class="space-y-4">
+						<legend class="text-sm font-semibold text-gray-900 dark:text-white">Address</legend>
+						<div>
+							<label class="label" for="street">Street</label>
+							<input class="input" id="street" type="text" name="street" value={ values.Street }>
+						</div>
+						<div class="flex flex-wrap gap-4">
+							<div class="flex-1">
+								<label class="label" for="city">City</label>
+								<input class="input" id="city" type="text" name="city" value={ values.City }>
+							</div>
+							<div class="flex-1">
+								<label class="label" for="state">State</label>
+								<input class="input" id="state" type="text" name="state" value={ values.State }>
+							</div>
+							<div class="flex-1">
+								<label class="label" for="postal_code">Postal code</label>
+								<input class="input" id="postal_code" type="text" name="postal_code" value={ values.PostalCode }>
+							</div>
+						</div>
+					</fieldset>
+					<fieldset class="space-y-4">
+						<legend class="text-sm font-semibold text-gray-900 dark:text-white">Notes</legend>
+						<textarea class="input" id="notes" name="notes" rows="4">{ values.Notes }</textarea>
+					</fieldset>
+					<div class="flex items-center gap-3">
+						<button class="btn" type="submit">{ patientFormSubmit(id) }</button>
+						<a class="btn-secondary" href="/patients">Cancel</a>
+					</div>
+				</form>
+			}
+		</div>
+	}
+}
+
+templ sexOption(value string, label string, selected string) {
+	if value == selected {
+		<option value={ value } selected>{ label }</option>
+	} else {
+		<option value={ value }>{ label }</option>
+	}
+}
+
+func patientFormTitle(id string) string {
+	if id == "" {
+		return "New patient"
+	}
+	return "Edit patient"
+}
+
+func patientFormAction(id string) string {
+	if id == "" {
+		return "/patients"
+	}
+	return "/patients/" + id
+}
+
+func patientFormSubmit(id string) string {
+	if id == "" {
+		return "Create patient"
+	}
+	return "Save changes"
+}
+
+// PatientDetailPage renders the patient record.
+templ PatientDetailPage(token string, p *auth.Principal, pt *repository.Patient, errMsg string) {
+	@layouts.App("Patient", token, p, "patients") {
+		<div class="mx-auto max-w-4xl">
+			@components.Card() {
+				@components.CardHeader(pt.DisplayName) {
+					<a class="inline-flex items-center rounded-lg p-2 text-sm font-medium text-indigo-700 hover:bg-gray-100 dark:text-indigo-400 dark:hover:bg-gray-700" href="/patients">Back to registry</a>
+				}
+				if errMsg != "" {
+					<div class="mb-4">@components.Alert(errMsg, false)</div>
+				}
+				<div class="flex items-center gap-4">
+					@components.Avatar(components.Initials(pt.DisplayName), "h-16 w-16 bg-indigo-600 text-white text-xl")
+					<div>
+						<p class="text-sm text-gray-500 dark:text-gray-400">Registered { pt.CreatedAt }</p>
+						<p class="mt-1 text-xs text-gray-400 dark:text-gray-400">Updated { pt.UpdatedAt }</p>
+					</div>
+					<div class="ml-auto">@patientStatusBadge(pt.Status)</div>
+				</div>
+				<dl class="mt-6 grid grid-cols-1 gap-4 text-sm sm:grid-cols-2">
+					@detailField("Birth date", pt.BirthDate.String)
+					@detailField("Sex", pt.Sex)
+					@detailField("Document", pt.Document.String)
+					@detailField("Phone", pt.Phone.String)
+					@detailField("Email", pt.Email.String)
+					@detailField("Address", addressLine(pt))
+				</dl>
+				if pt.Notes.Valid && pt.Notes.String != "" {
+					<div class="mt-6">
+						<h4 class="text-sm font-semibold text-gray-900 dark:text-white">Notes</h4>
+						<p class="mt-2 whitespace-pre-wrap text-sm text-gray-600 dark:text-gray-300">{ pt.Notes.String }</p>
+					</div>
+				}
+				<div class="mt-6 flex items-center gap-3">
+					<a class="btn" href={ "/patients/" + pt.ID + "/edit" }>Edit patient</a>
+					<form method="post" action={ "/patients/" + pt.ID + "/archive" }>
+						<input type="hidden" name="_csrf" value={ token }>
+						<button class="btn-secondary" type="submit">Archive</button>
+					</form>
+				</div>
+			}
+		</div>
+	}
+}
+
+templ detailField(label string, value string) {
+	<div>
+		<dt class="text-gray-500 dark:text-gray-400">{ label }</dt>
+		<dd class="mt-0.5 font-medium text-gray-900 dark:text-white">{ orDash(value) }</dd>
+	</div>
+}
+
+templ patientStatusBadge(status string) {
+	@statusBadge(status)
+}
+
+func addressLine(pt *repository.Patient) string {
+	parts := []string{pt.Street.String, pt.City.String, pt.State.String, pt.PostalCode.String}
+	out := ""
+	for _, part := range parts {
+		if part == "" {
+			continue
+		}
+		if out != "" {
+			out += ", "
+		}
+		out += part
+	}
+	return out
+}

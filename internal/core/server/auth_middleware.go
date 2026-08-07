@@ -86,5 +86,5 @@ func RequirePolicy(pe *policy.PolicyEngine, auditLogger *audit.Logger, log *slog
 }
 
 func redirectLogin(ctx echo.Context) error {
-	return ctx.Redirect(http.StatusFound, LoginPath)
+	return HtmxRedirect(ctx, LoginPath)
 }

@@ -17,6 +17,7 @@ import (
 	"librevita.org/internal/core/database"
 	"librevita.org/internal/core/policy"
 	"librevita.org/internal/domain/clinic"
+	patientusecase "librevita.org/internal/domain/patient/usecase"
 	httphandler "librevita.org/internal/domain/user/delivery/http"
 	"librevita.org/internal/domain/user/usecase"
 )
@@ -56,7 +57,8 @@ func newHandler(t *testing.T, db *sql.DB) (*httphandler.Handler, *auth.SessionMa
 	if err := policies.Load(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	h := httphandler.NewHandler(svc, csrf, sessions, policies, auditLogger, clinic.NewClockProvider(db))
+	patientSvc := patientusecase.NewService(db, log)
+	h := httphandler.NewHandler(svc, patientSvc, csrf, sessions, policies, auditLogger, clinic.NewClockProvider(db))
 	return h, sessions, svc
 }
 

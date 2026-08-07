@@ -1,0 +1,13 @@
+package components
+
+// Alert renders an error message. With oob set, the message carries
+// hx-swap-oob and lands in the #app-alert target that the shell renders,
+// so fragment responses can surface errors without replacing the
+// fragment. Page-level alerts render without the id to avoid duplicates.
+templ Alert(message string, oob bool) {
+	if oob {
+		<div id="app-alert" role="alert" hx-swap-oob="true" class="alert">{ message }</div>
+	} else {
+		<div role="alert" class="alert">{ message }</div>
+	}
+}

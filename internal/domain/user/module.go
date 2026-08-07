@@ -29,6 +29,11 @@ const (
 var Module = fx.Module("user",
 	fx.Provide(usecase.NewService),
 	fx.Provide(httphandler.NewHandler),
+	// Share the setup gate with other modules so every route is gated
+	// uniformly.
+	fx.Provide(func(h *httphandler.Handler) server.SetupGate {
+		return h.SetupGate
+	}),
 	fx.Invoke(registerRoutes),
 )
 
