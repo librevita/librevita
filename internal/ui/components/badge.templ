@@ -1,5 +1,7 @@
 package components
 
+import "librevita.org/internal/ui/shared"
+
 // Avatar renders a circular initials avatar. Pass the sizing and color
 // classes, e.g. "h-8 w-8 bg-indigo-600 text-white".
 templ Avatar(initials string, class string) {
@@ -8,5 +10,5 @@ templ Avatar(initials string, class string) {
 
 // Badge renders a role badge with the role-specific colors.
 templ Badge(role string) {
-	<span class={ "rounded-md px-2.5 py-0.5 text-xs font-medium " + RoleBadgeClass(role) }>{ role }</span>
+	<span class={ "rounded-md px-2.5 py-0.5 text-xs font-medium " + shared.RoleBadgeClass(role) }>{ role }</span>
 }

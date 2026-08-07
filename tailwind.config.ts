@@ -1,4 +1,4 @@
-import type { Config } from 'npm:tailwindcss@3.4.17';
+import type { Config } from 'tailwindcss';
 
 // Palette override: Tailwind 3.4 defaults to oklch colors, which XP-era
 // browsers cannot parse. The values below are the classic hex palette.
@@ -8,6 +8,10 @@ const config: Config = {
     './internal/**/*.templ',
     './internal/ui/src/**/*.ts',
   ],
+  // Button variants are composed dynamically in helpers.go, so the
+  // literal class names never reach the content scan; the JIT would
+  // tree-shake them out of @layer components.
+  safelist: ['btn', 'btn-secondary', 'btn-danger'],
   theme: {
     colors: {
       transparent: 'transparent',

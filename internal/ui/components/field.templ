@@ -1,0 +1,15 @@
+package components
+
+// Label renders the standard field label.
+templ Label(forID string, text string) {
+	<label class="label" for={ forID }>{ text }</label>
+}
+
+// Field groups a label with its control. The control and any hint or
+// error text go in the children, in that order.
+templ Field(labelFor string, label string) {
+	<div>
+		@Label(labelFor, label)
+		{ children... }
+	</div>
+}

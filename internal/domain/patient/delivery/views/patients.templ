@@ -1,6 +1,7 @@
 package views
 
 import (
+	"librevita.org/internal/ui/shared"
 	"strconv"
 
 	"librevita.org/internal/core/auth"
@@ -129,7 +130,7 @@ templ PatientRowCells(pt PatientRow) {
 	</td>
 	<td class="whitespace-nowrap p-4">
 		<div class="flex items-center gap-3">
-			@components.Avatar(components.Initials(pt.DisplayName), "h-8 w-8 bg-indigo-100 text-indigo-700 dark:bg-indigo-900 dark:text-indigo-300")
+			@components.Avatar(shared.Initials(pt.DisplayName), "h-8 w-8 bg-indigo-100 text-indigo-700 dark:bg-indigo-900 dark:text-indigo-300")
 			<div class="min-w-0">
 				<a class="truncate font-medium text-gray-900 hover:text-indigo-600 dark:text-white dark:hover:text-indigo-400" href={ "/patients/" + pt.ID }>{ pt.DisplayName }</a>
 				if pt.Email != "" {

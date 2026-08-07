@@ -1,0 +1,17 @@
+package components
+
+import "librevita.org/internal/ui/shared"
+
+// Button renders a styled button. kind selects the style class
+// ("primary", "secondary" or "danger"). Pass type ("submit" for form
+// submission), hx-* and other attributes in attrs; do not pass class.
+// There is no default type: without one, the browser default applies
+// (submit inside a form), so pass type="button" for JS-only actions.
+templ Button(kind string, label string, attrs templ.Attributes) {
+	<button { attrs... } class={ shared.BtnClass(kind) }>{ label }</button>
+}
+
+// ButtonLink renders a styled link that looks like a button.
+templ ButtonLink(kind string, href string, label string, attrs templ.Attributes) {
+	<a href={ href } { attrs... } class={ shared.BtnClass(kind) }>{ label }</a>
+}

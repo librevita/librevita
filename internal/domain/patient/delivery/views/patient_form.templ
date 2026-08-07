@@ -1,6 +1,7 @@
 package views
 
 import (
+	"librevita.org/internal/ui/shared"
 	"librevita.org/internal/core/auth"
 	"librevita.org/internal/domain/patient/repository"
 	"librevita.org/internal/ui/components"
@@ -49,71 +50,75 @@ templ PatientForm(token string, id string, values PatientFormValues, errMsg stri
 		}
 		<fieldset class="space-y-4">
 			<legend class="text-sm font-semibold text-gray-900 dark:text-white">Identity</legend>
-			<div>
-				<label class="label" for="display_name">Full name</label>
-				<input class="input" id="display_name" type="text" name="display_name" value={ values.DisplayName } required autofocus>
+			@components.Field("display_name", "Full name") {
+				@components.Input("display_name", templ.Attributes{ "id": "display_name", "type": "text", "value": values.DisplayName, "required": true, "autofocus": true })
+			}
+			<div class="flex flex-wrap gap-4">
+				<div class="flex-1">
+					@components.Field("birth_date", "Birth date") {
+						@components.Input("birth_date", templ.Attributes{ "id": "birth_date", "type": "date", "value": values.BirthDate })
+					}
+				</div>
+				<div class="flex-1">
+					@components.Field("sex", "Sex") {
+						@components.Select("sex", templ.Attributes{ "id": "sex" }) {
+							@sexOption("unknown", "Not specified", values.Sex)
+							@sexOption("female", "Female", values.Sex)
+							@sexOption("male", "Male", values.Sex)
+							@sexOption("other", "Other", values.Sex)
+						}
+					}
+				</div>
 			</div>
 			<div class="flex flex-wrap gap-4">
 				<div class="flex-1">
-					<label class="label" for="birth_date">Birth date</label>
-					<input class="input" id="birth_date" type="date" name="birth_date" value={ values.BirthDate }>
+					@components.Field("document", "Document") {
+						@components.Input("document", templ.Attributes{ "id": "document", "type": "text", "value": values.Document, "hx-post": "/patients/check-document", "hx-trigger": "blur changed", "hx-include": "#patient-id", "hx-target": "#document-error", "hx-swap": "innerHTML" })
+						<p id="document-error" class="mt-1 text-xs text-red-600 dark:text-red-400"></p>
+					}
 				</div>
 				<div class="flex-1">
-					<label class="label" for="sex">Sex</label>
-					<select class="input" id="sex" name="sex">
-						@sexOption("unknown", "Not specified", values.Sex)
-						@sexOption("female", "Female", values.Sex)
-						@sexOption("male", "Male", values.Sex)
-						@sexOption("other", "Other", values.Sex)
-					</select>
+					@components.Field("phone", "Phone") {
+						@components.Input("phone", templ.Attributes{ "id": "phone", "type": "tel", "value": values.Phone })
+					}
 				</div>
 			</div>
-			<div class="flex flex-wrap gap-4">
-				<div class="flex-1">
-					<label class="label" for="document">Document</label>
-					<input class="input" id="document" type="text" name="document" value={ values.Document }
-						hx-post="/patients/check-document" hx-trigger="blur changed" hx-include="#patient-id"
-						hx-target="#document-error" hx-swap="innerHTML">
-					<p id="document-error" class="mt-1 text-xs text-red-600 dark:text-red-400"></p>
-				</div>
-				<div class="flex-1">
-					<label class="label" for="phone">Phone</label>
-					<input class="input" id="phone" type="tel" name="phone" value={ values.Phone }>
-				</div>
-			</div>
-			<div>
-				<label class="label" for="email">Email</label>
-				<input class="input" id="email" type="email" name="email" value={ values.Email }>
-			</div>
+			@components.Field("email", "Email") {
+				@components.Input("email", templ.Attributes{ "id": "email", "type": "email", "value": values.Email })
+			}
 		</fieldset>
 		<fieldset class="space-y-4">
 			<legend class="text-sm font-semibold text-gray-900 dark:text-white">Address</legend>
-			<div>
-				<label class="label" for="street">Street</label>
-				<input class="input" id="street" type="text" name="street" value={ values.Street }>
-			</div>
+			@components.Field("street", "Street") {
+				@components.Input("street", templ.Attributes{ "id": "street", "type": "text", "value": values.Street })
+			}
 			<div class="flex flex-wrap gap-4">
 				<div class="flex-1">
-					<label class="label" for="city">City</label>
-					<input class="input" id="city" type="text" name="city" value={ values.City }>
+					@components.Field("city", "City") {
+						@components.Input("city", templ.Attributes{ "id": "city", "type": "text", "value": values.City })
+					}
 				</div>
 				<div class="flex-1">
-					<label class="label" for="state">State</label>
-					<input class="input" id="state" type="text" name="state" value={ values.State }>
+					@components.Field("state", "State") {
+						@components.Input("state", templ.Attributes{ "id": "state", "type": "text", "value": values.State })
+					}
 				</div>
 				<div class="flex-1">
-					<label class="label" for="postal_code">Postal code</label>
-					<input class="input" id="postal_code" type="text" name="postal_code" value={ values.PostalCode }>
+					@components.Field("postal_code", "Postal code") {
+						@components.Input("postal_code", templ.Attributes{ "id": "postal_code", "type": "text", "value": values.PostalCode })
+					}
 				</div>
 			</div>
 		</fieldset>
 		<fieldset class="space-y-4">
 			<legend class="text-sm font-semibold text-gray-900 dark:text-white">Notes</legend>
-			<textarea class="input" id="notes" name="notes" rows="4">{ values.Notes }</textarea>
+			@components.Textarea("notes", templ.Attributes{ "id": "notes", "rows": "4" }) {
+				{ values.Notes }
+			}
 		</fieldset>
 		<div class="flex items-center gap-3">
-			<button class="btn" type="submit">{ patientFormSubmit(id) }</button>
-			<a class="btn-secondary" hx-target="body" href="/patients">Cancel</a>
+			@components.Button("primary", patientFormSubmit(id), templ.Attributes{ "type": "submit" })
+			@components.ButtonLink("secondary", "/patients", "Cancel", templ.Attributes{ "hx-target": "body" })
 		</div>
 	</form>
 }
@@ -159,7 +164,7 @@ templ PatientDetailPage(token string, p *auth.Principal, pt *repository.GetPatie
 					<div class="mb-4">@components.Alert(errMsg, false)</div>
 				}
 				<div class="flex items-center gap-4">
-					@components.Avatar(components.Initials(pt.DisplayName), "h-16 w-16 bg-indigo-600 text-white text-xl")
+					@components.Avatar(shared.Initials(pt.DisplayName), "h-16 w-16 bg-indigo-600 text-white text-xl")
 					<div>
 						<p class="text-sm text-gray-500 dark:text-gray-400">Registered { pt.CreatedAt }</p>
 						if createdBy != "" {
@@ -184,10 +189,10 @@ templ PatientDetailPage(token string, p *auth.Principal, pt *repository.GetPatie
 					</div>
 				}
 				<div class="mt-6 flex items-center gap-3">
-					<a class="btn" href={ "/patients/" + pt.ID + "/edit" }>Edit patient</a>
+					@components.ButtonLink("primary", "/patients/" + pt.ID + "/edit", "Edit patient", nil)
 					<form method="post" action={ "/patients/" + pt.ID + "/archive" }>
 						<input type="hidden" name="_csrf" value={ token }>
-						<button class="btn-secondary" type="submit">Archive</button>
+						@components.Button("secondary", "Archive", templ.Attributes{ "type": "submit" })
 					</form>
 				</div>
 			}
