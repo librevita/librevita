@@ -1,22 +1,13 @@
-// Ambient declarations for the globals the frontend uses. Kept minimal and
-// aligned with the XP floor: the TS lib (ES2017 + DOM) already rejects APIs
-// missing from Firefox 52 / Goanna.
-
-interface HtmxConfig {
-  allowEval: boolean;
-  allowScriptTags: boolean;
-  includeIndicatorStyles: boolean;
-}
-
-declare const htmx: {
-  config: HtmxConfig;
-};
+// Ambient declarations for the globals the frontend uses. The global
+// `htmx` object and its config come from the htmx-types package; the
+// interfaces below are the event payloads this application consumes.
+/// <reference types="htmx-types" />
 
 declare interface HtmxRequestDetail {
   headers: Record<string, string>;
 }
 
 declare interface HtmxAfterSwapDetail {
-  elt: Element | null;
+  elt: HTMLElement | null;
 }
 
