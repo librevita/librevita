@@ -22,7 +22,7 @@ if (typeof window !== 'undefined') {
     window.globalThis = window;
   }
   if (typeof window.queueMicrotask !== 'function') {
-    // Firefox 52 has Promise; a microtask queue is enough for Alpine.
+    // Firefox 52 has Promise; a microtask queue is enough.
     window.queueMicrotask = (callback) => {
       Promise.resolve().then(callback);
     };

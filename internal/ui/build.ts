@@ -10,7 +10,7 @@ import { readFileSync } from 'node:fs';
 // Output root; Earthly provides /out, local runs may override with OUT.
 const out = process.env.OUT ?? '/out';
 
-// Browser floor: Firefox 52 ESR / Goanna. esbuild's firefox52 target
+// Browser floor: Firefox 52 ESR / Goanna. esbuild's firefox52 feature matrix
 // rejects for-of and destructuring (its feature matrix is conservative,
 // even though Firefox 52 supports both natively); firefox58 accepts them
 // while still lowering `?.`/`??`/class fields, so the output stays

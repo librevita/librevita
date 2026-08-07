@@ -7,7 +7,7 @@ import (
 )
 
 // Content-Security-Policy without unsafe-eval or unsafe-inline. The stack
-// (HTMX with allowEval=false, ES5 widgets, no Alpine) fits this policy; the
+// (HTMX with allowEval=false, first-party ES5 widgets) fits this policy; the
 // static handler overrides Cache-Control for cacheable assets.
 const contentSecurityPolicy = "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
 

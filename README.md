@@ -41,10 +41,10 @@ progressive. Assets are embedded in the binary (`internal/ui`, served under
 
 - **HTMX 1.9.12** for hypermedia interactions (`allowEval=false`,
   `allowScriptTags=false`), with the SSE extension for agenda live updates
-- **Alpine.js CSP build 3.15.12** restricted to ephemeral client state
-  (menus, modals, tabs); clinical state always lives on the server. The
-  CSP build disables `x-html` and keeps the strict Content-Security-Policy
-  (`script-src 'self'`, no `unsafe-eval`)
+- **First-party TypeScript** modules (bundled by esbuild) for the
+  ephemeral client state (menus, tabs, theme); clinical state always
+  lives on the server. The strict Content-Security-Policy
+  (`script-src 'self'`, no `unsafe-eval`) is never relaxed
 - **Tailwind CSS 3.4.17** compiled at build time with a hex palette
   override (the v3.4 default `oklch` colors are unparseable by XP-era
   browsers)
