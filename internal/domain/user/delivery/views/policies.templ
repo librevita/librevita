@@ -2,6 +2,7 @@ package views
 
 import (
 	"librevita.org/internal/core/auth"
+	"librevita.org/internal/ui/components"
 	"librevita.org/internal/ui/layouts"
 )
 
@@ -48,14 +49,14 @@ templ AdminPolicies(token string, p *auth.Principal, policies []PolicyView, errM
 							<div class="mt-6 overflow-x-auto">
 								<table class="table-base">
 									<caption class="text-left text-sm font-semibold text-gray-900 py-2 dark:text-white">Change history</caption>
-									<thead class="bg-gray-50 dark:bg-gray-700">
+									@components.Thead() {
 										<tr>
 											<th class="px-3 py-2 text-left font-medium text-gray-500 dark:text-gray-400">Expression</th>
 											<th class="px-3 py-2 text-left font-medium text-gray-500 dark:text-gray-400">Changed by</th>
 											<th class="px-3 py-2 text-left font-medium text-gray-500 dark:text-gray-400">Origin</th>
 											<th class="px-3 py-2 text-left font-medium text-gray-500 dark:text-gray-400">When</th>
 										</tr>
-									</thead>
+									}
 									<tbody class="divide-y divide-gray-200 dark:divide-gray-700">
 										for _, v := range p.History {
 											<tr>
