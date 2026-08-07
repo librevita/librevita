@@ -1,7 +1,7 @@
 package views
 
 import (
-	"net/url"
+	"strconv"
 
 	"librevita.org/internal/core/auth"
 	"librevita.org/internal/ui/components"
@@ -25,7 +25,7 @@ type PatientRow struct {
 // PatientListPage renders the patient registry with search. The search
 // input targets the list fragment, so the page body and the fragment
 // share the same table markup.
-templ PatientListPage(token string, p *auth.Principal, q string, status string, sortParam string, patients []PatientRow, nextCursor string, errMsg string) {
+templ PatientListPage(token string, p *auth.Principal, q string, status string, sortParam string, patients []PatientRow, nextLimit int, errMsg string) {
 	@layouts.App("Patients", token, p, "patients") {
 		<div class="mx-auto max-w-6xl">
 			<div class="flex items-center justify-between">
@@ -50,7 +50,7 @@ templ PatientListPage(token string, p *auth.Principal, q string, status string, 
 				</button>
 			</div>
 			<div id="patient-list" class="mt-4">
-				@PatientListTable(patients, nextCursor, errMsg)
+				@PatientListTable(patients, nextLimit, errMsg)
 			</div>
 		</div>
 	}
@@ -65,8 +65,11 @@ templ statusOption(value string, label string, selected string) {
 }
 
 // PatientListTable is the fragment swapped by the search input, filters,
-// and bulk archive. nextCursor drives the Load more button.
-templ PatientListTable(patients []PatientRow, nextCursor string, errMsg string) {
+// bulk archive, and the Load more button. nextLimit drives Load more:
+// the request re-renders the table with a larger limit, so the fragment
+// never mixes bare table rows with other elements (which the htmx
+// fragment parser cannot handle).
+templ PatientListTable(patients []PatientRow, nextLimit int, errMsg string) {
 	if errMsg != "" {
 		@components.Alert(errMsg, false)
 	}
@@ -75,16 +78,8 @@ templ PatientListTable(patients []PatientRow, nextCursor string, errMsg string) 
 			<p class="text-sm text-gray-500 dark:text-gray-400">No patients found.</p>
 		</div>
 	} else {
-		@PatientListRows(patients, nextCursor)
-	}
-}
-
-// PatientListRows renders the table body rows plus the Load more button.
-// Load-more responses append the rows into #patient-tbody and refresh the
-// button out of band with the next cursor.
-templ PatientListRows(patients []PatientRow, nextCursor string) {
-	<div x-data="tableSelect" class="overflow-x-auto rounded-lg">
-		<table class="min-w-full divide-y divide-gray-200 text-sm">
+		<div x-data="tableSelect" class="overflow-x-auto rounded-lg">
+			<table class="min-w-full divide-y divide-gray-200 text-sm">
 				@components.Thead() {
 					<tr>
 						<th scope="col" class="w-12 p-4">
@@ -99,16 +94,32 @@ templ PatientListRows(patients []PatientRow, nextCursor string) {
 						@components.Th("Actions", "p-4")
 					</tr>
 				}
-				<tbody id="patient-tbody" class="divide-y divide-gray-200 bg-white dark:divide-gray-700 dark:bg-gray-800">
+				<tbody class="divide-y divide-gray-200 bg-white dark:divide-gray-700 dark:bg-gray-800">
 					for _, pt := range patients {
 						<tr>@PatientRowCells(pt)</tr>
 					}
 				</tbody>
 			</table>
+			if nextLimit > 0 {
+				<button type="button" id="load-more-btn" hx-get={ "/patients?limit=" + itoa(nextLimit) } hx-include="#patient-search, #status-filter" hx-target="#patient-list" hx-swap="innerHTML" class="mt-4 inline-flex items-center gap-2 rounded-lg p-2 text-sm font-medium text-indigo-700 hover:bg-gray-100 dark:text-indigo-400 dark:hover:bg-gray-700">
+					Load more
+					<svg class="htmx-indicator h-4 w-4 animate-spin text-indigo-600" fill="none" viewBox="0 0 24 24" aria-hidden="true">
+						<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+						<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+					</svg>
+				</button>
+			}
 		</div>
-		if nextCursor != "" {
-			@loadMoreButton(nextCursor, false)
-		}
+	}
+}
+
+// PatientRowOnly is the archive/restore response: a bare row, swapped in
+// place. No sibling elements may follow, or the htmx fragment parser
+// wraps the row into a table and mis-parses them.
+templ PatientRowOnly(rows []PatientRow) {
+	for _, pt := range rows {
+		<tr>@PatientRowCells(pt)</tr>
+	}
 }
 
 // PatientRowCells renders one row of the registry table.
@@ -143,45 +154,16 @@ templ PatientRowCells(pt PatientRow) {
 	</td>
 }
 
-// PatientListMoreRows is the Load more response: only the next rows,
-// appended into #patient-tbody, plus the cursor button refreshed OOB.
-templ PatientListMoreRows(rows []PatientRow, nextCursor string) {
-	for _, pt := range rows {
-		<tr>@PatientRowCells(pt)</tr>
-	}
-	if nextCursor != "" {
-		@loadMoreButton(nextCursor, true)
-	} else {
-		<button type="button" id="load-more-btn" hx-swap-oob="true" class="hidden"></button>
-	}
-}
-
-templ loadMoreButton(cursor string, oob bool) {
-	<button type="button" id="load-more-btn" hx-swap-oob={ boolAttr(oob) } hx-get={ "/patients?after=" + urlQuery(cursor) } hx-include="#patient-search, #status-filter" hx-target="#patient-tbody" hx-swap="beforeend" class="mt-4 inline-flex items-center gap-2 rounded-lg p-2 text-sm font-medium text-indigo-700 hover:bg-gray-100 dark:text-indigo-400 dark:hover:bg-gray-700">
-		Load more
-		<svg class="htmx-indicator h-4 w-4 animate-spin text-indigo-600" fill="none" viewBox="0 0 24 24" aria-hidden="true">
-			<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-			<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
-		</svg>
-	</button>
-}
-
-func boolAttr(oob bool) string {
-	if oob {
-		return "true"
-	}
-	return "false"
-}
-
 // PatientListTableWithAlert composes the refreshed table with the OOB
-// alert in one response, used by the bulk archive.
-templ PatientListTableWithAlert(patients []PatientRow, nextCursor string, alertMsg string) {
-	@PatientListTable(patients, nextCursor, "")
+// alert in one response, used by the bulk archive. The table fragment
+// leads with a div, so the trailing OOB alert parses safely.
+templ PatientListTableWithAlert(patients []PatientRow, nextLimit int, alertMsg string) {
+	@PatientListTable(patients, nextLimit, "")
 	@components.Alert(alertMsg, true)
 }
 
-func urlQuery(s string) string {
-	return url.QueryEscape(s)
+func itoa(n int) string {
+	return strconv.Itoa(n)
 }
 
 templ patientSearchInput(q string) {
