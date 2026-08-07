@@ -18,7 +18,6 @@ var Module = fx.Module("ui",
 var vendorFiles = map[string]bool{
 	"js/htmx-1.9.12.min.js":        true,
 	"js/htmx-sse-1.9.12.js":        true,
-	"js/alpine-csp-3.15.12.min.js": true,
 }
 
 func registerStatic(e *echo.Echo) {

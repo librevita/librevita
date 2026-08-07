@@ -1,5 +1,5 @@
 // Package ui embeds the frontend assets (Tailwind CSS generated at build
-// time, vendored HTMX/Alpine runtimes, and the small application script)
+// time, the vendored HTMX runtime, and the first-party application scripts)
 // into the binary.
 package ui
 
