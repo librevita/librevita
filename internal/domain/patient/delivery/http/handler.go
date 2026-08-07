@@ -135,8 +135,50 @@ func (h *Handler) Detail(c echo.Context) error {
 	}
 	createdBy := orEmpty(row.CreatedByEmail)
 	pt := h.detailView(row, clock)
+	events, err := h.audit.ForResource(ctx, "patient:"+row.ID, 50)
+	if err != nil {
+		return err
+	}
 	return server.Render(c, http.StatusOK, views.PatientDetailPage(
-		server.CSRFToken(c, h.csrf), server.Principal(c), pt, createdBy, ""))
+		server.CSRFToken(c, h.csrf), server.Principal(c), pt, createdBy,
+		h.historyView(events, clock), ""))
+}
+
+// historyView turns audit events into display rows, newest first, with
+// the timestamp rendered in the clinic's timezone.
+func (h *Handler) historyView(events []audit.EventRow, clock *clinic.Clock) []views.HistoryRow {
+	out := make([]views.HistoryRow, 0, len(events))
+	for _, ev := range events {
+		out = append(out, views.HistoryRow{
+			When: clock.FormatStored(ev.CreatedAt),
+			Text: historyText(ev),
+		})
+	}
+	return out
+}
+
+// historyText renders a human-readable description of a patient event.
+func historyText(ev audit.EventRow) string {
+	actor := "an unknown user"
+	if ev.ActorEmail != nil && *ev.ActorEmail != "" {
+		actor = *ev.ActorEmail
+	}
+	switch ev.Action {
+	case "patient.create":
+		return "Registered by " + actor
+	case "patient.update":
+		if ev.Detail != nil && *ev.Detail != "" {
+			return "Updated by " + actor + " (" + *ev.Detail + ")"
+		}
+		return "Updated by " + actor
+	case "patient.status":
+		if ev.Detail != nil && *ev.Detail == usecase.StatusInactive {
+			return "Archived by " + actor
+		}
+		return "Restored by " + actor
+	default:
+		return ev.Action + " by " + actor
+	}
 }
 
 // EditPage renders the edit form with the stored values.
@@ -156,13 +198,18 @@ func (h *Handler) EditPage(c echo.Context) error {
 // Update applies the edited values and navigates to the detail page.
 func (h *Handler) Update(c echo.Context) error {
 	ctx := c.Request().Context()
+	id := c.Param("id")
 	input := h.input(c)
-	patient, err := h.svc.Update(ctx, c.Param("id"), input)
+	before, err := h.svc.GetWithCreator(ctx, id)
+	if err != nil {
+		return err
+	}
+	patient, err := h.svc.Update(ctx, id, input)
 	if err != nil {
 		var v *usecase.ValidationError
 		switch {
 		case errors.As(err, &v):
-			return h.formError(c, c.Param("id"), input, v.Msg)
+			return h.formError(c, id, input, v.Msg)
 		case errors.Is(err, usecase.ErrNotFound):
 			return echo.NewHTTPError(http.StatusNotFound)
 		default:
@@ -172,10 +219,55 @@ func (h *Handler) Update(c echo.Context) error {
 	h.audit.Record(ctx, audit.Event{
 		ActorID: server.ActorID(c), ActorMail: server.ActorMail(c),
 		Action: "patient.update", Resource: "patient:" + patient.ID,
-		Result: audit.ResultSuccess,
-		IP:     c.RealIP(), RequestID: c.Response().Header().Get(echo.HeaderXRequestID),
+		Result: audit.ResultSuccess, Detail: patientChanges(before, input),
+		IP: c.RealIP(), RequestID: c.Response().Header().Get(echo.HeaderXRequestID),
 	})
 	return server.HtmxRedirect(c, "/patients/"+patient.ID)
+}
+
+// patientChanges renders the changed fields as "name: old -> new"
+// pairs, listing only fields whose stored value differs from the input.
+func patientChanges(before *repository.GetPatientWithCreatorRow, input usecase.PatientInput) string {
+	type field struct {
+		name string
+		old  string
+		new  string
+	}
+	fields := []field{
+		{"display name", before.DisplayName, input.DisplayName},
+		{"birth date", orEmpty(before.BirthDate), input.BirthDate},
+		{"sex", before.Sex, input.Sex},
+		{"document", orEmpty(before.Document), input.Document},
+		{"phone", orEmpty(before.Phone), input.Phone},
+		{"email", orEmpty(before.Email), input.Email},
+		{"street", orEmpty(before.Street), input.Street},
+		{"city", orEmpty(before.City), input.City},
+		{"state", orEmpty(before.State), input.State},
+		{"postal code", orEmpty(before.PostalCode), input.PostalCode},
+		{"notes", orEmpty(before.Notes), input.Notes},
+	}
+	parts := make([]string, 0, 3)
+	for _, f := range fields {
+		old, next := strings.TrimSpace(f.old), strings.TrimSpace(f.new)
+		if old == next {
+			continue
+		}
+		if old == "" {
+			parts = append(parts, f.name+": "+displayValue(next))
+			continue
+		}
+		parts = append(parts, f.name+": "+displayValue(old)+" -> "+displayValue(next))
+	}
+	return strings.Join(parts, ", ")
+}
+
+// displayValue shortens long stored values (e.g. notes) for the audit
+// detail so the change list stays readable.
+func displayValue(s string) string {
+	if len(s) > 40 {
+		return s[:37] + "..."
+	}
+	return s
 }
 
 // Archive sets the patient inactive. htmx responses carry only an OOB
@@ -202,15 +294,13 @@ func (h *Handler) BulkArchive(c echo.Context) error {
 	for _, id := range ids {
 		if err := h.svc.SetStatus(ctx, id, usecase.StatusInactive); err == nil {
 			archived++
+			h.audit.Record(ctx, audit.Event{
+				ActorID: server.ActorID(c), ActorMail: server.ActorMail(c),
+				Action: "patient.status", Resource: "patient:" + id,
+				Result: audit.ResultSuccess, Detail: usecase.StatusInactive,
+				IP: c.RealIP(), RequestID: c.Response().Header().Get(echo.HeaderXRequestID),
+			})
 		}
-	}
-	if archived > 0 {
-		h.audit.Record(ctx, audit.Event{
-			ActorID: server.ActorID(c), ActorMail: server.ActorMail(c),
-			Action: "patient.status", Resource: "patient:bulk",
-			Result: audit.ResultSuccess, Detail: "archived " + strconv.Itoa(archived),
-			IP: c.RealIP(), RequestID: c.Response().Header().Get(echo.HeaderXRequestID),
-		})
 	}
 
 	clinicID, err := h.clinicID(ctx)
