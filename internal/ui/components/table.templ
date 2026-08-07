@@ -1,0 +1,14 @@
+package components
+
+// Thead renders a table header row with the standard muted style.
+templ Thead() {
+	<thead class="bg-gray-50 dark:bg-gray-700">
+		{ children... }
+	</thead>
+}
+
+// Th renders a table header cell. Pass extra classes for tighter
+// layouts (e.g. "px-3 py-2" in the policies history table).
+templ Th(label string, class string) {
+	<th scope="col" class={ "text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400 " + class }>{ label }</th>
+}

@@ -1,9 +1,8 @@
 package views
 
 import (
-	"strings"
-
 	"librevita.org/internal/core/auth"
+	"librevita.org/internal/ui/components"
 	"librevita.org/internal/ui/layouts"
 )
 
@@ -58,10 +57,9 @@ templ Home(token string, p *auth.Principal, stats DashboardStats) {
 	@layouts.App("Dashboard", token, p, "dashboard") {
 		<div class="mx-auto max-w-7xl">
 			<div class="grid gap-4 xl:grid-cols-2 2xl:grid-cols-3">
-				<section class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm sm:p-6 dark:border-gray-700 dark:bg-gray-800 2xl:col-span-2">
-					<header class="mb-4 flex items-center justify-between">
-						<h3 class="text-lg font-semibold text-gray-900 dark:text-white">Recent activity</h3>
-					</header>
+				<div class="2xl:col-span-2">
+					@components.Card() {
+						@components.CardHeader("Recent activity") { }
 					if len(stats.Activity) == 0 {
 						<p class="text-sm text-gray-500 dark:text-gray-400">No activity recorded yet.</p>
 					} else {
@@ -84,11 +82,13 @@ templ Home(token string, p *auth.Principal, stats DashboardStats) {
 							}
 						</ol>
 					}
-				</section>
-				<section class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm sm:p-6 dark:border-gray-700 dark:bg-gray-800">
-					<header class="mb-4">
-						<h3 class="text-lg font-semibold text-gray-900 dark:text-white">Statistics</h3>
-					</header>
+					}
+				</div>
+				<section>
+					@components.Card() {
+						<header class="mb-4">
+							<h3 class="text-lg font-semibold text-gray-900 dark:text-white">Statistics</h3>
+						</header>
 					<div x-data="tabs">
 						<ul class="hidden divide-x divide-gray-200 rounded-lg text-center text-sm font-medium text-gray-500 dark:divide-gray-700 dark:text-gray-400 sm:flex" role="tablist">
 							<li class="w-full" role="presentation">
@@ -104,12 +104,12 @@ templ Home(token string, p *auth.Principal, stats DashboardStats) {
 									for _, u := range stats.LatestUsers {
 										<li class="py-3">
 											<div class="flex items-center space-x-4">
-												<span class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-indigo-100 text-xs font-semibold text-indigo-700 dark:bg-indigo-900 dark:text-indigo-300">{ initials(u.Name) }</span>
+												@components.Avatar(components.Initials(u.Name), "h-8 w-8 bg-indigo-100 text-indigo-700 dark:bg-indigo-900 dark:text-indigo-300")
 												<div class="min-w-0 flex-1">
 													<p class="truncate font-medium text-gray-900 dark:text-white">{ u.Name }</p>
 													<p class="truncate text-sm text-gray-500 dark:text-gray-400">{ u.Email }</p>
 												</div>
-												<span class={ "rounded-md px-2.5 py-0.5 text-xs font-medium " + roleBadge(u.Role) }>{ u.Role }</span>
+												@components.Badge(u.Role)
 											</div>
 										</li>
 									}
@@ -127,38 +127,38 @@ templ Home(token string, p *auth.Principal, stats DashboardStats) {
 							</div>
 						</div>
 					</div>
+					}
 				</section>
 			</div>
 			<div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 2xl:grid-cols-4">
-				@miniStatCard("Patients", stats.Patients)
-				@miniStatCard("Staff", stats.Staff)
-				@miniStatCard("Total users", stats.Users)
-				@miniStatCard("Access policies", stats.Policies)
+				@components.StatCard("Patients", stats.Patients)
+				@components.StatCard("Staff", stats.Staff)
+				@components.StatCard("Total users", stats.Users)
+				@components.StatCard("Access policies", stats.Policies)
 			</div>
 			<div class="my-4 grid grid-cols-1 xl:grid-cols-2 xl:gap-4">
-				<section class="mb-4 rounded-lg border border-gray-200 bg-white p-4 shadow-sm sm:p-6 dark:border-gray-700 dark:bg-gray-800 xl:mb-0">
-					<header class="mb-4 flex items-center justify-between">
-						<h3 class="text-lg font-semibold text-gray-900 dark:text-white">Registered users</h3>
-					</header>
+				<div class="mb-4 xl:mb-0">
+					@components.Card() {
+						@components.CardHeader("Registered users") { }
 					<div class="flex flex-col">
 						<div class="overflow-x-auto rounded-lg">
 							<div class="inline-block min-w-full align-middle">
 								<div class="overflow-hidden shadow sm:rounded-lg">
 									<table class="min-w-full divide-y divide-gray-200 text-sm">
-										<thead class="bg-gray-50 dark:bg-gray-700">
+										@components.Thead() {
 											<tr>
-												<th scope="col" class="p-4 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">Name</th>
-												<th scope="col" class="p-4 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">Email</th>
-												<th scope="col" class="p-4 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">Role</th>
-												<th scope="col" class="p-4 text-left text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">Joined</th>
+												@components.Th("Name", "p-4")
+												@components.Th("Email", "p-4")
+												@components.Th("Role", "p-4")
+												@components.Th("Joined", "p-4")
 											</tr>
-										</thead>
+										}
 										<tbody class="bg-white dark:bg-gray-800">
 											for _, u := range stats.LatestUsers {
 												<tr>
 													<td class="whitespace-nowrap p-4 font-normal text-gray-900 dark:text-white">{ u.Name }</td>
 													<td class="whitespace-nowrap p-4 font-normal text-gray-500 dark:text-gray-400">{ u.Email }</td>
-													<td class="whitespace-nowrap p-4"><span class={ "rounded-md px-2.5 py-0.5 text-xs font-medium " + roleBadge(u.Role) }>{ u.Role }</span></td>
+													<td class="whitespace-nowrap p-4">@components.Badge(u.Role)</td>
 													<td class="whitespace-nowrap p-4 font-normal text-gray-500 dark:text-gray-400">{ u.Joined }</td>
 												</tr>
 											}
@@ -168,11 +168,11 @@ templ Home(token string, p *auth.Principal, stats DashboardStats) {
 							</div>
 						</div>
 					</div>
-				</section>
-				<section class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm sm:p-6 dark:border-gray-700 dark:bg-gray-800">
-					<header class="mb-4 flex items-center justify-between">
-						<h3 class="text-lg font-semibold text-gray-900 dark:text-white">Clinic profile</h3>
-					</header>
+					}
+				</div>
+				<section>
+					@components.Card() {
+						@components.CardHeader("Clinic profile") { }
 					<dl class="space-y-3 text-sm">
 						<div class="flex items-center justify-between gap-4">
 							<dt class="text-gray-500 dark:text-gray-400">Name</dt>
@@ -210,6 +210,7 @@ templ Home(token string, p *auth.Principal, stats DashboardStats) {
 					if p != nil && p.Role == auth.RoleAdmin {
 						<a class="mt-4 inline-flex items-center rounded-lg p-2 text-sm font-medium text-indigo-700 hover:bg-gray-100 dark:text-indigo-400 dark:hover:bg-gray-700" href="/admin/policies">Access policies</a>
 					}
+					}
 				</section>
 			</div>
 		</div>
@@ -230,13 +231,6 @@ templ Admin(token string, p *auth.Principal) {
 	}
 }
 
-templ miniStatCard(label string, value int64) {
-	<div class="rounded-lg border border-gray-200 bg-white p-4 shadow-sm sm:p-6 dark:border-gray-700 dark:bg-gray-800">
-		<h3 class="text-base font-normal text-gray-500 dark:text-gray-400">{ label }</h3>
-		<p class="mt-1 text-2xl font-bold leading-none text-gray-900 dark:text-white sm:text-3xl">{ value }</p>
-	</div>
-}
-
 func dotColor(result string) string {
 	switch result {
 	case "success":
@@ -248,26 +242,3 @@ func dotColor(result string) string {
 	}
 }
 
-func roleBadge(role string) string {
-	switch role {
-	case "admin":
-		return "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-300"
-	case "physician":
-		return "bg-indigo-100 text-indigo-800 dark:bg-indigo-900 dark:text-indigo-300"
-	case "receptionist":
-		return "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300"
-	default:
-		return "bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300"
-	}
-}
-
-func initials(name string) string {
-	if name == "" {
-		return "?"
-	}
-	parts := strings.Fields(name)
-	if len(parts) == 1 {
-		return strings.ToUpper(parts[0][:1])
-	}
-	return strings.ToUpper(parts[0][:1] + parts[1][:1])
-}

@@ -1,0 +1,12 @@
+package components
+
+// Avatar renders a circular initials avatar. Pass the sizing and color
+// classes, e.g. "h-8 w-8 bg-indigo-600 text-white".
+templ Avatar(initials string, class string) {
+	<span class={ "flex shrink-0 items-center justify-center rounded-full text-xs font-semibold " + class }>{ initials }</span>
+}
+
+// Badge renders a role badge with the role-specific colors.
+templ Badge(role string) {
+	<span class={ "rounded-md px-2.5 py-0.5 text-xs font-medium " + RoleBadgeClass(role) }>{ role }</span>
+}
