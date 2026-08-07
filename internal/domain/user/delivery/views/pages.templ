@@ -99,7 +99,7 @@ templ Home(token string, p *auth.Principal, stats DashboardStats) {
 							</li>
 						</ul>
 						<div class="border-t border-gray-200 dark:border-gray-700">
-							<div x-show="active === 'users'" class="pt-2">
+							<div x-show="active === 'users'" x-cloak class="pt-2">
 								<ul class="divide-y divide-gray-200 dark:divide-gray-700" role="list">
 									for _, u := range stats.LatestUsers {
 										<li class="py-3">
@@ -115,7 +115,7 @@ templ Home(token string, p *auth.Principal, stats DashboardStats) {
 									}
 								</ul>
 							</div>
-							<div x-show="active === 'policies'" class="pt-2">
+							<div x-show="active === 'policies'" x-cloak class="pt-2">
 								<ul class="divide-y divide-gray-200 dark:divide-gray-700" role="list">
 									for _, pl := range stats.LatestPolicies {
 										<li class="py-3">
