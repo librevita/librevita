@@ -1,11 +1,11 @@
 # Frontend assets
 
 All assets are served locally through `go:embed`; there is no CDN at
-runtime. The frontend build is driven by Deno: `deno.json` declares the
-dependencies and tasks, and `deno.lock` pins the npm packages with
+runtime. The frontend build is driven by Node: `package.json` declares
+the dependencies and scripts, and `package-lock.json` pins them with
 integrity hashes, so no npm version or checksum is hard-coded in the
-Earthfile. Everything in `internal/ui/static` is generated at build time
-and is not versioned.
+Earthfile (which installs with `npm ci`). Everything in
+`internal/ui/static` is generated at build time and is not versioned.
 
 | Asset | Origin | Purpose |
 | --- | --- | --- |
@@ -15,12 +15,13 @@ and is not versioned.
 | `theme.js` | esbuild bundle of `internal/ui/src/theme.ts` | Blocking head script: applies the `dark` class from the stored preference or `prefers-color-scheme` before first paint |
 | `ui.js` | esbuild bundle of `internal/ui/src/ui.ts` | Bootstrap: htmx config, CSRF header, Alpine components |
 
-`ui.js` and `theme.js` are bundled with `target=firefox58`, and the
-output is verified after the build: no `?.`/`??` and no optional catch
-binding (`catch {}`, a syntax error on Firefox 52 and Goanna) may reach
-the output. esbuild is forced to lower optional catch binding
-(`supported: { 'optional-catch-binding': false }`) because its firefox58
-feature matrix would otherwise allow it.
+`ui.js` and `theme.js` are bundled by esbuild with `target=firefox58`
+(`internal/ui/build.ts`), and the output is verified after the build:
+no `?.`/`??` and no optional catch binding (`catch {}`, a syntax error
+on Firefox 52 and Goanna) may reach the output. esbuild is forced to
+lower optional catch binding (`supported: { 'optional-catch-binding':
+false }`) because its firefox58 feature matrix would otherwise allow
+it.
 
 The Alpine CSP cdn build auto-starts when it loads; `ui.js` is loaded
 before it and registers components on `alpine:init`. The CSP build
