@@ -24,7 +24,10 @@ import (
 // utcMilliLayout matches the timestamps written by the database.
 const utcMilliLayout = "2006-01-02T15:04:05.000Z"
 
-const patientListLimit = 50
+const (
+	patientListLimit    = 50
+	maxPatientListLimit = 500
+)
 
 // Handler renders the patient pages and processes submissions.
 type Handler struct {
@@ -50,23 +53,26 @@ func (h *Handler) List(c echo.Context) error {
 	}
 	q := c.QueryParam("q")
 	status := c.QueryParam("status")
-	after := c.QueryParam("after")
 	sortParam := c.QueryParam("sort")
-
-	// Load-more requests append rows and refresh the cursor button via
-	// OOB; they must not re-render the whole table.
-	if server.IsHtmx(c) && c.Request().Header.Get("HX-Boosted") != "true" && after != "" {
-		return h.moreRows(c, ctx, clinicID, q, status, after, sortParam)
+	limit := c.QueryParam("limit")
+	if limit == "" {
+		limit = strconv.Itoa(patientListLimit)
+	}
+	pageLimit, err := strconv.Atoi(limit)
+	if err != nil || pageLimit < 1 {
+		pageLimit = patientListLimit
+	}
+	if pageLimit > maxPatientListLimit {
+		pageLimit = maxPatientListLimit
 	}
 
-	limit := patientListLimit + 1
-	patients, err := h.svc.List(ctx, clinicID, q, status, after, limit)
+	patients, err := h.svc.List(ctx, clinicID, q, status, "", pageLimit+1)
 	if err != nil {
 		return err
 	}
-	hasMore := len(patients) > patientListLimit
+	hasMore := len(patients) > pageLimit
 	if hasMore {
-		patients = patients[:patientListLimit]
+		patients = patients[:pageLimit]
 	}
 	h.sort(patients, sortParam)
 	rows := h.rows(c.Request().Context(), patients)
@@ -75,11 +81,11 @@ func (h *Handler) List(c echo.Context) error {
 	// (sidebar links) also arrives with HX-Request but must render the
 	// full page, so only non-boosted htmx requests get the fragment.
 	if server.IsHtmx(c) && c.Request().Header.Get("HX-Boosted") != "true" {
-		return server.Render(c, http.StatusOK, views.PatientListTable(rows, cursor(sortParam, rows, hasMore), ""))
+		return server.Render(c, http.StatusOK, views.PatientListTable(rows, nextLimit(sortParam, pageLimit, hasMore), ""))
 	}
 	return server.Render(c, http.StatusOK, views.PatientListPage(
 		server.CSRFToken(c, h.csrf), server.Principal(c), q, status, sortParam, rows,
-		cursor(sortParam, rows, hasMore), ""))
+		nextLimit(sortParam, pageLimit, hasMore), ""))
 }
 
 // NewPage renders the create form.
@@ -224,7 +230,7 @@ func (h *Handler) BulkArchive(c echo.Context) error {
 	if archived > 0 {
 		msg = strconv.Itoa(archived) + " patient(s) archived"
 	}
-	return server.Render(c, http.StatusOK, views.PatientListTableWithAlert(rows, cursor(sortParam, rows, hasMore), msg))
+	return server.Render(c, http.StatusOK, views.PatientListTableWithAlert(rows, nextLimit(sortParam, patientListLimit, hasMore), msg))
 }
 
 func (h *Handler) setStatus(c echo.Context, status, successMsg string) error {
@@ -243,7 +249,19 @@ func (h *Handler) setStatus(c echo.Context, status, successMsg string) error {
 		if err != nil {
 			return server.Render(c, http.StatusBadRequest, components.Alert("Could not update the patient", true))
 		}
-		return server.Render(c, http.StatusOK, components.Alert(successMsg, true))
+		// Re-render the row in place with the new status. The response
+		// must contain only the row: sibling elements would break the
+		// htmx fragment parser for table content.
+		patient, err := h.svc.Get(ctx, id)
+		if err != nil {
+			return err
+		}
+		clock, err := h.clocks.Clock(ctx)
+		if err != nil {
+			return err
+		}
+		return server.Render(c, http.StatusOK, views.PatientRowOnly(
+			[]views.PatientRow{h.rowOf(patient, clock)}))
 	}
 	if err != nil {
 		var v *usecase.ValidationError
@@ -275,32 +293,16 @@ func (h *Handler) input(c echo.Context) usecase.PatientInput {
 	}
 }
 
-// moreRows answers the Load more button: only the next rows plus an OOB
-// refresh of the cursor button.
-func (h *Handler) moreRows(c echo.Context, ctx context.Context, clinicID, q, status, after, sortParam string) error {
-	patients, err := h.svc.List(ctx, clinicID, q, status, after, patientListLimit+1)
-	if err != nil {
-		return err
-	}
-	hasMore := len(patients) > patientListLimit
-	if hasMore {
-		patients = patients[:patientListLimit]
-	}
-	h.sort(patients, sortParam)
-	rows := h.rows(ctx, patients)
-	return server.Render(c, http.StatusOK, views.PatientListMoreRows(rows, cursor(sortParam, rows, hasMore)))
-}
-
-// cursor builds the next Load more cursor from the last visible row. It
-// is empty when the page is exhausted or the sort order is not by name.
-func cursor(sortParam string, rows []views.PatientRow, hasMore bool) string {
+// nextLimit returns the limit for the Load more button: zero when the
+// page is exhausted or the sort order is not by name.
+func nextLimit(sortParam string, pageLimit int, hasMore bool) int {
 	if sortParam != "" && sortParam != "name" {
-		return ""
+		return 0
 	}
-	if !hasMore || len(rows) == 0 {
-		return ""
+	if !hasMore {
+		return 0
 	}
-	return rows[len(rows)-1].DisplayName
+	return pageLimit + patientListLimit
 }
 
 func (h *Handler) rows(ctx context.Context, patients []repository.Patient) []views.PatientRow {
@@ -310,20 +312,24 @@ func (h *Handler) rows(ctx context.Context, patients []repository.Patient) []vie
 	}
 	out := make([]views.PatientRow, 0, len(patients))
 	for _, pt := range patients {
-		out = append(out, views.PatientRow{
-			ID:          pt.ID,
-			DisplayName: pt.DisplayName,
-			BirthDate:   orEmpty(pt.BirthDate),
-			Sex:         pt.Sex,
-			Document:    orEmpty(pt.Document),
-			Phone:       orEmpty(pt.Phone),
-			Email:       orEmpty(pt.Email),
-			City:        orEmpty(pt.City),
-			Status:      pt.Status,
-			CreatedAt:   clock.FormatStored(pt.CreatedAt),
-		})
+		out = append(out, h.rowOf(&pt, clock))
 	}
 	return out
+}
+
+func (h *Handler) rowOf(pt *repository.Patient, clock *clinic.Clock) views.PatientRow {
+	return views.PatientRow{
+		ID:          pt.ID,
+		DisplayName: pt.DisplayName,
+		BirthDate:   orEmpty(pt.BirthDate),
+		Sex:         pt.Sex,
+		Document:    orEmpty(pt.Document),
+		Phone:       orEmpty(pt.Phone),
+		Email:       orEmpty(pt.Email),
+		City:        orEmpty(pt.City),
+		Status:      pt.Status,
+		CreatedAt:   clock.FormatStored(pt.CreatedAt),
+	}
 }
 
 func (h *Handler) detailView(row *repository.GetPatientWithCreatorRow, clock *clinic.Clock) *repository.GetPatientWithCreatorRow {
