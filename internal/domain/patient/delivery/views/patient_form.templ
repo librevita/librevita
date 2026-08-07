@@ -147,8 +147,8 @@ func patientFormSubmit(id string) string {
 	return "Save changes"
 }
 
-// PatientDetailPage renders the patient record.
-templ PatientDetailPage(token string, p *auth.Principal, pt *repository.Patient, errMsg string) {
+// PatientDetailPage renders the patient record with the registrar.
+templ PatientDetailPage(token string, p *auth.Principal, pt *repository.Patient, createdBy string, errMsg string) {
 	@layouts.App("Patient", token, p, "patients") {
 		<div class="mx-auto max-w-4xl">
 			@components.Card() {
@@ -162,6 +162,9 @@ templ PatientDetailPage(token string, p *auth.Principal, pt *repository.Patient,
 					@components.Avatar(components.Initials(pt.DisplayName), "h-16 w-16 bg-indigo-600 text-white text-xl")
 					<div>
 						<p class="text-sm text-gray-500 dark:text-gray-400">Registered { pt.CreatedAt }</p>
+						if createdBy != "" {
+							<p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">by <span class="font-medium text-gray-700 dark:text-gray-300">{ createdBy }</span></p>
+						}
 						<p class="mt-1 text-xs text-gray-400 dark:text-gray-400">Updated { pt.UpdatedAt }</p>
 					</div>
 					<div class="ml-auto">@patientStatusBadge(pt.Status)</div>

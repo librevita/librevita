@@ -71,8 +71,9 @@ func NewService(db *sql.DB, log *slog.Logger) *Service {
 	return &Service{db: db, q: repository.New(db), log: log}
 }
 
-// Create validates in and inserts a patient for the clinic.
-func (s *Service) Create(ctx context.Context, clinicID string, in PatientInput) (*repository.Patient, error) {
+// Create validates in and inserts a patient for the clinic, recording
+// createdBy (the user id of the registrar).
+func (s *Service) Create(ctx context.Context, clinicID, createdBy string, in PatientInput) (*repository.Patient, error) {
 	normalized, err := normalize(in)
 	if err != nil {
 		return nil, err
@@ -95,11 +96,24 @@ func (s *Service) Create(ctx context.Context, clinicID string, in PatientInput) 
 		State:       nullString(normalized.State),
 		PostalCode:  nullString(normalized.PostalCode),
 		Notes:       nullString(normalized.Notes),
+		CreatedBy:   nullString(createdBy),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("usecase: create patient: %w", err)
 	}
 	return &patient, nil
+}
+
+// GetWithCreator returns a patient with the registrar's email.
+func (s *Service) GetWithCreator(ctx context.Context, id string) (*repository.GetPatientWithCreatorRow, error) {
+	row, err := s.q.GetPatientWithCreator(ctx, id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("usecase: get patient with creator: %w", err)
+	}
+	return &row, nil
 }
 
 // Get returns a patient by id.
