@@ -60,7 +60,10 @@ func (h *Handler) List(c echo.Context) error {
 	h.sort(patients, c.QueryParam("sort"))
 	rows := h.rows(c.Request().Context(), patients)
 
-	if server.IsHtmx(c) {
+	// The search input and filters request fragments; boosted navigation
+	// (sidebar links) also arrives with HX-Request but must render the
+	// full page, so only non-boosted htmx requests get the fragment.
+	if server.IsHtmx(c) && c.Request().Header.Get("HX-Boosted") != "true" {
 		return render(c, http.StatusOK, views.PatientListTable(rows, ""))
 	}
 	return render(c, http.StatusOK, views.PatientListPage(
