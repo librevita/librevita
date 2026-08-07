@@ -280,6 +280,25 @@ func orEmpty(s *string) string {
 	return *s
 }
 
+// ProfilePage renders the signed-in user's profile with the color scheme
+// preference.
+func (h *Handler) ProfilePage(c echo.Context) error {
+	ctx := c.Request().Context()
+	p := server.Principal(c)
+	if p == nil {
+		return c.Redirect(http.StatusFound, server.LoginPath)
+	}
+	user, err := h.svc.UserByID(ctx, p.ID)
+	if err != nil {
+		return err
+	}
+	clock, err := h.clocks.Clock(ctx)
+	if err != nil {
+		return err
+	}
+	return render(c, http.StatusOK, views.Profile(server.CSRFToken(c, h.csrf), p, formatWhen(clock, user.CreatedAt)))
+}
+
 // Admin renders the admin-only area.
 func (h *Handler) Admin(c echo.Context) error {
 	return render(c, http.StatusOK, views.Admin(server.CSRFToken(c, h.csrf), server.Principal(c)))

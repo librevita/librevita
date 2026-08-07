@@ -14,7 +14,12 @@ const out = Deno.env.get('OUT') ?? '/out';
 // compatible with the XP floor. The generated files are verified
 // afterwards so a tool or dependency upgrade can never silently break
 // the floor.
-const xpForbidden = /\?\.|\?\?=|\?\?/;
+const xpForbidden = /\?\.|\?\?=|\?\?|\bcatch\s*\{/;
+
+// The firefox58 matrix still allows optional catch binding (catch {}),
+// which is a syntax error on Firefox 52 / Goanna. Force esbuild to keep
+// a binding so the floor can parse the file.
+const xpSupported = { 'optional-catch-binding': false };
 
 function assertXpFloor(path: string): void {
   const code = Deno.readTextFileSync(path);
@@ -35,8 +40,23 @@ await esbuild.build({
   format: 'iife',
   target: 'firefox58',
   minify: true,
+  supported: xpSupported,
 });
 assertXpFloor(`${out}/ui.js`);
+
+// Theme bootstrap for the head: blocking so the dark class exists before
+// first paint. Kept separate from ui.js (which is deferred).
+await esbuild.build({
+  entryPoints: ['internal/ui/src/theme.ts'],
+  outfile: `${out}/theme.js`,
+  bundle: true,
+  platform: 'browser',
+  format: 'iife',
+  target: 'firefox58',
+  minify: true,
+  supported: xpSupported,
+});
+assertXpFloor(`${out}/theme.js`);
 
 // Runtime assets from the pinned npm packages. HTMX 1.9 is IE11-compatible
 // and is copied verbatim; the Alpine CSP bundle uses ES2020 syntax
@@ -55,6 +75,7 @@ const alpineSource = await Deno.readTextFile(new URL(alpineUrl));
 const lowered = await esbuild.transform(alpineSource, {
   target: 'firefox58',
   minify: true,
+  supported: xpSupported,
 });
 await Deno.writeTextFile(`${out}/vendor/alpine-csp-3.15.12.min.js`, lowered.code);
 assertXpFloor(`${out}/vendor/alpine-csp-3.15.12.min.js`);
