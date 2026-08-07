@@ -10,17 +10,18 @@ import (
 	"librevita.org/internal/domain/clinic/repository"
 )
 
-// clockCacheTTL bounds how stale a cached clinic timezone can be. The
+// clockCacheTTL bounds how stale a cached clinic profile can be. The
 // profile changes rarely; a short TTL keeps the UI honest without a query
 // per request.
 const clockCacheTTL = time.Minute
 
-// ClockProvider resolves the clinic's timezone into a Clock.
+// ClockProvider resolves the clinic profile (id, timezone, and the full
+// row) into cached values shared by every request.
 type ClockProvider struct {
-	db   *sql.DB
-	mu   sync.Mutex
-	zone string
-	exp  time.Time
+	db  *sql.DB
+	mu  sync.Mutex
+	row *repository.Clinic
+	exp time.Time
 }
 
 // NewClockProvider is the Fx provider.
@@ -28,36 +29,50 @@ func NewClockProvider(db *sql.DB) *ClockProvider {
 	return &ClockProvider{db: db}
 }
 
-// Clock returns the clinic's clock, cached briefly. Systems without a
-// clinic profile yet (pre-onboarding) fall back to the default zone.
-func (p *ClockProvider) Clock(ctx context.Context) (*Clock, error) {
+// load returns the cached clinic row, refreshing it after the TTL.
+// Systems without a clinic profile yet (pre-onboarding) fall back to the
+// default zone and an empty id.
+func (p *ClockProvider) load(ctx context.Context) (*repository.Clinic, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	now := time.Now()
-	if p.zone != "" && now.Before(p.exp) {
-		return NewClock(p.zone), nil
+	if p.row != nil && time.Now().Before(p.exp) {
+		return p.row, nil
 	}
 
-	zone := DefaultTimezone
 	row, err := repository.New(p.db).GetClinic(ctx)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return nil, err
 	}
-	if err == nil {
-		zone = row.Timezone
+	if err != nil {
+		row = repository.Clinic{Timezone: DefaultTimezone}
 	}
 
-	p.zone = zone
-	p.exp = now.Add(clockCacheTTL)
-	return NewClock(zone), nil
+	p.row = &row
+	p.exp = time.Now().Add(clockCacheTTL)
+	return p.row, nil
 }
 
-// Profile returns the clinic profile row.
-func (p *ClockProvider) Profile(ctx context.Context) (*repository.Clinic, error) {
-	row, err := repository.New(p.db).GetClinic(ctx)
+// Clock returns the clinic's clock. Systems without a clinic profile yet
+// (pre-onboarding) fall back to the default zone.
+func (p *ClockProvider) Clock(ctx context.Context) (*Clock, error) {
+	row, err := p.load(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return &row, nil
+	return NewClock(row.Timezone), nil
+}
+
+// ClinicID returns the clinic's id, cached briefly.
+func (p *ClockProvider) ClinicID(ctx context.Context) (string, error) {
+	row, err := p.load(ctx)
+	if err != nil {
+		return "", err
+	}
+	return row.ID, nil
+}
+
+// Profile returns the clinic profile row, cached briefly.
+func (p *ClockProvider) Profile(ctx context.Context) (*repository.Clinic, error) {
+	return p.load(ctx)
 }

@@ -27,6 +27,7 @@ SELECT *
 FROM patients
 WHERE clinic_id = ?
   AND (@status_empty = '' OR status = @status_filter)
+  AND (@after_empty = '' OR display_name > @after COLLATE NOCASE)
 ORDER BY display_name COLLATE NOCASE
 LIMIT @limit;
 
@@ -35,6 +36,7 @@ SELECT *
 FROM patients
 WHERE clinic_id = ?
   AND (@status_empty = '' OR status = @status_filter)
+  AND (@after_empty = '' OR display_name > @after COLLATE NOCASE)
   AND (display_name LIKE ? COLLATE NOCASE
        OR document LIKE ?
        OR email LIKE ? COLLATE NOCASE)

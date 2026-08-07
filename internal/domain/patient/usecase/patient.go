@@ -86,17 +86,17 @@ func (s *Service) Create(ctx context.Context, clinicID, createdBy string, in Pat
 		ID:          id.String(),
 		ClinicID:    clinicID,
 		DisplayName: normalized.DisplayName,
-		BirthDate:   nullString(normalized.BirthDate),
+		BirthDate:   strPtr(normalized.BirthDate),
 		Sex:         normalized.Sex,
-		Document:    nullString(normalized.Document),
-		Phone:       nullString(normalized.Phone),
-		Email:       nullString(normalized.Email),
-		Street:      nullString(normalized.Street),
-		City:        nullString(normalized.City),
-		State:       nullString(normalized.State),
-		PostalCode:  nullString(normalized.PostalCode),
-		Notes:       nullString(normalized.Notes),
-		CreatedBy:   nullString(createdBy),
+		Document:    strPtr(normalized.Document),
+		Phone:       strPtr(normalized.Phone),
+		Email:       strPtr(normalized.Email),
+		Street:      strPtr(normalized.Street),
+		City:        strPtr(normalized.City),
+		State:       strPtr(normalized.State),
+		PostalCode:  strPtr(normalized.PostalCode),
+		Notes:       strPtr(normalized.Notes),
+		CreatedBy:   strPtr(createdBy),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("usecase: create patient: %w", err)
@@ -136,16 +136,16 @@ func (s *Service) Update(ctx context.Context, id string, in PatientInput) (*repo
 	}
 	patient, err := s.q.UpdatePatient(ctx, repository.UpdatePatientParams{
 		DisplayName: normalized.DisplayName,
-		BirthDate:   nullString(normalized.BirthDate),
+		BirthDate:   strPtr(normalized.BirthDate),
 		Sex:         normalized.Sex,
-		Document:    nullString(normalized.Document),
-		Phone:       nullString(normalized.Phone),
-		Email:       nullString(normalized.Email),
-		Street:      nullString(normalized.Street),
-		City:        nullString(normalized.City),
-		State:       nullString(normalized.State),
-		PostalCode:  nullString(normalized.PostalCode),
-		Notes:       nullString(normalized.Notes),
+		Document:    strPtr(normalized.Document),
+		Phone:       strPtr(normalized.Phone),
+		Email:       strPtr(normalized.Email),
+		Street:      strPtr(normalized.Street),
+		City:        strPtr(normalized.City),
+		State:       strPtr(normalized.State),
+		PostalCode:  strPtr(normalized.PostalCode),
+		Notes:       strPtr(normalized.Notes),
 		ID:          id,
 	})
 	if errors.Is(err, sql.ErrNoRows) {
@@ -157,13 +157,15 @@ func (s *Service) Update(ctx context.Context, id string, in PatientInput) (*repo
 	return &patient, nil
 }
 
-// List returns patients for the clinic, filtered by q when non-empty and
-// by status when set, up to limit.
-func (s *Service) List(ctx context.Context, clinicID, q, status string, limit int) ([]repository.Patient, error) {
+// List returns patients for the clinic, filtered by q when non-empty, by
+// status when set, and starting after the display name cursor, up to
+// limit.
+func (s *Service) List(ctx context.Context, clinicID, q, status, after string, limit int) ([]repository.Patient, error) {
 	pattern := "%" + strings.TrimSpace(q) + "%"
 	if strings.TrimSpace(q) == "" {
 		rows, err := s.q.ListPatients(ctx, repository.ListPatientsParams{
-			ClinicID: clinicID, StatusEmpty: status, StatusFilter: status, Limit: int64(limit),
+			ClinicID: clinicID, StatusEmpty: status, StatusFilter: status,
+			AfterEmpty: after, After: after, Limit: int64(limit),
 		})
 		if err != nil {
 			return nil, fmt.Errorf("usecase: list patients: %w", err)
@@ -172,9 +174,10 @@ func (s *Service) List(ctx context.Context, clinicID, q, status string, limit in
 	}
 	rows, err := s.q.SearchPatients(ctx, repository.SearchPatientsParams{
 		ClinicID: clinicID, StatusEmpty: status, StatusFilter: status,
+		AfterEmpty: after, After: after,
 		DisplayName: pattern,
-		Document:    sql.NullString{String: pattern, Valid: true},
-		Email:       sql.NullString{String: pattern, Valid: true},
+		Document:    strPtr(pattern),
+		Email:       strPtr(pattern),
 		Limit:       int64(limit),
 	})
 	if err != nil {
@@ -213,7 +216,7 @@ func (s *Service) Count(ctx context.Context, clinicID string) (int64, error) {
 func (s *Service) DocumentExists(ctx context.Context, clinicID, document, excludeID string) (bool, error) {
 	exists, err := s.q.PatientDocumentExists(ctx, repository.PatientDocumentExistsParams{
 		ClinicID: clinicID,
-		Document: sql.NullString{String: document, Valid: document != ""},
+		Document: strPtr(document),
 		ID:       excludeID,
 	})
 	if err != nil {
@@ -276,9 +279,9 @@ func normalize(in PatientInput) (PatientInput, error) {
 	return out, nil
 }
 
-func nullString(s string) sql.NullString {
+func strPtr(s string) *string {
 	if s == "" {
-		return sql.NullString{}
+		return nil
 	}
-	return sql.NullString{String: s, Valid: true}
+	return &s
 }

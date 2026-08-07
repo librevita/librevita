@@ -3,6 +3,7 @@ package server
 import (
 	"net/http"
 
+	"github.com/a-h/templ"
 	"github.com/labstack/echo/v4"
 )
 
@@ -29,4 +30,26 @@ func HtmxRedirect(c echo.Context, path string) error {
 		return nil
 	}
 	return c.Redirect(http.StatusFound, path)
+}
+
+// Render writes a templ component with the given status.
+func Render(c echo.Context, status int, comp templ.Component) error {
+	c.Response().Status = status
+	return comp.Render(c.Request().Context(), c.Response())
+}
+
+// ActorID returns the signed-in user's id, or "" when absent.
+func ActorID(c echo.Context) string {
+	if p := Principal(c); p != nil {
+		return p.ID
+	}
+	return ""
+}
+
+// ActorMail returns the signed-in user's email, or "" when absent.
+func ActorMail(c echo.Context) string {
+	if p := Principal(c); p != nil {
+		return p.Email
+	}
+	return ""
 }

@@ -148,7 +148,7 @@ func patientFormSubmit(id string) string {
 }
 
 // PatientDetailPage renders the patient record with the registrar.
-templ PatientDetailPage(token string, p *auth.Principal, pt *repository.Patient, createdBy string, errMsg string) {
+templ PatientDetailPage(token string, p *auth.Principal, pt *repository.GetPatientWithCreatorRow, createdBy string, errMsg string) {
 	@layouts.App("Patient", token, p, "patients") {
 		<div class="mx-auto max-w-4xl">
 			@components.Card() {
@@ -170,17 +170,17 @@ templ PatientDetailPage(token string, p *auth.Principal, pt *repository.Patient,
 					<div class="ml-auto">@patientStatusBadge(pt.Status)</div>
 				</div>
 				<dl class="mt-6 grid grid-cols-1 gap-4 text-sm sm:grid-cols-2">
-					@detailField("Birth date", pt.BirthDate.String)
+					@detailField("Birth date", orEmpty(pt.BirthDate))
 					@detailField("Sex", pt.Sex)
-					@detailField("Document", pt.Document.String)
-					@detailField("Phone", pt.Phone.String)
-					@detailField("Email", pt.Email.String)
+					@detailField("Document", orEmpty(pt.Document))
+					@detailField("Phone", orEmpty(pt.Phone))
+					@detailField("Email", orEmpty(pt.Email))
 					@detailField("Address", addressLine(pt))
 				</dl>
-				if pt.Notes.Valid && pt.Notes.String != "" {
+				if pt.Notes != nil {
 					<div class="mt-6">
 						<h4 class="text-sm font-semibold text-gray-900 dark:text-white">Notes</h4>
-						<p class="mt-2 whitespace-pre-wrap text-sm text-gray-600 dark:text-gray-300">{ pt.Notes.String }</p>
+						<p class="mt-2 whitespace-pre-wrap text-sm text-gray-600 dark:text-gray-300">{ *pt.Notes }</p>
 					</div>
 				}
 				<div class="mt-6 flex items-center gap-3">
@@ -206,8 +206,8 @@ templ patientStatusBadge(status string) {
 	@statusBadge(status)
 }
 
-func addressLine(pt *repository.Patient) string {
-	parts := []string{pt.Street.String, pt.City.String, pt.State.String, pt.PostalCode.String}
+func addressLine(pt *repository.GetPatientWithCreatorRow) string {
+	parts := []string{orEmpty(pt.Street), orEmpty(pt.City), orEmpty(pt.State), orEmpty(pt.PostalCode)}
 	out := ""
 	for _, part := range parts {
 		if part == "" {
