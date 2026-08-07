@@ -19,18 +19,20 @@ LIMIT 1;
 SELECT *
 FROM patients
 WHERE clinic_id = ?
+  AND (@status_empty = '' OR status = @status_filter)
 ORDER BY display_name COLLATE NOCASE
-LIMIT ?;
+LIMIT @limit;
 
 -- name: SearchPatients :many
 SELECT *
 FROM patients
 WHERE clinic_id = ?
-AND (display_name LIKE ? COLLATE NOCASE
-OR document LIKE ?
-OR email LIKE ? COLLATE NOCASE)
+  AND (@status_empty = '' OR status = @status_filter)
+  AND (display_name LIKE ? COLLATE NOCASE
+       OR document LIKE ?
+       OR email LIKE ? COLLATE NOCASE)
 ORDER BY display_name COLLATE NOCASE
-LIMIT ?;
+LIMIT @limit;
 
 -- name: UpdatePatient :one
 UPDATE patients
@@ -58,3 +60,10 @@ WHERE id = ?;
 SELECT COUNT(*)
 FROM patients
 WHERE clinic_id = ?;
+
+-- name: PatientDocumentExists :one
+SELECT EXISTS(
+    SELECT 1
+    FROM patients
+    WHERE clinic_id = ? AND document = ? AND id <> ?
+);

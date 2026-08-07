@@ -1,6 +1,8 @@
 package views
 
 import (
+	"strconv"
+
 	"librevita.org/internal/core/auth"
 	"librevita.org/internal/ui/components"
 	"librevita.org/internal/ui/layouts"
@@ -22,6 +24,7 @@ type PolicyRow struct {
 
 // ActivityRow is an audit event rendered on the dashboard timeline.
 type ActivityRow struct {
+	ID       int64
 	When     string
 	Action   string
 	Resource string
@@ -47,10 +50,11 @@ type DashboardStats struct {
 	Staff    int64
 	Users    int64
 	Policies int64
-	LatestUsers    []UserRow
-	LatestPolicies []PolicyRow
-	Activity       []ActivityRow
-	Clinic         ClinicInfo
+	LatestUsers     []UserRow
+	LatestPolicies  []PolicyRow
+	Activity        []ActivityRow
+	ActivityCursor  int64
+	Clinic          ClinicInfo
 }
 
 templ Home(token string, p *auth.Principal, stats DashboardStats) {
@@ -60,28 +64,7 @@ templ Home(token string, p *auth.Principal, stats DashboardStats) {
 				<div class="2xl:col-span-2">
 					@components.Card() {
 						@components.CardHeader("Recent activity") { }
-					if len(stats.Activity) == 0 {
-						<p class="text-sm text-gray-500 dark:text-gray-400">No activity recorded yet.</p>
-					} else {
-						<ol class="relative border-l border-gray-200">
-							for _, ev := range stats.Activity {
-								<li class="mb-6 ml-4">
-									<span class={ "absolute w-3 h-3 rounded-full mt-1.5 -left-1.5 border border-white " + dotColor(ev.Result) }></span>
-									<div class="flex items-baseline justify-between gap-4">
-										<h4 class="text-sm font-semibold text-gray-900 dark:text-white">{ ev.Action }</h4>
-										<time class="shrink-0 text-xs text-gray-400 dark:text-gray-400">{ ev.When }</time>
-									</div>
-									<p class="text-sm text-gray-500 dark:text-gray-400">{ ev.Resource }</p>
-									if ev.Actor != "" {
-										<p class="mt-0.5 text-xs text-gray-400 dark:text-gray-400">{ ev.Actor }</p>
-									}
-									if ev.Detail != "" {
-										<p class="mt-1 truncate text-xs text-red-600 dark:text-red-400">{ ev.Detail }</p>
-									}
-								</li>
-							}
-						</ol>
-					}
+						@ActivityFeed(stats.Activity, stats.ActivityCursor)
 					}
 				</div>
 				<section>
@@ -215,6 +198,44 @@ templ Home(token string, p *auth.Principal, stats DashboardStats) {
 			</div>
 		</div>
 	}
+}
+
+// ActivityFeed is the dashboard timeline fragment. It refreshes itself
+// every minute and appends older entries via the Load more button; both
+// requests hit /activity/recent and replace this feed, so the cursor
+// stays consistent.
+templ ActivityFeed(activity []ActivityRow, cursor int64) {
+	<div id="activity-feed" hx-get="/activity/recent" hx-trigger="every 60s" hx-swap="innerHTML">
+		if len(activity) == 0 {
+			<p class="text-sm text-gray-500 dark:text-gray-400">No activity recorded yet.</p>
+		} else {
+			<ol class="relative border-l border-gray-200">
+				for _, ev := range activity {
+					<li class="mb-6 ml-4">
+						<span class={ "absolute w-3 h-3 rounded-full mt-1.5 -left-1.5 border border-white " + dotColor(ev.Result) }></span>
+						<div class="flex items-baseline justify-between gap-4">
+							<h4 class="text-sm font-semibold text-gray-900 dark:text-white">{ ev.Action }</h4>
+							<time class="shrink-0 text-xs text-gray-400 dark:text-gray-400">{ ev.When }</time>
+						</div>
+						<p class="text-sm text-gray-500 dark:text-gray-400">{ ev.Resource }</p>
+						if ev.Actor != "" {
+							<p class="mt-0.5 text-xs text-gray-400 dark:text-gray-400">{ ev.Actor }</p>
+						}
+						if ev.Detail != "" {
+							<p class="mt-1 truncate text-xs text-red-600 dark:text-red-400">{ ev.Detail }</p>
+						}
+					</li>
+				}
+			</ol>
+		}
+		if cursor > 0 {
+			<button type="button" hx-get={ "/activity/recent?before=" + itoa(cursor) } hx-target="#activity-feed" hx-swap="innerHTML" class="mt-4 inline-flex items-center rounded-lg p-2 text-sm font-medium text-indigo-700 hover:bg-gray-100 dark:text-indigo-400 dark:hover:bg-gray-700">Load more</button>
+		}
+	</div>
+}
+
+func itoa(n int64) string {
+	return strconv.FormatInt(n, 10)
 }
 
 templ Admin(token string, p *auth.Principal) {

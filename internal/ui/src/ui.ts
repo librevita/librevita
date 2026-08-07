@@ -20,6 +20,20 @@ document.addEventListener('htmx:configRequest', (evt) => {
   }
 });
 
+// hx-boost replaces the body on navigation. Alpine only initializes the
+// original tree, so the swapped content must be initialized explicitly.
+// The old DOM is discarded, so initTree cannot double-initialize.
+document.addEventListener('htmx:afterSwap', (evt) => {
+  const detail = (evt as CustomEvent<HtmxAfterSwapDetail>).detail;
+  if (detail.elt) {
+    window.Alpine?.initTree(detail.elt);
+    const main = document.getElementById('app-main');
+    if (main && (main as HTMLElement).focus) {
+      (main as HTMLElement).focus({ preventScroll: true });
+    }
+  }
+});
+
 // The Alpine CSP cdn build auto-starts when it loads (after this bundle),
 // so components must register before that happens. The alpine:init event
 // fires at the start of Alpine initialization.

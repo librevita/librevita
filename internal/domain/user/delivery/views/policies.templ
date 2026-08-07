@@ -34,47 +34,63 @@ templ AdminPolicies(token string, p *auth.Principal, policies []PolicyView, errM
 				and <code class="rounded bg-gray-100 px-1">request</code> variables. They take effect immediately after saving.
 			</p>
 			<div class="mt-6 space-y-8">
-				for _, p := range policies {
-					<section class="card">
-						<form method="post" action="/admin/policies" class="space-y-3">
-							<input type="hidden" name="_csrf" value={ token }>
-							<input type="hidden" name="name" value={ p.Name }>
-							<label class="label" for={ "policy-" + p.Name }>
-								<span class="font-semibold text-gray-900 dark:text-white">{ p.Name }</span>
-								<textarea class="input font-mono" id={ "policy-" + p.Name } name="expression" rows="3" required>{ p.Expression }</textarea>
-							</label>
-							<button class="btn" type="submit">Save</button>
-						</form>
-						if len(p.History) > 0 {
-							<div class="mt-6 overflow-x-auto">
-								<table class="table-base">
-									<caption class="text-left text-sm font-semibold text-gray-900 py-2 dark:text-white">Change history</caption>
-									@components.Thead() {
-										<tr>
-											<th class="px-3 py-2 text-left font-medium text-gray-500 dark:text-gray-400">Expression</th>
-											<th class="px-3 py-2 text-left font-medium text-gray-500 dark:text-gray-400">Changed by</th>
-											<th class="px-3 py-2 text-left font-medium text-gray-500 dark:text-gray-400">Origin</th>
-											<th class="px-3 py-2 text-left font-medium text-gray-500 dark:text-gray-400">When</th>
-										</tr>
-									}
-									<tbody class="divide-y divide-gray-200 dark:divide-gray-700">
-										for _, v := range p.History {
-											<tr>
-												<td class="px-3 py-2 font-mono text-xs dark:text-gray-300">{ v.Expression }</td>
-												<td class="px-3 py-2 dark:text-gray-300">{ changedBy(v.ChangedBy, v.ChangedByEmail) }</td>
-												<td class="px-3 py-2 dark:text-gray-300">{ v.Origin }</td>
-												<td class="px-3 py-2 text-xs text-gray-500 dark:text-gray-400">{ v.When }</td>
-											</tr>
-										}
-									</tbody>
-								</table>
-							</div>
-						}
-					</section>
+				for _, pl := range policies {
+					@PolicyCard(token, pl, "")
 				}
 			</div>
 		</div>
 	}
+}
+
+// PolicyCard is the per-policy fragment: htmx saves and resets replace it
+// in place, so errors stay with their card.
+templ PolicyCard(token string, pl PolicyView, errMsg string) {
+	<section class="card">
+		<form method="post" action="/admin/policies" hx-post="/admin/policies" hx-target="closest section" hx-swap="outerHTML" class="space-y-3">
+			<input type="hidden" name="_csrf" value={ token }>
+			<input type="hidden" name="name" value={ pl.Name }>
+			<label class="label" for={ "policy-" + pl.Name }>
+				<span class="font-semibold text-gray-900 dark:text-white">{ pl.Name }</span>
+				<textarea class="input font-mono" id={ "policy-" + pl.Name } name="expression" rows="3" required>{ pl.Expression }</textarea>
+			</label>
+			if errMsg != "" {
+				<p class="text-xs text-red-600 dark:text-red-400">{ errMsg }</p>
+			}
+			<div class="flex items-center gap-3">
+				<button class="btn" type="submit">Save</button>
+				<button type="button" class="btn-secondary" hx-post="/admin/policies/reset" hx-vals={ policyVals(pl.Name) } hx-target="closest section" hx-swap="outerHTML">Reset to default</button>
+			</div>
+		</form>
+		if len(pl.History) > 0 {
+			<div class="mt-6 overflow-x-auto">
+				<table class="table-base">
+					<caption class="text-left text-sm font-semibold text-gray-900 py-2 dark:text-white">Change history</caption>
+					@components.Thead() {
+						<tr>
+							<th class="px-3 py-2 text-left font-medium text-gray-500 dark:text-gray-400">Expression</th>
+							<th class="px-3 py-2 text-left font-medium text-gray-500 dark:text-gray-400">Changed by</th>
+							<th class="px-3 py-2 text-left font-medium text-gray-500 dark:text-gray-400">Origin</th>
+							<th class="px-3 py-2 text-left font-medium text-gray-500 dark:text-gray-400">When</th>
+						</tr>
+					}
+					<tbody class="divide-y divide-gray-200 dark:divide-gray-700">
+						for _, v := range pl.History {
+							<tr>
+								<td class="px-3 py-2 font-mono text-xs dark:text-gray-300">{ v.Expression }</td>
+								<td class="px-3 py-2 dark:text-gray-300">{ changedBy(v.ChangedBy, v.ChangedByEmail) }</td>
+								<td class="px-3 py-2 dark:text-gray-300">{ v.Origin }</td>
+								<td class="px-3 py-2 text-xs text-gray-500 dark:text-gray-400">{ v.When }</td>
+							</tr>
+						}
+					</tbody>
+				</table>
+			</div>
+		}
+	</section>
+}
+
+func policyVals(name string) string {
+	return "{\"name\":\"" + name + "\"}"
 }
 
 func changedBy(id, email *string) string {

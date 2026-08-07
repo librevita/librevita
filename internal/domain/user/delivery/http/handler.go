@@ -2,8 +2,10 @@
 package http
 
 import (
+	"context"
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -13,7 +15,6 @@ import (
 	"librevita.org/internal/core/audit"
 	"librevita.org/internal/core/auth"
 	"librevita.org/internal/core/policy"
-	"librevita.org/internal/core/policy/repository"
 	"librevita.org/internal/core/server"
 	"librevita.org/internal/domain/clinic"
 	patientusecase "librevita.org/internal/domain/patient/usecase"
@@ -213,7 +214,7 @@ func (h *Handler) Home(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-	activity, err := h.audit.Recent(ctx, 8)
+	activity, err := h.audit.Recent(ctx, 8, 0)
 	if err != nil {
 		return err
 	}
@@ -257,8 +258,51 @@ func (h *Handler) Home(c echo.Context) error {
 			Name: pl.Name, Expression: pl.Expression,
 		})
 	}
+	stats.Activity = h.activityRows(ctx, activity, clock)
+	if len(stats.Activity) == 8 {
+		stats.ActivityCursor = stats.Activity[len(stats.Activity)-1].ID
+	}
+
+	return render(c, http.StatusOK, views.Home(server.CSRFToken(c, h.csrf), server.Principal(c), stats))
+}
+
+// HomeActivity serves the dashboard activity feed fragment: the timeline
+// refreshes itself every minute, and ?before= is the id cursor for the
+// Load more button.
+func (h *Handler) HomeActivity(c echo.Context) error {
+	ctx := c.Request().Context()
+	before, _ := strconv.ParseInt(c.QueryParam("before"), 10, 64)
+
+	limit := 8
+	if before > 0 {
+		limit = 12
+	}
+	activity, err := h.audit.Recent(ctx, limit, before)
+	if err != nil {
+		return err
+	}
+	clock, err := h.clocks.Clock(ctx)
+	if err != nil {
+		return err
+	}
+	rows := h.activityRows(ctx, activity, clock)
+
+	cursor := int64(0)
+	if before > 0 {
+		if len(rows) == 12 {
+			cursor = rows[len(rows)-1].ID
+		}
+	} else if len(rows) == 8 {
+		cursor = rows[len(rows)-1].ID
+	}
+	return render(c, http.StatusOK, views.ActivityFeed(rows, cursor))
+}
+
+func (h *Handler) activityRows(ctx context.Context, activity []audit.EventRow, clock *clinic.Clock) []views.ActivityRow {
+	out := make([]views.ActivityRow, 0, len(activity))
 	for _, ev := range activity {
 		row := views.ActivityRow{
+			ID:       ev.ID,
 			When:     formatWhen(clock, ev.CreatedAt),
 			Action:   ev.Action,
 			Resource: ev.Resource,
@@ -270,10 +314,9 @@ func (h *Handler) Home(c echo.Context) error {
 		if ev.Detail != nil {
 			row.Detail = *ev.Detail
 		}
-		stats.Activity = append(stats.Activity, row)
+		out = append(out, row)
 	}
-
-	return render(c, http.StatusOK, views.Home(server.CSRFToken(c, h.csrf), server.Principal(c), stats))
+	return out
 }
 
 func orEmpty(s *string) string {
@@ -310,15 +353,7 @@ func (h *Handler) Admin(c echo.Context) error {
 // AdminPoliciesPage lists the dynamic CEL policies for editing, each with
 // its recent change history.
 func (h *Handler) AdminPoliciesPage(c echo.Context) error {
-	policies, err := h.policies.List(c.Request().Context())
-	if err != nil {
-		return err
-	}
-	viewsList, err := h.policyViews(c, policies)
-	if err != nil {
-		return err
-	}
-	return render(c, http.StatusOK, views.AdminPolicies(server.CSRFToken(c, h.csrf), server.Principal(c), viewsList, ""))
+	return h.policiesPage(c, "")
 }
 
 // AdminPolicySave validates and persists a policy expression. Invalid
@@ -347,27 +382,78 @@ func (h *Handler) AdminPolicySave(c echo.Context) error {
 		IP: c.RealIP(), RequestID: c.Response().Header().Get(echo.HeaderXRequestID),
 	})
 
-	policies, listErr := h.policies.List(c.Request().Context())
-	if listErr != nil {
-		return listErr
+	if server.IsHtmx(c) {
+		return h.policyCardFragment(c, name, detail)
 	}
-	viewsList, listErr := h.policyViews(c, policies)
-	if listErr != nil {
-		return listErr
+	return h.policiesPage(c, "")
+}
+
+// AdminPolicyReset restores the default expression of a policy. htmx
+// requests receive the refreshed card; others navigate back to the list.
+func (h *Handler) AdminPolicyReset(c echo.Context) error {
+	name := strings.TrimSpace(c.FormValue("name"))
+	expression, ok := policy.DefaultPolicies[name]
+	if !ok {
+		return echo.NewHTTPError(http.StatusNotFound, "unknown policy")
 	}
-	return render(c, http.StatusOK, views.AdminPolicies(server.CSRFToken(c, h.csrf), server.Principal(c), viewsList, detail))
+	actor := policy.Actor{}
+	if p := server.Principal(c); p != nil {
+		actor = policy.Actor{ID: p.ID, Email: p.Email}
+	}
+	err := h.policies.Set(c.Request().Context(), name, expression, actor)
+	h.audit.Record(c.Request().Context(), audit.Event{
+		ActorID: actor.ID, ActorMail: actor.Email,
+		Action: "policy.update", Resource: "policy:" + name,
+		Result: audit.ResultSuccess, Detail: "reset to default",
+		IP: c.RealIP(), RequestID: c.Response().Header().Get(echo.HeaderXRequestID),
+	})
+	if err != nil {
+		return err
+	}
+	if server.IsHtmx(c) {
+		return h.policyCardFragment(c, name, "")
+	}
+	return h.policiesPage(c, "")
+}
+
+// policyCardFragment renders a single policy card, the swap target of
+// the inline save and reset forms.
+func (h *Handler) policyCardFragment(c echo.Context, name, errMsg string) error {
+	viewsList, err := h.policyViews(c, c.Request().Context())
+	if err != nil {
+		return err
+	}
+	for _, pv := range viewsList {
+		if pv.Name == name {
+			return render(c, http.StatusOK, views.PolicyCard(server.CSRFToken(c, h.csrf), pv, errMsg))
+		}
+	}
+	return echo.NewHTTPError(http.StatusNotFound, "unknown policy")
+}
+
+// policiesPage renders the full policies page.
+func (h *Handler) policiesPage(c echo.Context, errMsg string) error {
+	viewsList, err := h.policyViews(c, c.Request().Context())
+	if err != nil {
+		return err
+	}
+	return render(c, http.StatusOK, views.AdminPolicies(server.CSRFToken(c, h.csrf), server.Principal(c), viewsList, errMsg))
 }
 
 // policyViews decorates the stored policies with their change history,
 // rendering timestamps in the clinic's timezone.
-func (h *Handler) policyViews(c echo.Context, policies []repository.ListPoliciesRow) ([]views.PolicyView, error) {
-	clock, err := h.clocks.Clock(c.Request().Context())
+func (h *Handler) policyViews(c echo.Context, ctx context.Context) ([]views.PolicyView, error) {
+	policies, err := h.policies.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	clock, err := h.clocks.Clock(ctx)
 	if err != nil {
 		return nil, err
 	}
 	out := make([]views.PolicyView, 0, len(policies))
 	for _, p := range policies {
-		history, err := h.policies.History(c.Request().Context(), p.Name, 5)
+		history, err := h.policies.History(ctx, p.Name, 5)
 		if err != nil {
 			return nil, err
 		}
