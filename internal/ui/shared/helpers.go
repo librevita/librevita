@@ -1,4 +1,4 @@
-package components
+package shared
 
 import "strings"
 
@@ -25,5 +25,18 @@ func RoleBadgeClass(role string) string {
 		return "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300"
 	default:
 		return "bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300"
+	}
+}
+
+// BtnClass returns the style class for a button kind. Unknown kinds fall
+// back to the primary button.
+func BtnClass(kind string) string {
+	switch kind {
+	case "secondary":
+		return "btn-secondary"
+	case "danger":
+		return "btn-danger"
+	default:
+		return "btn"
 	}
 }

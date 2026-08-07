@@ -1,4 +1,4 @@
-package components
+package shared
 
 import "testing"
 
@@ -27,6 +27,20 @@ func TestRoleBadgeClass(t *testing.T) {
 	for role, want := range cases {
 		if got := RoleBadgeClass(role); got != want {
 			t.Errorf("RoleBadgeClass(%q) = %q, want %q", role, got, want)
+		}
+	}
+}
+
+func TestBtnClass(t *testing.T) {
+	cases := map[string]string{
+		"primary":   "btn",
+		"secondary": "btn-secondary",
+		"danger":    "btn-danger",
+		"unknown":   "btn",
+	}
+	for kind, want := range cases {
+		if got := BtnClass(kind); got != want {
+			t.Errorf("btnClass(%q) = %q, want %q", kind, got, want)
 		}
 	}
 }

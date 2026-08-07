@@ -1,0 +1,25 @@
+package components
+
+// Input renders a text-like control with the shared .input class. Pass
+// id, type, value, required and hx-* attributes in attrs; do not pass
+// class.
+templ Input(name string, attrs templ.Attributes) {
+	<input name={ name } class="input" { attrs... }>
+}
+
+// Select renders a select control; options go in the children.
+templ Select(name string, attrs templ.Attributes) {
+	<select name={ name } class="input" { attrs... }>{ children... }</select>
+}
+
+// Textarea renders a multiline control; the text content goes in the
+// children.
+templ Textarea(name string, attrs templ.Attributes) {
+	<textarea name={ name } class="input" { attrs... }>{ children... }</textarea>
+}
+
+// Checkbox renders a checkbox with the standard accent color. Pass
+// checked, value and other attributes in attrs.
+templ Checkbox(name string, attrs templ.Attributes) {
+	<input type="checkbox" name={ name } class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 dark:border-gray-600 dark:bg-gray-700 dark:ring-offset-gray-800" { attrs... }>
+}

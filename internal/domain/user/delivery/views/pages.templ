@@ -1,6 +1,7 @@
 package views
 
 import (
+	"librevita.org/internal/ui/shared"
 	"strconv"
 
 	"librevita.org/internal/core/auth"
@@ -87,7 +88,7 @@ templ Home(token string, p *auth.Principal, stats DashboardStats) {
 									for _, u := range stats.LatestUsers {
 										<li class="py-3">
 											<div class="flex items-center space-x-4">
-												@components.Avatar(components.Initials(u.Name), "h-8 w-8 bg-indigo-100 text-indigo-700 dark:bg-indigo-900 dark:text-indigo-300")
+												@components.Avatar(shared.Initials(u.Name), "h-8 w-8 bg-indigo-100 text-indigo-700 dark:bg-indigo-900 dark:text-indigo-300")
 												<div class="min-w-0 flex-1">
 													<p class="truncate font-medium text-gray-900 dark:text-white">{ u.Name }</p>
 													<p class="truncate text-sm text-gray-500 dark:text-gray-400">{ u.Email }</p>
