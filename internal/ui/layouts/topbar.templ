@@ -10,7 +10,7 @@ import (
 templ Topbar(title string, token string, principal *auth.Principal) {
 	<header class="flex h-16 shrink-0 items-center justify-between border-b border-gray-200 bg-white px-3 dark:border-gray-700 dark:bg-gray-800 lg:px-5">
 		<div class="flex items-center gap-3">
-			<button type="button" @click="toggle()" class="rounded-md p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white md:hidden" aria-label="Toggle navigation">
+			<button type="button" data-lv-nav-toggle class="rounded-md p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white md:hidden" aria-label="Toggle navigation">
 				<svg class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
 					<path stroke-linecap="round" stroke-linejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
 				</svg>
@@ -22,15 +22,15 @@ templ Topbar(title string, token string, principal *auth.Principal) {
 			<h1 class="ml-4 hidden border-l border-gray-200 pl-4 text-lg font-semibold text-gray-900 dark:border-gray-700 dark:text-white sm:block">{ title }</h1>
 		</div>
 		if principal != nil {
-			<div x-data="userMenu" class="relative">
-				<button type="button" @click="toggle()" class="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:hover:bg-gray-700">
+			<div class="relative">
+				<button type="button" data-lv-user-menu-toggle class="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:hover:bg-gray-700" aria-haspopup="true" aria-expanded="false">
 					@components.Avatar(components.Initials(principal.Name), "h-8 w-8 bg-indigo-600 text-white")
 					<span class="hidden text-sm font-medium text-gray-700 dark:text-gray-200 lg:block">{ principal.Name }</span>
 					<svg class="hidden h-4 w-4 text-gray-400 dark:text-gray-500 lg:block" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
 						<path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
 					</svg>
 				</button>
-				<div x-show="open" x-cloak @click.outside="close()" class="absolute right-0 z-50 mt-2 w-64 rounded-lg border border-gray-200 bg-white shadow-lg dark:border-gray-600 dark:bg-gray-800">
+				<div data-lv-user-menu class="absolute right-0 z-50 mt-2 hidden w-64 rounded-lg border border-gray-200 bg-white shadow-lg dark:border-gray-600 dark:bg-gray-800">
 					<div class="border-b border-gray-200 px-4 py-3 dark:border-gray-600">
 						<p class="text-sm font-medium text-gray-900 dark:text-white">{ principal.Name }</p>
 						<p class="truncate text-xs text-gray-500 dark:text-gray-400">{ principal.Email }</p>

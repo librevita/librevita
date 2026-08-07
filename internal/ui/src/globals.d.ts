@@ -20,12 +20,3 @@ declare interface HtmxAfterSwapDetail {
   elt: Element | null;
 }
 
-declare const Alpine: {
-  start: () => void;
-  data: <T>(name: string, factory: () => T) => void;
-  initTree: (root: Element) => void;
-};
-
-interface Window {
-  Alpine?: typeof Alpine;
-}

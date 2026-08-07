@@ -78,13 +78,13 @@ templ PatientListTable(patients []PatientRow, nextLimit int, errMsg string) {
 			<p class="text-sm text-gray-500 dark:text-gray-400">No patients found.</p>
 		</div>
 	} else {
-		<div x-data="tableSelect" class="overflow-x-auto rounded-lg">
+		<div data-lv-table-select class="overflow-x-auto rounded-lg">
 			<table class="min-w-full divide-y divide-gray-200 text-sm">
 				@components.Thead() {
 					<tr>
 						<th scope="col" class="w-12 p-4">
 							<span class="sr-only">Select</span>
-							<input type="checkbox" name="select_all" @click="toggleAll()" :checked="all" class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" aria-label="Select all">
+							<input type="checkbox" name="select_all" data-lv-select-all class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" aria-label="Select all">
 						</th>
 						<th scope="col" class="p-4"><a href="#" hx-get="/patients" hx-include="#patient-search, #status-filter" hx-target="#patient-list" hx-swap="innerHTML" class="text-xs font-medium uppercase tracking-wider text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white">Patient</a></th>
 						<th scope="col" class="p-4"><a href="#" hx-get="/patients?sort=birth_date" hx-include="#patient-search, #status-filter" hx-target="#patient-list" hx-swap="innerHTML" class="text-xs font-medium uppercase tracking-wider text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white">Birth date</a></th>
@@ -125,7 +125,7 @@ templ PatientRowOnly(rows []PatientRow) {
 // PatientRowCells renders one row of the registry table.
 templ PatientRowCells(pt PatientRow) {
 	<td class="whitespace-nowrap p-4">
-		<input type="checkbox" name="ids" value={ pt.ID } @change="updateAll()" class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" aria-label={ "Select " + pt.DisplayName }>
+		<input type="checkbox" name="ids" value={ pt.ID } class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" aria-label={ "Select " + pt.DisplayName }>
 	</td>
 	<td class="whitespace-nowrap p-4">
 		<div class="flex items-center gap-3">

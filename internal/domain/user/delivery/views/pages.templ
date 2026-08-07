@@ -72,17 +72,17 @@ templ Home(token string, p *auth.Principal, stats DashboardStats) {
 						<header class="mb-4">
 							<h3 class="text-lg font-semibold text-gray-900 dark:text-white">Statistics</h3>
 						</header>
-					<div x-data="tabs">
+					<div data-lv-tabs data-lv-active-class="bg-gray-50 text-gray-900 dark:bg-gray-700 dark:text-white">
 						<ul class="hidden divide-x divide-gray-200 rounded-lg text-center text-sm font-medium text-gray-500 dark:divide-gray-700 dark:text-gray-400 sm:flex" role="tablist">
 							<li class="w-full" role="presentation">
-								<button type="button" @click="set('users')" :class="tabClass('users', 'bg-gray-50 text-gray-900 dark:bg-gray-700 dark:text-white')" class="inline-block w-full rounded-tl-lg p-3 hover:bg-gray-100 dark:hover:bg-gray-700" role="tab">Latest users</button>
+								<button type="button" data-lv-tab="users" class="inline-block w-full rounded-tl-lg p-3 hover:bg-gray-100 dark:hover:bg-gray-700 bg-gray-50 text-gray-900 dark:bg-gray-700 dark:text-white" role="tab">Latest users</button>
 							</li>
 							<li class="w-full" role="presentation">
-								<button type="button" @click="set('policies')" :class="tabClass('policies', 'bg-gray-50 text-gray-900 dark:bg-gray-700 dark:text-white')" class="inline-block w-full rounded-tr-lg p-3 hover:bg-gray-100 dark:hover:bg-gray-700" role="tab">Access policies</button>
+								<button type="button" data-lv-tab="policies" class="inline-block w-full rounded-tr-lg p-3 hover:bg-gray-100 dark:hover:bg-gray-700" role="tab">Access policies</button>
 							</li>
 						</ul>
 						<div class="border-t border-gray-200 dark:border-gray-700">
-							<div x-show="active === 'users'" x-cloak class="pt-2">
+							<div data-lv-panel="users" class="pt-2">
 								<ul class="divide-y divide-gray-200 dark:divide-gray-700" role="list">
 									for _, u := range stats.LatestUsers {
 										<li class="py-3">
@@ -98,7 +98,7 @@ templ Home(token string, p *auth.Principal, stats DashboardStats) {
 									}
 								</ul>
 							</div>
-							<div x-show="active === 'policies'" x-cloak class="pt-2">
+							<div data-lv-panel="policies" class="hidden pt-2">
 								<ul class="divide-y divide-gray-200 dark:divide-gray-700" role="list">
 									for _, pl := range stats.LatestPolicies {
 										<li class="py-3">
