@@ -29,7 +29,7 @@ document.addEventListener('alpine:init', () => {
     return;
   }
   // Mobile navigation drawer. The aside is always visible from md up via
-  // md:flex! (important beats the x-show inline style).
+  // md:!flex (important beats the x-show inline style).
   alpine.data('sidebar', () => ({
     open: false,
     toggle() {
