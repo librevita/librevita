@@ -152,8 +152,16 @@ func patientFormSubmit(id string) string {
 	return "Save changes"
 }
 
-// PatientDetailPage renders the patient record with the registrar.
-templ PatientDetailPage(token string, p *auth.Principal, pt *repository.GetPatientWithCreatorRow, createdBy string, errMsg string) {
+// HistoryRow is one line of the patient's change history, pre-rendered
+// by the handler (timezone and actor formatting).
+type HistoryRow struct {
+	When string
+	Text string
+}
+
+// PatientDetailPage renders the patient record with the registrar and
+// the change history.
+templ PatientDetailPage(token string, p *auth.Principal, pt *repository.GetPatientWithCreatorRow, createdBy string, history []HistoryRow, errMsg string) {
 	@layouts.App("Patient", token, p, "patients") {
 		<div class="mx-auto max-w-4xl">
 			@components.Card() {
@@ -195,6 +203,19 @@ templ PatientDetailPage(token string, p *auth.Principal, pt *repository.GetPatie
 						@components.Button("secondary", "Archive", templ.Attributes{ "type": "submit" })
 					</form>
 				</div>
+				if len(history) > 0 {
+					<div class="mt-8">
+						<h4 class="text-sm font-semibold text-gray-900 dark:text-white">History</h4>
+						<ul class="mt-3 divide-y divide-gray-200 dark:divide-gray-700">
+							for _, h := range history {
+								<li class="flex items-baseline gap-4 py-2 text-sm">
+									<span class="w-36 shrink-0 text-xs text-gray-500 dark:text-gray-400">{ h.When }</span>
+									<span class="text-gray-700 dark:text-gray-300">{ h.Text }</span>
+								</li>
+							}
+						</ul>
+					</div>
+				}
 			}
 		</div>
 	}

@@ -24,3 +24,10 @@ FROM audit_log
 WHERE id < ?
 ORDER BY id DESC
 LIMIT ?;
+
+-- name: ListAuditEventsForResource :many
+SELECT id, created_at, actor_id, actor_email, action, resource, result, detail
+FROM audit_log
+WHERE resource = ?
+ORDER BY id DESC
+LIMIT ?;

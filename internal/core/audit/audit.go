@@ -72,29 +72,55 @@ func (l *Logger) Recent(ctx context.Context, limit int, before int64) ([]EventRo
 		if err != nil {
 			return nil, fmt.Errorf("audit: recent before: %w", err)
 		}
-		out := make([]EventRow, 0, len(rows))
-		for _, r := range rows {
-			out = append(out, EventRow{
-				ID: r.ID, CreatedAt: r.CreatedAt, ActorID: r.ActorID,
-				ActorEmail: r.ActorEmail, Action: r.Action, Resource: r.Resource,
-				Result: r.Result, Detail: r.Detail,
-			})
-		}
-		return out, nil
+		return eventsFromBefore(rows), nil
 	}
 	rows, err := l.queries.ListRecentAuditEvents(ctx, int64(limit))
 	if err != nil {
 		return nil, fmt.Errorf("audit: recent: %w", err)
 	}
+	return eventsFromRecent(rows), nil
+}
+
+// ForResource returns the events recorded against a resource (e.g.
+// "patient:<id>"), newest first, limited to the most recent rows.
+func (l *Logger) ForResource(ctx context.Context, resource string, limit int) ([]EventRow, error) {
+	rows, err := l.queries.ListAuditEventsForResource(ctx, repository.ListAuditEventsForResourceParams{
+		Resource: resource, Limit: int64(limit),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("audit: for resource %s: %w", resource, err)
+	}
+	return eventsFromResource(rows), nil
+}
+
+func eventsFromRecent(rows []repository.ListRecentAuditEventsRow) []EventRow {
 	out := make([]EventRow, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, EventRow{
-			ID: r.ID, CreatedAt: r.CreatedAt, ActorID: r.ActorID,
+		out = append(out, EventRow{ID: r.ID, CreatedAt: r.CreatedAt, ActorID: r.ActorID,
 			ActorEmail: r.ActorEmail, Action: r.Action, Resource: r.Resource,
-			Result: r.Result, Detail: r.Detail,
-		})
+			Result: r.Result, Detail: r.Detail})
 	}
-	return out, nil
+	return out
+}
+
+func eventsFromBefore(rows []repository.ListAuditEventsBeforeRow) []EventRow {
+	out := make([]EventRow, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, EventRow{ID: r.ID, CreatedAt: r.CreatedAt, ActorID: r.ActorID,
+			ActorEmail: r.ActorEmail, Action: r.Action, Resource: r.Resource,
+			Result: r.Result, Detail: r.Detail})
+	}
+	return out
+}
+
+func eventsFromResource(rows []repository.ListAuditEventsForResourceRow) []EventRow {
+	out := make([]EventRow, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, EventRow{ID: r.ID, CreatedAt: r.CreatedAt, ActorID: r.ActorID,
+			ActorEmail: r.ActorEmail, Action: r.Action, Resource: r.Resource,
+			Result: r.Result, Detail: r.Detail})
+	}
+	return out
 }
 
 // Record persists ev. Failures are logged and swallowed so that auditing
