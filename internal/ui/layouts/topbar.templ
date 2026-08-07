@@ -44,7 +44,7 @@ templ Topbar(title string, token string, principal *auth.Principal) {
 							Profile
 						</a>
 					</div>
-					<form method="post" action="/auth/logout" class="p-2">
+					<form method="post" hx-boost="false" action="/auth/logout" class="p-2">
 						<input type="hidden" name="_csrf" value={ token }>
 						<button type="submit" class="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:text-gray-200 dark:hover:bg-gray-600">
 							<svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
