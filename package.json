@@ -5,20 +5,30 @@
   "description": "Frontend build for the LibreVita web application",
   "scripts": {
     "check": "tsc --noEmit -p tsconfig.json",
-    "css": "tailwindcss -i internal/ui/input.css -o /out/app.css --minify -c tailwind.config.ts",
+    "css": "postcss internal/ui/input.css -o /out/app.css --env production",
     "bundle": "node internal/ui/build.ts",
     "build": "npm run check && npm run css && npm run bundle",
     "typecheck": "npm run check",
     "test": "node --test internal/ui/test/ui_test.ts"
   },
   "devDependencies": {
+    "autoprefixer": "^10.5.4",
+    "cssnano": "^8.0.4",
     "esbuild": "0.28.1",
     "htmx-types": "^1.0.1",
     "linkedom": "^0.18.10",
+    "postcss": "^8.5.26",
+    "postcss-cli": "^11.0.1",
+    "postcss-combine-media-query": "^2.1.0",
+    "postcss-import": "^16.1.1",
+    "postcss-sort-media-queries": "^6.7.1",
     "tailwindcss": "3.4.17",
     "typescript": "^5.7.3"
   },
   "dependencies": {
     "htmx.org": "1.9.12"
-  }
+  },
+  "browserslist": [
+    "Firefox >= 52"
+  ]
 }
