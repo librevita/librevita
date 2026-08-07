@@ -143,13 +143,13 @@ func (s *Service) Update(ctx context.Context, id string, in PatientInput) (*repo
 	return &patient, nil
 }
 
-// List returns patients for the clinic, filtered by q when non-empty,
-// newest first, up to limit.
-func (s *Service) List(ctx context.Context, clinicID, q string, limit int) ([]repository.Patient, error) {
+// List returns patients for the clinic, filtered by q when non-empty and
+// by status when set, up to limit.
+func (s *Service) List(ctx context.Context, clinicID, q, status string, limit int) ([]repository.Patient, error) {
 	pattern := "%" + strings.TrimSpace(q) + "%"
 	if strings.TrimSpace(q) == "" {
 		rows, err := s.q.ListPatients(ctx, repository.ListPatientsParams{
-			ClinicID: clinicID, Limit: int64(limit),
+			ClinicID: clinicID, StatusEmpty: status, StatusFilter: status, Limit: int64(limit),
 		})
 		if err != nil {
 			return nil, fmt.Errorf("usecase: list patients: %w", err)
@@ -157,10 +157,11 @@ func (s *Service) List(ctx context.Context, clinicID, q string, limit int) ([]re
 		return rows, nil
 	}
 	rows, err := s.q.SearchPatients(ctx, repository.SearchPatientsParams{
-		ClinicID: clinicID, Limit: int64(limit),
+		ClinicID: clinicID, StatusEmpty: status, StatusFilter: status,
 		DisplayName: pattern,
 		Document:    sql.NullString{String: pattern, Valid: true},
 		Email:       sql.NullString{String: pattern, Valid: true},
+		Limit:       int64(limit),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("usecase: search patients: %w", err)
@@ -191,6 +192,20 @@ func (s *Service) Count(ctx context.Context, clinicID string) (int64, error) {
 		return 0, fmt.Errorf("usecase: count patients: %w", err)
 	}
 	return count, nil
+}
+
+// DocumentExists reports whether another patient in the clinic already
+// holds the document. excludeID skips the record being edited.
+func (s *Service) DocumentExists(ctx context.Context, clinicID, document, excludeID string) (bool, error) {
+	exists, err := s.q.PatientDocumentExists(ctx, repository.PatientDocumentExistsParams{
+		ClinicID: clinicID,
+		Document: sql.NullString{String: document, Valid: document != ""},
+		ID:       excludeID,
+	})
+	if err != nil {
+		return false, fmt.Errorf("usecase: check patient document: %w", err)
+	}
+	return exists, nil
 }
 
 func normalize(in PatientInput) (PatientInput, error) {

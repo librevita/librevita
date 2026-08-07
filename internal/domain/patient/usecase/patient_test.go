@@ -128,7 +128,7 @@ func TestListAndSearch(t *testing.T) {
 		}
 	}
 
-	all, err := svc.List(context.Background(), "clinic-1", "", 50)
+	all, err := svc.List(context.Background(), "clinic-1", "", "", 50)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -136,7 +136,7 @@ func TestListAndSearch(t *testing.T) {
 		t.Fatalf("List = %d patients, want 3", len(all))
 	}
 
-	hit, err := svc.List(context.Background(), "clinic-1", "bruno", 50)
+	hit, err := svc.List(context.Background(), "clinic-1", "bruno", "", 50)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -144,12 +144,35 @@ func TestListAndSearch(t *testing.T) {
 		t.Fatalf("search 'bruno' = %+v, want only Bruno Lima", hit)
 	}
 
-	none, err := svc.List(context.Background(), "clinic-1", "zzz", 50)
+	none, err := svc.List(context.Background(), "clinic-1", "zzz", "", 50)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(none) != 0 {
 		t.Fatalf("search 'zzz' = %d, want 0", len(none))
+	}
+
+	// Status filter.
+	pt, err := svc.Get(context.Background(), hit[0].ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.SetStatus(context.Background(), pt.ID, usecase.StatusInactive); err != nil {
+		t.Fatal(err)
+	}
+	active, err := svc.List(context.Background(), "clinic-1", "", usecase.StatusActive, 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(active) != 2 {
+		t.Fatalf("active = %d, want 2", len(active))
+	}
+	inactive, err := svc.List(context.Background(), "clinic-1", "", usecase.StatusInactive, 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(inactive) != 1 {
+		t.Fatalf("inactive = %d, want 1", len(inactive))
 	}
 }
 

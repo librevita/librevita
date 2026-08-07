@@ -23,7 +23,7 @@ type PatientFormValues struct {
 	Notes       string
 }
 
-// PatientFormPage renders the create (patient nil) or edit form.
+// PatientFormPage renders the create (id empty) or edit page.
 templ PatientFormPage(token string, p *auth.Principal, id string, values PatientFormValues, errMsg string) {
 	@layouts.App(patientFormTitle(id), token, p, "patients") {
 		<div class="mx-auto max-w-3xl">
@@ -31,80 +31,91 @@ templ PatientFormPage(token string, p *auth.Principal, id string, values Patient
 				@components.CardHeader(patientFormTitle(id)) {
 					<a class="inline-flex items-center rounded-lg p-2 text-sm font-medium text-indigo-700 hover:bg-gray-100 dark:text-indigo-400 dark:hover:bg-gray-700" href="/patients">Back to registry</a>
 				}
-				if errMsg != "" {
-					<div class="mb-4">@components.Alert(errMsg, false)</div>
-				}
-				<form method="post" action={ patientFormAction(id) } class="space-y-6">
-					<input type="hidden" name="_csrf" value={ token }>
-					<fieldset class="space-y-4">
-						<legend class="text-sm font-semibold text-gray-900 dark:text-white">Identity</legend>
-						<div>
-							<label class="label" for="display_name">Full name</label>
-							<input class="input" id="display_name" type="text" name="display_name" value={ values.DisplayName } required autofocus>
-						</div>
-						<div class="flex flex-wrap gap-4">
-							<div class="flex-1">
-								<label class="label" for="birth_date">Birth date</label>
-								<input class="input" id="birth_date" type="date" name="birth_date" value={ values.BirthDate }>
-							</div>
-							<div class="flex-1">
-								<label class="label" for="sex">Sex</label>
-								<select class="input" id="sex" name="sex">
-									@sexOption("unknown", "Not specified", values.Sex)
-									@sexOption("female", "Female", values.Sex)
-									@sexOption("male", "Male", values.Sex)
-									@sexOption("other", "Other", values.Sex)
-								</select>
-							</div>
-						</div>
-						<div class="flex flex-wrap gap-4">
-							<div class="flex-1">
-								<label class="label" for="document">Document</label>
-								<input class="input" id="document" type="text" name="document" value={ values.Document }>
-							</div>
-							<div class="flex-1">
-								<label class="label" for="phone">Phone</label>
-								<input class="input" id="phone" type="tel" name="phone" value={ values.Phone }>
-							</div>
-						</div>
-						<div>
-							<label class="label" for="email">Email</label>
-							<input class="input" id="email" type="email" name="email" value={ values.Email }>
-						</div>
-					</fieldset>
-					<fieldset class="space-y-4">
-						<legend class="text-sm font-semibold text-gray-900 dark:text-white">Address</legend>
-						<div>
-							<label class="label" for="street">Street</label>
-							<input class="input" id="street" type="text" name="street" value={ values.Street }>
-						</div>
-						<div class="flex flex-wrap gap-4">
-							<div class="flex-1">
-								<label class="label" for="city">City</label>
-								<input class="input" id="city" type="text" name="city" value={ values.City }>
-							</div>
-							<div class="flex-1">
-								<label class="label" for="state">State</label>
-								<input class="input" id="state" type="text" name="state" value={ values.State }>
-							</div>
-							<div class="flex-1">
-								<label class="label" for="postal_code">Postal code</label>
-								<input class="input" id="postal_code" type="text" name="postal_code" value={ values.PostalCode }>
-							</div>
-						</div>
-					</fieldset>
-					<fieldset class="space-y-4">
-						<legend class="text-sm font-semibold text-gray-900 dark:text-white">Notes</legend>
-						<textarea class="input" id="notes" name="notes" rows="4">{ values.Notes }</textarea>
-					</fieldset>
-					<div class="flex items-center gap-3">
-						<button class="btn" type="submit">{ patientFormSubmit(id) }</button>
-						<a class="btn-secondary" href="/patients">Cancel</a>
-					</div>
-				</form>
+				@PatientForm(token, id, values, errMsg)
 			}
 		</div>
 	}
+}
+
+// PatientForm is the form fragment: htmx posts replace it in place so
+// validation errors keep the typed values, and the document field checks
+// duplicates on blur.
+templ PatientForm(token string, id string, values PatientFormValues, errMsg string) {
+	<form method="post" action={ patientFormAction(id) } hx-post={ patientFormAction(id) } hx-target="this" hx-swap="outerHTML" class="space-y-6">
+		<input type="hidden" name="_csrf" value={ token }>
+		<input type="hidden" name="id" id="patient-id" value={ id }>
+		if errMsg != "" {
+			<div class="mb-4">@components.Alert(errMsg, false)</div>
+		}
+		<fieldset class="space-y-4">
+			<legend class="text-sm font-semibold text-gray-900 dark:text-white">Identity</legend>
+			<div>
+				<label class="label" for="display_name">Full name</label>
+				<input class="input" id="display_name" type="text" name="display_name" value={ values.DisplayName } required autofocus>
+			</div>
+			<div class="flex flex-wrap gap-4">
+				<div class="flex-1">
+					<label class="label" for="birth_date">Birth date</label>
+					<input class="input" id="birth_date" type="date" name="birth_date" value={ values.BirthDate }>
+				</div>
+				<div class="flex-1">
+					<label class="label" for="sex">Sex</label>
+					<select class="input" id="sex" name="sex">
+						@sexOption("unknown", "Not specified", values.Sex)
+						@sexOption("female", "Female", values.Sex)
+						@sexOption("male", "Male", values.Sex)
+						@sexOption("other", "Other", values.Sex)
+					</select>
+				</div>
+			</div>
+			<div class="flex flex-wrap gap-4">
+				<div class="flex-1">
+					<label class="label" for="document">Document</label>
+					<input class="input" id="document" type="text" name="document" value={ values.Document }
+						hx-post="/patients/check-document" hx-trigger="blur changed" hx-include="#patient-id"
+						hx-target="#document-error" hx-swap="innerHTML">
+					<p id="document-error" class="mt-1 text-xs text-red-600 dark:text-red-400"></p>
+				</div>
+				<div class="flex-1">
+					<label class="label" for="phone">Phone</label>
+					<input class="input" id="phone" type="tel" name="phone" value={ values.Phone }>
+				</div>
+			</div>
+			<div>
+				<label class="label" for="email">Email</label>
+				<input class="input" id="email" type="email" name="email" value={ values.Email }>
+			</div>
+		</fieldset>
+		<fieldset class="space-y-4">
+			<legend class="text-sm font-semibold text-gray-900 dark:text-white">Address</legend>
+			<div>
+				<label class="label" for="street">Street</label>
+				<input class="input" id="street" type="text" name="street" value={ values.Street }>
+			</div>
+			<div class="flex flex-wrap gap-4">
+				<div class="flex-1">
+					<label class="label" for="city">City</label>
+					<input class="input" id="city" type="text" name="city" value={ values.City }>
+				</div>
+				<div class="flex-1">
+					<label class="label" for="state">State</label>
+					<input class="input" id="state" type="text" name="state" value={ values.State }>
+				</div>
+				<div class="flex-1">
+					<label class="label" for="postal_code">Postal code</label>
+					<input class="input" id="postal_code" type="text" name="postal_code" value={ values.PostalCode }>
+				</div>
+			</div>
+		</fieldset>
+		<fieldset class="space-y-4">
+			<legend class="text-sm font-semibold text-gray-900 dark:text-white">Notes</legend>
+			<textarea class="input" id="notes" name="notes" rows="4">{ values.Notes }</textarea>
+		</fieldset>
+		<div class="flex items-center gap-3">
+			<button class="btn" type="submit">{ patientFormSubmit(id) }</button>
+			<a class="btn-secondary" href="/patients">Cancel</a>
+		</div>
+	</form>
 }
 
 templ sexOption(value string, label string, selected string) {
@@ -205,4 +216,11 @@ func addressLine(pt *repository.Patient) string {
 		out += part
 	}
 	return out
+}
+
+// PatientDocumentError is the inline duplicate-document message swapped
+// into the #document-error container. The id keeps the target stable
+// across swaps.
+templ PatientDocumentError(message string) {
+	<p id="document-error" class="mt-1 text-xs text-red-600 dark:text-red-400">{ message }</p>
 }

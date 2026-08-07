@@ -50,13 +50,51 @@ func NewLogger(db *sql.DB, log *slog.Logger) (*Logger, error) {
 	return &Logger{queries: repository.New(db), log: log}, nil
 }
 
-// Recent returns the latest audit events, newest first.
-func (l *Logger) Recent(ctx context.Context, limit int) ([]repository.ListRecentAuditEventsRow, error) {
+// EventRow is a stored audit event with its cursor id.
+type EventRow struct {
+	ID         int64
+	CreatedAt  string
+	ActorID    *string
+	ActorEmail *string
+	Action     string
+	Resource   string
+	Result     string
+	Detail     *string
+}
+
+// Recent returns the latest audit events, newest first. A non-zero before
+// acts as an exclusive id cursor for pagination.
+func (l *Logger) Recent(ctx context.Context, limit int, before int64) ([]EventRow, error) {
+	if before > 0 {
+		rows, err := l.queries.ListAuditEventsBefore(ctx, repository.ListAuditEventsBeforeParams{
+			ID: before, Limit: int64(limit),
+		})
+		if err != nil {
+			return nil, fmt.Errorf("audit: recent before: %w", err)
+		}
+		out := make([]EventRow, 0, len(rows))
+		for _, r := range rows {
+			out = append(out, EventRow{
+				ID: r.ID, CreatedAt: r.CreatedAt, ActorID: r.ActorID,
+				ActorEmail: r.ActorEmail, Action: r.Action, Resource: r.Resource,
+				Result: r.Result, Detail: r.Detail,
+			})
+		}
+		return out, nil
+	}
 	rows, err := l.queries.ListRecentAuditEvents(ctx, int64(limit))
 	if err != nil {
 		return nil, fmt.Errorf("audit: recent: %w", err)
 	}
-	return rows, nil
+	out := make([]EventRow, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, EventRow{
+			ID: r.ID, CreatedAt: r.CreatedAt, ActorID: r.ActorID,
+			ActorEmail: r.ActorEmail, Action: r.Action, Resource: r.Resource,
+			Result: r.Result, Detail: r.Detail,
+		})
+	}
+	return out, nil
 }
 
 // Record persists ev. Failures are logged and swallowed so that auditing

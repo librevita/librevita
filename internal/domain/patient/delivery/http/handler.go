@@ -4,7 +4,11 @@ package http
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
+	"sort"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/a-h/templ"
@@ -48,17 +52,19 @@ func (h *Handler) List(c echo.Context) error {
 		return err
 	}
 	q := c.QueryParam("q")
-	patients, err := h.svc.List(ctx, clinicID, q, patientListLimit)
+	status := c.QueryParam("status")
+	patients, err := h.svc.List(ctx, clinicID, q, status, patientListLimit)
 	if err != nil {
 		return err
 	}
+	h.sort(patients, c.QueryParam("sort"))
 	rows := h.rows(c.Request().Context(), patients)
 
 	if server.IsHtmx(c) {
 		return render(c, http.StatusOK, views.PatientListTable(rows, ""))
 	}
 	return render(c, http.StatusOK, views.PatientListPage(
-		server.CSRFToken(c, h.csrf), server.Principal(c), q, rows, ""))
+		server.CSRFToken(c, h.csrf), server.Principal(c), q, status, c.QueryParam("sort"), rows, ""))
 }
 
 // NewPage renders the create form.
@@ -79,8 +85,7 @@ func (h *Handler) Create(c echo.Context) error {
 	if err != nil {
 		var v *usecase.ValidationError
 		if errors.As(err, &v) {
-			return render(c, http.StatusBadRequest, views.PatientFormPage(
-				server.CSRFToken(c, h.csrf), server.Principal(c), "", values(input), v.Msg))
+			return h.formError(c, "", input, v.Msg)
 		}
 		return err
 	}
@@ -135,8 +140,7 @@ func (h *Handler) Update(c echo.Context) error {
 		var v *usecase.ValidationError
 		switch {
 		case errors.As(err, &v):
-			return render(c, http.StatusBadRequest, views.PatientFormPage(
-				server.CSRFToken(c, h.csrf), server.Principal(c), c.Param("id"), values(input), v.Msg))
+			return h.formError(c, c.Param("id"), input, v.Msg)
 		case errors.Is(err, usecase.ErrNotFound):
 			return echo.NewHTTPError(http.StatusNotFound)
 		default:
@@ -161,6 +165,60 @@ func (h *Handler) Archive(c echo.Context) error {
 // Restore sets the patient active again.
 func (h *Handler) Restore(c echo.Context) error {
 	return h.setStatus(c, usecase.StatusActive, "Patient restored")
+}
+
+// BulkArchive archives the patients whose ids are in the form. The
+// response is the refreshed table fragment plus an OOB alert, so the
+// archived rows disappear at once.
+func (h *Handler) BulkArchive(c echo.Context) error {
+	ctx := c.Request().Context()
+	ids := c.Request().PostForm["ids"]
+	archived := 0
+	for _, id := range ids {
+		if err := h.svc.SetStatus(ctx, id, usecase.StatusInactive); err == nil {
+			archived++
+		}
+	}
+	if archived > 0 {
+		h.audit.Record(ctx, audit.Event{
+			ActorID: actorID(c), ActorMail: actorMail(c),
+			Action: "patient.status", Resource: "patient:bulk",
+			Result: audit.ResultSuccess, Detail: "archived " + strconv.Itoa(archived),
+			IP: c.RealIP(), RequestID: c.Response().Header().Get(echo.HeaderXRequestID),
+		})
+	}
+
+	clinicID, err := h.clinicID(ctx)
+	if err != nil {
+		return err
+	}
+	patients, err := h.svc.List(ctx, clinicID, c.QueryParam("q"), c.QueryParam("status"), patientListLimit)
+	if err != nil {
+		return err
+	}
+	rows := h.rows(ctx, patients)
+	msg := "No patients selected"
+	if archived > 0 {
+		msg = strconv.Itoa(archived) + " patient(s) archived"
+	}
+	return render(c, http.StatusOK, templList{
+		table: views.PatientListTable(rows, ""),
+		alert: components.Alert(msg, true),
+	})
+}
+
+// templList renders a table fragment followed by an OOB alert in one
+// response.
+type templList struct {
+	table templ.Component
+	alert templ.Component
+}
+
+func (t templList) Render(ctx context.Context, w io.Writer) error {
+	if err := t.table.Render(ctx, w); err != nil {
+		return err
+	}
+	return t.alert.Render(ctx, w)
 }
 
 func (h *Handler) setStatus(c echo.Context, status, successMsg string) error {
@@ -285,6 +343,61 @@ func patientInput(pt *repository.Patient) usecase.PatientInput {
 		PostalCode:  pt.PostalCode.String,
 		Notes:       pt.Notes.String,
 	}
+}
+
+// sort orders the rows by the sort query parameter:
+// name, -name, birth_date, -birth_date.
+func (h *Handler) sort(patients []repository.Patient, sortParam string) {
+	less := func(i, j int) bool {
+		return patients[i].DisplayName < patients[j].DisplayName
+	}
+	switch sortParam {
+	case "-name":
+		less = func(i, j int) bool {
+			return patients[i].DisplayName > patients[j].DisplayName
+		}
+	case "birth_date":
+		less = func(i, j int) bool {
+			return patients[i].BirthDate.String < patients[j].BirthDate.String
+		}
+	case "-birth_date":
+		less = func(i, j int) bool {
+			return patients[i].BirthDate.String > patients[j].BirthDate.String
+		}
+	}
+	sort.SliceStable(patients, less)
+}
+
+// formError renders the form fragment for htmx submissions and the full
+// page otherwise.
+func (h *Handler) formError(c echo.Context, id string, input usecase.PatientInput, msg string) error {
+	if server.IsHtmx(c) {
+		return render(c, http.StatusBadRequest, views.PatientForm("", id, values(input), msg))
+	}
+	return render(c, http.StatusBadRequest, views.PatientFormPage(
+		server.CSRFToken(c, h.csrf), server.Principal(c), id, values(input), msg))
+}
+
+// CheckDocument answers the inline duplicate check of the patient form.
+// The response is an empty element or the inline error, swapped into the
+// #document-error container.
+func (h *Handler) CheckDocument(c echo.Context) error {
+	document := strings.TrimSpace(c.FormValue("document"))
+	if document == "" {
+		return render(c, http.StatusOK, views.PatientDocumentError(""))
+	}
+	clinicID, err := h.clinicID(c.Request().Context())
+	if err != nil {
+		return err
+	}
+	exists, err := h.svc.DocumentExists(c.Request().Context(), clinicID, document, c.FormValue("id"))
+	if err != nil {
+		return err
+	}
+	if exists {
+		return render(c, http.StatusOK, views.PatientDocumentError("This document is already registered"))
+	}
+	return render(c, http.StatusOK, views.PatientDocumentError(""))
 }
 
 func actorID(c echo.Context) string {

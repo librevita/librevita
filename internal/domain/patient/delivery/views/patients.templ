@@ -23,20 +23,36 @@ type PatientRow struct {
 // PatientListPage renders the patient registry with search. The search
 // input targets the list fragment, so the page body and the fragment
 // share the same table markup.
-templ PatientListPage(token string, p *auth.Principal, q string, patients []PatientRow, errMsg string) {
+templ PatientListPage(token string, p *auth.Principal, q string, status string, sortParam string, patients []PatientRow, errMsg string) {
 	@layouts.App("Patients", token, p, "patients") {
 		<div class="mx-auto max-w-6xl">
 			<div class="flex items-center justify-between">
 				<h2 class="text-lg font-semibold text-gray-900 dark:text-white">Patient registry</h2>
 				<a class="btn" href="/patients/new">New patient</a>
 			</div>
-			<div class="mt-4">
-				@patientSearchInput(q)
-				<div id="patient-list" class="mt-4">
-					@PatientListTable(patients, errMsg)
+			<div class="mt-4 flex flex-wrap items-center gap-3">
+				<div class="min-w-64 flex-1">
+					@patientSearchInput(q)
 				</div>
+				<select id="status-filter" name="status" hx-get="/patients" hx-trigger="change" hx-include="#patient-search" hx-target="#patient-list" hx-swap="innerHTML" class="input mt-0 w-auto">
+					@statusOption("", "All statuses", status)
+					@statusOption("active", "Active", status)
+					@statusOption("inactive", "Inactive", status)
+				</select>
+				<button type="button" class="btn-secondary" hx-post="/patients/bulk-archive" hx-include="input[name='ids']:checked" hx-target="#patient-list" hx-swap="innerHTML">Archive selected</button>
+			</div>
+			<div id="patient-list" class="mt-4">
+				@PatientListTable(patients, errMsg)
 			</div>
 		</div>
+	}
+}
+
+templ statusOption(value string, label string, selected string) {
+	if value == selected {
+		<option value={ value } selected>{ label }</option>
+	} else {
+		<option value={ value }>{ label }</option>
 	}
 }
 
@@ -55,8 +71,12 @@ templ PatientListTable(patients []PatientRow, errMsg string) {
 			<table class="min-w-full divide-y divide-gray-200 text-sm">
 				@components.Thead() {
 					<tr>
-						@components.Th("Patient", "p-4")
-						@components.Th("Birth date", "p-4")
+						<th scope="col" class="w-12 p-4">
+							<span class="sr-only">Select</span>
+							<input type="checkbox" name="ids" value="all" class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" aria-label="Select all">
+						</th>
+						<th scope="col" class="p-4"><a href="#" hx-get="/patients" hx-include="#patient-search, #status-filter" hx-target="#patient-list" hx-swap="innerHTML" class="text-xs font-medium uppercase tracking-wider text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white">Patient</a></th>
+						<th scope="col" class="p-4"><a href="#" hx-get="/patients?sort=birth_date" hx-include="#patient-search, #status-filter" hx-target="#patient-list" hx-swap="innerHTML" class="text-xs font-medium uppercase tracking-wider text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white">Birth date</a></th>
 						@components.Th("Document", "p-4")
 						@components.Th("Phone", "p-4")
 						@components.Th("Status", "p-4")
@@ -66,6 +86,9 @@ templ PatientListTable(patients []PatientRow, errMsg string) {
 				<tbody class="divide-y divide-gray-200 bg-white dark:divide-gray-700 dark:bg-gray-800">
 					for _, pt := range patients {
 						<tr>
+							<td class="whitespace-nowrap p-4">
+								<input type="checkbox" name="ids" value={ pt.ID } class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" aria-label={ "Select " + pt.DisplayName }>
+							</td>
 							<td class="whitespace-nowrap p-4">
 								<div class="flex items-center gap-3">
 									@components.Avatar(components.Initials(pt.DisplayName), "h-8 w-8 bg-indigo-100 text-indigo-700 dark:bg-indigo-900 dark:text-indigo-300")

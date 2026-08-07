@@ -37,9 +37,11 @@ func registerRoutes(e *echo.Echo, h *httphandler.Handler, gate server.SetupGate,
 	e.GET("/patients", h.List, view...)
 	e.GET("/patients/new", h.NewPage, edit...)
 	e.POST("/patients", h.Create, edit...)
+	e.POST("/patients/check-document", h.CheckDocument, edit...)
 	e.GET("/patients/:id", h.Detail, view...)
 	e.GET("/patients/:id/edit", h.EditPage, edit...)
 	e.POST("/patients/:id", h.Update, edit...)
 	e.POST("/patients/:id/archive", h.Archive, edit...)
 	e.POST("/patients/:id/restore", h.Restore, edit...)
+	e.POST("/patients/bulk-archive", h.BulkArchive, edit...)
 }

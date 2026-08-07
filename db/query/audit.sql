@@ -17,3 +17,10 @@ SELECT id, created_at, actor_id, actor_email, action, resource, result, detail
 FROM audit_log
 ORDER BY id DESC
 LIMIT ?;
+
+-- name: ListAuditEventsBefore :many
+SELECT id, created_at, actor_id, actor_email, action, resource, result, detail
+FROM audit_log
+WHERE id < ?
+ORDER BY id DESC
+LIMIT ?;
