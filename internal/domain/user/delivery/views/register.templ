@@ -11,7 +11,7 @@ templ Register(token string, errMsg string) {
 				if errMsg != "" {
 					<div class="alert mt-4" role="alert">{ errMsg }</div>
 				}
-				<form method="post" action="/auth/register" class="mt-6 space-y-4">
+				<form method="post" hx-boost="false" action="/auth/register" class="mt-6 space-y-4">
 					<input type="hidden" name="_csrf" value={ token }>
 					<div>
 						<label class="label" for="name">Name</label>

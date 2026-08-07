@@ -15,7 +15,7 @@ templ Setup(token string, errMsg string) {
 				if errMsg != "" {
 					<div class="alert mt-4" role="alert">{ errMsg }</div>
 				}
-				<form method="post" action="/setup" class="mt-6 space-y-6">
+				<form method="post" hx-boost="false" action="/setup" class="mt-6 space-y-6">
 					<input type="hidden" name="_csrf" value={ token }>
 					<fieldset class="space-y-4">
 						<legend class="text-sm font-semibold text-gray-900 dark:text-white">Administrator</legend>

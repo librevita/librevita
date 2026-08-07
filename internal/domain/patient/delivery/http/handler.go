@@ -375,7 +375,9 @@ func (h *Handler) sort(patients []repository.Patient, sortParam string) {
 // page otherwise.
 func (h *Handler) formError(c echo.Context, id string, input usecase.PatientInput, msg string) error {
 	if server.IsHtmx(c) {
-		return render(c, http.StatusBadRequest, views.PatientForm("", id, values(input), msg))
+		// htmx only swaps 2xx/3xx responses, so the inline error must
+		// arrive with 200.
+		return render(c, http.StatusOK, views.PatientForm("", id, values(input), msg))
 	}
 	return render(c, http.StatusBadRequest, views.PatientFormPage(
 		server.CSRFToken(c, h.csrf), server.Principal(c), id, values(input), msg))
