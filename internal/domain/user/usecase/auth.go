@@ -204,6 +204,15 @@ func (s *Service) UserCount(ctx context.Context) (int64, error) {
 	return count, nil
 }
 
+// ListRecentUsers returns the newest accounts, newest first.
+func (s *Service) ListRecentUsers(ctx context.Context, limit int) ([]repository.ListRecentUsersRow, error) {
+	rows, err := s.users.ListRecentUsers(ctx, int64(limit))
+	if err != nil {
+		return nil, fmt.Errorf("usecase: list recent users: %w", err)
+	}
+	return rows, nil
+}
+
 // Onboard creates the initial admin account and the clinic profile in one
 // transaction. It succeeds only on a system that has never been set up;
 // concurrent setup attempts are serialized by the single SQLite connection,

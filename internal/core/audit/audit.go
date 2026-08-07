@@ -50,6 +50,15 @@ func NewLogger(db *sql.DB, log *slog.Logger) (*Logger, error) {
 	return &Logger{queries: repository.New(db), log: log}, nil
 }
 
+// Recent returns the latest audit events, newest first.
+func (l *Logger) Recent(ctx context.Context, limit int) ([]repository.ListRecentAuditEventsRow, error) {
+	rows, err := l.queries.ListRecentAuditEvents(ctx, int64(limit))
+	if err != nil {
+		return nil, fmt.Errorf("audit: recent: %w", err)
+	}
+	return rows, nil
+}
+
 // Record persists ev. Failures are logged and swallowed so that auditing
 // never breaks the audited operation.
 func (l *Logger) Record(ctx context.Context, ev Event) {
