@@ -33,7 +33,7 @@ function assertXpFloor(path: string): void {
 }
 
 await esbuild.build({
-  entryPoints: ['internal/ui/src/ui.ts'],
+  entryPoints: ['internal/ui/src/main.ts'],
   outfile: `${out}/ui.js`,
   bundle: true,
   platform: 'browser',
@@ -69,16 +69,6 @@ async function copyAsset(specifier: string, dest: string): Promise<void> {
   await Deno.writeFile(dest, data);
   assertXpFloor(dest);
 }
-
-const alpineUrl = import.meta.resolve('alpine/dist/cdn.min.js');
-const alpineSource = await Deno.readTextFile(new URL(alpineUrl));
-const lowered = await esbuild.transform(alpineSource, {
-  target: 'firefox58',
-  minify: true,
-  supported: xpSupported,
-});
-await Deno.writeTextFile(`${out}/vendor/alpine-csp-3.15.12.min.js`, lowered.code);
-assertXpFloor(`${out}/vendor/alpine-csp-3.15.12.min.js`);
 
 await copyAsset('htmx/dist/htmx.min.js', `${out}/vendor/htmx-1.9.12.min.js`);
 await copyAsset('htmx/dist/ext/sse.js', `${out}/vendor/htmx-sse-1.9.12.js`);

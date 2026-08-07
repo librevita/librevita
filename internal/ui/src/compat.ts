@@ -30,7 +30,7 @@ if (typeof window !== 'undefined') {
 }
 
 if (typeof Array.prototype.flat !== 'function') {
-  Array.prototype.flat = function (depth) {
+  Array.prototype.flat = function (this: unknown[], depth?: number) {
     const maxDepth = depth === undefined ? 1 : depth;
     const result: unknown[] = [];
     const flatten = (list: unknown[], level: number) => {
@@ -49,7 +49,7 @@ if (typeof Array.prototype.flat !== 'function') {
 }
 
 if (typeof Array.prototype.flatMap !== 'function') {
-  Array.prototype.flatMap = function (mapper, thisArg) {
+  Array.prototype.flatMap = function (this: unknown[], mapper: (value: unknown, index: number, array: unknown[]) => unknown, thisArg?: unknown) {
     return this.map(mapper, thisArg).flat();
   };
 }

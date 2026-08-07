@@ -4,7 +4,8 @@
     "css": "deno run -A npm:tailwindcss@3.4.17 -i internal/ui/input.css -o /out/app.css --minify -c tailwind.config.ts",
     "bundle": "deno run -A internal/ui/build.ts",
     "build": "deno task check && deno task css && deno task bundle",
-    "typecheck": "deno check internal/ui/src/ tailwind.config.ts"
+    "typecheck": "deno check internal/ui/src/ tailwind.config.ts",
+    "test": "deno test internal/ui/src/"
   },
   "imports": {
     "esbuild": "npm:esbuild@0.28.1",

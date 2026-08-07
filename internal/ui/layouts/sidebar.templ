@@ -5,7 +5,7 @@ import "librevita.org/internal/core/auth"
 // Sidebar is the navigation rail: role-aware link groups. It is a drawer
 // on small screens (Alpine x-show + md:!flex) and static from md up.
 templ Sidebar(principal *auth.Principal, active string) {
-	<aside @click.outside="close()" x-show="open" class="fixed inset-y-0 left-0 z-40 flex w-64 flex-col overflow-y-auto border-r border-gray-200 bg-white pt-16 dark:border-gray-700 dark:bg-gray-800 md:static md:z-auto md:pt-0 md:!flex">
+	<aside data-lv-drawer class="fixed inset-y-0 left-0 z-40 hidden w-64 flex-col overflow-y-auto border-r border-gray-200 bg-white pt-16 dark:border-gray-700 dark:bg-gray-800 md:static md:z-auto md:pt-0 md:!flex">
 		<nav class="flex-1 space-y-6 px-3 py-4">
 			<div class="space-y-1">
 				<p class="px-3 pb-1 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">General</p>

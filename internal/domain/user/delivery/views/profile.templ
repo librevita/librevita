@@ -27,19 +27,19 @@ templ Profile(token string, p *auth.Principal, joined string) {
 				<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
 					Choose how LibreVita looks. System follows your browser or operating system preference.
 				</p>
-				<div x-data="themePref" class="mt-4">
+				<div data-lv-theme-pref data-lv-active-class="border-indigo-500 bg-indigo-50 text-indigo-700 dark:border-indigo-400 dark:bg-indigo-900/40 dark:text-indigo-300" class="mt-4">
 					<fieldset>
 						<legend class="sr-only">Color scheme</legend>
 						<div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
-							<button type="button" @click="set('light')" :class="prefClass('light', 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:border-indigo-400 dark:bg-indigo-900/40 dark:text-indigo-300')" class="flex items-center gap-3 rounded-lg border border-gray-200 px-4 py-3 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700" aria-pressed="false">
+							<button type="button" data-lv-theme="light" class="flex items-center gap-3 rounded-lg border border-gray-200 px-4 py-3 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700" aria-pressed="false">
 								@themeIcon("light")
 								Light
 							</button>
-							<button type="button" @click="set('system')" :class="prefClass('system', 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:border-indigo-400 dark:bg-indigo-900/40 dark:text-indigo-300')" class="flex items-center gap-3 rounded-lg border border-gray-200 px-4 py-3 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700" aria-pressed="false">
+							<button type="button" data-lv-theme="system" class="flex items-center gap-3 rounded-lg border border-gray-200 px-4 py-3 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700" aria-pressed="false">
 								@themeIcon("system")
 								System
 							</button>
-							<button type="button" @click="set('dark')" :class="prefClass('dark', 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:border-indigo-400 dark:bg-indigo-900/40 dark:text-indigo-300')" class="flex items-center gap-3 rounded-lg border border-gray-200 px-4 py-3 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700" aria-pressed="false">
+							<button type="button" data-lv-theme="dark" class="flex items-center gap-3 rounded-lg border border-gray-200 px-4 py-3 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700" aria-pressed="false">
 								@themeIcon("dark")
 								Dark
 							</button>
