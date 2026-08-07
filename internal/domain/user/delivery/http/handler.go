@@ -16,6 +16,7 @@ import (
 	"librevita.org/internal/core/policy/repository"
 	"librevita.org/internal/core/server"
 	"librevita.org/internal/domain/clinic"
+	patientusecase "librevita.org/internal/domain/patient/usecase"
 	"librevita.org/internal/domain/user/delivery/views"
 	"librevita.org/internal/domain/user/usecase"
 )
@@ -27,6 +28,7 @@ const utcMilliLayout = "2006-01-02T15:04:05.000Z"
 // Handler renders the auth pages and processes form submissions.
 type Handler struct {
 	svc      *usecase.Service
+	patients *patientusecase.Service
 	csrf     *auth.CSRF
 	sessions *auth.SessionManager
 	policies *policy.PolicyEngine
@@ -35,9 +37,10 @@ type Handler struct {
 }
 
 // NewHandler is the Fx provider.
-func NewHandler(svc *usecase.Service, csrf *auth.CSRF, sessions *auth.SessionManager,
+func NewHandler(svc *usecase.Service, patients *patientusecase.Service,
+	csrf *auth.CSRF, sessions *auth.SessionManager,
 	policies *policy.PolicyEngine, auditLogger *audit.Logger, clocks *clinic.ClockProvider) *Handler {
-	return &Handler{svc: svc, csrf: csrf, sessions: sessions, policies: policies, audit: auditLogger, clocks: clocks}
+	return &Handler{svc: svc, patients: patients, csrf: csrf, sessions: sessions, policies: policies, audit: auditLogger, clocks: clocks}
 }
 
 // SetupGate redirects navigation to /setup while the system is not yet
@@ -53,7 +56,7 @@ func (h *Handler) SetupGate() echo.MiddlewareFunc {
 				return err
 			}
 			if !onboarded {
-				return c.Redirect(http.StatusFound, "/setup")
+				return server.HtmxRedirect(c, "/setup")
 			}
 			return next(c)
 		}
@@ -190,7 +193,11 @@ func (h *Handler) Logout(c echo.Context) error {
 func (h *Handler) Home(c echo.Context) error {
 	ctx := c.Request().Context()
 
-	patients, err := h.svc.UserCountByRole(ctx, "patient")
+	clinicRow, err := h.clocks.Profile(ctx)
+	if err != nil {
+		return err
+	}
+	patients, err := h.patients.Count(ctx, clinicRow.ID)
 	if err != nil {
 		return err
 	}
@@ -211,10 +218,6 @@ func (h *Handler) Home(c echo.Context) error {
 		return err
 	}
 	policies, err := h.policies.List(ctx)
-	if err != nil {
-		return err
-	}
-	clinicRow, err := h.clocks.Profile(ctx)
 	if err != nil {
 		return err
 	}

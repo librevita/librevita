@@ -47,6 +47,12 @@ var DefaultPolicies = map[string]string{
 	// `principal.email == 'hr@example.org'`, or close it entirely with
 	// `false`.
 	"users.register": `principal.role == 'admin'`,
+
+	// Patient registry, available to the clinical roles.
+	"patient.view": `principal.role in ['admin', 'physician', 'receptionist']`,
+
+	// Patient record changes, restricted to staff that care for patients.
+	"patient.edit": `principal.role in ['admin', 'physician']`,
 }
 
 // RequestInfo is the request side of the policy evaluation context.
