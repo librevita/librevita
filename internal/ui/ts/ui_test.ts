@@ -5,9 +5,9 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { parseHTML } from 'linkedom';
-import { selectTab } from '../src/tabs.ts';
-import { rowBoxes } from '../src/table-select.ts';
-import { applyThemeClass, readStored } from '../src/theme-pref.ts';
+import { selectTab } from './tabs.ts';
+import { rowBoxes } from './table-select.ts';
+import { applyThemeClass, readStored } from './theme-pref.ts';
 
 test('tabs.selectTab toggles panels and active classes', () => {
   const { document } = parseHTML(

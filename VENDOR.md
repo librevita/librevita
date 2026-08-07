@@ -57,7 +57,7 @@ Earthfile `+frontend` target (`node:26.7-alpine3.24`), with the artifacts copied
 
 `htmx.org` is the only runtime JavaScript: `js/vendor/htmx-1.9.12.min.js` and `js/vendor/htmx-sse-1.9.12.js`, copied
 verbatim from `node_modules/htmx.org@1.9.12` by `internal/ui/build.ts`. Everything else under `internal/ui/static` is
-first-party: `theme.js` and `ui.js` are esbuild bundles of `internal/ui/src/*.ts`, and `app.css` is the PostCSS pipeline
+first-party: `theme.js` and `ui.js` are esbuild bundles of `internal/ui/ts/*.ts`, and `app.css` is the PostCSS pipeline
 over `internal/ui/input.css` (see below) — none of it is vendored.
 
 ### Build-time devDependencies

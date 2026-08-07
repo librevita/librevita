@@ -48,19 +48,19 @@ progressive. Assets are embedded in the binary (`internal/ui`, served under
 - **Tailwind CSS 3.4.17** compiled at build time with a hex palette
   override (the v3.4 default `oklch` colors are unparseable by XP-era
   browsers)
-- The frontend build is driven by **Deno** (`denoland/deno:alpine-2.9.5`):
-  `deno.json` declares the dependencies (esbuild, tailwindcss,
-  htmx.org, @alpinejs/csp) and tasks, and `deno.lock` pins them
-  with integrity hashes — nothing is versioned inside the Earthfile.
-  esbuild (via npm:) bundles the TypeScript source to the XP floor
-  (`target=firefox52`) with the feature-detected compatibility polyfills;
-  no one writes ES5
-- **TypeScript** in `internal/ui/src` with strict checking (`deno check`,
+- The frontend build is driven by **Node** (`node:26.7-alpine3.24` in
+  the Earthfile): `package.json` declares the dependencies and scripts,
+  and `package-lock.json` pins them with integrity hashes — nothing is
+  versioned inside the Earthfile. esbuild bundles the TypeScript source
+  to the XP floor (`target=firefox58`, verified by `assertXpFloor` after
+  the build) and the PostCSS pipeline compiles Tailwind from
+  `internal/ui/input.css`; no one writes ES5
+- **TypeScript** in `internal/ui/ts` with strict checking (`tsc --noEmit`,
   `lib: ES2017+DOM` aligned to the XP floor, so APIs missing from Firefox
   52 are compile errors)
 
-The runtime assets (HTMX, its SSE extension, Alpine CSP) come from npm
-packages pinned in `deno.lock` and are documented in
+The runtime assets (HTMX and its SSE extension) come from npm packages
+pinned in `package-lock.json` and are documented in
 `VENDOR.md`. The compatibility floor is Windows
 XP-era browsers (Pale Moon 28.8, Basilisk 55, K-Meleon 74G/76, Firefox 52
 ESR); newer engines are covered automatically. The server applies a strict

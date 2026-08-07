@@ -6,7 +6,7 @@ const config: Config = {
   darkMode: 'class',
   content: [
     './internal/**/*.templ',
-    './internal/ui/src/**/*.ts',
+    './internal/ui/ts/**/*.ts',
   ],
   // Button variants are composed dynamically in helpers.go, so the
   // literal class names never reach the content scan; the JIT would

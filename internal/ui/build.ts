@@ -36,7 +36,7 @@ function assertXpFloor(file) {
 }
 
 await esbuild.build({
-  entryPoints: ['internal/ui/src/main.ts'],
+  entryPoints: ['internal/ui/ts/main.ts'],
   outfile: `${out}/ui.js`,
   bundle: true,
   platform: 'browser',
@@ -50,7 +50,7 @@ assertXpFloor(`${out}/ui.js`);
 // Theme bootstrap for the head: blocking so the dark class exists before
 // first paint. Kept separate from ui.js (which is deferred).
 await esbuild.build({
-  entryPoints: ['internal/ui/src/theme.ts'],
+  entryPoints: ['internal/ui/ts/theme.ts'],
   outfile: `${out}/theme.js`,
   bundle: true,
   platform: 'browser',

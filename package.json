@@ -9,7 +9,7 @@
     "bundle": "node internal/ui/build.ts",
     "build": "npm run check && npm run css && npm run bundle",
     "typecheck": "npm run check",
-    "test": "node --test internal/ui/test/ui_test.ts"
+    "test": "node --test internal/ui/ts/ui_test.ts"
   },
   "devDependencies": {
     "autoprefixer": "^10.5.4",
