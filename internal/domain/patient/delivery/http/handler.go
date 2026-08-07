@@ -84,7 +84,7 @@ func (h *Handler) Create(c echo.Context) error {
 		return err
 	}
 	input := h.input(c)
-	patient, err := h.svc.Create(ctx, clinicID, input)
+	patient, err := h.svc.Create(ctx, clinicID, actorID(c), input)
 	if err != nil {
 		var v *usecase.ValidationError
 		if errors.As(err, &v) {
@@ -101,10 +101,10 @@ func (h *Handler) Create(c echo.Context) error {
 	return server.HtmxRedirect(c, "/patients/"+patient.ID)
 }
 
-// Detail renders the patient record.
+// Detail renders the patient record with the registrar.
 func (h *Handler) Detail(c echo.Context) error {
 	ctx := c.Request().Context()
-	patient, err := h.svc.Get(ctx, c.Param("id"))
+	row, err := h.svc.GetWithCreator(ctx, c.Param("id"))
 	if err != nil {
 		if errors.Is(err, usecase.ErrNotFound) {
 			return echo.NewHTTPError(http.StatusNotFound)
@@ -115,9 +115,13 @@ func (h *Handler) Detail(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-	pt := h.detailView(patient, clock)
+	createdBy := ""
+	if row.CreatedByEmail.Valid {
+		createdBy = row.CreatedByEmail.String
+	}
+	pt := h.detailView(patientFromRow(row), clock)
 	return render(c, http.StatusOK, views.PatientDetailPage(
-		server.CSRFToken(c, h.csrf), server.Principal(c), pt, ""))
+		server.CSRFToken(c, h.csrf), server.Principal(c), pt, createdBy, ""))
 }
 
 // EditPage renders the edit form with the stored values.
@@ -330,6 +334,19 @@ func formatStored(clock *clinic.Clock, stored string) string {
 		return stored
 	}
 	return clock.FormatUI(t)
+}
+
+// patientFromRow converts the creator-joined row into the plain patient
+// model used by the detail view.
+func patientFromRow(row *repository.GetPatientWithCreatorRow) *repository.Patient {
+	return &repository.Patient{
+		ID: row.ID, ClinicID: row.ClinicID, DisplayName: row.DisplayName,
+		BirthDate: row.BirthDate, Sex: row.Sex, Document: row.Document,
+		Phone: row.Phone, Email: row.Email, Street: row.Street,
+		City: row.City, State: row.State, PostalCode: row.PostalCode,
+		Notes: row.Notes, Status: row.Status, CreatedBy: row.CreatedBy,
+		CreatedAt: row.CreatedAt, UpdatedAt: row.UpdatedAt,
+	}
 }
 
 func patientInput(pt *repository.Patient) usecase.PatientInput {

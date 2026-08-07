@@ -50,7 +50,7 @@ func TestCreateAndGet(t *testing.T) {
 	db := openDB(t)
 	svc := newService(t, db)
 
-	pt, err := svc.Create(context.Background(), "clinic-1", validInput())
+	pt, err := svc.Create(context.Background(), "clinic-1", "user-1", validInput())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,7 +84,7 @@ func TestCreateValidation(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			in := validInput()
 			tc.mutate(&in)
-			_, err := svc.Create(context.Background(), "clinic-1", in)
+			_, err := svc.Create(context.Background(), "clinic-1", "user-1", in)
 			var v *usecase.ValidationError
 			if !errors.As(err, &v) {
 				t.Fatalf("Create = %v, want ValidationError", err)
@@ -97,7 +97,7 @@ func TestUpdate(t *testing.T) {
 	db := openDB(t)
 	svc := newService(t, db)
 
-	pt, err := svc.Create(context.Background(), "clinic-1", validInput())
+	pt, err := svc.Create(context.Background(), "clinic-1", "user-1", validInput())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -123,7 +123,7 @@ func TestListAndSearch(t *testing.T) {
 		in := validInput()
 		in.DisplayName = name
 		in.Document = name
-		if _, err := svc.Create(context.Background(), "clinic-1", in); err != nil {
+		if _, err := svc.Create(context.Background(), "clinic-1", "user-1", in); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -180,7 +180,7 @@ func TestSetStatus(t *testing.T) {
 	db := openDB(t)
 	svc := newService(t, db)
 
-	pt, err := svc.Create(context.Background(), "clinic-1", validInput())
+	pt, err := svc.Create(context.Background(), "clinic-1", "user-1", validInput())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -204,10 +204,51 @@ func TestCount(t *testing.T) {
 		t.Fatalf("count = %d, want 0", n)
 	}
 	in := validInput()
-	if _, err := svc.Create(context.Background(), "clinic-1", in); err != nil {
+	if _, err := svc.Create(context.Background(), "clinic-1", "user-1", in); err != nil {
 		t.Fatal(err)
 	}
 	if n, _ := svc.Count(context.Background(), "clinic-1"); n != 1 {
 		t.Fatalf("count = %d, want 1", n)
+	}
+}
+
+func TestCreateRecordsRegistrar(t *testing.T) {
+	db := openDB(t)
+	svc := newService(t, db)
+
+	if _, err := db.Exec(`INSERT INTO users (id, email, password_hash, display_name, role)
+		VALUES ('user-1', 'ana@example.org', 'x', 'Ana Souza', 'admin')`); err != nil {
+		t.Fatal(err)
+	}
+	pt, err := svc.Create(context.Background(), "clinic-1", "user-1", validInput())
+	if err != nil {
+		t.Fatal(err)
+	}
+	row, err := svc.GetWithCreator(context.Background(), pt.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if row.CreatedBy.String != "user-1" {
+		t.Fatalf("CreatedBy = %q, want user-1", row.CreatedBy.String)
+	}
+	if row.CreatedByEmail.String != "ana@example.org" {
+		t.Fatalf("CreatedByEmail = %q, want ana@example.org", row.CreatedByEmail.String)
+	}
+}
+
+func TestGetWithCreatorMissingUser(t *testing.T) {
+	db := openDB(t)
+	svc := newService(t, db)
+
+	pt, err := svc.Create(context.Background(), "clinic-1", "ghost", validInput())
+	if err != nil {
+		t.Fatal(err)
+	}
+	row, err := svc.GetWithCreator(context.Background(), pt.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if row.CreatedByEmail.Valid {
+		t.Fatalf("CreatedByEmail = %q, want empty for unknown user", row.CreatedByEmail.String)
 	}
 }

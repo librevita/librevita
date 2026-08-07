@@ -100,6 +100,7 @@ CREATE TABLE patients (
     notes       TEXT,
     status      TEXT    NOT NULL DEFAULT 'active'
                         CHECK (status IN ('active', 'inactive')),
+    created_by  TEXT    REFERENCES users(id),
     created_at  TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
     updated_at  TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
