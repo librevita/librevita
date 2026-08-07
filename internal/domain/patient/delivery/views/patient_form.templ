@@ -113,7 +113,7 @@ templ PatientForm(token string, id string, values PatientFormValues, errMsg stri
 		</fieldset>
 		<div class="flex items-center gap-3">
 			<button class="btn" type="submit">{ patientFormSubmit(id) }</button>
-			<a class="btn-secondary" href="/patients">Cancel</a>
+			<a class="btn-secondary" hx-boost="false" href="/patients">Cancel</a>
 		</div>
 	</form>
 }
