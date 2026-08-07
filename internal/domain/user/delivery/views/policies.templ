@@ -39,7 +39,7 @@ templ AdminPolicies(token string, p *auth.Principal, policies []PolicyView, errM
 							<input type="hidden" name="_csrf" value={ token }>
 							<input type="hidden" name="name" value={ p.Name }>
 							<label class="label" for={ "policy-" + p.Name }>
-								<span class="font-semibold text-gray-900">{ p.Name }</span>
+								<span class="font-semibold text-gray-900 dark:text-white">{ p.Name }</span>
 								<textarea class="input font-mono" id={ "policy-" + p.Name } name="expression" rows="3" required>{ p.Expression }</textarea>
 							</label>
 							<button class="btn" type="submit">Save</button>
@@ -47,22 +47,22 @@ templ AdminPolicies(token string, p *auth.Principal, policies []PolicyView, errM
 						if len(p.History) > 0 {
 							<div class="mt-6 overflow-x-auto">
 								<table class="table-base">
-									<caption class="text-left text-sm font-semibold text-gray-900 py-2">Change history</caption>
-									<thead class="bg-gray-50">
+									<caption class="text-left text-sm font-semibold text-gray-900 py-2 dark:text-white">Change history</caption>
+									<thead class="bg-gray-50 dark:bg-gray-700">
 										<tr>
-											<th class="px-3 py-2 text-left font-medium text-gray-500">Expression</th>
-											<th class="px-3 py-2 text-left font-medium text-gray-500">Changed by</th>
-											<th class="px-3 py-2 text-left font-medium text-gray-500">Origin</th>
-											<th class="px-3 py-2 text-left font-medium text-gray-500">When</th>
+											<th class="px-3 py-2 text-left font-medium text-gray-500 dark:text-gray-400">Expression</th>
+											<th class="px-3 py-2 text-left font-medium text-gray-500 dark:text-gray-400">Changed by</th>
+											<th class="px-3 py-2 text-left font-medium text-gray-500 dark:text-gray-400">Origin</th>
+											<th class="px-3 py-2 text-left font-medium text-gray-500 dark:text-gray-400">When</th>
 										</tr>
 									</thead>
-									<tbody class="divide-y divide-gray-200">
+									<tbody class="divide-y divide-gray-200 dark:divide-gray-700">
 										for _, v := range p.History {
 											<tr>
-												<td class="px-3 py-2 font-mono text-xs">{ v.Expression }</td>
-												<td class="px-3 py-2">{ changedBy(v.ChangedBy, v.ChangedByEmail) }</td>
-												<td class="px-3 py-2">{ v.Origin }</td>
-												<td class="px-3 py-2 text-xs text-gray-500">{ v.When }</td>
+												<td class="px-3 py-2 font-mono text-xs dark:text-gray-300">{ v.Expression }</td>
+												<td class="px-3 py-2 dark:text-gray-300">{ changedBy(v.ChangedBy, v.ChangedByEmail) }</td>
+												<td class="px-3 py-2 dark:text-gray-300">{ v.Origin }</td>
+												<td class="px-3 py-2 text-xs text-gray-500 dark:text-gray-400">{ v.When }</td>
 											</tr>
 										}
 									</tbody>

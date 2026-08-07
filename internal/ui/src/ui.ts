@@ -62,7 +62,52 @@ document.addEventListener('alpine:init', () => {
       return this.active === name ? activeClass : '';
     },
   }));
+
+  // Color scheme preference on the profile page. The initial class comes
+  // from theme.js (head); this persists the user choice. 'system' removes
+  // the stored value so theme.js follows the OS scheme again.
+  alpine.data('themePref', () => ({
+    pref: readThemePref(),
+    set(pref: string) {
+      this.pref = pref;
+      try {
+        if (pref === 'system') {
+          localStorage.removeItem('librevita-theme');
+        } else {
+          localStorage.setItem('librevita-theme', pref);
+        }
+      } catch (_) {
+        // Private mode: preference lasts for the session.
+      }
+      applyThemePref(pref);
+    },
+    prefClass(name: string, activeClass: string) {
+      return this.pref === name ? activeClass : '';
+    },
+  }));
 });
+
+function readThemePref(): string {
+  try {
+    const stored = localStorage.getItem('librevita-theme');
+    if (stored === 'light' || stored === 'dark') {
+      return stored;
+    }
+  } catch (_) {
+    // Private mode.
+  }
+  return 'system';
+}
+
+function applyThemePref(pref: string): void {
+  if (pref === 'system') {
+    const dark = typeof window.matchMedia === 'function' &&
+      window.matchMedia('(prefers-color-scheme: dark)').matches;
+    document.documentElement.classList.toggle('dark', dark);
+  } else {
+    document.documentElement.classList.toggle('dark', pref === 'dark');
+  }
+}
 
 function readCookie(name: string): string {
   const parts = document.cookie.split(';');

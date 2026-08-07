@@ -213,6 +213,15 @@ func (s *Service) ListRecentUsers(ctx context.Context, limit int) ([]repository.
 	return rows, nil
 }
 
+// UserByID returns the account with the given id.
+func (s *Service) UserByID(ctx context.Context, id string) (*repository.User, error) {
+	user, err := s.users.GetUserByID(ctx, id)
+	if err != nil {
+		return nil, fmt.Errorf("usecase: get user: %w", err)
+	}
+	return &user, nil
+}
+
 // Onboard creates the initial admin account and the clinic profile in one
 // transaction. It succeeds only on a system that has never been set up;
 // concurrent setup attempts are serialized by the single SQLite connection,

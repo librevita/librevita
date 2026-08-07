@@ -36,7 +36,7 @@ frontend:
     WORKDIR /src
     COPY . .
     RUN --mount=type=cache,target=/root/.cache/deno deno task build
-    RUN mkdir -p /static-out/js && cp /out/ui.js /out/vendor/* /static-out/js/
+    RUN mkdir -p /static-out/js && cp /out/ui.js /out/theme.js /out/vendor/* /static-out/js/
     SAVE ARTIFACT /out/app.css AS LOCAL ./internal/ui/static/css/app.css
     SAVE ARTIFACT /static-out/js /static-js
     SAVE ARTIFACT /static-out/js AS LOCAL ./internal/ui/static/js
