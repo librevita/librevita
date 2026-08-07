@@ -1,0 +1,60 @@
+package layouts
+
+import "librevita.org/internal/core/auth"
+
+// Sidebar is the navigation rail: role-aware link groups. It is a drawer
+// on small screens (Alpine x-show + md:!flex) and static from md up.
+templ Sidebar(principal *auth.Principal, active string) {
+	<aside @click.outside="close()" x-show="open" class="fixed inset-y-0 left-0 z-40 flex w-64 flex-col overflow-y-auto border-r border-gray-200 bg-white pt-16 dark:border-gray-700 dark:bg-gray-800 md:static md:z-auto md:pt-0 md:!flex">
+		<nav class="flex-1 space-y-6 px-3 py-4">
+			<div class="space-y-1">
+				<p class="px-3 pb-1 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">General</p>
+				@navLink("/", "Dashboard", "dashboard", active == "dashboard")
+				@navLink("/profile", "Profile", "user", active == "profile")
+			</div>
+			if principal != nil && principal.Role == auth.RoleAdmin {
+				<div class="space-y-1">
+					<p class="px-3 pb-1 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Management</p>
+					@navLink("/admin", "Admin area", "admin", active == "admin")
+					@navLink("/admin/policies", "Access policies", "policies", active == "policies")
+				</div>
+			}
+		</nav>
+	</aside>
+}
+
+templ navLink(href string, label string, icon string, active bool) {
+	<a href={ href } class={ navClass(active) }>
+		@navIcon(icon)
+		{ label }
+	</a>
+}
+
+func navClass(active bool) string {
+	base := "flex items-center gap-3 rounded-lg px-3 py-2 text-base font-medium focus:outline-none focus:ring-2 focus:ring-indigo-500 "
+	if active {
+		return base + "bg-gray-100 text-gray-900 dark:bg-gray-700 dark:text-white"
+	}
+	return base + "text-gray-900 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700"
+}
+
+templ navIcon(name string) {
+	switch name {
+	case "dashboard":
+		<svg class="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+			<path stroke-linecap="round" stroke-linejoin="round" d="M2.25 12l8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25" />
+		</svg>
+	case "admin":
+		<svg class="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+			<path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" />
+		</svg>
+	case "user":
+		<svg class="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+			<path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
+		</svg>
+	case "policies":
+		<svg class="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+			<path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" />
+		</svg>
+	}
+}

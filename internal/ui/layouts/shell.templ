@@ -1,0 +1,22 @@
+package layouts
+
+import (
+	"librevita.org/internal/core/auth"
+)
+
+// App is the authenticated application shell: topbar and sidebar around
+// the page content, following the flowbite admin dashboard. Interactions
+// are progressive enhancements only; navigation is plain links.
+templ App(title string, token string, principal *auth.Principal, active string) {
+	@Base(title) {
+		<div x-data="sidebar" class="flex h-full flex-col">
+			@Topbar(title, token, principal)
+			<div class="flex min-h-0 flex-1">
+				@Sidebar(principal, active)
+				<main class="flex-1 overflow-y-auto bg-gray-50 p-4 dark:bg-gray-900 lg:p-6">
+					{ children... }
+				</main>
+			</div>
+		</div>
+	}
+}
