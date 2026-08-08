@@ -526,8 +526,18 @@ func (h *Handler) userRows(rows []repository.ListUsersRow, clock *clinic.Clock) 
 
 // UserNewPage renders the staff account creation form.
 func (h *Handler) UserNewPage(c echo.Context) error {
+	ctx := c.Request().Context()
+	clinicID, err := h.clocks.ClinicID(ctx)
+	if err != nil {
+		return err
+	}
+	specialties, err := h.svc.ListSpecialties(ctx, clinicID)
+	if err != nil {
+		return err
+	}
 	return server.Render(c, http.StatusOK, views.UserFormPage(
-		server.CSRFToken(c, h.csrf), server.Principal(c), "", views.UserFormValues{}, ""))
+		server.CSRFToken(c, h.csrf), server.Principal(c), "", views.UserFormValues{},
+		h.specialtyViews(specialties, nil), ""))
 }
 
 // UserCreate creates a staff account.
@@ -545,13 +555,16 @@ func (h *Handler) UserCreate(c echo.Context) error {
 		switch {
 		case errors.As(err, &v):
 			return server.Render(c, http.StatusBadRequest, views.UserFormPage(
-				server.CSRFToken(c, h.csrf), server.Principal(c), "", createFormValues(in), v.Msg))
+				server.CSRFToken(c, h.csrf), server.Principal(c), "", createFormValues(in), nil, v.Msg))
 		case errors.Is(err, usecase.ErrEmailTaken):
 			return server.Render(c, http.StatusConflict, views.UserFormPage(
-				server.CSRFToken(c, h.csrf), server.Principal(c), "", createFormValues(in), "That email is already registered"))
+				server.CSRFToken(c, h.csrf), server.Principal(c), "", createFormValues(in), nil, "That email is already registered"))
 		default:
 			return err
 		}
+	}
+	if err := h.setFormSpecialties(c, user.ID); err != nil {
+		return err
 	}
 	h.audit.Record(ctx, audit.Event{
 		ActorID: server.ActorID(c), ActorMail: server.ActorMail(c),
@@ -562,19 +575,33 @@ func (h *Handler) UserCreate(c echo.Context) error {
 	return server.HtmxRedirect(c, "/admin/users")
 }
 
-// UserEditPage renders the account edit form.
+// UserEditPage renders the account edit form with the assigned
+// specialties pre-selected.
 func (h *Handler) UserEditPage(c echo.Context) error {
-	user, err := h.svc.GetUser(c.Request().Context(), c.Param("id"))
+	ctx := c.Request().Context()
+	user, err := h.svc.GetUser(ctx, c.Param("id"))
 	if err != nil {
 		if errors.Is(err, usecase.ErrUserNotFound) {
 			return echo.NewHTTPError(http.StatusNotFound)
 		}
 		return err
 	}
+	clinicID, err := h.clocks.ClinicID(ctx)
+	if err != nil {
+		return err
+	}
+	specialties, err := h.svc.ListSpecialties(ctx, clinicID)
+	if err != nil {
+		return err
+	}
+	selected, err := h.svc.UserSpecialties(ctx, user.ID)
+	if err != nil {
+		return err
+	}
 	return server.Render(c, http.StatusOK, views.UserFormPage(
 		server.CSRFToken(c, h.csrf), server.Principal(c), user.ID, views.UserFormValues{
 			Name: user.DisplayName, Email: user.Email, Role: user.Role, Active: user.Active == 1,
-		}, ""))
+		}, h.specialtyViews(specialties, selected), ""))
 }
 
 // UserUpdate applies the account changes.
@@ -600,19 +627,22 @@ func (h *Handler) UserUpdate(c echo.Context) error {
 		switch {
 		case errors.As(err, &v):
 			return server.Render(c, http.StatusBadRequest, views.UserFormPage(
-				server.CSRFToken(c, h.csrf), server.Principal(c), id, updateFormValues(in), v.Msg))
+				server.CSRFToken(c, h.csrf), server.Principal(c), id, updateFormValues(in), nil, v.Msg))
 		case errors.Is(err, usecase.ErrEmailTaken):
 			return server.Render(c, http.StatusConflict, views.UserFormPage(
-				server.CSRFToken(c, h.csrf), server.Principal(c), id, updateFormValues(in), "That email is already registered"))
+				server.CSRFToken(c, h.csrf), server.Principal(c), id, updateFormValues(in), nil, "That email is already registered"))
 		case errors.Is(err, usecase.ErrCannotDemoteSelf):
 			return server.Render(c, http.StatusBadRequest, views.UserFormPage(
-				server.CSRFToken(c, h.csrf), server.Principal(c), id, updateFormValues(in), "You cannot change your own role or status"))
+				server.CSRFToken(c, h.csrf), server.Principal(c), id, updateFormValues(in), nil, "You cannot change your own role or status"))
 		case errors.Is(err, usecase.ErrLastActiveAdmin):
 			return server.Render(c, http.StatusBadRequest, views.UserFormPage(
-				server.CSRFToken(c, h.csrf), server.Principal(c), id, updateFormValues(in), "The system needs at least one active admin"))
+				server.CSRFToken(c, h.csrf), server.Principal(c), id, updateFormValues(in), nil, "The system needs at least one active admin"))
 		default:
 			return err
 		}
+	}
+	if err := h.setFormSpecialties(c, id); err != nil {
+		return err
 	}
 	h.audit.Record(ctx, audit.Event{
 		ActorID: server.ActorID(c), ActorMail: server.ActorMail(c),
@@ -700,4 +730,100 @@ func (h *Handler) UserStatus(c echo.Context) error {
 		ID: updated.ID, Name: updated.DisplayName, Email: updated.Email,
 		Role: updated.Role, Active: updated.Active, CreatedAt: clock.FormatStored(user.CreatedAt),
 	}}))
+}
+
+// setFormSpecialties applies the submitted specialty checkboxes to the
+// account.
+func (h *Handler) setFormSpecialties(c echo.Context, userID string) error {
+	ids := c.Request().PostForm["specialties"]
+	return h.svc.SetUserSpecialties(c.Request().Context(), userID, ids)
+}
+
+// specialtyViews joins the catalog with the user's selection.
+func (h *Handler) specialtyViews(all, selected []repository.Specialty) []views.SpecialtyView {
+	sel := make(map[string]bool, len(selected))
+	for _, sp := range selected {
+		sel[sp.ID] = true
+	}
+	out := make([]views.SpecialtyView, 0, len(all))
+	for _, sp := range all {
+		out = append(out, views.SpecialtyView{ID: sp.ID, Name: sp.Name, Selected: sel[sp.ID]})
+	}
+	return out
+}
+
+// SpecialtiesPage lists the clinic's specialty catalog.
+func (h *Handler) SpecialtiesPage(c echo.Context) error {
+	ctx := c.Request().Context()
+	clinicID, err := h.clocks.ClinicID(ctx)
+	if err != nil {
+		return err
+	}
+	rows, err := h.svc.ListSpecialties(ctx, clinicID)
+	if err != nil {
+		return err
+	}
+	return server.Render(c, http.StatusOK, views.SpecialtiesPage(
+		server.CSRFToken(c, h.csrf), server.Principal(c), h.specialtyRows(rows), ""))
+}
+
+func (h *Handler) specialtyRows(rows []repository.Specialty) []views.SpecialtyRow {
+	out := make([]views.SpecialtyRow, 0, len(rows))
+	for _, sp := range rows {
+		out = append(out, views.SpecialtyRow{ID: sp.ID, Name: sp.Name})
+	}
+	return out
+}
+
+// SpecialtyCreate adds a specialty to the clinic catalog.
+func (h *Handler) SpecialtyCreate(c echo.Context) error {
+	ctx := c.Request().Context()
+	clinicID, err := h.clocks.ClinicID(ctx)
+	if err != nil {
+		return err
+	}
+	specialty, err := h.svc.CreateSpecialty(ctx, clinicID, c.FormValue("name"))
+	if err != nil {
+		msg := "Could not create the specialty"
+		var v *usecase.ValidationError
+		switch {
+		case errors.As(err, &v):
+			msg = v.Msg
+		case errors.Is(err, usecase.ErrDuplicateSpecialty):
+			msg = "A specialty with this name already exists"
+		}
+		rows, lerr := h.svc.ListSpecialties(ctx, clinicID)
+		if lerr != nil {
+			return lerr
+		}
+		return server.Render(c, http.StatusBadRequest, views.SpecialtiesPage(
+			server.CSRFToken(c, h.csrf), server.Principal(c), h.specialtyRows(rows), msg))
+	}
+	h.audit.Record(ctx, audit.Event{
+		ActorID: server.ActorID(c), ActorMail: server.ActorMail(c),
+		Action: "specialty.create", Resource: "specialty:" + specialty.ID,
+		Result: audit.ResultSuccess, Detail: specialty.Name,
+		IP: c.RealIP(), RequestID: c.Response().Header().Get(echo.HeaderXRequestID),
+	})
+	return server.HtmxRedirect(c, "/admin/specialties")
+}
+
+// SpecialtyDelete removes a specialty from the catalog.
+func (h *Handler) SpecialtyDelete(c echo.Context) error {
+	ctx := c.Request().Context()
+	clinicID, err := h.clocks.ClinicID(ctx)
+	if err != nil {
+		return err
+	}
+	id := c.Param("id")
+	if err := h.svc.DeleteSpecialty(ctx, clinicID, id); err != nil {
+		return err
+	}
+	h.audit.Record(ctx, audit.Event{
+		ActorID: server.ActorID(c), ActorMail: server.ActorMail(c),
+		Action: "specialty.delete", Resource: "specialty:" + id,
+		Result: audit.ResultSuccess,
+		IP: c.RealIP(), RequestID: c.Response().Header().Get(echo.HeaderXRequestID),
+	})
+	return server.HtmxRedirect(c, "/admin/specialties")
 }
