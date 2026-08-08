@@ -62,4 +62,9 @@ func registerRoutes(e *echo.Echo, h *httphandler.Handler, sessions *auth.Session
 	e.GET("/admin/policies", h.AdminPoliciesPage, gate, server.RequireAuth(sessions, log), server.RequirePolicy(policies, auditLogger, log, "admin.view"))
 	e.POST("/admin/policies", h.AdminPolicySave, gate, server.RequireAuth(sessions, log), server.RequirePolicy(policies, auditLogger, log, "admin.view"))
 	e.POST("/admin/policies/reset", h.AdminPolicyReset, gate, server.RequireAuth(sessions, log), server.RequirePolicy(policies, auditLogger, log, "admin.view"))
+	e.GET("/admin/users", h.UsersPage, gate, server.RequireAuth(sessions, log), server.RequirePolicy(policies, auditLogger, log, "users.manage"))
+	e.GET("/admin/users/new", h.UserNewPage, gate, server.RequireAuth(sessions, log), server.RequirePolicy(policies, auditLogger, log, "users.manage"))
+	e.POST("/admin/users", h.UserCreate, gate, server.RequireAuth(sessions, log), server.RequirePolicy(policies, auditLogger, log, "users.manage"))
+	e.GET("/admin/users/:id/edit", h.UserEditPage, gate, server.RequireAuth(sessions, log), server.RequirePolicy(policies, auditLogger, log, "users.manage"))
+	e.POST("/admin/users/:id", h.UserUpdate, gate, server.RequireAuth(sessions, log), server.RequirePolicy(policies, auditLogger, log, "users.manage"))
 }

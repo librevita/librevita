@@ -48,6 +48,9 @@ var DefaultPolicies = map[string]string{
 	// `false`.
 	"users.register": `principal.role == 'admin'`,
 
+	// User management: create staff accounts, change roles and status.
+	"users.manage": `principal.role == 'admin'`,
+
 	// Patient registry, available to the clinical roles.
 	"patient.view": `principal.role in ['admin', 'physician', 'receptionist']`,
 
