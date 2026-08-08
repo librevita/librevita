@@ -2,6 +2,7 @@ package server
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/a-h/templ"
 	"github.com/labstack/echo/v4"
@@ -52,4 +53,16 @@ func ActorMail(c echo.Context) string {
 		return p.Email
 	}
 	return ""
+}
+
+// ValidNext accepts only same-site absolute paths, rejecting open
+// redirects (protocol-relative and external URLs).
+func ValidNext(s string) string {
+	if s == "" {
+		return ""
+	}
+	if !strings.HasPrefix(s, "/") || strings.HasPrefix(s, "//") || strings.Contains(s, "://") {
+		return ""
+	}
+	return s
 }

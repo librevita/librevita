@@ -65,3 +65,22 @@ func TestHtmxRedirectFallsBackTo302(t *testing.T) {
 		t.Fatal("HX-Redirect set on a plain request")
 	}
 }
+
+func TestValidNext(t *testing.T) {
+	cases := []struct {
+		in   string
+		want string
+	}{
+		{"", ""},
+		{"/patients", "/patients"},
+		{"/patients?q=ana", "/patients?q=ana"},
+		{"//evil.com", ""},
+		{"https://evil.com", ""},
+		{"javascript:alert(1)", ""},
+	}
+	for _, tc := range cases {
+		if got := ValidNext(tc.in); got != tc.want {
+			t.Errorf("ValidNext(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}

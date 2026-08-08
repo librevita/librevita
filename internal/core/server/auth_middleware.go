@@ -1,6 +1,7 @@
 package server
 
 import (
+	"net/url"
 	"errors"
 	"log/slog"
 	"net/http"
@@ -86,5 +87,11 @@ func RequirePolicy(pe *policy.PolicyEngine, auditLogger *audit.Logger, log *slog
 }
 
 func redirectLogin(ctx echo.Context) error {
-	return HtmxRedirect(ctx, LoginPath)
+	// Remember where the user was going so the login page can send them
+	// back after authenticating.
+	next := ctx.Request().URL.RequestURI()
+	if next == "" || next == "/" {
+		return HtmxRedirect(ctx, LoginPath)
+	}
+	return HtmxRedirect(ctx, LoginPath+"?next="+url.QueryEscape(next))
 }
