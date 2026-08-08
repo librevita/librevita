@@ -110,3 +110,23 @@ CREATE INDEX idx_patients_name ON patients (display_name COLLATE NOCASE);
 CREATE UNIQUE INDEX idx_patients_clinic_document
     ON patients (clinic_id, document)
     WHERE document IS NOT NULL;
+
+-- Clinician specialties and their mapping to users. Owned by the user
+-- domain; see db/migrations/00009_specialties.sql.
+CREATE TABLE specialties (
+    id         TEXT PRIMARY KEY,
+    clinic_id  TEXT NOT NULL,
+    name       TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+);
+
+CREATE UNIQUE INDEX idx_specialties_clinic_name
+    ON specialties (clinic_id, name COLLATE NOCASE);
+
+CREATE TABLE user_specialties (
+    user_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    specialty_id TEXT NOT NULL REFERENCES specialties(id) ON DELETE CASCADE,
+    PRIMARY KEY (user_id, specialty_id)
+);
+
+CREATE INDEX idx_user_specialties_specialty ON user_specialties (specialty_id);

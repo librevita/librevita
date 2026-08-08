@@ -186,3 +186,78 @@ func TestListUsersSearch(t *testing.T) {
 		t.Errorf("search 'example.org' = %d rows, want 0 (not a word prefix)", len(rows))
 	}
 }
+
+func TestSpecialties(t *testing.T) {
+	db := openAuthDB(t)
+	svc := newService(t, db)
+	ctx := context.Background()
+
+	psy, err := svc.CreateSpecialty(ctx, "clinic-1", "Psychologist")
+	if err != nil {
+		t.Fatal(err)
+	}
+	physio, err := svc.CreateSpecialty(ctx, "clinic-1", "Physiotherapist")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.CreateSpecialty(ctx, "clinic-1", " psychologist "); !errors.Is(err, usecase.ErrDuplicateSpecialty) {
+		t.Errorf("duplicate specialty err = %v, want ErrDuplicateSpecialty", err)
+	}
+	if _, err := svc.CreateSpecialty(ctx, "clinic-1", ""); err == nil {
+		t.Errorf("empty specialty name must fail")
+	}
+	// The other clinic has its own catalog.
+	if _, err := svc.CreateSpecialty(ctx, "clinic-2", "Psychologist"); err != nil {
+		t.Errorf("same name in another clinic must be allowed: %v", err)
+	}
+
+	rows, err := svc.ListSpecialties(ctx, "clinic-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("ListSpecialties = %d, want 2", len(rows))
+	}
+
+	// Assign more than one specialty to a user.
+	staff, err := svc.CreateUser(ctx, usecase.CreateUserInput{
+		Name: "Dr. Ana", Email: "ana.sp@example.org", Password: "senha-segura", Role: "physician",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.SetUserSpecialties(ctx, staff.ID, []string{psy.ID, physio.ID}); err != nil {
+		t.Fatal(err)
+	}
+	assigned, err := svc.UserSpecialties(ctx, staff.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(assigned) != 2 {
+		t.Fatalf("UserSpecialties = %d, want 2", len(assigned))
+	}
+
+	// Replacing the set drops the first assignment.
+	if err := svc.SetUserSpecialties(ctx, staff.ID, []string{physio.ID}); err != nil {
+		t.Fatal(err)
+	}
+	assigned, err = svc.UserSpecialties(ctx, staff.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(assigned) != 1 || assigned[0].ID != physio.ID {
+		t.Fatalf("after replace = %+v, want only physiotherapy", assigned)
+	}
+
+	// Deleting the specialty removes the mapping too.
+	if err := svc.DeleteSpecialty(ctx, "clinic-1", physio.ID); err != nil {
+		t.Fatal(err)
+	}
+	assigned, err = svc.UserSpecialties(ctx, staff.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(assigned) != 0 {
+		t.Fatalf("after specialty delete = %d, want 0", len(assigned))
+	}
+}
