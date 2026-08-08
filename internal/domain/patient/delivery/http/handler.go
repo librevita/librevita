@@ -26,7 +26,6 @@ const utcMilliLayout = "2006-01-02T15:04:05.000Z"
 
 const (
 	patientListLimit    = 50
-	maxPatientListLimit = 500
 )
 
 // Handler renders the patient pages and processes submissions.
@@ -44,48 +43,37 @@ func NewHandler(svc *usecase.Service, clocks *clinic.ClockProvider,
 }
 
 // List renders the registry page or, for htmx requests, only the table
-// fragment (search).
+// fragment (search, filter, pager).
 func (h *Handler) List(c echo.Context) error {
 	ctx := c.Request().Context()
 	clinicID, err := h.clinicID(ctx)
 	if err != nil {
 		return err
 	}
-	q := c.QueryParam("q")
+	q := strings.TrimSpace(c.QueryParam("q"))
 	status := c.QueryParam("status")
-	sortParam := c.QueryParam("sort")
-	limit := c.QueryParam("limit")
-	if limit == "" {
-		limit = strconv.Itoa(patientListLimit)
-	}
-	pageLimit, err := strconv.Atoi(limit)
-	if err != nil || pageLimit < 1 {
-		pageLimit = patientListLimit
-	}
-	if pageLimit > maxPatientListLimit {
-		pageLimit = maxPatientListLimit
+	page := 1
+	if p := c.QueryParam("page"); p != "" {
+		if n, err := strconv.Atoi(p); err == nil && n > 0 {
+			page = n
+		}
 	}
 
-	patients, err := h.svc.List(ctx, clinicID, q, status, "", pageLimit+1)
+	patients, total, err := h.svc.ListPage(ctx, clinicID, q, status, patientListLimit, (page-1)*patientListLimit)
 	if err != nil {
 		return err
 	}
-	hasMore := len(patients) > pageLimit
-	if hasMore {
-		patients = patients[:pageLimit]
-	}
-	h.sort(patients, sortParam)
 	rows := h.rows(c.Request().Context(), patients)
+	pager := views.PatientPager{Q: q, Status: status, Page: page, Total: total, Shown: int64(len(rows))}
 
 	// The search input and filters request fragments; boosted navigation
 	// (sidebar links) also arrives with HX-Request but must render the
 	// full page, so only non-boosted htmx requests get the fragment.
 	if server.IsHtmx(c) && c.Request().Header.Get("HX-Boosted") != "true" {
-		return server.Render(c, http.StatusOK, views.PatientListTable(rows, nextLimit(sortParam, pageLimit, hasMore), ""))
+		return server.Render(c, http.StatusOK, views.PatientListTable(rows, pager, ""))
 	}
 	return server.Render(c, http.StatusOK, views.PatientListPage(
-		server.CSRFToken(c, h.csrf), server.Principal(c), q, status, sortParam, rows,
-		nextLimit(sortParam, pageLimit, hasMore), ""))
+		server.CSRFToken(c, h.csrf), server.Principal(c), q, status, rows, pager, ""))
 }
 
 // NewPage renders the create form.
@@ -286,9 +274,14 @@ func (h *Handler) Restore(c echo.Context) error {
 // archived rows disappear at once.
 func (h *Handler) BulkArchive(c echo.Context) error {
 	ctx := c.Request().Context()
-	q := c.QueryParam("q")
+	q := strings.TrimSpace(c.QueryParam("q"))
 	status := c.QueryParam("status")
-	sortParam := c.QueryParam("sort")
+	page := 1
+	if p := c.QueryParam("page"); p != "" {
+		if n, err := strconv.Atoi(p); err == nil && n > 0 {
+			page = n
+		}
+	}
 	ids := c.Request().PostForm["ids"]
 	archived := 0
 	for _, id := range ids {
@@ -307,20 +300,17 @@ func (h *Handler) BulkArchive(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-	patients, err := h.svc.List(ctx, clinicID, q, status, "", patientListLimit+1)
+	patients, total, err := h.svc.ListPage(ctx, clinicID, q, status, patientListLimit, (page-1)*patientListLimit)
 	if err != nil {
 		return err
 	}
-	hasMore := len(patients) > patientListLimit
-	if hasMore {
-		patients = patients[:patientListLimit]
-	}
 	rows := h.rows(ctx, patients)
+	pager := views.PatientPager{Q: q, Status: status, Page: page, Total: total, Shown: int64(len(rows))}
 	msg := "No patients selected"
 	if archived > 0 {
 		msg = strconv.Itoa(archived) + " patient(s) archived"
 	}
-	return server.Render(c, http.StatusOK, views.PatientListTableWithAlert(rows, nextLimit(sortParam, patientListLimit, hasMore), msg))
+	return server.Render(c, http.StatusOK, views.PatientListTableWithAlert(rows, pager, msg))
 }
 
 func (h *Handler) setStatus(c echo.Context, status, successMsg string) error {

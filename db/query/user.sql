@@ -48,7 +48,12 @@ SELECT id, email, display_name, role, active, created_at
 FROM users
 WHERE (email || ' ' || display_name) LIKE '%' || CAST(? AS TEXT) || '%'
 ORDER BY created_at DESC, id DESC
-LIMIT ?;
+LIMIT ? OFFSET ?;
+
+-- name: CountUsersMatching :one
+SELECT COUNT(*)
+FROM users
+WHERE (email || ' ' || display_name) LIKE '%' || CAST(? AS TEXT) || '%';
 
 -- name: UpdateUser :one
 UPDATE users

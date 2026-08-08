@@ -14,6 +14,7 @@ import (
 	"librevita.org/internal/core/auth"
 	"librevita.org/internal/core/policy"
 	"librevita.org/internal/core/server"
+	"librevita.org/internal/ui/components"
 	"librevita.org/internal/domain/clinic"
 	patientusecase "librevita.org/internal/domain/patient/usecase"
 	"librevita.org/internal/domain/user/delivery/views"
@@ -465,26 +466,30 @@ func (h *Handler) policyViews(c echo.Context, ctx context.Context) ([]views.Poli
 
 // User management (users.manage policy).
 
-const userListLimit = 50
+const userListLimit = 20
 
-// UsersPage lists the accounts with an optional name/email search.
+// UsersPage lists one page of accounts with an optional name/email
+// search, flowbite-style: breadcrumb, toolbar, and paged table.
 func (h *Handler) UsersPage(c echo.Context) error {
 	ctx := c.Request().Context()
 	q := strings.TrimSpace(c.QueryParam("q"))
-	rows, err := h.svc.ListUsers(ctx, q, userListLimit+1)
+	page := 1
+	if p := c.QueryParam("page"); p != "" {
+		if n, err := strconv.Atoi(p); err == nil && n > 0 {
+			page = n
+		}
+	}
+	rows, total, err := h.svc.ListUsersPage(ctx, q, userListLimit, (page-1)*userListLimit)
 	if err != nil {
 		return err
-	}
-	hasMore := len(rows) > userListLimit
-	if hasMore {
-		rows = rows[:userListLimit]
 	}
 	clock, err := h.clocks.Clock(ctx)
 	if err != nil {
 		return err
 	}
 	return server.Render(c, http.StatusOK, views.UsersListPage(
-		server.CSRFToken(c, h.csrf), server.Principal(c), q, h.userRows(rows, clock), hasMore, ""))
+		server.CSRFToken(c, h.csrf), server.Principal(c), q, page, total,
+		h.userRows(rows, clock), ""))
 }
 
 func createFormValues(in usecase.CreateUserInput) views.UserFormValues {
@@ -626,4 +631,49 @@ func (h *Handler) userChanges(before, after *repository.User, in usecase.UpdateU
 
 func updateFormValues(in usecase.UpdateUserInput) views.UserFormValues {
 	return views.UserFormValues{Name: in.Name, Email: in.Email, Role: in.Role, Active: in.Active}
+}
+
+// UserStatus toggles an account between active and inactive from the
+// list row. The response is the refreshed row fragment, or an OOB alert
+// when the anti-lockout rules refuse the change.
+func (h *Handler) UserStatus(c echo.Context) error {
+	ctx := c.Request().Context()
+	id := c.Param("id")
+	user, err := h.svc.GetUser(ctx, id)
+	if err != nil {
+		if errors.Is(err, usecase.ErrUserNotFound) {
+			return echo.NewHTTPError(http.StatusNotFound)
+		}
+		return err
+	}
+	clock, err := h.clocks.Clock(ctx)
+	if err != nil {
+		return err
+	}
+	updated, err := h.svc.UpdateUser(ctx, id, server.ActorID(c), usecase.UpdateUserInput{
+		Name:   user.DisplayName,
+		Email:  user.Email,
+		Role:   user.Role,
+		Active: user.Active != 1,
+	})
+	if err != nil {
+		msg := "Could not update the user"
+		switch {
+		case errors.Is(err, usecase.ErrCannotDemoteSelf):
+			msg = "You cannot change your own status"
+		case errors.Is(err, usecase.ErrLastActiveAdmin):
+			msg = "The system needs at least one active admin"
+		}
+		return server.Render(c, http.StatusBadRequest, components.Alert(msg, true))
+	}
+	h.audit.Record(ctx, audit.Event{
+		ActorID: server.ActorID(c), ActorMail: server.ActorMail(c),
+		Action: "user.update", Resource: "user:" + id,
+		Result: audit.ResultSuccess, Detail: h.userChanges(user, updated, usecase.UpdateUserInput{Active: updated.Active == 1}),
+		IP: c.RealIP(), RequestID: c.Response().Header().Get(echo.HeaderXRequestID),
+	})
+	return server.Render(c, http.StatusOK, views.UserRowCells(views.UserListRow{
+		ID: updated.ID, Name: updated.DisplayName, Email: updated.Email,
+		Role: updated.Role, Active: updated.Active, CreatedAt: clock.FormatStored(user.CreatedAt),
+	}))
 }

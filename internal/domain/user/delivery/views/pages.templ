@@ -60,7 +60,7 @@ type DashboardStats struct {
 
 templ Home(token string, p *auth.Principal, stats DashboardStats) {
 	@layouts.App("Dashboard", token, p, "dashboard") {
-		<div class="mx-auto max-w-7xl">
+		<div class="mx-auto max-w-7xl p-4 lg:p-6">
 			<div class="grid gap-4 xl:grid-cols-2 2xl:grid-cols-3">
 				<div class="2xl:col-span-2">
 					@components.Card() {
@@ -241,7 +241,7 @@ func itoa(n int64) string {
 
 templ Admin(token string, p *auth.Principal) {
 	@layouts.App("Admin area", token, p, "admin") {
-		<div class="mx-auto max-w-4xl">
+		<div class="mx-auto max-w-4xl p-4 lg:p-6">
 			<p class="text-sm text-gray-600">
 				Only users with the <strong class="text-gray-900">admin</strong> role can see this page.
 			</p>

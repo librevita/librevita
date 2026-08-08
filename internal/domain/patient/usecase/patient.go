@@ -285,3 +285,25 @@ func strPtr(s string) *string {
 	}
 	return &s
 }
+
+
+// ListPage returns one page of patients matching q and status, ordered
+// by display name, together with the total match count.
+func (s *Service) ListPage(ctx context.Context, clinicID, q, status string, limit, offset int) ([]repository.Patient, int64, error) {
+	pattern := "%" + strings.TrimSpace(q) + "%"
+	rows, err := s.q.ListPatientsPage(ctx, repository.ListPatientsPageParams{
+		ClinicID: clinicID, StatusEmpty: status, StatusFilter: status,
+		QueryEmpty: q, Pattern: pattern, Limit: int64(limit), Offset: int64(offset),
+	})
+	if err != nil {
+		return nil, 0, fmt.Errorf("usecase: list patients page: %w", err)
+	}
+	total, err := s.q.CountPatientsMatching(ctx, repository.CountPatientsMatchingParams{
+		ClinicID: clinicID, StatusEmpty: status, StatusFilter: status,
+		QueryEmpty: q, Pattern: pattern,
+	})
+	if err != nil {
+		return nil, 0, fmt.Errorf("usecase: count patients: %w", err)
+	}
+	return rows, total, nil
+}

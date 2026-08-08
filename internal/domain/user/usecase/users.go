@@ -151,17 +151,22 @@ func validateEmail(email string) error {
 	return nil
 }
 
-// ListUsers returns accounts matching q (name or email, case-insensitive),
-// newest first.
-func (s *Service) ListUsers(ctx context.Context, q string, limit int) ([]repository.ListUsersRow, error) {
+// ListUsersPage returns one page of accounts matching q (name or email,
+// case-insensitive), newest first, together with the total match count.
+func (s *Service) ListUsersPage(ctx context.Context, q string, limit, offset int) ([]repository.ListUsersRow, int64, error) {
 	rows, err := s.users.ListUsers(ctx, repository.ListUsersParams{
 		Column1: q,
 		Limit:   int64(limit),
+		Offset:  int64(offset),
 	})
 	if err != nil {
-		return nil, fmt.Errorf("usecase: list users: %w", err)
+		return nil, 0, fmt.Errorf("usecase: list users: %w", err)
 	}
-	return rows, nil
+	total, err := s.users.CountUsersMatching(ctx, q)
+	if err != nil {
+		return nil, 0, fmt.Errorf("usecase: count users: %w", err)
+	}
+	return rows, total, nil
 }
 
 // GetUser loads a single account.
