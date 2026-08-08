@@ -42,3 +42,25 @@ LIMIT 1;
 INSERT INTO meta (key, value)
 VALUES (?, ?)
 ON CONFLICT(key) DO UPDATE SET value = excluded.value;
+
+-- name: ListUsers :many
+SELECT id, email, display_name, role, active, created_at
+FROM users
+WHERE (email || ' ' || display_name) LIKE '%' || CAST(? AS TEXT) || '%'
+ORDER BY created_at DESC, id DESC
+LIMIT ?;
+
+-- name: UpdateUser :one
+UPDATE users
+SET email = ?,
+display_name = ?,
+role = ?,
+active = ?,
+updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE id = ?
+RETURNING *;
+
+-- name: CountActiveUsersByRole :one
+SELECT COUNT(*)
+FROM users
+WHERE role = ? AND active = 1;

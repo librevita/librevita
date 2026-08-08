@@ -17,6 +17,7 @@ import (
 	"librevita.org/internal/domain/clinic"
 	patientusecase "librevita.org/internal/domain/patient/usecase"
 	"librevita.org/internal/domain/user/delivery/views"
+	"librevita.org/internal/domain/user/repository"
 	"librevita.org/internal/domain/user/usecase"
 )
 
@@ -462,4 +463,167 @@ func (h *Handler) policyViews(c echo.Context, ctx context.Context) ([]views.Poli
 	return out, nil
 }
 
+// User management (users.manage policy).
 
+const userListLimit = 50
+
+// UsersPage lists the accounts with an optional name/email search.
+func (h *Handler) UsersPage(c echo.Context) error {
+	ctx := c.Request().Context()
+	q := strings.TrimSpace(c.QueryParam("q"))
+	rows, err := h.svc.ListUsers(ctx, q, userListLimit+1)
+	if err != nil {
+		return err
+	}
+	hasMore := len(rows) > userListLimit
+	if hasMore {
+		rows = rows[:userListLimit]
+	}
+	clock, err := h.clocks.Clock(ctx)
+	if err != nil {
+		return err
+	}
+	return server.Render(c, http.StatusOK, views.UsersListPage(
+		server.CSRFToken(c, h.csrf), server.Principal(c), q, h.userRows(rows, clock), hasMore, ""))
+}
+
+func createFormValues(in usecase.CreateUserInput) views.UserFormValues {
+	return views.UserFormValues{Name: in.Name, Email: in.Email, Password: in.Password, Role: in.Role}
+}
+
+// userRows renders the list rows with the clinic timezone.
+func (h *Handler) userRows(rows []repository.ListUsersRow, clock *clinic.Clock) []views.UserListRow {
+	out := make([]views.UserListRow, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, views.UserListRow{
+			ID: r.ID, Name: r.DisplayName, Email: r.Email, Role: r.Role,
+			Active: r.Active, CreatedAt: clock.FormatStored(r.CreatedAt),
+		})
+	}
+	return out
+}
+
+// UserNewPage renders the staff account creation form.
+func (h *Handler) UserNewPage(c echo.Context) error {
+	return server.Render(c, http.StatusOK, views.UserFormPage(
+		server.CSRFToken(c, h.csrf), server.Principal(c), "", views.UserFormValues{}, ""))
+}
+
+// UserCreate creates a staff account.
+func (h *Handler) UserCreate(c echo.Context) error {
+	ctx := c.Request().Context()
+	in := usecase.CreateUserInput{
+		Name:     c.FormValue("name"),
+		Email:    c.FormValue("email"),
+		Password: c.FormValue("password"),
+		Role:     c.FormValue("role"),
+	}
+	user, err := h.svc.CreateUser(ctx, in)
+	if err != nil {
+		var v *usecase.ValidationError
+		switch {
+		case errors.As(err, &v):
+			return server.Render(c, http.StatusBadRequest, views.UserFormPage(
+				server.CSRFToken(c, h.csrf), server.Principal(c), "", createFormValues(in), v.Msg))
+		case errors.Is(err, usecase.ErrEmailTaken):
+			return server.Render(c, http.StatusConflict, views.UserFormPage(
+				server.CSRFToken(c, h.csrf), server.Principal(c), "", createFormValues(in), "That email is already registered"))
+		default:
+			return err
+		}
+	}
+	h.audit.Record(ctx, audit.Event{
+		ActorID: server.ActorID(c), ActorMail: server.ActorMail(c),
+		Action: "user.create", Resource: "user:" + user.ID,
+		Result: audit.ResultSuccess, Detail: "role: " + user.Role,
+		IP: c.RealIP(), RequestID: c.Response().Header().Get(echo.HeaderXRequestID),
+	})
+	return server.HtmxRedirect(c, "/admin/users")
+}
+
+// UserEditPage renders the account edit form.
+func (h *Handler) UserEditPage(c echo.Context) error {
+	user, err := h.svc.GetUser(c.Request().Context(), c.Param("id"))
+	if err != nil {
+		if errors.Is(err, usecase.ErrUserNotFound) {
+			return echo.NewHTTPError(http.StatusNotFound)
+		}
+		return err
+	}
+	return server.Render(c, http.StatusOK, views.UserFormPage(
+		server.CSRFToken(c, h.csrf), server.Principal(c), user.ID, views.UserFormValues{
+			Name: user.DisplayName, Email: user.Email, Role: user.Role, Active: user.Active == 1,
+		}, ""))
+}
+
+// UserUpdate applies the account changes.
+func (h *Handler) UserUpdate(c echo.Context) error {
+	ctx := c.Request().Context()
+	id := c.Param("id")
+	in := usecase.UpdateUserInput{
+		Name:   c.FormValue("name"),
+		Email:  c.FormValue("email"),
+		Role:   c.FormValue("role"),
+		Active: c.FormValue("active") == "on",
+	}
+	before, err := h.svc.GetUser(ctx, id)
+	if err != nil {
+		if errors.Is(err, usecase.ErrUserNotFound) {
+			return echo.NewHTTPError(http.StatusNotFound)
+		}
+		return err
+	}
+	user, err := h.svc.UpdateUser(ctx, id, server.ActorID(c), in)
+	if err != nil {
+		var v *usecase.ValidationError
+		switch {
+		case errors.As(err, &v):
+			return server.Render(c, http.StatusBadRequest, views.UserFormPage(
+				server.CSRFToken(c, h.csrf), server.Principal(c), id, updateFormValues(in), v.Msg))
+		case errors.Is(err, usecase.ErrEmailTaken):
+			return server.Render(c, http.StatusConflict, views.UserFormPage(
+				server.CSRFToken(c, h.csrf), server.Principal(c), id, updateFormValues(in), "That email is already registered"))
+		case errors.Is(err, usecase.ErrCannotDemoteSelf):
+			return server.Render(c, http.StatusBadRequest, views.UserFormPage(
+				server.CSRFToken(c, h.csrf), server.Principal(c), id, updateFormValues(in), "You cannot change your own role or status"))
+		case errors.Is(err, usecase.ErrLastActiveAdmin):
+			return server.Render(c, http.StatusBadRequest, views.UserFormPage(
+				server.CSRFToken(c, h.csrf), server.Principal(c), id, updateFormValues(in), "The system needs at least one active admin"))
+		default:
+			return err
+		}
+	}
+	h.audit.Record(ctx, audit.Event{
+		ActorID: server.ActorID(c), ActorMail: server.ActorMail(c),
+		Action: "user.update", Resource: "user:" + id,
+		Result: audit.ResultSuccess, Detail: h.userChanges(before, user, in),
+		IP: c.RealIP(), RequestID: c.Response().Header().Get(echo.HeaderXRequestID),
+	})
+	return server.HtmxRedirect(c, "/admin/users")
+}
+
+// userChanges renders the changed fields for the audit detail.
+func (h *Handler) userChanges(before, after *repository.User, in usecase.UpdateUserInput) string {
+	parts := make([]string, 0, 4)
+	if before.DisplayName != after.DisplayName {
+		parts = append(parts, "name: "+before.DisplayName+" -> "+after.DisplayName)
+	}
+	if before.Email != after.Email {
+		parts = append(parts, "email: "+before.Email+" -> "+after.Email)
+	}
+	if before.Role != after.Role {
+		parts = append(parts, "role: "+before.Role+" -> "+after.Role)
+	}
+	if before.Active != after.Active {
+		if after.Active == 1 {
+			parts = append(parts, "status: inactive -> active")
+		} else {
+			parts = append(parts, "status: active -> inactive")
+		}
+	}
+	return strings.Join(parts, ", ")
+}
+
+func updateFormValues(in usecase.UpdateUserInput) views.UserFormValues {
+	return views.UserFormValues{Name: in.Name, Email: in.Email, Role: in.Role, Active: in.Active}
+}

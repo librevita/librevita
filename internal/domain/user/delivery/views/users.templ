@@ -1,0 +1,181 @@
+package views
+
+import (
+	"librevita.org/internal/core/auth"
+	"librevita.org/internal/ui/components"
+	"librevita.org/internal/ui/layouts"
+	"librevita.org/internal/ui/shared"
+)
+
+// UserListRow is one account line of the management table.
+type UserListRow struct {
+	ID        string
+	Name      string
+	Email     string
+	Role      string
+	Active    int64
+	CreatedAt string
+}
+
+// UserFormValues carries the current form values so the form can redraw
+// after a validation error.
+type UserFormValues struct {
+	Name     string
+	Email    string
+	Password string
+	Role     string
+	Active   bool
+}
+
+// UsersListPage renders the account management table.
+templ UsersListPage(token string, p *auth.Principal, q string, rows []UserListRow, hasMore bool, errMsg string) {
+	@layouts.App("Users", token, p, "users") {
+		<div class="mx-auto max-w-5xl">
+			@components.Card() {
+				@components.CardHeader("Users") {
+					@components.ButtonLink("primary", "/admin/users/new", "New user", nil)
+				}
+				if errMsg != "" {
+					<div class="mb-4">@components.Alert(errMsg, false)</div>
+				}
+				<form method="get" action="/admin/users" class="mb-4">
+					<div class="flex gap-3">
+						@components.Input("q", templ.Attributes{ "type": "search", "value": q, "placeholder": "Search by name or email", "class": "input max-w-sm" })
+						@components.Button("primary", "Search", templ.Attributes{ "type": "submit" })
+					</div>
+				</form>
+				<table class="table-base">
+					<thead>
+						<tr class="text-left text-xs uppercase tracking-wider text-gray-500 dark:text-gray-400">
+							<th class="px-3 py-2">User</th>
+							<th class="px-3 py-2">Role</th>
+							<th class="px-3 py-2">Status</th>
+							<th class="px-3 py-2">Created</th>
+							<th class="px-3 py-2"><span class="sr-only">Actions</span></th>
+						</tr>
+					</thead>
+					<tbody class="divide-y divide-gray-200 dark:divide-gray-700">
+						for _, u := range rows {
+							<tr>
+								<td class="px-3 py-2.5">
+									<div class="flex items-center gap-3">
+										@components.Avatar(shared.Initials(u.Name), "h-8 w-8 bg-indigo-100 text-indigo-700 dark:bg-indigo-900 dark:text-indigo-300")
+										<div>
+											<p class="font-medium text-gray-900 dark:text-white">{ u.Name }</p>
+											<p class="text-xs text-gray-500 dark:text-gray-400">{ u.Email }</p>
+										</div>
+									</div>
+								</td>
+								<td class="px-3 py-2.5">@components.Badge(u.Role)</td>
+								<td class="px-3 py-2.5">@userStatusBadge(u.Active)</td>
+								<td class="px-3 py-2.5 text-sm text-gray-500 dark:text-gray-400">{ u.CreatedAt }</td>
+								<td class="px-3 py-2.5 text-right">
+									<a class="text-sm font-medium text-indigo-700 hover:underline dark:text-indigo-400" href={ "/admin/users/" + u.ID + "/edit" }>Edit</a>
+								</td>
+							</tr>
+						}
+						if len(rows) == 0 {
+							<tr>
+								<td colspan="5" class="px-3 py-8 text-center text-sm text-gray-500 dark:text-gray-400">No users found</td>
+							</tr>
+						}
+					</tbody>
+				</table>
+				if hasMore {
+					<p class="mt-3 text-xs text-gray-500 dark:text-gray-400">Showing the { len(rows) } most recent accounts.</p>
+				}
+			}
+		</div>
+	}
+}
+
+// UserFormPage renders the create (id empty) or edit form.
+templ UserFormPage(token string, p *auth.Principal, id string, values UserFormValues, errMsg string) {
+	@layouts.App(userFormTitle(id), token, p, "users") {
+		<div class="mx-auto max-w-xl">
+			@components.Card() {
+				@components.CardHeader(userFormTitle(id)) {
+					<a class="inline-flex items-center rounded-lg p-2 text-sm font-medium text-indigo-700 hover:bg-gray-100 dark:text-indigo-400 dark:hover:bg-gray-700" href="/admin/users">Back to users</a>
+				}
+				@UserForm(token, id, values, errMsg)
+			}
+		</div>
+	}
+}
+
+// UserForm is the account form fragment: htmx posts replace it in place
+// so validation errors keep the typed values.
+templ UserForm(token string, id string, values UserFormValues, errMsg string) {
+	<form method="post" action={ userFormAction(id) } hx-post={ userFormAction(id) } hx-target="this" hx-swap="outerHTML" class="space-y-4">
+		<input type="hidden" name="_csrf" value={ token }>
+		if errMsg != "" {
+			@components.Alert(errMsg, false)
+		}
+		@components.Field("name", "Name") {
+			@components.Input("name", templ.Attributes{ "id": "name", "type": "text", "value": values.Name, "required": true, "autofocus": true })
+		}
+		@components.Field("email", "Email") {
+			@components.Input("email", templ.Attributes{ "id": "email", "type": "email", "value": values.Email, "required": true })
+		}
+		if id == "" {
+			@components.Field("password", "Password") {
+				@components.Input("password", templ.Attributes{ "id": "password", "type": "password", "minlength": "8", "required": true })
+			}
+		}
+		@components.Field("role", "Role") {
+			@components.Select("role", templ.Attributes{ "id": "role", "required": true }) {
+				@roleOption("physician", "Physician", values.Role)
+				@roleOption("receptionist", "Receptionist", values.Role)
+				@roleOption("admin", "Administrator", values.Role)
+				@roleOption("patient", "Patient", values.Role)
+			}
+		}
+		if id != "" {
+			<div class="flex items-center gap-2">
+				@components.Checkbox("active", templ.Attributes{ "id": "active", "checked": values.Active })
+				<label class="text-sm text-gray-700 dark:text-gray-300" for="active">Active account</label>
+			</div>
+		}
+		<div class="flex items-center gap-3">
+			@components.Button("primary", userFormSubmit(id), templ.Attributes{ "type": "submit" })
+			@components.ButtonLink("secondary", "/admin/users", "Cancel", templ.Attributes{ "hx-target": "body" })
+		</div>
+	</form>
+}
+
+templ roleOption(value string, label string, selected string) {
+	if value == selected {
+		<option value={ value } selected>{ label }</option>
+	} else {
+		<option value={ value }>{ label }</option>
+	}
+}
+
+templ userStatusBadge(active int64) {
+	if active == 1 {
+		<span class="inline-flex items-center rounded-md bg-green-100 px-2.5 py-0.5 text-xs font-medium text-green-800 dark:bg-green-900 dark:text-green-300">Active</span>
+	} else {
+		<span class="inline-flex items-center rounded-md bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-600 dark:bg-gray-700 dark:text-gray-300">Inactive</span>
+	}
+}
+
+func userFormTitle(id string) string {
+	if id == "" {
+		return "New user"
+	}
+	return "Edit user"
+}
+
+func userFormAction(id string) string {
+	if id == "" {
+		return "/admin/users"
+	}
+	return "/admin/users/" + id
+}
+
+func userFormSubmit(id string) string {
+	if id == "" {
+		return "Create user"
+	}
+	return "Save changes"
+}
