@@ -170,11 +170,19 @@ func TestListUsersSearch(t *testing.T) {
 		t.Errorf("search 'ANA' = %+v", rows)
 	}
 
+	// Whole-word prefix: the term must start a word or the email value.
+	rows, _, err = svc.ListUsersPage(ctx, "ana@example.org", 10, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 {
+		t.Errorf("search 'ana@example.org' = %d rows, want 1", len(rows))
+	}
 	rows, _, err = svc.ListUsersPage(ctx, "example.org", 10, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(rows) != 2 {
-		t.Errorf("search 'example.org' = %d rows, want 2", len(rows))
+	if len(rows) != 0 {
+		t.Errorf("search 'example.org' = %d rows, want 0 (not a word prefix)", len(rows))
 	}
 }

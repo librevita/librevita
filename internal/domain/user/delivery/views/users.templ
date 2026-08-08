@@ -60,46 +60,53 @@ templ UsersListPage(token string, p *auth.Principal, q string, page int, total i
 				</nav>
 				<h1 class="mb-4 text-xl font-semibold text-gray-900 sm:text-2xl dark:text-white">All users</h1>
 				<div class="flex flex-wrap items-center justify-between gap-3">
-					<form method="get" action="/admin/users">
-						<div class="relative">
-							<svg class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400 dark:text-gray-500" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd"></path></svg>
-							@components.Input("q", "pl-9 md:w-64 xl:w-96", templ.Attributes{ "type": "search", "value": q, "placeholder": "Search for users" })
-						</div>
-					</form>
+					<div class="relative">
+						<svg class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400 dark:text-gray-500" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd"></path></svg>
+						@components.Input("q", "pl-9 md:w-64 xl:w-96", templ.Attributes{ "id": "user-search", "type": "search", "value": q, "placeholder": "Search for users", "hx-get": "/admin/users", "hx-trigger": "input changed delay:300ms", "hx-target": "#user-list", "hx-swap": "innerHTML" })
+					</div>
 					@components.ButtonLink("primary", "/admin/users/new", "Add user", nil)
 				</div>
 			</div>
 			<div class="flex flex-col">
-				if errMsg != "" {
-					<div class="mb-4">@components.Alert(errMsg, false)</div>
-				}
-				<div class="overflow-hidden shadow-sm">
-					<div class="overflow-x-auto">
-						<table class="min-w-full divide-y divide-gray-200 dark:divide-gray-600">
-							<thead class="bg-gray-100 dark:bg-gray-700">
-								<tr>
-									@components.Th("Name", "p-4")
-									@components.Th("Role", "p-4")
-									@components.Th("Status", "p-4")
-									@components.Th("Created", "p-4")
-									<th scope="col" class="p-4 text-right text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">Actions</th>
-								</tr>
-							</thead>
-							<tbody class="divide-y divide-gray-200 bg-white dark:divide-gray-700 dark:bg-gray-800">
-								for _, u := range rows {
-									<tr class="hover:bg-gray-100 dark:hover:bg-gray-700">@UserRowCells(u)</tr>
-								}
-								if len(rows) == 0 {
-									<tr>
-										<td colspan="5" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">No users found</td>
-									</tr>
-								}
-							</tbody>
-						</table>
-					</div>
+				<div id="user-list">
+					@UsersListTable(rows, q, page, total, errMsg)
 				</div>
-				@userPager(q, page, total, int64(len(rows)))
 			</div>
+		</div>
+	}
+}
+
+// UsersListTable is the fragment swapped by the search input and the
+// pager: the table plus the pager refresh together.
+templ UsersListTable(rows []UserListRow, q string, page int, total int64, errMsg string) {
+	if errMsg != "" {
+		<div class="mb-4">@components.Alert(errMsg, false)</div>
+	}
+	if len(rows) == 0 {
+		<div class="overflow-hidden rounded-lg bg-white p-6 text-center shadow-sm dark:bg-gray-800">
+			<p class="text-sm text-gray-500 dark:text-gray-400">No users found</p>
+		</div>
+	} else {
+		<div class="overflow-hidden shadow-sm">
+			<div class="overflow-x-auto">
+				<table class="min-w-full divide-y divide-gray-200 dark:divide-gray-600">
+					<thead class="bg-gray-100 dark:bg-gray-700">
+						<tr>
+							@components.Th("Name", "p-4")
+							@components.Th("Role", "p-4")
+							@components.Th("Status", "p-4")
+							@components.Th("Created", "p-4")
+							<th scope="col" class="p-4 text-right text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">Actions</th>
+						</tr>
+					</thead>
+					<tbody class="divide-y divide-gray-200 bg-white dark:divide-gray-700 dark:bg-gray-800">
+						for _, u := range rows {
+							<tr class="hover:bg-gray-100 dark:hover:bg-gray-700">@UserRowCells(u)</tr>
+						}
+					</tbody>
+				</table>
+			</div>
+			@userPager(q, page, total, int64(len(rows)))
 		</div>
 	}
 }
@@ -140,10 +147,10 @@ templ userPager(q string, page int, total int64, shown int64) {
 	if total > 0 {
 		<div class="sticky bottom-0 mt-4 w-full border-t border-gray-200 bg-white p-4 sm:flex sm:items-center sm:justify-between dark:border-gray-800 dark:bg-gray-800">
 			<div class="mb-4 flex items-center sm:mb-0">
-				<a href={ userPageHref(q, page-1) } aria-label="Previous page" class={ "inline-flex justify-center rounded p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white " + userNavDisabled(page <= 1) }>
+				<a href={ userPageHref(q, page-1) } hx-get="/admin/users" hx-vals={ userPageVals(page-1) } hx-include="#user-search" hx-target="#user-list" hx-swap="innerHTML" aria-label="Previous page" class={ "inline-flex justify-center rounded p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white " + userNavDisabled(page <= 1) }>
 					<svg class="h-7 w-7" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true"><path fill-rule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clip-rule="evenodd"></path></svg>
 				</a>
-				<a href={ userPageHref(q, page+1) } aria-label="Next page" class={ "mr-2 inline-flex justify-center rounded p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white " + userNavDisabled(int64(page)*userPageSize >= total) }>
+				<a href={ userPageHref(q, page+1) } hx-get="/admin/users" hx-vals={ userPageVals(page+1) } hx-include="#user-search" hx-target="#user-list" hx-swap="innerHTML" aria-label="Next page" class={ "mr-2 inline-flex justify-center rounded p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white " + userNavDisabled(int64(page)*userPageSize >= total) }>
 					<svg class="h-7 w-7" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"></path></svg>
 				</a>
 				<span class="text-sm font-normal text-gray-500 dark:text-gray-400">Showing
@@ -152,11 +159,11 @@ templ userPager(q string, page int, total int64, shown int64) {
 				</span>
 			</div>
 			<div class="flex items-center gap-3">
-				<a href={ userPageHref(q, page-1) } class={ "inline-flex items-center justify-center rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600 " + userNavDisabled(page <= 1) }>
+				<a href={ userPageHref(q, page-1) } hx-get="/admin/users" hx-vals={ userPageVals(page-1) } hx-include="#user-search" hx-target="#user-list" hx-swap="innerHTML" class={ "inline-flex items-center justify-center rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600 " + userNavDisabled(page <= 1) }>
 					<svg class="mr-1 h-5 w-5 -ml-1" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true"><path fill-rule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clip-rule="evenodd"></path></svg>
 					Previous
 				</a>
-				<a href={ userPageHref(q, page+1) } class={ "inline-flex items-center justify-center rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600 " + userNavDisabled(int64(page)*userPageSize >= total) }>
+				<a href={ userPageHref(q, page+1) } hx-get="/admin/users" hx-vals={ userPageVals(page+1) } hx-include="#user-search" hx-target="#user-list" hx-swap="innerHTML" class={ "inline-flex items-center justify-center rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600 " + userNavDisabled(int64(page)*userPageSize >= total) }>
 					Next
 					<svg class="ml-1 h-5 w-5 -mr-1" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"></path></svg>
 				</a>
@@ -173,6 +180,10 @@ func userPageHref(q string, page int) string {
 		href += "&q=" + q
 	}
 	return href
+}
+
+func userPageVals(page int) string {
+	return `{"page":` + itoaUser(page) + `}`
 }
 
 func userNavDisabled(disabled bool) string {

@@ -82,7 +82,7 @@ SELECT *
 FROM patients
 WHERE clinic_id = ?
   AND (@status_empty = '' OR status = @status_filter)
-  AND (@query_empty = '' OR (display_name || ' ' || COALESCE(document, '') || ' ' || COALESCE(email, '')) LIKE @pattern COLLATE NOCASE)
+  AND (@query_empty = '' OR (' ' || display_name || ' ' || COALESCE(document, '') || ' ' || COALESCE(email, '')) LIKE '% ' || @pattern || '%' COLLATE NOCASE)
 ORDER BY display_name COLLATE NOCASE
 LIMIT @limit OFFSET @offset;
 
@@ -91,4 +91,4 @@ SELECT COUNT(*)
 FROM patients
 WHERE clinic_id = ?
   AND (@status_empty = '' OR status = @status_filter)
-  AND (@query_empty = '' OR (display_name || ' ' || COALESCE(document, '') || ' ' || COALESCE(email, '')) LIKE @pattern COLLATE NOCASE);
+  AND (@query_empty = '' OR (' ' || display_name || ' ' || COALESCE(document, '') || ' ' || COALESCE(email, '')) LIKE '% ' || @pattern || '%' COLLATE NOCASE);

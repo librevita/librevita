@@ -32,5 +32,11 @@ document.addEventListener('htmx:afterSwap', (evt) => {
   tabs.refresh(root);
   themePref.refresh(root);
   tableSelect.refresh(root);
-  focusAppMain();
+  // Only page navigations (boosted swaps target the body) move the focus
+  // to the main content; fragment swaps (search, pager, row updates) must
+  // leave the focus where the user is typing or clicking.
+  const target = detail.target as HTMLElement | null;
+  if (target && target.tagName.toLowerCase() === 'body') {
+    focusAppMain();
+  }
 });

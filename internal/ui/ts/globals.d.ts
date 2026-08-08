@@ -9,5 +9,6 @@ declare interface HtmxRequestDetail {
 
 declare interface HtmxAfterSwapDetail {
   elt: HTMLElement | null;
+  target: HTMLElement | null;
 }
 

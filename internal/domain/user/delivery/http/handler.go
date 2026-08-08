@@ -487,6 +487,13 @@ func (h *Handler) UsersPage(c echo.Context) error {
 	if err != nil {
 		return err
 	}
+	// The search input and the pager request fragments; boosted
+	// navigation (sidebar links) also arrives with HX-Request but must
+	// render the full page.
+	if server.IsHtmx(c) && c.Request().Header.Get("HX-Boosted") != "true" {
+		return server.Render(c, http.StatusOK, views.UsersListTable(
+			h.userRows(rows, clock), q, page, total, ""))
+	}
 	return server.Render(c, http.StatusOK, views.UsersListPage(
 		server.CSRFToken(c, h.csrf), server.Principal(c), q, page, total,
 		h.userRows(rows, clock), ""))
