@@ -207,6 +207,10 @@ func (h *Handler) Home(c echo.Context) error {
 	if err != nil {
 		return err
 	}
+	staff, err := h.svc.CountStaff(ctx)
+	if err != nil {
+		return err
+	}
 	users, err := h.svc.ListRecentUsers(ctx, 8)
 	if err != nil {
 		return err
@@ -226,7 +230,7 @@ func (h *Handler) Home(c echo.Context) error {
 
 	stats := views.DashboardStats{
 		Patients: patients,
-		Staff:    total - patients,
+		Staff:    staff,
 		Users:    total,
 		Policies: int64(len(policies)),
 		Clinic: views.ClinicInfo{
@@ -676,7 +680,15 @@ func (h *Handler) UserStatus(c echo.Context) error {
 		case errors.Is(err, usecase.ErrLastActiveAdmin):
 			msg = "The system needs at least one active admin"
 		}
-		return server.Render(c, http.StatusBadRequest, components.Alert(msg, true))
+		h.audit.Record(ctx, audit.Event{
+			ActorID: server.ActorID(c), ActorMail: server.ActorMail(c),
+			Action: "user.update", Resource: "user:" + id, Result: audit.ResultFailure,
+			Detail: msg,
+			IP: c.RealIP(), RequestID: c.Response().Header().Get(echo.HeaderXRequestID),
+		})
+		// htmx does not swap 4xx responses, so errors return 200 with an
+		// OOB alert that lands in the shell's #app-alert container.
+		return server.Render(c, http.StatusOK, components.Alert(msg, true))
 	}
 	h.audit.Record(ctx, audit.Event{
 		ActorID: server.ActorID(c), ActorMail: server.ActorMail(c),
@@ -684,8 +696,8 @@ func (h *Handler) UserStatus(c echo.Context) error {
 		Result: audit.ResultSuccess, Detail: h.userChanges(user, updated, usecase.UpdateUserInput{Active: updated.Active == 1}),
 		IP: c.RealIP(), RequestID: c.Response().Header().Get(echo.HeaderXRequestID),
 	})
-	return server.Render(c, http.StatusOK, views.UserRowCells(views.UserListRow{
+	return server.Render(c, http.StatusOK, views.UserRowOnly([]views.UserListRow{{
 		ID: updated.ID, Name: updated.DisplayName, Email: updated.Email,
 		Role: updated.Role, Active: updated.Active, CreatedAt: clock.FormatStored(user.CreatedAt),
-	}))
+	}}))
 }

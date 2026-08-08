@@ -69,3 +69,17 @@ RETURNING *;
 SELECT COUNT(*)
 FROM users
 WHERE role = ? AND active = 1;
+
+-- name: UpdateUserGuarded :one
+-- Applies the update only when the guard flag is zero or more than one
+-- active admin remains. Single-statement, so the last-admin check and
+-- the write are atomic.
+UPDATE users
+SET email = ?,
+    display_name = ?,
+    role = ?,
+    active = ?,
+    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE users.id = ?
+  AND (CAST(? AS INTEGER) = 0 OR (SELECT COUNT(*) FROM users AS u WHERE u.role = 'admin' AND u.active = 1) > 1)
+RETURNING *;

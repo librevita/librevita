@@ -22,27 +22,6 @@ FROM patients
 WHERE id = ?
 LIMIT 1;
 
--- name: ListPatients :many
-SELECT *
-FROM patients
-WHERE clinic_id = ?
-  AND (@status_empty = '' OR status = @status_filter)
-  AND (@after_empty = '' OR display_name > @after COLLATE NOCASE)
-ORDER BY display_name COLLATE NOCASE
-LIMIT @limit;
-
--- name: SearchPatients :many
-SELECT *
-FROM patients
-WHERE clinic_id = ?
-  AND (@status_empty = '' OR status = @status_filter)
-  AND (@after_empty = '' OR display_name > @after COLLATE NOCASE)
-  AND (display_name LIKE ? COLLATE NOCASE
-       OR document LIKE ?
-       OR email LIKE ? COLLATE NOCASE)
-ORDER BY display_name COLLATE NOCASE
-LIMIT @limit;
-
 -- name: UpdatePatient :one
 UPDATE patients
 SET display_name = ?,
@@ -57,13 +36,13 @@ state = ?,
 postal_code = ?,
 notes = ?,
 updated_at = (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-WHERE id = ?
+WHERE id = ? AND clinic_id = ?
 RETURNING *;
 
 -- name: UpdatePatientStatus :exec
 UPDATE patients
 SET status = ?, updated_at = (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-WHERE id = ?;
+WHERE id = ? AND clinic_id = ?;
 
 -- name: CountPatients :one
 SELECT COUNT(*)

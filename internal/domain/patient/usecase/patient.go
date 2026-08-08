@@ -3,14 +3,14 @@
 package usecase
 
 import (
+	"net/mail"
+	"time"
 	"context"
 	"database/sql"
 	"errors"
 	"fmt"
 	"log/slog"
-	"net/mail"
 	"strings"
-	"time"
 
 	"github.com/google/uuid"
 
@@ -129,7 +129,7 @@ func (s *Service) Get(ctx context.Context, id string) (*repository.Patient, erro
 }
 
 // Update validates in and applies it to the patient.
-func (s *Service) Update(ctx context.Context, id string, in PatientInput) (*repository.Patient, error) {
+func (s *Service) Update(ctx context.Context, clinicID, id string, in PatientInput) (*repository.Patient, error) {
 	normalized, err := normalize(in)
 	if err != nil {
 		return nil, err
@@ -147,6 +147,7 @@ func (s *Service) Update(ctx context.Context, id string, in PatientInput) (*repo
 		PostalCode:  strPtr(normalized.PostalCode),
 		Notes:       strPtr(normalized.Notes),
 		ID:          id,
+		ClinicID:    clinicID,
 	})
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
@@ -157,52 +158,40 @@ func (s *Service) Update(ctx context.Context, id string, in PatientInput) (*repo
 	return &patient, nil
 }
 
-// List returns patients for the clinic, filtered by q when non-empty, by
-// status when set, and starting after the display name cursor, up to
-// limit.
-func (s *Service) List(ctx context.Context, clinicID, q, status, after string, limit int) ([]repository.Patient, error) {
-	pattern := "%" + strings.TrimSpace(q) + "%"
-	if strings.TrimSpace(q) == "" {
-		rows, err := s.q.ListPatients(ctx, repository.ListPatientsParams{
-			ClinicID: clinicID, StatusEmpty: status, StatusFilter: status,
-			AfterEmpty: after, After: after, Limit: int64(limit),
-		})
-		if err != nil {
-			return nil, fmt.Errorf("usecase: list patients: %w", err)
-		}
-		return rows, nil
-	}
-	rows, err := s.q.SearchPatients(ctx, repository.SearchPatientsParams{
-		ClinicID: clinicID, StatusEmpty: status, StatusFilter: status,
-		AfterEmpty: after, After: after,
-		DisplayName: pattern,
-		Document:    strPtr(pattern),
-		Email:       strPtr(pattern),
-		Limit:       int64(limit),
+// SetStatus updates the patient status, scoped to the clinic.
+func (s *Service) SetStatus(ctx context.Context, clinicID, id, status string) error {
+	err := s.q.UpdatePatientStatus(ctx, repository.UpdatePatientStatusParams{
+		Status: status, ID: id, ClinicID: clinicID,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("usecase: search patients: %w", err)
-	}
-	return rows, nil
-}
-
-// SetStatus archives (inactive) or restores (active) a patient.
-func (s *Service) SetStatus(ctx context.Context, id, status string) error {
-	if status != StatusActive && status != StatusInactive {
-		return &ValidationError{Msg: "invalid patient status"}
-	}
-	if err := s.q.UpdatePatientStatus(ctx, repository.UpdatePatientStatusParams{
-		ID: id, Status: status,
-	}); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return ErrNotFound
-		}
 		return fmt.Errorf("usecase: set patient status: %w", err)
 	}
 	return nil
 }
 
-// Count returns the number of patient records for the clinic.
+// ListPage returns one page of patients matching q and status, ordered
+// by display name, together with the total match count.
+func (s *Service) ListPage(ctx context.Context, clinicID, q, status string, limit, offset int) ([]repository.Patient, int64, error) {
+	// The SQL pattern matches whole-word prefixes: the term must start a
+	// word in the name or a document/email value.
+	pattern := strings.TrimSpace(q)
+	rows, err := s.q.ListPatientsPage(ctx, repository.ListPatientsPageParams{
+		ClinicID: clinicID, StatusEmpty: status, StatusFilter: status,
+		QueryEmpty: q, Pattern: strPtr(pattern), Limit: int64(limit), Offset: int64(offset),
+	})
+	if err != nil {
+		return nil, 0, fmt.Errorf("usecase: list patients page: %w", err)
+	}
+	total, err := s.q.CountPatientsMatching(ctx, repository.CountPatientsMatchingParams{
+		ClinicID: clinicID, StatusEmpty: status, StatusFilter: status,
+		QueryEmpty: q, Pattern: strPtr(pattern),
+	})
+	if err != nil {
+		return nil, 0, fmt.Errorf("usecase: count patients: %w", err)
+	}
+	return rows, total, nil
+}
+
 func (s *Service) Count(ctx context.Context, clinicID string) (int64, error) {
 	count, err := s.q.CountPatients(ctx, clinicID)
 	if err != nil {
@@ -284,28 +273,4 @@ func strPtr(s string) *string {
 		return nil
 	}
 	return &s
-}
-
-
-// ListPage returns one page of patients matching q and status, ordered
-// by display name, together with the total match count.
-func (s *Service) ListPage(ctx context.Context, clinicID, q, status string, limit, offset int) ([]repository.Patient, int64, error) {
-	// The SQL pattern matches whole-word prefixes: the term must start a
-	// word in the name or a document/email value.
-	pattern := strings.TrimSpace(q)
-	rows, err := s.q.ListPatientsPage(ctx, repository.ListPatientsPageParams{
-		ClinicID: clinicID, StatusEmpty: status, StatusFilter: status,
-		QueryEmpty: q, Pattern: strPtr(pattern), Limit: int64(limit), Offset: int64(offset),
-	})
-	if err != nil {
-		return nil, 0, fmt.Errorf("usecase: list patients page: %w", err)
-	}
-	total, err := s.q.CountPatientsMatching(ctx, repository.CountPatientsMatchingParams{
-		ClinicID: clinicID, StatusEmpty: status, StatusFilter: status,
-		QueryEmpty: q, Pattern: strPtr(pattern),
-	})
-	if err != nil {
-		return nil, 0, fmt.Errorf("usecase: count patients: %w", err)
-	}
-	return rows, total, nil
 }

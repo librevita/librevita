@@ -62,6 +62,12 @@ type Config struct {
 	// HTTPAddr is the Echo bind address, for example ":8080".
 	HTTPAddr string `koanf:"http_addr"`
 
+	// TrustedProxies is a comma-separated list of proxy addresses whose
+	// X-Forwarded-For header is trusted for rate limiting and audit IPs.
+	// Empty means the app is not behind a proxy and the remote address is
+	// used directly.
+	TrustedProxies string `koanf:"trusted_proxies"`
+
 	// DataDir is the base directory for default database and log files.
 	DataDir string `koanf:"data_dir"`
 
@@ -114,6 +120,7 @@ func RegisterFlags(fs *pflag.FlagSet) {
 	stringFlag(fs, "config", "", "configuration file (.yaml, .yml, or .json)")
 	stringFlag(fs, "env", defaultEnv, "runtime environment")
 	stringFlag(fs, "http-addr", defaultHTTPAddr, "HTTP bind address")
+	stringFlag(fs, "trusted-proxies", "", "comma-separated proxy IPs allowed to set X-Forwarded-For")
 	stringFlag(fs, "data-dir", defaultDataDir, "base directory for database and logs")
 	stringFlag(fs, "db-driver", DriverSQLite, "database backend: sqlite or rqlite")
 	stringFlag(fs, "db-path", "", "SQLite database path")
