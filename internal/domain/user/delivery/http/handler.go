@@ -120,7 +120,8 @@ func (h *Handler) Setup(c echo.Context) error {
 
 // LoginPage renders the sign-in form.
 func (h *Handler) LoginPage(c echo.Context) error {
-	return server.Render(c, http.StatusOK, views.Login(server.CSRFToken(c, h.csrf), ""))
+	next := server.ValidNext(c.QueryParam("next"))
+	return server.Render(c, http.StatusOK, views.Login(server.CSRFToken(c, h.csrf), next, ""))
 }
 
 // Login validates credentials and starts a session.
@@ -132,13 +133,17 @@ func (h *Handler) Login(c echo.Context) error {
 	if err != nil {
 		if errors.Is(err, usecase.ErrInvalidCredentials) {
 			return server.Render(c, http.StatusUnauthorized,
-				views.Login(server.CSRFToken(c, h.csrf), "Invalid email or password"))
+				views.Login(server.CSRFToken(c, h.csrf), server.ValidNext(c.FormValue("next")), "Invalid email or password"))
 		}
 		return err
 	}
 
 	c.SetCookie(h.sessions.Cookie(token))
-	return c.Redirect(http.StatusFound, "/")
+	next := server.ValidNext(c.FormValue("next"))
+	if next == "" {
+		next = "/"
+	}
+	return c.Redirect(http.StatusFound, next)
 }
 
 // RegisterPage renders the account creation form.

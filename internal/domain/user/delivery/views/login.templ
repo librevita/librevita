@@ -5,7 +5,7 @@ import "librevita.org/internal/ui/layouts"
 // Login renders the sign-in page. The layout follows the Flowbite admin
 // dashboard sign-in card: centered logo, then a wide white card with the
 // email and password fields.
-templ Login(token string, errMsg string) {
+templ Login(token string, next string, errMsg string) {
 	@layouts.Base("Sign in") {
 		<main class="flex min-h-full flex-col items-center justify-center px-6 pt-8">
 			<a href="/auth/login" class="mb-8 flex items-center justify-center text-2xl font-semibold text-gray-900 dark:text-white">
@@ -19,6 +19,9 @@ templ Login(token string, errMsg string) {
 				}
 				<form method="post" hx-boost="false" action="/auth/login" class="space-y-6">
 					<input type="hidden" name="_csrf" value={ token }>
+					if next != "" {
+						<input type="hidden" name="next" value={ next }>
+					}
 					<div>
 						<label class="mb-2 block text-sm font-medium text-gray-900 dark:text-white" for="email">Your email</label>
 						<input class="auth-input" id="email" type="email" name="email" placeholder="name@company.com" required autofocus>
