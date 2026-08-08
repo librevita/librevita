@@ -27,7 +27,7 @@ type PatientFormValues struct {
 // PatientFormPage renders the create (id empty) or edit page.
 templ PatientFormPage(token string, p *auth.Principal, id string, values PatientFormValues, errMsg string) {
 	@layouts.App(patientFormTitle(id), token, p, "patients") {
-		<div class="mx-auto max-w-3xl">
+		<div class="mx-auto max-w-3xl p-4 lg:p-6">
 			@components.Card() {
 				@components.CardHeader(patientFormTitle(id)) {
 					<a class="inline-flex items-center rounded-lg p-2 text-sm font-medium text-indigo-700 hover:bg-gray-100 dark:text-indigo-400 dark:hover:bg-gray-700" href="/patients">Back to registry</a>
@@ -51,17 +51,17 @@ templ PatientForm(token string, id string, values PatientFormValues, errMsg stri
 		<fieldset class="space-y-4">
 			<legend class="text-sm font-semibold text-gray-900 dark:text-white">Identity</legend>
 			@components.Field("display_name", "Full name") {
-				@components.Input("display_name", templ.Attributes{ "id": "display_name", "type": "text", "value": values.DisplayName, "required": true, "autofocus": true })
+				@components.Input("display_name", "", templ.Attributes{ "id": "display_name", "type": "text", "value": values.DisplayName, "required": true, "autofocus": true })
 			}
 			<div class="flex flex-wrap gap-4">
 				<div class="flex-1">
 					@components.Field("birth_date", "Birth date") {
-						@components.Input("birth_date", templ.Attributes{ "id": "birth_date", "type": "date", "value": values.BirthDate })
+						@components.Input("birth_date", "", templ.Attributes{ "id": "birth_date", "type": "date", "value": values.BirthDate })
 					}
 				</div>
 				<div class="flex-1">
 					@components.Field("sex", "Sex") {
-						@components.Select("sex", templ.Attributes{ "id": "sex" }) {
+						@components.Select("sex", "", templ.Attributes{ "id": "sex" }) {
 							@sexOption("unknown", "Not specified", values.Sex)
 							@sexOption("female", "Female", values.Sex)
 							@sexOption("male", "Male", values.Sex)
@@ -73,46 +73,46 @@ templ PatientForm(token string, id string, values PatientFormValues, errMsg stri
 			<div class="flex flex-wrap gap-4">
 				<div class="flex-1">
 					@components.Field("document", "Document") {
-						@components.Input("document", templ.Attributes{ "id": "document", "type": "text", "value": values.Document, "hx-post": "/patients/check-document", "hx-trigger": "blur changed", "hx-include": "#patient-id", "hx-target": "#document-error", "hx-swap": "innerHTML" })
+						@components.Input("document", "", templ.Attributes{ "id": "document", "type": "text", "value": values.Document, "hx-post": "/patients/check-document", "hx-trigger": "blur changed", "hx-include": "#patient-id", "hx-target": "#document-error", "hx-swap": "innerHTML" })
 						<p id="document-error" class="mt-1 text-xs text-red-600 dark:text-red-400"></p>
 					}
 				</div>
 				<div class="flex-1">
 					@components.Field("phone", "Phone") {
-						@components.Input("phone", templ.Attributes{ "id": "phone", "type": "tel", "value": values.Phone })
+						@components.Input("phone", "", templ.Attributes{ "id": "phone", "type": "tel", "value": values.Phone })
 					}
 				</div>
 			</div>
 			@components.Field("email", "Email") {
-				@components.Input("email", templ.Attributes{ "id": "email", "type": "email", "value": values.Email })
+				@components.Input("email", "", templ.Attributes{ "id": "email", "type": "email", "value": values.Email })
 			}
 		</fieldset>
 		<fieldset class="space-y-4">
 			<legend class="text-sm font-semibold text-gray-900 dark:text-white">Address</legend>
 			@components.Field("street", "Street") {
-				@components.Input("street", templ.Attributes{ "id": "street", "type": "text", "value": values.Street })
+				@components.Input("street", "", templ.Attributes{ "id": "street", "type": "text", "value": values.Street })
 			}
 			<div class="flex flex-wrap gap-4">
 				<div class="flex-1">
 					@components.Field("city", "City") {
-						@components.Input("city", templ.Attributes{ "id": "city", "type": "text", "value": values.City })
+						@components.Input("city", "", templ.Attributes{ "id": "city", "type": "text", "value": values.City })
 					}
 				</div>
 				<div class="flex-1">
 					@components.Field("state", "State") {
-						@components.Input("state", templ.Attributes{ "id": "state", "type": "text", "value": values.State })
+						@components.Input("state", "", templ.Attributes{ "id": "state", "type": "text", "value": values.State })
 					}
 				</div>
 				<div class="flex-1">
 					@components.Field("postal_code", "Postal code") {
-						@components.Input("postal_code", templ.Attributes{ "id": "postal_code", "type": "text", "value": values.PostalCode })
+						@components.Input("postal_code", "", templ.Attributes{ "id": "postal_code", "type": "text", "value": values.PostalCode })
 					}
 				</div>
 			</div>
 		</fieldset>
 		<fieldset class="space-y-4">
 			<legend class="text-sm font-semibold text-gray-900 dark:text-white">Notes</legend>
-			@components.Textarea("notes", templ.Attributes{ "id": "notes", "rows": "4" }) {
+			@components.Textarea("notes", "", templ.Attributes{ "id": "notes", "rows": "4" }) {
 				{ values.Notes }
 			}
 		</fieldset>
@@ -163,7 +163,7 @@ type HistoryRow struct {
 // the change history.
 templ PatientDetailPage(token string, p *auth.Principal, pt *repository.GetPatientWithCreatorRow, createdBy string, history []HistoryRow, errMsg string) {
 	@layouts.App("Patient", token, p, "patients") {
-		<div class="mx-auto max-w-4xl">
+		<div class="mx-auto max-w-4xl p-4 lg:p-6">
 			@components.Card() {
 				@components.CardHeader(pt.DisplayName) {
 					<a class="inline-flex items-center rounded-lg p-2 text-sm font-medium text-indigo-700 hover:bg-gray-100 dark:text-indigo-400 dark:hover:bg-gray-700" href="/patients">Back to registry</a>
@@ -229,7 +229,15 @@ templ detailField(label string, value string) {
 }
 
 templ patientStatusBadge(status string) {
-	@statusBadge(status)
+	<div class="flex items-center">
+		if status == "active" {
+			<span class="mr-2 h-2.5 w-2.5 rounded-full bg-green-400 dark:bg-green-500"></span>
+			<span class="text-sm text-gray-900 dark:text-white">Active</span>
+		} else {
+			<span class="mr-2 h-2.5 w-2.5 rounded-full bg-red-500"></span>
+			<span class="text-sm text-gray-900 dark:text-white">Inactive</span>
+		}
+	</div>
 }
 
 func addressLine(pt *repository.GetPatientWithCreatorRow) string {

@@ -40,3 +40,21 @@ func BtnClass(kind string) string {
 		return "btn"
 	}
 }
+
+// InputClass joins the base form control class with optional extra
+// classes, avoiding a trailing space when extras are empty.
+func InputClass(extra string) string {
+	if extra == "" {
+		return "input"
+	}
+	return "input " + extra
+}
+
+// CheckboxClass joins the base checkbox classes with optional extras.
+func CheckboxClass(extra string) string {
+	base := "h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 dark:border-gray-600 dark:bg-gray-700 dark:ring-offset-gray-800"
+	if extra == "" {
+		return base
+	}
+	return base + " " + extra
+}

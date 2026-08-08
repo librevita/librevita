@@ -76,3 +76,19 @@ SELECT EXISTS(
     FROM patients
     WHERE clinic_id = ? AND document = ? AND id <> ?
 );
+
+-- name: ListPatientsPage :many
+SELECT *
+FROM patients
+WHERE clinic_id = ?
+  AND (@status_empty = '' OR status = @status_filter)
+  AND (@query_empty = '' OR (display_name || ' ' || COALESCE(document, '') || ' ' || COALESCE(email, '')) LIKE @pattern COLLATE NOCASE)
+ORDER BY display_name COLLATE NOCASE
+LIMIT @limit OFFSET @offset;
+
+-- name: CountPatientsMatching :one
+SELECT COUNT(*)
+FROM patients
+WHERE clinic_id = ?
+  AND (@status_empty = '' OR status = @status_filter)
+  AND (@query_empty = '' OR (display_name || ' ' || COALESCE(document, '') || ' ' || COALESCE(email, '')) LIKE @pattern COLLATE NOCASE);

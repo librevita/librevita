@@ -67,4 +67,5 @@ func registerRoutes(e *echo.Echo, h *httphandler.Handler, sessions *auth.Session
 	e.POST("/admin/users", h.UserCreate, gate, server.RequireAuth(sessions, log), server.RequirePolicy(policies, auditLogger, log, "users.manage"))
 	e.GET("/admin/users/:id/edit", h.UserEditPage, gate, server.RequireAuth(sessions, log), server.RequirePolicy(policies, auditLogger, log, "users.manage"))
 	e.POST("/admin/users/:id", h.UserUpdate, gate, server.RequireAuth(sessions, log), server.RequirePolicy(policies, auditLogger, log, "users.manage"))
+	e.POST("/admin/users/:id/status", h.UserStatus, gate, server.RequireAuth(sessions, log), server.RequirePolicy(policies, auditLogger, log, "users.manage"))
 }

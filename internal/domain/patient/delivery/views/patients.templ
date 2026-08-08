@@ -23,35 +23,68 @@ type PatientRow struct {
 	CreatedAt   string
 }
 
-// PatientListPage renders the patient registry with search. The search
-// input targets the list fragment, so the page body and the fragment
-// share the same table markup.
-templ PatientListPage(token string, p *auth.Principal, q string, status string, sortParam string, patients []PatientRow, nextLimit int, errMsg string) {
+// PatientPager carries the pager state for the registry table.
+type PatientPager struct {
+	Q      string
+	Status string
+	Page   int
+	Total  int64
+	Shown  int64
+}
+
+// PatientListPage renders the patient registry following the
+// flowbite-admin-dashboard CRUD layout: breadcrumb, toolbar with search,
+// filter and bulk actions, and the paged table fragment.
+templ PatientListPage(token string, p *auth.Principal, q string, status string, patients []PatientRow, pager PatientPager, errMsg string) {
 	@layouts.App("Patients", token, p, "patients") {
-		<div class="mx-auto max-w-6xl">
-			<div class="flex items-center justify-between">
-				<h2 class="text-lg font-semibold text-gray-900 dark:text-white">Patient registry</h2>
-				<a class="btn" href="/patients/new">New patient</a>
-			</div>
-			<div class="mt-4 flex flex-wrap items-center gap-3">
-				<div class="min-w-64 flex-1">
-					@patientSearchInput(q)
+		<div class="w-full">
+			<div class="border-b border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
+				<nav class="mb-4" aria-label="Breadcrumb">
+					<ol class="inline-flex items-center space-x-1 text-sm font-medium md:space-x-2">
+						<li class="inline-flex items-center">
+							<a href="/" class="inline-flex items-center text-gray-700 hover:text-indigo-600 dark:text-gray-300 dark:hover:text-white">
+								<svg class="mr-2.5 h-5 w-5" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true"><path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z"></path></svg>
+								Home
+							</a>
+						</li>
+						<li>
+							<div class="flex items-center">
+								<svg class="h-6 w-6 text-gray-400" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"></path></svg>
+								<a href="/patients" class="ml-1 text-gray-700 hover:text-indigo-600 md:ml-2 dark:text-gray-300 dark:hover:text-white">Patients</a>
+							</div>
+						</li>
+						<li>
+							<div class="flex items-center">
+								<svg class="h-6 w-6 text-gray-400" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"></path></svg>
+								<span class="ml-1 text-gray-400 md:ml-2 dark:text-gray-500" aria-current="page">List</span>
+							</div>
+						</li>
+					</ol>
+				</nav>
+				<h1 class="mb-4 text-xl font-semibold text-gray-900 sm:text-2xl dark:text-white">All patients</h1>
+				<div class="flex flex-wrap items-center justify-between gap-3">
+					<div class="flex flex-wrap items-center gap-3">
+						@patientSearchInput(q)
+						<select id="status-filter" name="status" hx-get="/patients" hx-trigger="change" hx-include="#patient-search" hx-target="#patient-list" hx-swap="innerHTML" class="input mt-0 w-auto">
+							@statusOption("", "All statuses", status)
+							@statusOption("active", "Active", status)
+							@statusOption("inactive", "Inactive", status)
+						</select>
+						<button type="button" class="btn-secondary" hx-post="/patients/bulk-archive" hx-include="input[name='ids']:checked" hx-target="#patient-list" hx-swap="innerHTML">
+							Archive selected
+							<svg class="htmx-indicator h-4 w-4 animate-spin text-gray-500" fill="none" viewBox="0 0 24 24" aria-hidden="true">
+								<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+								<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+							</svg>
+						</button>
+					</div>
+					@components.ButtonLink("primary", "/patients/new", "New patient", nil)
 				</div>
-				<select id="status-filter" name="status" hx-get="/patients" hx-trigger="change" hx-include="#patient-search" hx-target="#patient-list" hx-swap="innerHTML" class="input mt-0 w-auto">
-					@statusOption("", "All statuses", status)
-					@statusOption("active", "Active", status)
-					@statusOption("inactive", "Inactive", status)
-				</select>
-				<button type="button" class="btn-secondary" hx-post="/patients/bulk-archive" hx-include="input[name='ids']:checked" hx-target="#patient-list" hx-swap="innerHTML">
-					Archive selected
-					<svg class="htmx-indicator h-4 w-4 animate-spin text-gray-500" fill="none" viewBox="0 0 24 24" aria-hidden="true">
-						<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-						<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
-					</svg>
-				</button>
 			</div>
-			<div id="patient-list" class="mt-4">
-				@PatientListTable(patients, nextLimit, errMsg)
+			<div class="flex flex-col">
+				<div id="patient-list">
+					@PatientListTable(patients, pager, errMsg)
+				</div>
 			</div>
 		</div>
 	}
@@ -66,52 +99,100 @@ templ statusOption(value string, label string, selected string) {
 }
 
 // PatientListTable is the fragment swapped by the search input, filters,
-// bulk archive, and the Load more button. nextLimit drives Load more:
-// the request re-renders the table with a larger limit, so the fragment
-// never mixes bare table rows with other elements (which the htmx
-// fragment parser cannot handle).
-templ PatientListTable(patients []PatientRow, nextLimit int, errMsg string) {
+// bulk archive, and the pager. It carries the table and the pager so
+// every interaction refreshes both together.
+templ PatientListTable(patients []PatientRow, pager PatientPager, errMsg string) {
 	if errMsg != "" {
 		@components.Alert(errMsg, false)
 	}
 	if len(patients) == 0 {
-		<div class="rounded-lg border border-gray-200 bg-white p-6 text-center shadow-sm dark:border-gray-700 dark:bg-gray-800">
+		<div class="overflow-hidden rounded-lg bg-white p-6 text-center shadow-sm dark:bg-gray-800">
 			<p class="text-sm text-gray-500 dark:text-gray-400">No patients found.</p>
 		</div>
 	} else {
-		<div data-lv-table-select class="overflow-x-auto rounded-lg">
-			<table class="min-w-full divide-y divide-gray-200 text-sm">
-				@components.Thead() {
-					<tr>
-						<th scope="col" class="w-12 p-4">
-							<span class="sr-only">Select</span>
-							<input type="checkbox" name="select_all" data-lv-select-all class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" aria-label="Select all">
-						</th>
-						<th scope="col" class="p-4"><a href="#" hx-get="/patients" hx-include="#patient-search, #status-filter" hx-target="#patient-list" hx-swap="innerHTML" class="text-xs font-medium uppercase tracking-wider text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white">Patient</a></th>
-						<th scope="col" class="p-4"><a href="#" hx-get="/patients?sort=birth_date" hx-include="#patient-search, #status-filter" hx-target="#patient-list" hx-swap="innerHTML" class="text-xs font-medium uppercase tracking-wider text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white">Birth date</a></th>
-						@components.Th("Document", "p-4")
-						@components.Th("Phone", "p-4")
-						@components.Th("Status", "p-4")
-						@components.Th("Actions", "p-4")
-					</tr>
-				}
-				<tbody class="divide-y divide-gray-200 bg-white dark:divide-gray-700 dark:bg-gray-800">
-					for _, pt := range patients {
-						<tr>@PatientRowCells(pt)</tr>
-					}
-				</tbody>
-			</table>
-			if nextLimit > 0 {
-				<button type="button" id="load-more-btn" hx-get={ "/patients?limit=" + itoa(nextLimit) } hx-include="#patient-search, #status-filter" hx-target="#patient-list" hx-swap="innerHTML" class="mt-4 inline-flex items-center gap-2 rounded-lg p-2 text-sm font-medium text-indigo-700 hover:bg-gray-100 dark:text-indigo-400 dark:hover:bg-gray-700">
-					Load more
-					<svg class="htmx-indicator h-4 w-4 animate-spin text-indigo-600" fill="none" viewBox="0 0 24 24" aria-hidden="true">
-						<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-						<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
-					</svg>
-				</button>
-			}
+		<div data-lv-table-select class="overflow-hidden shadow-sm">
+			<div class="overflow-x-auto">
+				<table class="min-w-full divide-y divide-gray-200 dark:divide-gray-600">
+					<thead class="bg-gray-100 dark:bg-gray-700">
+						<tr>
+							<th scope="col" class="w-12 p-4">
+								<span class="sr-only">Select</span>
+								<input type="checkbox" name="select_all" data-lv-select-all class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" aria-label="Select all">
+							</th>
+							@components.Th("Patient", "p-4")
+							@components.Th("Birth date", "p-4")
+							@components.Th("Document", "p-4")
+							@components.Th("Phone", "p-4")
+							@components.Th("Status", "p-4")
+							<th scope="col" class="p-4 text-right text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">Actions</th>
+						</tr>
+					</thead>
+					<tbody class="divide-y divide-gray-200 bg-white dark:divide-gray-700 dark:bg-gray-800">
+						for _, pt := range patients {
+							<tr class="hover:bg-gray-100 dark:hover:bg-gray-700">@PatientRowCells(pt)</tr>
+						}
+					</tbody>
+				</table>
+			</div>
+			@patientPager(pager)
 		</div>
 	}
+}
+
+// patientPager renders the flowbite pager footer. The links refresh the
+// table fragment via htmx (keeping search and status) and keep a plain
+// href as the no-JS fallback.
+templ patientPager(pager PatientPager) {
+	if pager.Total > 0 {
+		<div class="sticky bottom-0 w-full border-t border-gray-200 bg-white p-4 sm:flex sm:items-center sm:justify-between dark:border-gray-800 dark:bg-gray-800">
+			<div class="mb-4 flex items-center sm:mb-0">
+				<a href={ patientPageHref(pager, pager.Page-1) } hx-get="/patients" hx-vals={ patientPageVals(pager, pager.Page-1) } hx-include="#patient-search, #status-filter" hx-target="#patient-list" hx-swap="innerHTML" aria-label="Previous page" class={ "inline-flex justify-center rounded p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white " + patientNavDisabled(pager.Page <= 1) }>
+					<svg class="h-7 w-7" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true"><path fill-rule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clip-rule="evenodd"></path></svg>
+				</a>
+				<a href={ patientPageHref(pager, pager.Page+1) } hx-get="/patients" hx-vals={ patientPageVals(pager, pager.Page+1) } hx-include="#patient-search, #status-filter" hx-target="#patient-list" hx-swap="innerHTML" aria-label="Next page" class={ "mr-2 inline-flex justify-center rounded p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white " + patientNavDisabled(int64(pager.Page)*patientPageSize >= pager.Total) }>
+					<svg class="h-7 w-7" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"></path></svg>
+				</a>
+				<span class="text-sm font-normal text-gray-500 dark:text-gray-400">Showing
+					<span class="font-semibold text-gray-900 dark:text-white">{ int64(pager.Page-1)*patientPageSize + 1 }-{ int64(pager.Page-1)*patientPageSize + pager.Shown }</span> of
+					<span class="font-semibold text-gray-900 dark:text-white">{ pager.Total }</span>
+				</span>
+			</div>
+			<div class="flex items-center gap-3">
+				<a href={ patientPageHref(pager, pager.Page-1) } hx-get="/patients" hx-vals={ patientPageVals(pager, pager.Page-1) } hx-include="#patient-search, #status-filter" hx-target="#patient-list" hx-swap="innerHTML" class={ "inline-flex items-center justify-center rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600 " + patientNavDisabled(pager.Page <= 1) }>
+					<svg class="mr-1 h-5 w-5 -ml-1" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true"><path fill-rule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clip-rule="evenodd"></path></svg>
+					Previous
+				</a>
+				<a href={ patientPageHref(pager, pager.Page+1) } hx-get="/patients" hx-vals={ patientPageVals(pager, pager.Page+1) } hx-include="#patient-search, #status-filter" hx-target="#patient-list" hx-swap="innerHTML" class={ "inline-flex items-center justify-center rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600 " + patientNavDisabled(int64(pager.Page)*patientPageSize >= pager.Total) }>
+					Next
+					<svg class="ml-1 h-5 w-5 -mr-1" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"></path></svg>
+				</a>
+			</div>
+		</div>
+	}
+}
+
+const patientPageSize = 20
+
+func patientPageHref(pager PatientPager, page int) string {
+	href := "/patients?page=" + itoa(page)
+	if pager.Q != "" {
+		href += "&q=" + pager.Q
+	}
+	if pager.Status != "" {
+		href += "&status=" + pager.Status
+	}
+	return href
+}
+
+func patientPageVals(pager PatientPager, page int) string {
+	return `{"page":` + itoa(page) + `}`
+}
+
+func patientNavDisabled(disabled bool) string {
+	if disabled {
+		return "pointer-events-none opacity-50"
+	}
+	return ""
 }
 
 // PatientRowOnly is the archive/restore response: a bare row, swapped in
@@ -125,41 +206,66 @@ templ PatientRowOnly(rows []PatientRow) {
 
 // PatientRowCells renders one row of the registry table.
 templ PatientRowCells(pt PatientRow) {
-	<td class="whitespace-nowrap p-4">
-		<input type="checkbox" name="ids" value={ pt.ID } class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" aria-label={ "Select " + pt.DisplayName }>
+	<td class="w-4 p-4">
+		<div class="flex items-center">
+			<input type="checkbox" name="ids" value={ pt.ID } class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 dark:border-gray-600 dark:bg-gray-700" aria-label={ "Select " + pt.DisplayName }>
+		</div>
 	</td>
-	<td class="whitespace-nowrap p-4">
+	<td class="p-4">
 		<div class="flex items-center gap-3">
-			@components.Avatar(shared.Initials(pt.DisplayName), "h-8 w-8 bg-indigo-100 text-indigo-700 dark:bg-indigo-900 dark:text-indigo-300")
+			@components.Avatar(shared.Initials(pt.DisplayName), "h-10 w-10 text-sm bg-indigo-100 text-indigo-700 dark:bg-indigo-900 dark:text-indigo-300")
 			<div class="min-w-0">
-				<a class="truncate font-medium text-gray-900 hover:text-indigo-600 dark:text-white dark:hover:text-indigo-400" href={ "/patients/" + pt.ID }>{ pt.DisplayName }</a>
+				<a class="text-base font-semibold text-gray-900 hover:text-indigo-600 dark:text-white dark:hover:text-indigo-400" href={ "/patients/" + pt.ID }>{ pt.DisplayName }</a>
 				if pt.Email != "" {
-					<p class="truncate text-xs text-gray-500 dark:text-gray-400">{ pt.Email }</p>
+					<p class="truncate text-sm text-gray-500 dark:text-gray-400">{ pt.Email }</p>
 				}
 			</div>
 		</div>
 	</td>
-	<td class="whitespace-nowrap p-4 font-normal text-gray-500 dark:text-gray-400">{ orDash(pt.BirthDate) }</td>
-	<td class="whitespace-nowrap p-4 font-normal text-gray-500 dark:text-gray-400">{ orDash(pt.Document) }</td>
-	<td class="whitespace-nowrap p-4 font-normal text-gray-500 dark:text-gray-400">{ orDash(pt.Phone) }</td>
-	<td class="whitespace-nowrap p-4">@statusBadge(pt.Status)</td>
-	<td class="whitespace-nowrap p-4">
-		<div class="flex items-center gap-2">
-			<a class="inline-flex items-center rounded-md px-2 py-1 text-sm font-medium text-indigo-700 hover:bg-gray-100 dark:text-indigo-400 dark:hover:bg-gray-700" href={ "/patients/" + pt.ID + "/edit" }>Edit</a>
+	<td class="p-4 whitespace-nowrap text-base text-gray-500 dark:text-gray-400">{ orDash(pt.BirthDate) }</td>
+	<td class="p-4 whitespace-nowrap text-base text-gray-500 dark:text-gray-400">{ orDash(pt.Document) }</td>
+	<td class="p-4 whitespace-nowrap text-base text-gray-500 dark:text-gray-400">{ orDash(pt.Phone) }</td>
+	<td class="p-4 whitespace-nowrap">@patientStatusCell(pt.Status)</td>
+	<td class="p-4 whitespace-nowrap">
+		<div class="flex items-center justify-end gap-2">
+			<a href={ "/patients/" + pt.ID + "/edit" } class="inline-flex items-center rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600">
+				<svg class="mr-2 h-4 w-4" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true"><path d="M17.414 2.586a2 2 0 00-2.828 0L7 10.172V13h2.828l7.586-7.586a2 2 0 000-2.828z"></path><path fill-rule="evenodd" d="M2 6a2 2 0 012-2h4a1 1 0 010 2H4v10h10v-4a1 1 0 112 0v4a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" clip-rule="evenodd"></path></svg>
+				Edit
+			</a>
 			if pt.Status == "active" {
-				<button type="button" hx-post={ "/patients/" + pt.ID + "/archive" } hx-target="closest tr" hx-swap="outerHTML" class="inline-flex items-center rounded-md px-2 py-1 text-sm font-medium text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-700">Archive</button>
+				<button type="button" hx-post={ "/patients/" + pt.ID + "/archive" } hx-target="closest tr" hx-swap="outerHTML" class="inline-flex items-center rounded-lg bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700 dark:bg-red-500 dark:hover:bg-red-600">
+					<svg class="mr-2 h-4 w-4" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"></path></svg>
+					Archive
+				</button>
 			} else {
-				<button type="button" hx-post={ "/patients/" + pt.ID + "/restore" } hx-target="closest tr" hx-swap="outerHTML" class="inline-flex items-center rounded-md px-2 py-1 text-sm font-medium text-green-700 hover:bg-gray-100 dark:text-green-400 dark:hover:bg-gray-700">Restore</button>
+				<button type="button" hx-post={ "/patients/" + pt.ID + "/restore" } hx-target="closest tr" hx-swap="outerHTML" class="inline-flex items-center rounded-lg bg-green-600 px-3 py-2 text-sm font-medium text-white hover:bg-green-700 dark:bg-green-500 dark:hover:bg-green-600">
+					<svg class="mr-2 h-4 w-4" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path></svg>
+					Restore
+				</button>
 			}
 		</div>
 	</td>
 }
 
+// patientStatusCell renders the status with the colored dot, matching
+// the users list.
+templ patientStatusCell(status string) {
+	<div class="flex items-center">
+		if status == "active" {
+			<span class="mr-2 h-2.5 w-2.5 rounded-full bg-green-400 dark:bg-green-500"></span>
+			<span class="text-base text-gray-900 dark:text-white">Active</span>
+		} else {
+			<span class="mr-2 h-2.5 w-2.5 rounded-full bg-red-500"></span>
+			<span class="text-base text-gray-900 dark:text-white">Inactive</span>
+		}
+	</div>
+}
+
 // PatientListTableWithAlert composes the refreshed table with the OOB
 // alert in one response, used by the bulk archive. The table fragment
 // leads with a div, so the trailing OOB alert parses safely.
-templ PatientListTableWithAlert(patients []PatientRow, nextLimit int, alertMsg string) {
-	@PatientListTable(patients, nextLimit, "")
+templ PatientListTableWithAlert(patients []PatientRow, pager PatientPager, alertMsg string) {
+	@PatientListTable(patients, pager, "")
 	@components.Alert(alertMsg, true)
 }
 
@@ -170,11 +276,9 @@ func itoa(n int) string {
 templ patientSearchInput(q string) {
 	<div class="relative">
 		<label class="sr-only" for="patient-search">Search patients</label>
-		<input id="patient-search" class="auth-input pl-10" type="search" name="q" value={ q } placeholder="Search by name, document, or email..."
+		<svg class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400 dark:text-gray-500" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd"></path></svg>
+		<input id="patient-search" class="input pl-9 md:w-64 xl:w-96" type="search" name="q" value={ q } placeholder="Search by name, document, or email..."
 			hx-get="/patients" hx-trigger="input changed delay:300ms" hx-target="#patient-list" hx-swap="innerHTML">
-		<svg class="pointer-events-none absolute inset-y-0 left-3 my-auto h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
-			<path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
-		</svg>
 	</div>
 }
 
@@ -192,10 +296,4 @@ func orEmpty(s *string) string {
 	return *s
 }
 
-templ statusBadge(status string) {
-	if status == "active" {
-		<span class="rounded-md bg-green-100 px-2.5 py-0.5 text-xs font-medium text-green-800 dark:bg-green-900 dark:text-green-300">active</span>
-	} else {
-		<span class="rounded-md bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-800 dark:bg-gray-700 dark:text-gray-300">inactive</span>
-	}
-}
+

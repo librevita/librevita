@@ -13,7 +13,7 @@ templ App(title string, token string, principal *auth.Principal, active string) 
 			@Topbar(title, token, principal)
 			<div class="flex min-h-0 flex-1">
 				@Sidebar(principal, active)
-				<main id="app-main" tabindex="-1" class="flex-1 overflow-y-auto bg-gray-50 p-4 dark:bg-gray-900 lg:p-6">
+				<main id="app-main" tabindex="-1" class="flex-1 overflow-y-auto bg-gray-50 dark:bg-gray-900">
 					<div id="app-alert" class="mb-4 empty:hidden"></div>
 					{ children... }
 				</main>

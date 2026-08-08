@@ -162,7 +162,7 @@ func TestListUsersSearch(t *testing.T) {
 		}
 	}
 
-	rows, err := svc.ListUsers(ctx, "ANA", 10)
+	rows, _, err := svc.ListUsersPage(ctx, "ANA", 10, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -170,7 +170,7 @@ func TestListUsersSearch(t *testing.T) {
 		t.Errorf("search 'ANA' = %+v", rows)
 	}
 
-	rows, err = svc.ListUsers(ctx, "example.org", 10)
+	rows, _, err = svc.ListUsersPage(ctx, "example.org", 10, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
