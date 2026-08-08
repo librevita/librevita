@@ -110,14 +110,14 @@ func TestUpdate(t *testing.T) {
 	}
 	in := validInput()
 	in.DisplayName = "Maria O. Lima"
-	updated, err := svc.Update(context.Background(), pt.ID, in)
+	updated, err := svc.Update(context.Background(), "clinic-1", pt.ID, in)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if updated.DisplayName != "Maria O. Lima" {
 		t.Fatalf("Update = %+v", updated)
 	}
-	if _, err := svc.Update(context.Background(), "missing", in); !errors.Is(err, usecase.ErrNotFound) {
+	if _, err := svc.Update(context.Background(), "clinic-1", "missing", in); !errors.Is(err, usecase.ErrNotFound) {
 		t.Fatalf("Update missing = %v, want ErrNotFound", err)
 	}
 }
@@ -135,23 +135,33 @@ func TestListAndSearch(t *testing.T) {
 		}
 	}
 
-	all, err := svc.List(context.Background(), "clinic-1", "", "", "", 50)
+	all, total, err := svc.ListPage(context.Background(), "clinic-1", "", "", 50, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(all) != 3 {
-		t.Fatalf("List = %d patients, want 3", len(all))
+	if len(all) != 3 || total != 3 {
+		t.Fatalf("ListPage = %d patients (total %d), want 3", len(all), total)
 	}
 
-	hit, err := svc.List(context.Background(), "clinic-1", "bruno", "", "", 50)
+	// Whole-word prefix: 're' must not match 'Moreno'.
+	hit, _, err := svc.ListPage(context.Background(), "clinic-1", "bruno", "", 50, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(hit) != 1 || hit[0].DisplayName != "Bruno Lima" {
 		t.Fatalf("search 'bruno' = %+v, want only Bruno Lima", hit)
 	}
+	moreno, _, err := svc.ListPage(context.Background(), "clinic-1", "re", "", 50, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range moreno {
+		if p.DisplayName == "Gustavo Moreno da Veiga" {
+			t.Errorf("search 're' matched 'Moreno' via substring")
+		}
+	}
 
-	none, err := svc.List(context.Background(), "clinic-1", "zzz", "", "", 50)
+	none, _, err := svc.ListPage(context.Background(), "clinic-1", "zzz", "", 50, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -164,17 +174,17 @@ func TestListAndSearch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := svc.SetStatus(context.Background(), pt.ID, usecase.StatusInactive); err != nil {
+	if err := svc.SetStatus(context.Background(), "clinic-1", pt.ID, usecase.StatusInactive); err != nil {
 		t.Fatal(err)
 	}
-	active, err := svc.List(context.Background(), "clinic-1", "", usecase.StatusActive, "", 50)
+	active, _, err := svc.ListPage(context.Background(), "clinic-1", "", usecase.StatusActive, 50, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(active) != 2 {
 		t.Fatalf("active = %d, want 2", len(active))
 	}
-	inactive, err := svc.List(context.Background(), "clinic-1", "", usecase.StatusInactive, "", 50)
+	inactive, _, err := svc.ListPage(context.Background(), "clinic-1", "", usecase.StatusInactive, 50, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -191,14 +201,14 @@ func TestSetStatus(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := svc.SetStatus(context.Background(), pt.ID, usecase.StatusInactive); err != nil {
+	if err := svc.SetStatus(context.Background(), "clinic-1", pt.ID, usecase.StatusInactive); err != nil {
 		t.Fatal(err)
 	}
 	got, _ := svc.Get(context.Background(), pt.ID)
 	if got.Status != usecase.StatusInactive {
 		t.Fatalf("status = %q, want inactive", got.Status)
 	}
-	if err := svc.SetStatus(context.Background(), pt.ID, "banana"); err == nil {
+	if err := svc.SetStatus(context.Background(), "clinic-1", pt.ID, "banana"); err == nil {
 		t.Fatal("invalid status accepted")
 	}
 }

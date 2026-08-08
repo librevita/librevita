@@ -112,29 +112,35 @@ func (s *Service) UpdateUser(ctx context.Context, id string, actorID string, in 
 
 	demotingOrDeactivating := (current.Role == auth.RoleAdmin.String() && current.Active == 1) &&
 		(role != auth.RoleAdmin || !in.Active)
-	if demotingOrDeactivating {
-		count, err := s.users.CountActiveUsersByRole(ctx, auth.RoleAdmin.String())
-		if err != nil {
-			return nil, fmt.Errorf("usecase: count active admins: %w", err)
-		}
-		if count <= 1 {
-			return nil, ErrLastActiveAdmin
-		}
-	}
 
 	active := int64(0)
 	if in.Active {
 		active = 1
 	}
-	user, err := s.users.UpdateUser(ctx, repository.UpdateUserParams{
-		ID:          id,
-		Email:       email,
-		DisplayName: name,
-		Role:        role.String(),
-		Active:      active,
-	})
-	if err != nil {
-		return nil, ErrEmailTaken
+
+	var user repository.User
+	if demotingOrDeactivating {
+		// The last-active-admin check lives inside the UPDATE itself
+		// (single statement = atomic), so two concurrent admins cannot
+		// both pass a separate count check and leave no active admin.
+		u, err := s.users.UpdateUserGuarded(ctx, repository.UpdateUserGuardedParams{
+			Email: email, DisplayName: name, Role: role.String(), Active: active, ID: id, Column6: 1,
+		})
+		if err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return nil, ErrLastActiveAdmin
+			}
+			return nil, ErrEmailTaken
+		}
+		user = u
+	} else {
+		u, err := s.users.UpdateUser(ctx, repository.UpdateUserParams{
+			ID: id, Email: email, DisplayName: name, Role: role.String(), Active: active,
+		})
+		if err != nil {
+			return nil, ErrEmailTaken
+		}
+		user = u
 	}
 	return &user, nil
 }
@@ -179,4 +185,17 @@ func (s *Service) GetUser(ctx context.Context, id string) (*repository.User, err
 		return nil, fmt.Errorf("usecase: get user: %w", err)
 	}
 	return &user, nil
+}
+
+// CountStaff counts the accounts with clinical or administrative roles.
+func (s *Service) CountStaff(ctx context.Context) (int64, error) {
+	var total int64
+	for _, role := range []string{auth.RoleAdmin.String(), auth.RolePhysician.String(), auth.RoleReceptionist.String()} {
+		count, err := s.users.CountUsersByRole(ctx, role)
+		if err != nil {
+			return 0, fmt.Errorf("usecase: count staff by role: %w", err)
+		}
+		total += count
+	}
+	return total, nil
 }

@@ -25,7 +25,8 @@ import (
 const utcMilliLayout = "2006-01-02T15:04:05.000Z"
 
 const (
-	patientListLimit    = 50
+	patientListLimit  = 50
+	maxBulkArchiveIDs = 50
 )
 
 // Handler renders the patient pages and processes submissions.
@@ -192,7 +193,11 @@ func (h *Handler) Update(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-	patient, err := h.svc.Update(ctx, id, input)
+	clinicID, err := h.clinicID(ctx)
+	if err != nil {
+		return err
+	}
+	patient, err := h.svc.Update(ctx, clinicID, id, input)
 	if err != nil {
 		var v *usecase.ValidationError
 		switch {
@@ -282,10 +287,18 @@ func (h *Handler) BulkArchive(c echo.Context) error {
 			page = n
 		}
 	}
+	clinicID, err := h.clinicID(ctx)
+	if err != nil {
+		return err
+	}
+	// Bound the number of writes a single request can trigger.
 	ids := c.Request().PostForm["ids"]
+	if len(ids) > maxBulkArchiveIDs {
+		ids = ids[:maxBulkArchiveIDs]
+	}
 	archived := 0
 	for _, id := range ids {
-		if err := h.svc.SetStatus(ctx, id, usecase.StatusInactive); err == nil {
+		if err := h.svc.SetStatus(ctx, clinicID, id, usecase.StatusInactive); err == nil {
 			archived++
 			h.audit.Record(ctx, audit.Event{
 				ActorID: server.ActorID(c), ActorMail: server.ActorMail(c),
@@ -293,13 +306,16 @@ func (h *Handler) BulkArchive(c echo.Context) error {
 				Result: audit.ResultSuccess, Detail: usecase.StatusInactive,
 				IP: c.RealIP(), RequestID: c.Response().Header().Get(echo.HeaderXRequestID),
 			})
+		} else {
+			h.audit.Record(ctx, audit.Event{
+				ActorID: server.ActorID(c), ActorMail: server.ActorMail(c),
+				Action: "patient.status", Resource: "patient:" + id, Result: audit.ResultFailure,
+				Detail: "bulk archive failed: " + err.Error(),
+				IP: c.RealIP(), RequestID: c.Response().Header().Get(echo.HeaderXRequestID),
+			})
 		}
 	}
 
-	clinicID, err := h.clinicID(ctx)
-	if err != nil {
-		return err
-	}
 	patients, total, err := h.svc.ListPage(ctx, clinicID, q, status, patientListLimit, (page-1)*patientListLimit)
 	if err != nil {
 		return err
@@ -316,7 +332,11 @@ func (h *Handler) BulkArchive(c echo.Context) error {
 func (h *Handler) setStatus(c echo.Context, status, successMsg string) error {
 	ctx := c.Request().Context()
 	id := c.Param("id")
-	err := h.svc.SetStatus(ctx, id, status)
+	clinicID, err := h.clinicID(ctx)
+	if err != nil {
+		return err
+	}
+	err = h.svc.SetStatus(ctx, clinicID, id, status)
 	if err == nil {
 		h.audit.Record(ctx, audit.Event{
 			ActorID: server.ActorID(c), ActorMail: server.ActorMail(c),
@@ -324,10 +344,19 @@ func (h *Handler) setStatus(c echo.Context, status, successMsg string) error {
 			Result: audit.ResultSuccess, Detail: status,
 			IP: c.RealIP(), RequestID: c.Response().Header().Get(echo.HeaderXRequestID),
 		})
+	} else {
+		h.audit.Record(ctx, audit.Event{
+			ActorID: server.ActorID(c), ActorMail: server.ActorMail(c),
+			Action: "patient.status", Resource: "patient:" + id, Result: audit.ResultFailure,
+			Detail: "could not set status " + status,
+			IP: c.RealIP(), RequestID: c.Response().Header().Get(echo.HeaderXRequestID),
+		})
 	}
 	if server.IsHtmx(c) {
 		if err != nil {
-			return server.Render(c, http.StatusBadRequest, components.Alert("Could not update the patient", true))
+			// htmx does not swap 4xx responses, so errors return 200 with
+			// an OOB alert that lands in the shell's #app-alert container.
+			return server.Render(c, http.StatusOK, components.Alert("Could not update the patient", true))
 		}
 		// Re-render the row in place with the new status. The response
 		// must contain only the row: sibling elements would break the

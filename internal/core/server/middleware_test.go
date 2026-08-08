@@ -202,3 +202,70 @@ func newTestAudit(t *testing.T) *audit.Logger {
 	}
 	return l
 }
+
+func TestNotFoundRedirectsAnonymous(t *testing.T) {
+	db := openTestDB(t)
+	sessions, err := auth.NewSessionManager(db, &config.Config{Env: "development"}, testLogger())
+	if err != nil {
+		t.Fatal(err)
+	}
+	e := echo.New()
+	registerNotFound(e, sessions)
+
+	req := httptest.NewRequest(http.MethodGet, "/no-such-page", nil)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+	if rec.Code != http.StatusFound {
+		t.Fatalf("anonymous unknown route = %d, want 302", rec.Code)
+	}
+	if loc := rec.Header().Get("Location"); loc != LoginPath+"?next=%2Fno-such-page" {
+		t.Errorf("redirect = %q, want login with next", loc)
+	}
+}
+
+func TestNotFoundAuthenticated(t *testing.T) {
+	db := openTestDB(t)
+	sessions, err := auth.NewSessionManager(db, &config.Config{Env: "development"}, testLogger())
+	if err != nil {
+		t.Fatal(err)
+	}
+	hash, err := auth.HashPassword("test-password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`INSERT INTO users (id, email, password_hash, display_name, role) VALUES (?, ?, ?, ?, ?)`,
+		"01990000-0000-7000-8000-000000000001", "user@example.org", hash, "Test User", auth.RoleAdmin.String()); err != nil {
+		t.Fatal(err)
+	}
+	token, err := sessions.Create(context.Background(), auth.Principal{ID: "01990000-0000-7000-8000-000000000001", Email: "user@example.org", Name: "Test User", Role: auth.RoleAdmin})
+	if err != nil {
+		t.Fatal(err)
+	}
+	e := echo.New()
+	registerNotFound(e, sessions)
+
+	req := httptest.NewRequest(http.MethodGet, "/no-such-page", nil)
+	req.AddCookie(sessions.Cookie(token))
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("authenticated unknown route = %d, want 404", rec.Code)
+	}
+}
+
+func TestNotFoundPublicPaths(t *testing.T) {
+	db := openTestDB(t)
+	sessions, err := auth.NewSessionManager(db, &config.Config{Env: "development"}, testLogger())
+	if err != nil {
+		t.Fatal(err)
+	}
+	e := echo.New()
+	registerNotFound(e, sessions)
+
+	req := httptest.NewRequest(http.MethodGet, "/setup", nil)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("unknown /setup path = %d, want 404 (public path)", rec.Code)
+	}
+}

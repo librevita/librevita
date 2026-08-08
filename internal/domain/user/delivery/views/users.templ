@@ -1,6 +1,7 @@
 package views
 
 import (
+	"net/url"
 	"strconv"
 
 	"librevita.org/internal/core/auth"
@@ -111,6 +112,15 @@ templ UsersListTable(rows []UserListRow, q string, page int, total int64, errMsg
 	}
 }
 
+// UserRowOnly is the status toggle response: a bare row, swapped in
+// place. No sibling elements may follow, or the htmx fragment parser
+// wraps the row into a table and mis-parses them.
+templ UserRowOnly(rows []UserListRow) {
+	for _, u := range rows {
+		<tr class="hover:bg-gray-100 dark:hover:bg-gray-700">@UserRowCells(u)</tr>
+	}
+}
+
 // UserRowCells is the row fragment swapped by the status toggle, so the
 // change re-renders only the affected row.
 templ UserRowCells(u UserListRow) {
@@ -140,57 +150,28 @@ templ UserRowCells(u UserListRow) {
 	</td>
 }
 
-// userPager renders the flowbite pager footer: chevron arrows and the
-// visible range on the left, Previous/Next on the right. The links keep
-// the search term and are disabled at the ends.
+// userPager renders the shared flowbite pager with the users list
+// htmx wiring.
 templ userPager(q string, page int, total int64, shown int64) {
-	if total > 0 {
-		<div class="sticky bottom-0 mt-4 w-full border-t border-gray-200 bg-white p-4 sm:flex sm:items-center sm:justify-between dark:border-gray-800 dark:bg-gray-800">
-			<div class="mb-4 flex items-center sm:mb-0">
-				<a href={ userPageHref(q, page-1) } hx-get="/admin/users" hx-vals={ userPageVals(page-1) } hx-include="#user-search" hx-target="#user-list" hx-swap="innerHTML" aria-label="Previous page" class={ "inline-flex justify-center rounded p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white " + userNavDisabled(page <= 1) }>
-					<svg class="h-7 w-7" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true"><path fill-rule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clip-rule="evenodd"></path></svg>
-				</a>
-				<a href={ userPageHref(q, page+1) } hx-get="/admin/users" hx-vals={ userPageVals(page+1) } hx-include="#user-search" hx-target="#user-list" hx-swap="innerHTML" aria-label="Next page" class={ "mr-2 inline-flex justify-center rounded p-1 text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white " + userNavDisabled(int64(page)*userPageSize >= total) }>
-					<svg class="h-7 w-7" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"></path></svg>
-				</a>
-				<span class="text-sm font-normal text-gray-500 dark:text-gray-400">Showing
-					<span class="font-semibold text-gray-900 dark:text-white">{ int64(page-1)*userPageSize + 1 }-{ int64(page-1)*userPageSize + shown }</span> of
-					<span class="font-semibold text-gray-900 dark:text-white">{ total }</span>
-				</span>
-			</div>
-			<div class="flex items-center gap-3">
-				<a href={ userPageHref(q, page-1) } hx-get="/admin/users" hx-vals={ userPageVals(page-1) } hx-include="#user-search" hx-target="#user-list" hx-swap="innerHTML" class={ "inline-flex items-center justify-center rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600 " + userNavDisabled(page <= 1) }>
-					<svg class="mr-1 h-5 w-5 -ml-1" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true"><path fill-rule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clip-rule="evenodd"></path></svg>
-					Previous
-				</a>
-				<a href={ userPageHref(q, page+1) } hx-get="/admin/users" hx-vals={ userPageVals(page+1) } hx-include="#user-search" hx-target="#user-list" hx-swap="innerHTML" class={ "inline-flex items-center justify-center rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600 " + userNavDisabled(int64(page)*userPageSize >= total) }>
-					Next
-					<svg class="ml-1 h-5 w-5 -mr-1" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"></path></svg>
-				</a>
-			</div>
-		</div>
-	}
+	@components.Pager(components.PagerData{
+		Total: total, Shown: shown, Page: page, PageSize: userPageSize,
+		PrevHref: userPageHref(q, page-1), NextHref: userPageHref(q, page+1),
+		PrevDisabled: page <= 1, NextDisabled: int64(page)*userPageSize >= total,
+		HxGet: "/admin/users", HxInclude: "#user-search", HxTarget: "#user-list",
+		HxValsPrev: userPageVals(page - 1), HxValsNext: userPageVals(page + 1),
+	})
 }
-
-const userPageSize = 20
 
 func userPageHref(q string, page int) string {
 	href := "/admin/users?page=" + itoaUser(page)
 	if q != "" {
-		href += "&q=" + q
+		href += "&q=" + url.QueryEscape(q)
 	}
 	return href
 }
 
 func userPageVals(page int) string {
 	return `{"page":` + itoaUser(page) + `}`
-}
-
-func userNavDisabled(disabled bool) string {
-	if disabled {
-		return "pointer-events-none opacity-50"
-	}
-	return ""
 }
 
 func userToggleClass(active int64) string {
@@ -280,6 +261,8 @@ templ roleOption(value string, label string, selected string) {
 		<option value={ value }>{ label }</option>
 	}
 }
+
+const userPageSize = 20
 
 func itoaUser(n int) string {
 	return strconv.Itoa(n)
