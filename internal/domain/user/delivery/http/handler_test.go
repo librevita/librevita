@@ -57,7 +57,7 @@ func newHandler(t *testing.T, db *sql.DB) (*httphandler.Handler, *auth.SessionMa
 	if err := policies.Load(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	patientSvc := patientusecase.NewService(db, log)
+	patientSvc := patientusecase.NewService(db, log, policies)
 	h := httphandler.NewHandler(svc, patientSvc, csrf, sessions, policies, auditLogger, clinic.NewClockProvider(db))
 	return h, sessions, svc
 }

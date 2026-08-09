@@ -431,3 +431,37 @@ func TestRejectedSelfLockoutKeepsPreviousPolicy(t *testing.T) {
 		t.Fatal("rejected change must keep the admin allowed")
 	}
 }
+
+func TestPatientEditResourcePolicy(t *testing.T) {
+	pe := testPolicyEngine(t)
+
+	admin := &auth.Principal{ID: "01990000-0000-7000-8000-000000000001", Email: "admin@example.org", Name: "Admin", Role: auth.RoleAdmin}
+	owner := &auth.Principal{ID: "01990000-0000-7000-8000-000000000002", Email: "dr.owner@example.org", Name: "Dr. Owner", Role: auth.RolePhysician}
+	other := &auth.Principal{ID: "01990000-0000-7000-8000-000000000003", Email: "dr.other@example.org", Name: "Dr. Other", Role: auth.RolePhysician}
+	rec := &auth.Principal{ID: "01990000-0000-7000-8000-000000000004", Email: "rec@example.org", Name: "Rec", Role: auth.RoleReceptionist}
+
+	req := RequestInfo{Method: "POST", Path: "/patients/01990000-0000-7000-8000-000000000099"}
+	resource := map[string]any{"id": "01990000-0000-7000-8000-000000000099", "created_by": owner.ID, "status": "active"}
+
+	cases := []struct {
+		name     string
+		principal *auth.Principal
+		want     bool
+	}{
+		{"admin edits anything", admin, true},
+		{"owner physician edits", owner, true},
+		{"other physician denied", other, false},
+		{"receptionist denied", rec, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := pe.AllowedResource(context.Background(), "patient.edit", tc.principal, req, resource, nil)
+			if err != nil {
+				t.Fatalf("AllowedResource: %v", err)
+			}
+			if got != tc.want {
+				t.Fatalf("AllowedResource = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}

@@ -197,6 +197,9 @@ func (h *Handler) Update(c echo.Context) error {
 	if err != nil {
 		return err
 	}
+	if err := h.authorizePatientEdit(c, before.CreatedBy, before.ID, before.Status); err != nil {
+		return err
+	}
 	patient, err := h.svc.Update(ctx, clinicID, id, input)
 	if err != nil {
 		var v *usecase.ValidationError
@@ -298,6 +301,13 @@ func (h *Handler) BulkArchive(c echo.Context) error {
 	}
 	archived := 0
 	for _, id := range ids {
+		pt, err := h.svc.Get(ctx, id)
+		if err != nil {
+			continue
+		}
+		if err := h.authorizePatientEdit(c, pt.CreatedBy, pt.ID, pt.Status); err != nil {
+			continue
+		}
 		if err := h.svc.SetStatus(ctx, clinicID, id, usecase.StatusInactive); err == nil {
 			archived++
 			h.audit.Record(ctx, audit.Event{
@@ -334,6 +344,13 @@ func (h *Handler) setStatus(c echo.Context, status, successMsg string) error {
 	id := c.Param("id")
 	clinicID, err := h.clinicID(ctx)
 	if err != nil {
+		return err
+	}
+	pt, err := h.svc.Get(ctx, id)
+	if err != nil {
+		return err
+	}
+	if err := h.authorizePatientEdit(c, pt.CreatedBy, pt.ID, pt.Status); err != nil {
 		return err
 	}
 	err = h.svc.SetStatus(ctx, clinicID, id, status)
@@ -542,4 +559,28 @@ func (h *Handler) CheckDocument(c echo.Context) error {
 		return server.Render(c, http.StatusOK, views.PatientDocumentError("This document is already registered"))
 	}
 	return server.Render(c, http.StatusOK, views.PatientDocumentError(""))
+}
+
+
+// authorizePatientEdit enforces the fine-grained patient.edit policy
+// against the record and audits denials.
+func (h *Handler) authorizePatientEdit(c echo.Context, createdBy *string, ptID, ptStatus string) error {
+	principal := server.Principal(c)
+	if principal == nil {
+		return echo.NewHTTPError(http.StatusForbidden)
+	}
+	ctx := c.Request().Context()
+	if err := h.svc.AuthorizePatientEdit(ctx, principal, ptID, createdBy, ptStatus); err != nil {
+		if errors.Is(err, usecase.ErrForbidden) {
+			h.audit.Record(ctx, audit.Event{
+				ActorID: principal.ID, ActorMail: principal.Email,
+				Action: "authorize", Resource: "policy:patient.edit", Result: audit.ResultFailure,
+				Detail: "denied patient " + ptID,
+				IP: c.RealIP(), RequestID: c.Response().Header().Get(echo.HeaderXRequestID),
+			})
+			return echo.NewHTTPError(http.StatusForbidden)
+		}
+		return err
+	}
+	return nil
 }
