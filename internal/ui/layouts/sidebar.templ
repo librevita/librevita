@@ -21,12 +21,11 @@ templ Sidebar(principal *auth.Principal, active string) {
 			if principal != nil && principal.Role == auth.RoleAdmin {
 				<div class="space-y-1">
 					<p class="px-3 pb-1 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Management</p>
-					@navLink("/admin", "Admin area", "admin", active == "admin")
-					@navLink("/admin/users", "Users", "user", active == "users")
-					@navLink("/admin/specialties", "Specialties", "policies", active == "specialties")
-					@navLink("/admin/roles", "Roles", "user", active == "roles")
+					@navLink("/users", "Users", "user", active == "users")
+					@navLink("/specialties", "Specialties", "policies", active == "specialties")
+					@navLink("/roles", "Roles", "user", active == "roles")
 					@navLink("/staff/requests", "Staff requests", "user", active == "staff-requests")
-					@navLink("/admin/policies", "Access policies", "policies", active == "policies")
+					@navLink("/policies", "Access policies", "policies", active == "policies")
 				</div>
 			}
 		</nav>

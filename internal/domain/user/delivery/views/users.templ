@@ -48,7 +48,7 @@ templ UsersListPage(token string, p *auth.Principal, q string, page int, total i
 						<li>
 							<div class="flex items-center">
 								<svg class="h-6 w-6 text-gray-400" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"></path></svg>
-								<a href="/admin/users" class="ml-1 text-gray-700 hover:text-indigo-600 md:ml-2 dark:text-gray-300 dark:hover:text-white">Users</a>
+								<a href="/users" class="ml-1 text-gray-700 hover:text-indigo-600 md:ml-2 dark:text-gray-300 dark:hover:text-white">Users</a>
 							</div>
 						</li>
 						<li>
@@ -63,9 +63,9 @@ templ UsersListPage(token string, p *auth.Principal, q string, page int, total i
 				<div class="flex flex-wrap items-center justify-between gap-3">
 					<div class="relative">
 						<svg class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400 dark:text-gray-500" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd"></path></svg>
-						@components.Input("q", "pl-9 md:w-64 xl:w-96", templ.Attributes{ "id": "user-search", "type": "search", "value": q, "placeholder": "Search for users", "hx-get": "/admin/users", "hx-trigger": "input changed delay:300ms", "hx-target": "#user-list", "hx-swap": "innerHTML" })
+						@components.Input("q", "pl-9 md:w-64 xl:w-96", templ.Attributes{ "id": "user-search", "type": "search", "value": q, "placeholder": "Search for users", "hx-get": "/users", "hx-trigger": "input changed delay:300ms", "hx-target": "#user-list", "hx-swap": "innerHTML" })
 					</div>
-					@components.ButtonLink("primary", "/admin/users/new", "Add user", nil)
+					@components.ButtonLink("primary", "/users/new", "Add user", nil)
 				</div>
 			</div>
 			<div class="flex flex-col">
@@ -138,11 +138,11 @@ templ UserRowCells(u UserListRow) {
 	<td class="p-4 whitespace-nowrap text-base text-gray-500 dark:text-gray-400">{ u.CreatedAt }</td>
 	<td class="p-4 whitespace-nowrap">
 		<div class="flex items-center justify-end gap-2">
-			<a href={ "/admin/users/" + u.ID + "/edit" } class="inline-flex items-center rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600">
+			<a href={ "/users/" + u.ID + "/edit" } class="inline-flex items-center rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600">
 				<svg class="mr-2 h-4 w-4" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true"><path d="M17.414 2.586a2 2 0 00-2.828 0L7 10.172V13h2.828l7.586-7.586a2 2 0 000-2.828z"></path><path fill-rule="evenodd" d="M2 6a2 2 0 012-2h4a1 1 0 010 2H4v10h10v-4a1 1 0 112 0v4a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" clip-rule="evenodd"></path></svg>
 				Edit user
 			</a>
-			<button type="button" hx-post={ "/admin/users/" + u.ID + "/status" } hx-target="closest tr" hx-swap="outerHTML" class={ "inline-flex items-center rounded-lg px-3 py-2 text-sm font-medium text-white focus:ring-4 dark:focus:ring-red-900 " + userToggleClass(u.Active) }>
+			<button type="button" hx-post={ "/users/" + u.ID + "/status" } hx-target="closest tr" hx-swap="outerHTML" class={ "inline-flex items-center rounded-lg px-3 py-2 text-sm font-medium text-white focus:ring-4 dark:focus:ring-red-900 " + userToggleClass(u.Active) }>
 				<svg class="mr-2 h-4 w-4" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"></path></svg>
 				{ userToggleLabel(u.Active) }
 			</button>
@@ -157,13 +157,13 @@ templ userPager(q string, page int, total int64, shown int64) {
 		Total: total, Shown: shown, Page: page, PageSize: userPageSize,
 		PrevHref: userPageHref(q, page-1), NextHref: userPageHref(q, page+1),
 		PrevDisabled: page <= 1, NextDisabled: int64(page)*userPageSize >= total,
-		HxGet: "/admin/users", HxInclude: "#user-search", HxTarget: "#user-list",
+		HxGet: "/users", HxInclude: "#user-search", HxTarget: "#user-list",
 		HxValsPrev: userPageVals(page - 1), HxValsNext: userPageVals(page + 1),
 	})
 }
 
 func userPageHref(q string, page int) string {
-	href := "/admin/users?page=" + itoaUser(page)
+	href := "/users?page=" + itoaUser(page)
 	if q != "" {
 		href += "&q=" + url.QueryEscape(q)
 	}
@@ -207,7 +207,7 @@ templ UserFormPage(token string, p *auth.Principal, id string, values UserFormVa
 		<div class="mx-auto max-w-xl p-4 lg:p-6">
 			@components.Card() {
 				@components.CardHeader(userFormTitle(id)) {
-					<a class="inline-flex items-center rounded-lg p-2 text-sm font-medium text-indigo-700 hover:bg-gray-100 dark:text-indigo-400 dark:hover:bg-gray-700" href="/admin/users">Back to users</a>
+					<a class="inline-flex items-center rounded-lg p-2 text-sm font-medium text-indigo-700 hover:bg-gray-100 dark:text-indigo-400 dark:hover:bg-gray-700" href="/users">Back to users</a>
 				}
 				@UserForm(token, id, values, roles, specialties, errMsg)
 			}
@@ -265,7 +265,7 @@ templ UserForm(token string, id string, values UserFormValues, roles []RoleView,
 		}
 		<div class="flex items-center gap-3">
 			@components.Button("primary", userFormSubmit(id), templ.Attributes{ "type": "submit" })
-			@components.ButtonLink("secondary", "/admin/users", "Cancel", templ.Attributes{ "hx-target": "body" })
+			@components.ButtonLink("secondary", "/users", "Cancel", templ.Attributes{ "hx-target": "body" })
 		</div>
 	</form>
 }
@@ -293,9 +293,9 @@ func userFormTitle(id string) string {
 
 func userFormAction(id string) string {
 	if id == "" {
-		return "/admin/users"
+		return "/users"
 	}
-	return "/admin/users/" + id
+	return "/users/" + id
 }
 
 func userFormSubmit(id string) string {

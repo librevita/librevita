@@ -46,7 +46,7 @@ templ AdminPolicies(token string, p *auth.Principal, policies []PolicyView, errM
 // in place, so errors stay with their card.
 templ PolicyCard(token string, pl PolicyView, errMsg string) {
 	<section class="card">
-		<form method="post" action="/admin/policies" hx-post="/admin/policies" hx-target="closest section" hx-swap="outerHTML" class="space-y-3">
+		<form method="post" action="/policies" hx-post="/policies" hx-target="closest section" hx-swap="outerHTML" class="space-y-3">
 			<input type="hidden" name="_csrf" value={ token }>
 			<input type="hidden" name="name" value={ pl.Name }>
 			<label class="label" for={ "policy-" + pl.Name }>
@@ -58,7 +58,7 @@ templ PolicyCard(token string, pl PolicyView, errMsg string) {
 			}
 			<div class="flex items-center gap-3">
 				<button class="btn" type="submit">Save</button>
-				<button type="button" class="btn-secondary" hx-post="/admin/policies/reset" hx-vals={ policyVals(pl.Name) } hx-target="closest section" hx-swap="outerHTML">Reset to default</button>
+				<button type="button" class="btn-secondary" hx-post="/policies/reset" hx-vals={ policyVals(pl.Name) } hx-target="closest section" hx-swap="outerHTML">Reset to default</button>
 			</div>
 		</form>
 		if len(pl.History) > 0 {

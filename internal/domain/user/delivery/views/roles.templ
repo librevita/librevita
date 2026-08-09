@@ -32,7 +32,7 @@ templ RolesPage(token string, p *auth.Principal, rows []RoleView, errMsg string)
 						<li>
 							<div class="flex items-center">
 								<svg class="h-6 w-6 text-gray-400" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"></path></svg>
-								<a href="/admin/users" class="ml-1 text-gray-700 hover:text-indigo-600 md:ml-2 dark:text-gray-300 dark:hover:text-white">Users</a>
+								<a href="/users" class="ml-1 text-gray-700 hover:text-indigo-600 md:ml-2 dark:text-gray-300 dark:hover:text-white">Users</a>
 							</div>
 						</li>
 						<li>
@@ -44,7 +44,7 @@ templ RolesPage(token string, p *auth.Principal, rows []RoleView, errMsg string)
 					</ol>
 				</nav>
 				<h1 class="mb-4 text-xl font-semibold text-gray-900 sm:text-2xl dark:text-white">Roles</h1>
-				<form method="post" hx-post="/admin/roles" hx-target="this" hx-swap="outerHTML" class="flex max-w-lg items-center gap-2">
+				<form method="post" hx-post="/roles" hx-target="this" hx-swap="outerHTML" class="flex max-w-lg items-center gap-2">
 					<input type="hidden" name="_csrf" value={ token }>
 					@components.Input("name", "pl-3", templ.Attributes{ "type": "text", "placeholder": "e.g. psychologist", "required": true })
 					<label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
@@ -88,7 +88,7 @@ templ RolesPage(token string, p *auth.Principal, rows []RoleView, errMsg string)
 													<span class="text-sm text-gray-400 dark:text-gray-500">-</span>
 												}
 											} else {
-												<form method="post" action={ "/admin/roles/" + r.ID + "/clinical" } class="inline">
+												<form method="post" action={ "/roles/" + r.ID + "/clinical" } class="inline">
 													<input type="hidden" name="_csrf" value={ token }>
 													<input type="hidden" name="clinical" value={ clinicalValue(r.IsClinical) }>
 													@components.Button(clinicalButtonKind(r.IsClinical), clinicalButtonLabel(r.IsClinical), templ.Attributes{ "type": "submit" })
@@ -98,12 +98,12 @@ templ RolesPage(token string, p *auth.Principal, rows []RoleView, errMsg string)
 										<td class="p-4 text-right">
 											if !r.System {
 												<div class="flex items-center justify-end gap-2">
-													<form method="post" action={ "/admin/roles/" + r.ID + "/rename" } class="inline">
+													<form method="post" action={ "/roles/" + r.ID + "/rename" } class="inline">
 														<input type="hidden" name="_csrf" value={ token }>
 														@components.Input("name", "py-1", templ.Attributes{ "type": "text", "value": r.Name, "required": true, "aria-label": "New name" })
 														@components.Button("secondary", "Rename", templ.Attributes{ "type": "submit" })
 													</form>
-													<form method="post" action={ "/admin/roles/" + r.ID + "/delete" } class="inline">
+													<form method="post" action={ "/roles/" + r.ID + "/delete" } class="inline">
 														<input type="hidden" name="_csrf" value={ token }>
 														@components.Button("danger", "Delete", templ.Attributes{ "type": "submit" })
 													</form>
