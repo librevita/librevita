@@ -130,3 +130,22 @@ CREATE TABLE user_specialties (
 );
 
 CREATE INDEX idx_user_specialties_specialty ON user_specialties (specialty_id);
+
+-- Staff profile change requests: receptionist proposals that an admin
+-- approves or rejects. Owned by the user domain; see
+-- db/migrations/00010_staff_requests.sql.
+CREATE TABLE staff_change_requests (
+    id            TEXT PRIMARY KEY,
+    user_id       TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    requested_by  TEXT NOT NULL REFERENCES users(id),
+    status        TEXT NOT NULL DEFAULT 'pending'
+                  CHECK (status IN ('pending', 'approved', 'rejected')),
+    changes       TEXT NOT NULL,
+    decision_note TEXT,
+    created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    decided_at    TEXT,
+    decided_by    TEXT REFERENCES users(id)
+);
+
+CREATE INDEX idx_staff_requests_status ON staff_change_requests (status, created_at DESC);
+CREATE INDEX idx_staff_requests_user ON staff_change_requests (user_id);

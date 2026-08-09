@@ -51,6 +51,13 @@ var DefaultPolicies = map[string]string{
 	// User management: create staff accounts, change roles and status.
 	"users.manage": `principal.role == 'admin'`,
 
+	// Physician directory: visible to staff, edited directly by admins,
+	// and changeable by receptionists through admin-approved requests.
+	"staff.view": `principal.role in ['admin', 'physician', 'receptionist']`,
+	"staff.edit": `principal.role == 'admin'`,
+	"staff.request": `principal.role in ['admin', 'receptionist']`,
+	"staff.approve": `principal.role == 'admin'`,
+
 	// Patient registry, available to the clinical roles.
 	"patient.view": `principal.role in ['admin', 'physician', 'receptionist']`,
 

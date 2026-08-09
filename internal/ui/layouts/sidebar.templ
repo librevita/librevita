@@ -11,6 +11,12 @@ templ Sidebar(principal *auth.Principal, active string) {
 				<p class="px-3 pb-1 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">General</p>
 				@navLink("/", "Dashboard", "dashboard", active == "dashboard")
 				@navLink("/patients", "Patients", "patients", active == "patients")
+				if principal != nil && principal.Role != auth.RolePatient {
+					@navLink("/staff", "Physicians", "patients", active == "physicians")
+				}
+				if principal != nil && principal.Role == auth.RoleReceptionist {
+					@navLink("/staff/my-requests", "My requests", "user", active == "my-requests")
+				}
 			</div>
 			if principal != nil && principal.Role == auth.RoleAdmin {
 				<div class="space-y-1">
@@ -18,6 +24,7 @@ templ Sidebar(principal *auth.Principal, active string) {
 					@navLink("/admin", "Admin area", "admin", active == "admin")
 					@navLink("/admin/users", "Users", "user", active == "users")
 					@navLink("/admin/specialties", "Specialties", "policies", active == "specialties")
+					@navLink("/staff/requests", "Staff requests", "user", active == "staff-requests")
 					@navLink("/admin/policies", "Access policies", "policies", active == "policies")
 				</div>
 			}

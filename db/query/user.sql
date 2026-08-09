@@ -113,3 +113,54 @@ FROM specialties s
 JOIN user_specialties us ON us.specialty_id = s.id
 WHERE us.user_id = ?
 ORDER BY s.name COLLATE NOCASE;
+
+-- name: ListPhysicians :many
+SELECT u.id, u.email, u.display_name, u.role, u.active,
+       COALESCE(CAST(GROUP_CONCAT(s.name, ', ') AS TEXT), '') AS specialties
+FROM users u
+LEFT JOIN user_specialties us ON us.user_id = u.id
+LEFT JOIN specialties s ON s.id = us.specialty_id
+WHERE u.role = 'physician'
+GROUP BY u.id
+ORDER BY u.display_name COLLATE NOCASE;
+
+-- name: CreateStaffChangeRequest :one
+INSERT INTO staff_change_requests (id, user_id, requested_by, status, changes)
+VALUES (?, ?, ?, 'pending', ?)
+RETURNING *;
+
+-- name: ListStaffChangeRequests :many
+SELECT r.id, r.user_id, r.requested_by, r.status, r.changes, r.decision_note,
+       r.created_at, r.decided_at, r.decided_by,
+       u.email AS user_email, u.display_name AS user_name,
+       req.email AS requester_email
+FROM staff_change_requests r
+JOIN users u ON u.id = r.user_id
+JOIN users req ON req.id = r.requested_by
+WHERE r.status = ?
+ORDER BY r.created_at DESC
+LIMIT ?;
+
+-- name: GetStaffChangeRequest :one
+SELECT *
+FROM staff_change_requests
+WHERE id = ?
+LIMIT 1;
+
+-- name: DecideStaffChangeRequest :exec
+UPDATE staff_change_requests
+SET status = ?,
+    decision_note = ?,
+    decided_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+    decided_by = ?
+WHERE id = ? AND status = 'pending';
+
+-- name: ListStaffChangeRequestsByRequester :many
+SELECT r.id, r.user_id, r.requested_by, r.status, r.changes, r.decision_note,
+       r.created_at, r.decided_at, r.decided_by,
+       u.email AS user_email, u.display_name AS user_name
+FROM staff_change_requests r
+JOIN users u ON u.id = r.user_id
+WHERE r.requested_by = ?
+ORDER BY r.created_at DESC
+LIMIT ?;
