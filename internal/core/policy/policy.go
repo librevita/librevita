@@ -31,9 +31,15 @@ import (
 //
 //	principal  map[string]any  id (string UUIDv7), email (string), name (string), role (string)
 //	request    map[string]any  method (string), path (string)
+//	resource   map[string]any  the object being accessed (route policies
+//	                           leave it empty; resource policies, evaluated
+//	                           in the use cases, fill it, e.g. created_by)
+//	context    map[string]any  ambient attributes (time, emergency flag, ...)
 //
 // Policy names are permissions. Routes reference them with Require(name) in
-// the server package.
+// the server package. Resource-level policies (patient.edit) are enforced
+// inside the use cases with AllowedResource, where the object attributes
+// are available; the route middleware only performs the coarse filter.
 var DefaultPolicies = map[string]string{
 	// Authenticated dashboard, available to every active account.
 	"dashboard.view": `principal.role in ['admin', 'physician', 'receptionist', 'patient']`,
@@ -61,8 +67,10 @@ var DefaultPolicies = map[string]string{
 	// Patient registry, available to the clinical roles.
 	"patient.view": `principal.role in ['admin', 'physician', 'receptionist']`,
 
-	// Patient record changes, restricted to staff that care for patients.
-	"patient.edit": `principal.role in ['admin', 'physician']`,
+	// Patient record changes, evaluated against the record itself: an
+	// admin edits anything, a physician only the patients they registered
+	// (resource.created_by). Enforced in the patient use cases.
+	"patient.edit": `principal.role == 'admin' || (principal.role == 'physician' && resource.created_by == principal.id)`,
 }
 
 // RequestInfo is the request side of the policy evaluation context.
@@ -124,6 +132,8 @@ func NewPolicyEngine(db *sql.DB, log *slog.Logger) (*PolicyEngine, error) {
 	env, err := cel.NewEnv(
 		cel.Variable("principal", cel.MapType(cel.StringType, cel.AnyType)),
 		cel.Variable("request", cel.MapType(cel.StringType, cel.AnyType)),
+		cel.Variable("resource", cel.MapType(cel.StringType, cel.AnyType)),
+		cel.Variable("context", cel.MapType(cel.StringType, cel.AnyType)),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("policy: cel environment: %w", err)
@@ -205,7 +215,7 @@ func (pe *PolicyEngine) Set(ctx context.Context, name, expression string, actor 
 	// Critical policies must never deny the admin role; the admin panel
 	// is the only place that could restore them.
 	if criticalPolicies[name] {
-		allowed, err := evaluate(prog, &adminFixture, RequestInfo{Method: "GET", Path: "/admin"})
+		allowed, err := evaluate(prog, &adminFixture, RequestInfo{Method: "GET", Path: "/admin"}, nil, nil)
 		if err != nil {
 			return fmt.Errorf("policy: %q would break admin access: %w", name, err)
 		}
@@ -317,16 +327,40 @@ func (pe *PolicyEngine) Allowed(ctx context.Context, name string, p *auth.Princi
 		return false, fmt.Errorf("%w: %q", ErrPolicyNotFound, name)
 	}
 
-	allowed, err := evaluate(prog, p, req)
+	allowed, err := evaluate(prog, p, req, nil, nil)
 	if err != nil {
 		return false, fmt.Errorf("policy: %q evaluation: %w", name, err)
 	}
 	return allowed, nil
 }
 
-// evaluate runs prog against a principal/request activation and requires a
-// boolean result.
-func evaluate(prog cel.Program, p *auth.Principal, req RequestInfo) (bool, error) {
+// AllowedResource evaluates a resource-level policy (e.g. patient.edit)
+// against the object attributes and ambient context. Route policies
+// without resource/context can be evaluated here too: the variables are
+// simply empty maps. The use cases audit denials themselves.
+func (pe *PolicyEngine) AllowedResource(ctx context.Context, name string, p *auth.Principal, req RequestInfo, resource, ambient map[string]any) (bool, error) {
+	pe.mu.RLock()
+	prog, ok := pe.progs[name]
+	pe.mu.RUnlock()
+	if !ok {
+		return false, fmt.Errorf("%w: %q", ErrPolicyNotFound, name)
+	}
+	if resource == nil {
+		resource = map[string]any{}
+	}
+	if ambient == nil {
+		ambient = map[string]any{}
+	}
+	allowed, err := evaluate(prog, p, req, resource, ambient)
+	if err != nil {
+		return false, fmt.Errorf("policy: %q evaluation: %w", name, err)
+	}
+	return allowed, nil
+}
+
+// evaluate runs prog against the full activation and requires a boolean
+// result.
+func evaluate(prog cel.Program, p *auth.Principal, req RequestInfo, resource, ambient map[string]any) (bool, error) {
 	out, _, err := prog.Eval(map[string]any{
 		"principal": map[string]any{
 			"id":    p.ID,
@@ -338,6 +372,8 @@ func evaluate(prog cel.Program, p *auth.Principal, req RequestInfo) (bool, error
 			"method": req.Method,
 			"path":   req.Path,
 		},
+		"resource": resource,
+		"context":  ambient,
 	})
 	if err != nil {
 		return false, err

@@ -7,6 +7,9 @@ import (
 	"log/slog"
 	"testing"
 
+	"librevita.org/internal/core/auth"
+	"librevita.org/internal/core/policy"
+
 	_ "modernc.org/sqlite"
 
 	"librevita.org/internal/core/database"
@@ -30,7 +33,14 @@ func openDB(t *testing.T) *sql.DB {
 
 func newService(t *testing.T, db *sql.DB) *usecase.Service {
 	t.Helper()
-	return usecase.NewService(db, slog.New(slog.DiscardHandler))
+	policies, err := policy.NewPolicyEngine(db, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := policies.Load(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	return usecase.NewService(db, slog.New(slog.DiscardHandler), policies)
 }
 
 func orEmpty(s *string) string {
@@ -267,5 +277,29 @@ func TestGetWithCreatorMissingUser(t *testing.T) {
 	}
 	if row.CreatedByEmail != nil {
 		t.Fatalf("CreatedByEmail = %q, want empty for unknown user", *row.CreatedByEmail)
+	}
+}
+
+func TestAuthorizePatientEdit(t *testing.T) {
+	db := openDB(t)
+	svc := newService(t, db)
+	ctx := context.Background()
+
+	admin := &auth.Principal{ID: "01990000-0000-7000-8000-000000000001", Email: "admin@c.org", Name: "Admin", Role: auth.RoleAdmin}
+	owner := &auth.Principal{ID: "01990000-0000-7000-8000-000000000002", Email: "owner@c.org", Name: "Owner", Role: auth.RolePhysician}
+	other := &auth.Principal{ID: "01990000-0000-7000-8000-000000000003", Email: "other@c.org", Name: "Other", Role: auth.RolePhysician}
+
+	pt, err := svc.Create(ctx, "clinic-1", owner.ID, validInput())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.AuthorizePatientEdit(ctx, admin, pt.ID, pt.CreatedBy, pt.Status); err != nil {
+		t.Errorf("admin edit denied: %v", err)
+	}
+	if err := svc.AuthorizePatientEdit(ctx, owner, pt.ID, pt.CreatedBy, pt.Status); err != nil {
+		t.Errorf("owner edit denied: %v", err)
+	}
+	if err := svc.AuthorizePatientEdit(ctx, other, pt.ID, pt.CreatedBy, pt.Status); !errors.Is(err, usecase.ErrForbidden) {
+		t.Errorf("other physician err = %v, want ErrForbidden", err)
 	}
 }

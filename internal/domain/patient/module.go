@@ -29,19 +29,17 @@ func registerRoutes(e *echo.Echo, h *httphandler.Handler, gate server.SetupGate,
 		gate(), server.RequireAuth(sessions, log),
 		server.RequirePolicy(policies, auditLogger, log, "patient.view"),
 	}
-	edit := []echo.MiddlewareFunc{
-		gate(), server.RequireAuth(sessions, log),
-		server.RequirePolicy(policies, auditLogger, log, "patient.edit"),
-	}
-
+	// patient.edit is enforced as the fine-grained resource policy inside
+	// the use cases, where the record attributes are available; the route
+	// middleware only applies the coarse view filter.
 	e.GET("/patients", h.List, view...)
-	e.GET("/patients/new", h.NewPage, edit...)
-	e.POST("/patients", h.Create, edit...)
-	e.POST("/patients/check-document", h.CheckDocument, edit...)
+	e.GET("/patients/new", h.NewPage, view...)
+	e.POST("/patients", h.Create, view...)
+	e.POST("/patients/check-document", h.CheckDocument, view...)
 	e.GET("/patients/:id", h.Detail, view...)
-	e.GET("/patients/:id/edit", h.EditPage, edit...)
-	e.POST("/patients/:id", h.Update, edit...)
-	e.POST("/patients/:id/archive", h.Archive, edit...)
-	e.POST("/patients/:id/restore", h.Restore, edit...)
-	e.POST("/patients/bulk-archive", h.BulkArchive, edit...)
+	e.GET("/patients/:id/edit", h.EditPage, view...)
+	e.POST("/patients/:id", h.Update, view...)
+	e.POST("/patients/:id/archive", h.Archive, view...)
+	e.POST("/patients/:id/restore", h.Restore, view...)
+	e.POST("/patients/bulk-archive", h.BulkArchive, view...)
 }

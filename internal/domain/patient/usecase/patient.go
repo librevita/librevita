@@ -3,17 +3,19 @@
 package usecase
 
 import (
-	"net/mail"
-	"time"
 	"context"
 	"database/sql"
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/mail"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 
+	"librevita.org/internal/core/auth"
+	"librevita.org/internal/core/policy"
 	"librevita.org/internal/domain/patient/repository"
 )
 
@@ -61,14 +63,38 @@ type PatientInput struct {
 
 // Service persists and validates patient records.
 type Service struct {
-	db  *sql.DB
-	q   *repository.Queries
-	log *slog.Logger
+	db       *sql.DB
+	q        *repository.Queries
+	log      *slog.Logger
+	policies *policy.PolicyEngine
 }
 
 // NewService is the Fx provider.
-func NewService(db *sql.DB, log *slog.Logger) *Service {
-	return &Service{db: db, q: repository.New(db), log: log}
+func NewService(db *sql.DB, log *slog.Logger, policies *policy.PolicyEngine) *Service {
+	return &Service{db: db, q: repository.New(db), log: log, policies: policies}
+}
+
+// ErrForbidden reports a resource-level policy denial.
+var ErrForbidden = errors.New("usecase: permission denied")
+
+// AuthorizePatientEdit evaluates the fine-grained patient.edit policy
+// against the record itself: an admin edits anything, a physician only
+// the patients they registered. Callers audit the denial.
+func (s *Service) AuthorizePatientEdit(ctx context.Context, principal *auth.Principal, id string, createdBy *string, status string) error {
+	resource := map[string]any{
+		"id":         id,
+		"created_by": orEmpty(createdBy),
+		"status":     status,
+	}
+	allowed, err := s.policies.AllowedResource(ctx, "patient.edit", principal,
+		policy.RequestInfo{Method: "POST", Path: "/patients/" + id}, resource, nil)
+	if err != nil {
+		return fmt.Errorf("usecase: authorize patient edit: %w", err)
+	}
+	if !allowed {
+		return ErrForbidden
+	}
+	return nil
 }
 
 // Create validates in and inserts a patient for the clinic, recording
@@ -273,4 +299,11 @@ func strPtr(s string) *string {
 		return nil
 	}
 	return &s
+}
+
+func orEmpty(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
 }
