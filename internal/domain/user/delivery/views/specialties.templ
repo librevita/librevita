@@ -36,7 +36,7 @@ templ SpecialtiesPage(token string, p *auth.Principal, rows []SpecialtyRow, errM
 						<li>
 							<div class="flex items-center">
 								<svg class="h-6 w-6 text-gray-400" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"></path></svg>
-								<a href="/admin/users" class="ml-1 text-gray-700 hover:text-indigo-600 md:ml-2 dark:text-gray-300 dark:hover:text-white">Users</a>
+								<a href="/users" class="ml-1 text-gray-700 hover:text-indigo-600 md:ml-2 dark:text-gray-300 dark:hover:text-white">Users</a>
 							</div>
 						</li>
 						<li>
@@ -48,7 +48,7 @@ templ SpecialtiesPage(token string, p *auth.Principal, rows []SpecialtyRow, errM
 					</ol>
 				</nav>
 				<h1 class="mb-4 text-xl font-semibold text-gray-900 sm:text-2xl dark:text-white">Specialties</h1>
-				<form method="post" hx-post="/admin/specialties" hx-target="this" hx-swap="outerHTML" class="flex max-w-md items-center gap-2">
+				<form method="post" hx-post="/specialties" hx-target="this" hx-swap="outerHTML" class="flex max-w-md items-center gap-2">
 					<input type="hidden" name="_csrf" value={ token }>
 					@components.Input("name", "pl-3", templ.Attributes{ "type": "text", "placeholder": "e.g. Psychologist", "required": true })
 					@components.Button("primary", "Add specialty", templ.Attributes{ "type": "submit" })
@@ -72,7 +72,7 @@ templ SpecialtiesPage(token string, p *auth.Principal, rows []SpecialtyRow, errM
 									<tr class="hover:bg-gray-100 dark:hover:bg-gray-700">
 										<td class="p-4 text-base font-medium text-gray-900 dark:text-white">{ sp.Name }</td>
 										<td class="p-4 text-right">
-											<form method="post" action={ "/admin/specialties/" + sp.ID + "/delete" } class="inline">
+											<form method="post" action={ "/specialties/" + sp.ID + "/delete" } class="inline">
 												<input type="hidden" name="_csrf" value={ token }>
 												@components.Button("danger", "Delete", templ.Attributes{ "type": "submit" })
 											</form>

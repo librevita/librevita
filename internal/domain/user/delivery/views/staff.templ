@@ -58,7 +58,7 @@ templ StaffPage(token string, p *auth.Principal, rows []PhysicianRow, errMsg str
 				<h1 class="mb-4 text-xl font-semibold text-gray-900 sm:text-2xl dark:text-white">Physicians</h1>
 				if p != nil && p.Role == auth.RoleAdmin {
 					<div class="flex items-center gap-2">
-						@components.ButtonLink("secondary", "/admin/users/new", "New physician account", nil)
+						@components.ButtonLink("secondary", "/users/new", "New physician account", nil)
 					</div>
 				}
 			</div>

@@ -192,9 +192,9 @@ templ Home(token string, p *auth.Principal, stats DashboardStats) {
 						}
 					</dl>
 					if p != nil && p.Role == auth.RoleAdmin {
-						<a class="mt-4 inline-flex items-center rounded-lg p-2 text-sm font-medium text-indigo-700 hover:bg-gray-100 dark:text-indigo-400 dark:hover:bg-gray-700" href="/admin/policies">Access policies</a>
+						<a class="mt-4 inline-flex items-center rounded-lg p-2 text-sm font-medium text-indigo-700 hover:bg-gray-100 dark:text-indigo-400 dark:hover:bg-gray-700" href="/policies">Access policies</a>
 					}
-					}
+				}
 				</section>
 			</div>
 		</div>
@@ -237,20 +237,6 @@ templ ActivityFeed(activity []ActivityRow, cursor int64) {
 
 func itoa(n int64) string {
 	return strconv.FormatInt(n, 10)
-}
-
-templ Admin(token string, p *auth.Principal) {
-	@layouts.App("Admin area", token, p, "admin") {
-		<div class="mx-auto max-w-4xl p-4 lg:p-6">
-			<p class="text-sm text-gray-600">
-				Only users with the <strong class="text-gray-900">admin</strong> role can see this page.
-			</p>
-			<nav class="mt-6 flex flex-wrap gap-3">
-				<a class="btn" href="/admin/policies">Access policies</a>
-				<a class="btn-secondary" href="/">Back to dashboard</a>
-			</nav>
-		</div>
-	}
 }
 
 func dotColor(result string) string {

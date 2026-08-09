@@ -347,10 +347,6 @@ func (h *Handler) ProfilePage(c echo.Context) error {
 }
 
 // Admin renders the admin-only area.
-func (h *Handler) Admin(c echo.Context) error {
-	return server.Render(c, http.StatusOK, views.Admin(server.CSRFToken(c, h.csrf), server.Principal(c)))
-}
-
 // AdminPoliciesPage lists the dynamic CEL policies for editing, each with
 // its recent change history.
 func (h *Handler) AdminPoliciesPage(c echo.Context) error {
@@ -576,7 +572,7 @@ func (h *Handler) UserCreate(c echo.Context) error {
 		Result: audit.ResultSuccess, Detail: "role: " + in.Role,
 		IP: c.RealIP(), RequestID: c.Response().Header().Get(echo.HeaderXRequestID),
 	})
-	return server.HtmxRedirect(c, "/admin/users")
+	return server.HtmxRedirect(c, "/users")
 }
 
 // UserEditPage renders the account edit form with the assigned
@@ -658,7 +654,7 @@ func (h *Handler) UserUpdate(c echo.Context) error {
 		Result: audit.ResultSuccess, Detail: h.userChanges(before, user, in),
 		IP: c.RealIP(), RequestID: c.Response().Header().Get(echo.HeaderXRequestID),
 	})
-	return server.HtmxRedirect(c, "/admin/users")
+	return server.HtmxRedirect(c, "/users")
 }
 
 // userChanges renders the changed fields for the audit detail. The
@@ -816,7 +812,7 @@ func (h *Handler) SpecialtyCreate(c echo.Context) error {
 		Result: audit.ResultSuccess, Detail: specialty.Name,
 		IP: c.RealIP(), RequestID: c.Response().Header().Get(echo.HeaderXRequestID),
 	})
-	return server.HtmxRedirect(c, "/admin/specialties")
+	return server.HtmxRedirect(c, "/specialties")
 }
 
 // SpecialtyDelete removes a specialty from the catalog.
@@ -836,7 +832,7 @@ func (h *Handler) SpecialtyDelete(c echo.Context) error {
 		Result: audit.ResultSuccess,
 		IP: c.RealIP(), RequestID: c.Response().Header().Get(echo.HeaderXRequestID),
 	})
-	return server.HtmxRedirect(c, "/admin/specialties")
+	return server.HtmxRedirect(c, "/specialties")
 }
 
 // RolesPage lists the role catalog for the administrator.
@@ -884,7 +880,7 @@ func (h *Handler) RoleCreate(c echo.Context) error {
 		Result: audit.ResultSuccess, Detail: role.Name,
 		IP: c.RealIP(), RequestID: c.Response().Header().Get(echo.HeaderXRequestID),
 	})
-	return server.HtmxRedirect(c, "/admin/roles")
+	return server.HtmxRedirect(c, "/roles")
 }
 
 // RoleRename renames a non-system role, refusing names still referenced
@@ -931,7 +927,7 @@ func (h *Handler) RoleRename(c echo.Context) error {
 		Result: audit.ResultSuccess, Detail: role.Name,
 		IP: c.RealIP(), RequestID: c.Response().Header().Get(echo.HeaderXRequestID),
 	})
-	return server.HtmxRedirect(c, "/admin/roles")
+	return server.HtmxRedirect(c, "/roles")
 }
 
 // RoleClinical toggles a non-system role's clinical flag.
@@ -957,7 +953,7 @@ func (h *Handler) RoleClinical(c echo.Context) error {
 		Result: audit.ResultSuccess, Detail: "clinical flag changed",
 		IP: c.RealIP(), RequestID: c.Response().Header().Get(echo.HeaderXRequestID),
 	})
-	return server.HtmxRedirect(c, "/admin/roles")
+	return server.HtmxRedirect(c, "/roles")
 }
 
 // RoleDelete removes a non-system role that no account uses.
@@ -986,7 +982,7 @@ func (h *Handler) RoleDelete(c echo.Context) error {
 		Result: audit.ResultSuccess,
 		IP: c.RealIP(), RequestID: c.Response().Header().Get(echo.HeaderXRequestID),
 	})
-	return server.HtmxRedirect(c, "/admin/roles")
+	return server.HtmxRedirect(c, "/roles")
 }
 
 
