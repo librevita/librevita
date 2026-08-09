@@ -61,7 +61,7 @@ func (h *Handler) StaffEditPage(c echo.Context) error {
 		}
 		return err
 	}
-	if user.Role != auth.RolePhysician.String() {
+	if user.RoleIsClinical != 1 {
 		return echo.NewHTTPError(http.StatusNotFound)
 	}
 	clinicID, err := h.clocks.ClinicID(ctx)
@@ -310,7 +310,7 @@ func (h *Handler) applyStaffChange(ctx context.Context, id string, change usecas
 		return err
 	}
 	if _, err := h.svc.UpdateUser(ctx, id, actorID, usecase.UpdateUserInput{
-		Name: change.Name, Email: change.Email, Role: current.Role, Active: current.Active == 1,
+		Name: change.Name, Email: change.Email, Role: current.RoleName, Active: current.Active == 1,
 	}); err != nil {
 		return err
 	}

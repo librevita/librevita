@@ -212,7 +212,7 @@ func TestConcurrentRegistrationCreatesNoAdmins(t *testing.T) {
 	}
 
 	var admins int
-	if err := db.QueryRow(`SELECT COUNT(*) FROM users WHERE role = 'admin'`).Scan(&admins); err != nil {
+	if err := db.QueryRow(`SELECT COUNT(*) FROM users u JOIN roles r ON r.id = u.role_id WHERE r.name = 'admin'`).Scan(&admins); err != nil {
 		t.Fatal(err)
 	}
 	if admins != 0 {
@@ -312,7 +312,7 @@ func TestOnboardCreatesAdminAndClinic(t *testing.T) {
 	}
 
 	var admins int
-	if err := db.QueryRow(`SELECT COUNT(*) FROM users WHERE role = 'admin'`).Scan(&admins); err != nil {
+	if err := db.QueryRow(`SELECT COUNT(*) FROM users u JOIN roles r ON r.id = u.role_id WHERE r.name = 'admin'`).Scan(&admins); err != nil {
 		t.Fatal(err)
 	}
 	if admins != 1 {
@@ -380,7 +380,7 @@ func TestConcurrentOnboardSingleWinner(t *testing.T) {
 	}
 
 	var admins int
-	if err := db.QueryRow(`SELECT COUNT(*) FROM users WHERE role = 'admin'`).Scan(&admins); err != nil {
+	if err := db.QueryRow(`SELECT COUNT(*) FROM users u JOIN roles r ON r.id = u.role_id WHERE r.name = 'admin'`).Scan(&admins); err != nil {
 		t.Fatal(err)
 	}
 	if admins != 1 {

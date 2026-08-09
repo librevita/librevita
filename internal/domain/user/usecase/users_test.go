@@ -19,7 +19,11 @@ func TestCreateUser(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateUser: %v", err)
 	}
-	if user.Role != "physician" || user.DisplayName != "Dr. Lima" {
+	loaded, err := svc.GetUser(ctx, user.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.RoleName != "physician" || user.DisplayName != "Dr. Lima" {
 		t.Errorf("CreateUser = %+v, want physician/Dr. Lima", user)
 	}
 	if user.Active != 1 {
@@ -74,7 +78,11 @@ func TestUpdateUserRoleAndStatus(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpdateUser: %v", err)
 	}
-	if updated.DisplayName != "Nurse Chefe" || updated.Role != "physician" || updated.Active != 0 {
+	loaded, err := svc.GetUser(ctx, staff.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.DisplayName != "Nurse Chefe" || loaded.RoleName != "physician" || updated.Active != 0 {
 		t.Errorf("UpdateUser = %+v", updated)
 	}
 
@@ -388,5 +396,74 @@ func TestListPhysicians(t *testing.T) {
 	}
 	if rows[0].Specialties != "Psychologist" {
 		t.Errorf("joined specialties = %q, want Psychologist", rows[0].Specialties)
+	}
+}
+
+func TestRolesCRUD(t *testing.T) {
+	db := openAuthDB(t)
+	svc := newService(t, db)
+	ctx := context.Background()
+
+	// The four system roles are seeded by the migration.
+	rows, err := svc.ListRoles(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 4 {
+		t.Fatalf("ListRoles = %d, want 4 seeded roles", len(rows))
+	}
+
+	psy, err := svc.CreateRole(ctx, "psychologist", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.CreateRole(ctx, " psychologist ", true); !errors.Is(err, usecase.ErrDuplicateRole) {
+		t.Errorf("duplicate role err = %v, want ErrDuplicateRole", err)
+	}
+
+	// System roles cannot be renamed or deleted.
+	if _, err := svc.RenameRole(ctx, rows[0].ID, "director"); !errors.Is(err, usecase.ErrSystemRole) {
+		t.Errorf("rename system err = %v, want ErrSystemRole", err)
+	}
+	if err := svc.DeleteRole(ctx, rows[0].ID); !errors.Is(err, usecase.ErrSystemRole) {
+		t.Errorf("delete system err = %v, want ErrSystemRole", err)
+	}
+
+	// A role in use cannot be deleted.
+	staff, err := svc.CreateUser(ctx, usecase.CreateUserInput{
+		Name: "Psy", Email: "psy@example.org", Password: "senha-segura", Role: "psychologist",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = staff
+	if err := svc.DeleteRole(ctx, psy.ID); !errors.Is(err, usecase.ErrRoleInUse) {
+		t.Errorf("delete in-use err = %v, want ErrRoleInUse", err)
+	}
+
+	// Rename works on custom roles and the account reflects it.
+	renamed, err := svc.RenameRole(ctx, psy.ID, "psychotherapist")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if renamed.Name != "psychotherapist" {
+		t.Errorf("renamed = %q, want psychotherapist", renamed.Name)
+	}
+	loaded, err := svc.GetUser(ctx, staff.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.RoleName != "psychotherapist" {
+		t.Errorf("account role after rename = %q, want psychotherapist", loaded.RoleName)
+	}
+
+	// The custom role works in account creation, so it stays in use and
+	// cannot be deleted; an unused role can.
+	spare, err := svc.CreateRole(ctx, "spare", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.DeleteRole(ctx, spare.ID); err != nil {
+		t.Fatalf("delete unused role: %v", err)
 	}
 }

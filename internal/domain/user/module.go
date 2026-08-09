@@ -71,6 +71,11 @@ func registerRoutes(e *echo.Echo, h *httphandler.Handler, sessions *auth.Session
 	e.GET("/admin/specialties", h.SpecialtiesPage, gate, server.RequireAuth(sessions, log), server.RequirePolicy(policies, auditLogger, log, "users.manage"))
 	e.POST("/admin/specialties", h.SpecialtyCreate, gate, server.RequireAuth(sessions, log), server.RequirePolicy(policies, auditLogger, log, "users.manage"))
 	e.POST("/admin/specialties/:id/delete", h.SpecialtyDelete, gate, server.RequireAuth(sessions, log), server.RequirePolicy(policies, auditLogger, log, "users.manage"))
+	e.GET("/admin/roles", h.RolesPage, gate, server.RequireAuth(sessions, log), server.RequirePolicy(policies, auditLogger, log, "users.manage"))
+	e.POST("/admin/roles", h.RoleCreate, gate, server.RequireAuth(sessions, log), server.RequirePolicy(policies, auditLogger, log, "users.manage"))
+	e.POST("/admin/roles/:id/rename", h.RoleRename, gate, server.RequireAuth(sessions, log), server.RequirePolicy(policies, auditLogger, log, "users.manage"))
+	e.POST("/admin/roles/:id/clinical", h.RoleClinical, gate, server.RequireAuth(sessions, log), server.RequirePolicy(policies, auditLogger, log, "users.manage"))
+	e.POST("/admin/roles/:id/delete", h.RoleDelete, gate, server.RequireAuth(sessions, log), server.RequirePolicy(policies, auditLogger, log, "users.manage"))
 
 	// Physician directory and the approval workflow.
 	e.GET("/staff", h.StaffPage, gate, server.RequireAuth(sessions, log), server.RequirePolicy(policies, auditLogger, log, "staff.view"))

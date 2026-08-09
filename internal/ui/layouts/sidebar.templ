@@ -24,6 +24,7 @@ templ Sidebar(principal *auth.Principal, active string) {
 					@navLink("/admin", "Admin area", "admin", active == "admin")
 					@navLink("/admin/users", "Users", "user", active == "users")
 					@navLink("/admin/specialties", "Specialties", "policies", active == "specialties")
+					@navLink("/admin/roles", "Roles", "user", active == "roles")
 					@navLink("/staff/requests", "Staff requests", "user", active == "staff-requests")
 					@navLink("/admin/policies", "Access policies", "policies", active == "policies")
 				</div>

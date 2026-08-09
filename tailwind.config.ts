@@ -16,7 +16,10 @@ const config: Config = {
     'btn',
     'btn-secondary',
     'btn-danger',
-    { pattern: /^(bg|text)-(purple|blue|indigo)-(100|800|900|300)$/, variants: ['dark'] },
+    {
+      pattern: /^(bg|text)-(gray|red|indigo|green|blue|purple|amber)-(100|800|900|300)$/,
+      variants: ['dark'],
+    },
     { pattern: /^(bg|text)-gray-(100|800|700|300)$/, variants: ['dark'] },
   ],
   theme: {
