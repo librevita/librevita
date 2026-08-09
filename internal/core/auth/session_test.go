@@ -41,8 +41,8 @@ func seedUser(t *testing.T, db *sql.DB, id string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.Exec(`INSERT INTO users (id, email, password_hash, display_name, role) VALUES (?, ?, ?, ?, ?)`,
-		id, "user@example.org", hash, "Test User", RoleAdmin.String()); err != nil {
+	if _, err := db.Exec(`INSERT INTO users (id, email, password_hash, display_name, role_id) VALUES (?, ?, ?, ?, ?)`,
+		id, "user@example.org", hash, "Test User", "00000000-0000-7000-8000-000000000001"); err != nil {
 		t.Fatalf("seed user: %v", err)
 	}
 }

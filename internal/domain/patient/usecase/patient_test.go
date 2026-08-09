@@ -243,8 +243,8 @@ func TestCreateRecordsRegistrar(t *testing.T) {
 	db := openDB(t)
 	svc := newService(t, db)
 
-	if _, err := db.Exec(`INSERT INTO users (id, email, password_hash, display_name, role)
-		VALUES ('user-1', 'ana@example.org', 'x', 'Ana Souza', 'admin')`); err != nil {
+	if _, err := db.Exec(`INSERT INTO users (id, email, password_hash, display_name, role_id)
+		VALUES ('user-1', 'ana@example.org', 'x', 'Ana Souza', '00000000-0000-7000-8000-000000000001')`); err != nil {
 		t.Fatal(err)
 	}
 	pt, err := svc.Create(context.Background(), "clinic-1", "user-1", validInput())

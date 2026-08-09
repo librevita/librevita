@@ -65,8 +65,8 @@ func TestRequireAuthAcceptsValidSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.Exec(`INSERT INTO users (id, email, password_hash, display_name, role) VALUES (?, ?, ?, ?, ?)`,
-		"01990000-0000-7000-8000-000000000001", "user@example.org", hash, "Test User", auth.RoleAdmin.String()); err != nil {
+	if _, err := db.Exec(`INSERT INTO users (id, email, password_hash, display_name, role_id) VALUES (?, ?, ?, ?, ?)`,
+		"01990000-0000-7000-8000-000000000001", "user@example.org", hash, "Test User", "00000000-0000-7000-8000-000000000001"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -233,8 +233,8 @@ func TestNotFoundAuthenticated(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.Exec(`INSERT INTO users (id, email, password_hash, display_name, role) VALUES (?, ?, ?, ?, ?)`,
-		"01990000-0000-7000-8000-000000000001", "user@example.org", hash, "Test User", auth.RoleAdmin.String()); err != nil {
+	if _, err := db.Exec(`INSERT INTO users (id, email, password_hash, display_name, role_id) VALUES (?, ?, ?, ?, ?)`,
+		"01990000-0000-7000-8000-000000000001", "user@example.org", hash, "Test User", "00000000-0000-7000-8000-000000000001"); err != nil {
 		t.Fatal(err)
 	}
 	token, err := sessions.Create(context.Background(), auth.Principal{ID: "01990000-0000-7000-8000-000000000001", Email: "user@example.org", Name: "Test User", Role: auth.RoleAdmin})

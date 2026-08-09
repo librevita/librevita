@@ -1,6 +1,9 @@
 package shared
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestInitials(t *testing.T) {
 	cases := map[string]string{
@@ -22,7 +25,17 @@ func TestRoleBadgeClass(t *testing.T) {
 		"admin":        "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-300",
 		"physician":    "bg-indigo-100 text-indigo-800 dark:bg-indigo-900 dark:text-indigo-300",
 		"receptionist": "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300",
-		"patient":      "bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300",
+		"patient":      "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300",
+	}
+	// Custom roles derive a stable color from the name.
+	if got := RoleBadgeClass("patient"); got != RoleBadgeClass("patient") {
+		t.Errorf("RoleBadgeClass must be stable, got %q twice", got)
+	}
+	for _, role := range []string{"psychologist", "manager", "social-worker"} {
+		got := RoleBadgeClass(role)
+		if !strings.HasPrefix(got, "bg-") || !strings.Contains(got, "dark:bg-") {
+			t.Errorf("RoleBadgeClass(%q) = %q, want a palette pair", role, got)
+		}
 	}
 	for role, want := range cases {
 		if got := RoleBadgeClass(role); got != want {

@@ -19,24 +19,39 @@ const migrationsDir = "migrations"
 // Migrations are embedded in the binary and are safe to run on every boot.
 
 func Migrate(ctx context.Context, db *sql.DB, log *slog.Logger) error {
+	provider, err := newProvider(db, log)
+	if err != nil {
+		return err
+	}
+	if _, err := provider.Up(ctx); err != nil {
+		return fmt.Errorf("migrate: goose up: %w", err)
+	}
+	return nil
+}
+
+// MigrateTo applies migrations up to the given version. It supports
+// controlled upgrades and tests of incremental migrations.
+func MigrateTo(ctx context.Context, db *sql.DB, version int64, log *slog.Logger) error {
+	provider, err := newProvider(db, log)
+	if err != nil {
+		return err
+	}
+	if _, err := provider.UpTo(ctx, version); err != nil {
+		return fmt.Errorf("migrate: goose up to %d: %w", version, err)
+	}
+	return nil
+}
+
+func newProvider(db *sql.DB, log *slog.Logger) (*goose.Provider, error) {
 	migrations, err := fs.Sub(dbassets.Migrations, migrationsDir)
 	if err != nil {
-		return fmt.Errorf("migrate: embedded filesystem: %w", err)
+		return nil, fmt.Errorf("migrate: embedded filesystem: %w", err)
 	}
-
-	provider, err := goose.NewProvider(
+	return goose.NewProvider(
 		goose.DialectSQLite3,
 		db,
 		migrations,
 		goose.WithSlog(log),
 		goose.WithVerbose(true),
 	)
-	if err != nil {
-		return fmt.Errorf("migrate: provider: %w", err)
-	}
-
-	if _, err := provider.Up(ctx); err != nil {
-		return fmt.Errorf("migrate: goose up: %w", err)
-	}
-	return nil
 }

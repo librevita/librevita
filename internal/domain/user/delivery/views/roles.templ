@@ -1,0 +1,144 @@
+package views
+
+import (
+	"librevita.org/internal/core/auth"
+	"librevita.org/internal/ui/components"
+	"librevita.org/internal/ui/layouts"
+)
+
+// RoleView is one row of the role catalog.
+type RoleView struct {
+	ID         string
+	Name       string
+	System     bool
+	IsClinical bool
+}
+
+// RolesPage lists the relational role catalog. The four seeded roles are
+// system roles and cannot be renamed or deleted, because the CEL
+// policies reference them by name.
+templ RolesPage(token string, p *auth.Principal, rows []RoleView, errMsg string) {
+	@layouts.App("Roles", token, p, "users") {
+		<div class="w-full">
+			<div class="border-b border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
+				<nav class="mb-4" aria-label="Breadcrumb">
+					<ol class="inline-flex items-center space-x-1 text-sm font-medium md:space-x-2">
+						<li class="inline-flex items-center">
+							<a href="/" class="inline-flex items-center text-gray-700 hover:text-indigo-600 dark:text-gray-300 dark:hover:text-white">
+								<svg class="mr-2.5 h-5 w-5" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true"><path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z"></path></svg>
+								Home
+							</a>
+						</li>
+						<li>
+							<div class="flex items-center">
+								<svg class="h-6 w-6 text-gray-400" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"></path></svg>
+								<a href="/admin/users" class="ml-1 text-gray-700 hover:text-indigo-600 md:ml-2 dark:text-gray-300 dark:hover:text-white">Users</a>
+							</div>
+						</li>
+						<li>
+							<div class="flex items-center">
+								<svg class="h-6 w-6 text-gray-400" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"></path></svg>
+								<span class="ml-1 text-gray-400 md:ml-2 dark:text-gray-500" aria-current="page">Roles</span>
+							</div>
+						</li>
+					</ol>
+				</nav>
+				<h1 class="mb-4 text-xl font-semibold text-gray-900 sm:text-2xl dark:text-white">Roles</h1>
+				<form method="post" hx-post="/admin/roles" hx-target="this" hx-swap="outerHTML" class="flex max-w-lg items-center gap-2">
+					<input type="hidden" name="_csrf" value={ token }>
+					@components.Input("name", "pl-3", templ.Attributes{ "type": "text", "placeholder": "e.g. psychologist", "required": true })
+					<label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+						@components.Checkbox("clinical", "", templ.Attributes{ "value": "on" })
+						Clinical
+					</label>
+					@components.Button("primary", "Add role", templ.Attributes{ "type": "submit" })
+				</form>
+			</div>
+			<div class="flex flex-col p-4">
+				if errMsg != "" {
+					<div class="mb-4">@components.Alert(errMsg, false)</div>
+				}
+				<div class="overflow-hidden shadow-sm">
+					<div class="overflow-x-auto">
+						<table class="min-w-full divide-y divide-gray-200 dark:divide-gray-600">
+							<thead class="bg-gray-100 dark:bg-gray-700">
+								<tr>
+									@components.Th("Role", "p-4")
+									@components.Th("Kind", "p-4")
+									@components.Th("Clinical", "p-4")
+									<th scope="col" class="p-4 text-right text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">Actions</th>
+								</tr>
+							</thead>
+							<tbody class="divide-y divide-gray-200 bg-white dark:divide-gray-700 dark:bg-gray-800">
+								for _, r := range rows {
+									<tr class="hover:bg-gray-100 dark:hover:bg-gray-700">
+										<td class="p-4 text-base font-medium text-gray-900 dark:text-white">{ r.Name }</td>
+										<td class="p-4">
+											if r.System {
+												<span class="inline-flex items-center rounded-md bg-gray-100 px-2.5 py-0.5 text-xs font-medium text-gray-600 dark:bg-gray-700 dark:text-gray-300">System</span>
+											} else {
+												<span class="inline-flex items-center rounded-md bg-indigo-100 px-2.5 py-0.5 text-xs font-medium text-indigo-800 dark:bg-indigo-900 dark:text-indigo-300">Custom</span>
+											}
+										</td>
+										<td class="p-4">
+											if r.System {
+												if r.IsClinical {
+													<span class="inline-flex items-center rounded-md bg-green-100 px-2.5 py-0.5 text-xs font-medium text-green-800 dark:bg-green-900 dark:text-green-300">Yes</span>
+												} else {
+													<span class="text-sm text-gray-400 dark:text-gray-500">-</span>
+												}
+											} else {
+												<form method="post" action={ "/admin/roles/" + r.ID + "/clinical" } class="inline">
+													<input type="hidden" name="_csrf" value={ token }>
+													<input type="hidden" name="clinical" value={ clinicalValue(r.IsClinical) }>
+													@components.Button(clinicalButtonKind(r.IsClinical), clinicalButtonLabel(r.IsClinical), templ.Attributes{ "type": "submit" })
+												</form>
+											}
+										</td>
+										<td class="p-4 text-right">
+											if !r.System {
+												<div class="flex items-center justify-end gap-2">
+													<form method="post" action={ "/admin/roles/" + r.ID + "/rename" } class="inline">
+														<input type="hidden" name="_csrf" value={ token }>
+														@components.Input("name", "py-1", templ.Attributes{ "type": "text", "value": r.Name, "required": true, "aria-label": "New name" })
+														@components.Button("secondary", "Rename", templ.Attributes{ "type": "submit" })
+													</form>
+													<form method="post" action={ "/admin/roles/" + r.ID + "/delete" } class="inline">
+														<input type="hidden" name="_csrf" value={ token }>
+														@components.Button("danger", "Delete", templ.Attributes{ "type": "submit" })
+													</form>
+												</div>
+											}
+										</td>
+									</tr>
+								}
+							</tbody>
+						</table>
+					</div>
+				</div>
+			</div>
+		</div>
+	}
+}
+
+
+func clinicalValue(isClinical bool) string {
+	if isClinical {
+		return ""
+	}
+	return "on"
+}
+
+func clinicalButtonKind(isClinical bool) string {
+	if isClinical {
+		return "secondary"
+	}
+	return "primary"
+}
+
+func clinicalButtonLabel(isClinical bool) string {
+	if isClinical {
+		return "Remove"
+	}
+	return "Mark clinical"
+}

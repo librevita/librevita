@@ -202,14 +202,14 @@ templ userStatusCell(u UserListRow) {
 
 // UserFormPage renders the create (id empty) or edit form with the
 // specialty checkboxes.
-templ UserFormPage(token string, p *auth.Principal, id string, values UserFormValues, specialties []SpecialtyView, errMsg string) {
+templ UserFormPage(token string, p *auth.Principal, id string, values UserFormValues, roles []RoleView, specialties []SpecialtyView, errMsg string) {
 	@layouts.App(userFormTitle(id), token, p, "users") {
 		<div class="mx-auto max-w-xl p-4 lg:p-6">
 			@components.Card() {
 				@components.CardHeader(userFormTitle(id)) {
 					<a class="inline-flex items-center rounded-lg p-2 text-sm font-medium text-indigo-700 hover:bg-gray-100 dark:text-indigo-400 dark:hover:bg-gray-700" href="/admin/users">Back to users</a>
 				}
-				@UserForm(token, id, values, specialties, errMsg)
+				@UserForm(token, id, values, roles, specialties, errMsg)
 			}
 		</div>
 	}
@@ -219,7 +219,7 @@ templ UserFormPage(token string, p *auth.Principal, id string, values UserFormVa
 // so validation errors keep the typed values. The specialty checkboxes
 // are shown when the catalog has entries, so a physician can carry more
 // than one specialty.
-templ UserForm(token string, id string, values UserFormValues, specialties []SpecialtyView, errMsg string) {
+templ UserForm(token string, id string, values UserFormValues, roles []RoleView, specialties []SpecialtyView, errMsg string) {
 	<form method="post" action={ userFormAction(id) } hx-post={ userFormAction(id) } hx-target="this" hx-swap="outerHTML" class="space-y-4">
 		<input type="hidden" name="_csrf" value={ token }>
 		if errMsg != "" {
@@ -238,10 +238,9 @@ templ UserForm(token string, id string, values UserFormValues, specialties []Spe
 		}
 		@components.Field("role", "Role") {
 			@components.Select("role", "", templ.Attributes{ "id": "role", "required": true }) {
-				@roleOption("physician", "Physician", values.Role)
-				@roleOption("receptionist", "Receptionist", values.Role)
-				@roleOption("admin", "Administrator", values.Role)
-				@roleOption("patient", "Patient", values.Role)
+				for _, r := range roles {
+					@roleOption(r.Name, r.Name, values.Role)
+				}
 			}
 		}
 		if id != "" {

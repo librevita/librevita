@@ -247,7 +247,7 @@ func (h *Handler) Home(c echo.Context) error {
 		stats.LatestUsers = append(stats.LatestUsers, views.UserRow{
 			Name:   u.DisplayName,
 			Email:  u.Email,
-			Role:   u.Role,
+			Role:   u.RoleName,
 			Joined: clock.FormatStored(u.CreatedAt),
 		})
 	}
@@ -517,7 +517,7 @@ func (h *Handler) userRows(rows []repository.ListUsersRow, clock *clinic.Clock) 
 	out := make([]views.UserListRow, 0, len(rows))
 	for _, r := range rows {
 		out = append(out, views.UserListRow{
-			ID: r.ID, Name: r.DisplayName, Email: r.Email, Role: r.Role,
+			ID: r.ID, Name: r.DisplayName, Email: r.Email, Role: r.RoleName,
 			Active: r.Active, CreatedAt: clock.FormatStored(r.CreatedAt),
 		})
 	}
@@ -535,9 +535,13 @@ func (h *Handler) UserNewPage(c echo.Context) error {
 	if err != nil {
 		return err
 	}
+	roles, err := h.formRoles(ctx)
+	if err != nil {
+		return err
+	}
 	return server.Render(c, http.StatusOK, views.UserFormPage(
 		server.CSRFToken(c, h.csrf), server.Principal(c), "", views.UserFormValues{},
-		h.specialtyViews(specialties, nil), ""))
+		roles, h.specialtyViews(specialties, nil), ""))
 }
 
 // UserCreate creates a staff account.
@@ -555,10 +559,10 @@ func (h *Handler) UserCreate(c echo.Context) error {
 		switch {
 		case errors.As(err, &v):
 			return server.Render(c, http.StatusBadRequest, views.UserFormPage(
-				server.CSRFToken(c, h.csrf), server.Principal(c), "", createFormValues(in), nil, v.Msg))
+				server.CSRFToken(c, h.csrf), server.Principal(c), "", createFormValues(in), nil, nil, v.Msg))
 		case errors.Is(err, usecase.ErrEmailTaken):
 			return server.Render(c, http.StatusConflict, views.UserFormPage(
-				server.CSRFToken(c, h.csrf), server.Principal(c), "", createFormValues(in), nil, "That email is already registered"))
+				server.CSRFToken(c, h.csrf), server.Principal(c), "", createFormValues(in), nil, nil, "That email is already registered"))
 		default:
 			return err
 		}
@@ -569,7 +573,7 @@ func (h *Handler) UserCreate(c echo.Context) error {
 	h.audit.Record(ctx, audit.Event{
 		ActorID: server.ActorID(c), ActorMail: server.ActorMail(c),
 		Action: "user.create", Resource: "user:" + user.ID,
-		Result: audit.ResultSuccess, Detail: "role: " + user.Role,
+		Result: audit.ResultSuccess, Detail: "role: " + in.Role,
 		IP: c.RealIP(), RequestID: c.Response().Header().Get(echo.HeaderXRequestID),
 	})
 	return server.HtmxRedirect(c, "/admin/users")
@@ -598,10 +602,14 @@ func (h *Handler) UserEditPage(c echo.Context) error {
 	if err != nil {
 		return err
 	}
+	roles, err := h.formRoles(ctx)
+	if err != nil {
+		return err
+	}
 	return server.Render(c, http.StatusOK, views.UserFormPage(
 		server.CSRFToken(c, h.csrf), server.Principal(c), user.ID, views.UserFormValues{
-			Name: user.DisplayName, Email: user.Email, Role: user.Role, Active: user.Active == 1,
-		}, h.specialtyViews(specialties, selected), ""))
+			Name: user.DisplayName, Email: user.Email, Role: user.RoleName, Active: user.Active == 1,
+		}, roles, h.specialtyViews(specialties, selected), ""))
 }
 
 // UserUpdate applies the account changes.
@@ -627,16 +635,16 @@ func (h *Handler) UserUpdate(c echo.Context) error {
 		switch {
 		case errors.As(err, &v):
 			return server.Render(c, http.StatusBadRequest, views.UserFormPage(
-				server.CSRFToken(c, h.csrf), server.Principal(c), id, updateFormValues(in), nil, v.Msg))
+				server.CSRFToken(c, h.csrf), server.Principal(c), id, updateFormValues(in), nil, nil, v.Msg))
 		case errors.Is(err, usecase.ErrEmailTaken):
 			return server.Render(c, http.StatusConflict, views.UserFormPage(
-				server.CSRFToken(c, h.csrf), server.Principal(c), id, updateFormValues(in), nil, "That email is already registered"))
+				server.CSRFToken(c, h.csrf), server.Principal(c), id, updateFormValues(in), nil, nil, "That email is already registered"))
 		case errors.Is(err, usecase.ErrCannotDemoteSelf):
 			return server.Render(c, http.StatusBadRequest, views.UserFormPage(
-				server.CSRFToken(c, h.csrf), server.Principal(c), id, updateFormValues(in), nil, "You cannot change your own role or status"))
+				server.CSRFToken(c, h.csrf), server.Principal(c), id, updateFormValues(in), nil, nil, "You cannot change your own role or status"))
 		case errors.Is(err, usecase.ErrLastActiveAdmin):
 			return server.Render(c, http.StatusBadRequest, views.UserFormPage(
-				server.CSRFToken(c, h.csrf), server.Principal(c), id, updateFormValues(in), nil, "The system needs at least one active admin"))
+				server.CSRFToken(c, h.csrf), server.Principal(c), id, updateFormValues(in), nil, nil, "The system needs at least one active admin"))
 		default:
 			return err
 		}
@@ -653,8 +661,10 @@ func (h *Handler) UserUpdate(c echo.Context) error {
 	return server.HtmxRedirect(c, "/admin/users")
 }
 
-// userChanges renders the changed fields for the audit detail.
-func (h *Handler) userChanges(before, after *repository.User, in usecase.UpdateUserInput) string {
+// userChanges renders the changed fields for the audit detail. The
+// before row carries the role name; the submitted input carries the new
+// role name.
+func (h *Handler) userChanges(before *repository.GetUserByIDRow, after *repository.User, in usecase.UpdateUserInput) string {
 	parts := make([]string, 0, 4)
 	if before.DisplayName != after.DisplayName {
 		parts = append(parts, "name: "+before.DisplayName+" -> "+after.DisplayName)
@@ -662,8 +672,8 @@ func (h *Handler) userChanges(before, after *repository.User, in usecase.UpdateU
 	if before.Email != after.Email {
 		parts = append(parts, "email: "+before.Email+" -> "+after.Email)
 	}
-	if before.Role != after.Role {
-		parts = append(parts, "role: "+before.Role+" -> "+after.Role)
+	if before.RoleName != in.Role {
+		parts = append(parts, "role: "+before.RoleName+" -> "+in.Role)
 	}
 	if before.Active != after.Active {
 		if after.Active == 1 {
@@ -699,7 +709,7 @@ func (h *Handler) UserStatus(c echo.Context) error {
 	updated, err := h.svc.UpdateUser(ctx, id, server.ActorID(c), usecase.UpdateUserInput{
 		Name:   user.DisplayName,
 		Email:  user.Email,
-		Role:   user.Role,
+		Role:   user.RoleName,
 		Active: user.Active != 1,
 	})
 	if err != nil {
@@ -720,15 +730,16 @@ func (h *Handler) UserStatus(c echo.Context) error {
 		// OOB alert that lands in the shell's #app-alert container.
 		return server.Render(c, http.StatusOK, components.Alert(msg, true))
 	}
+	roleName := user.RoleName
 	h.audit.Record(ctx, audit.Event{
 		ActorID: server.ActorID(c), ActorMail: server.ActorMail(c),
 		Action: "user.update", Resource: "user:" + id,
-		Result: audit.ResultSuccess, Detail: h.userChanges(user, updated, usecase.UpdateUserInput{Active: updated.Active == 1}),
+		Result: audit.ResultSuccess, Detail: h.userChanges(user, updated, usecase.UpdateUserInput{Active: updated.Active == 1, Role: roleName}),
 		IP: c.RealIP(), RequestID: c.Response().Header().Get(echo.HeaderXRequestID),
 	})
 	return server.Render(c, http.StatusOK, views.UserRowOnly([]views.UserListRow{{
 		ID: updated.ID, Name: updated.DisplayName, Email: updated.Email,
-		Role: updated.Role, Active: updated.Active, CreatedAt: clock.FormatStored(user.CreatedAt),
+		Role: roleName, Active: updated.Active, CreatedAt: clock.FormatStored(user.CreatedAt),
 	}}))
 }
 
@@ -826,4 +837,182 @@ func (h *Handler) SpecialtyDelete(c echo.Context) error {
 		IP: c.RealIP(), RequestID: c.Response().Header().Get(echo.HeaderXRequestID),
 	})
 	return server.HtmxRedirect(c, "/admin/specialties")
+}
+
+// RolesPage lists the role catalog for the administrator.
+func (h *Handler) RolesPage(c echo.Context) error {
+	ctx := c.Request().Context()
+	rows, err := h.svc.ListRoles(ctx)
+	if err != nil {
+		return err
+	}
+	return server.Render(c, http.StatusOK, views.RolesPage(
+		server.CSRFToken(c, h.csrf), server.Principal(c), h.roleViews(rows), ""))
+}
+
+func (h *Handler) roleViews(rows []repository.Role) []views.RoleView {
+	out := make([]views.RoleView, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, views.RoleView{ID: r.ID, Name: r.Name, System: r.System == 1, IsClinical: r.IsClinical == 1})
+	}
+	return out
+}
+
+// RoleCreate adds a role to the catalog.
+func (h *Handler) RoleCreate(c echo.Context) error {
+	ctx := c.Request().Context()
+	role, err := h.svc.CreateRole(ctx, c.FormValue("name"), c.FormValue("clinical") == "on")
+	if err != nil {
+		msg := "Could not create the role"
+		var v *usecase.ValidationError
+		switch {
+		case errors.As(err, &v):
+			msg = v.Msg
+		case errors.Is(err, usecase.ErrDuplicateRole):
+			msg = "A role with this name already exists"
+		}
+		rows, lerr := h.svc.ListRoles(ctx)
+		if lerr != nil {
+			return lerr
+		}
+		return server.Render(c, http.StatusBadRequest, views.RolesPage(
+			server.CSRFToken(c, h.csrf), server.Principal(c), h.roleViews(rows), msg))
+	}
+	h.audit.Record(ctx, audit.Event{
+		ActorID: server.ActorID(c), ActorMail: server.ActorMail(c),
+		Action: "role.create", Resource: "role:" + role.ID,
+		Result: audit.ResultSuccess, Detail: role.Name,
+		IP: c.RealIP(), RequestID: c.Response().Header().Get(echo.HeaderXRequestID),
+	})
+	return server.HtmxRedirect(c, "/admin/roles")
+}
+
+// RoleRename renames a non-system role, refusing names still referenced
+// by active CEL policies so a policy never silently stops matching.
+func (h *Handler) RoleRename(c echo.Context) error {
+	ctx := c.Request().Context()
+	id := c.Param("id")
+	current, err := h.svc.RoleByID(ctx, id)
+	if err != nil {
+		return err
+	}
+	if policies := h.policiesReferencing(ctx, current.Name); len(policies) > 0 {
+		rows, lerr := h.svc.ListRoles(ctx)
+		if lerr != nil {
+			return lerr
+		}
+		return server.Render(c, http.StatusBadRequest, views.RolesPage(
+			server.CSRFToken(c, h.csrf), server.Principal(c), h.roleViews(rows),
+			"This role is referenced by active policies ("+strings.Join(policies, ", ")+"). Update them first."))
+	}
+	role, err := h.svc.RenameRole(ctx, id, c.FormValue("name"))
+	if err != nil {
+		msg := "Could not rename the role"
+		var v *usecase.ValidationError
+		switch {
+		case errors.As(err, &v):
+			msg = v.Msg
+		case errors.Is(err, usecase.ErrDuplicateRole):
+			msg = "A role with this name already exists"
+		case errors.Is(err, usecase.ErrSystemRole):
+			msg = "System roles cannot be renamed"
+		}
+
+		rows, lerr := h.svc.ListRoles(ctx)
+		if lerr != nil {
+			return lerr
+		}
+		return server.Render(c, http.StatusBadRequest, views.RolesPage(
+			server.CSRFToken(c, h.csrf), server.Principal(c), h.roleViews(rows), msg))
+	}
+	h.audit.Record(ctx, audit.Event{
+		ActorID: server.ActorID(c), ActorMail: server.ActorMail(c),
+		Action: "role.rename", Resource: "role:" + id,
+		Result: audit.ResultSuccess, Detail: role.Name,
+		IP: c.RealIP(), RequestID: c.Response().Header().Get(echo.HeaderXRequestID),
+	})
+	return server.HtmxRedirect(c, "/admin/roles")
+}
+
+// RoleClinical toggles a non-system role's clinical flag.
+func (h *Handler) RoleClinical(c echo.Context) error {
+	ctx := c.Request().Context()
+	id := c.Param("id")
+	err := h.svc.SetRoleClinical(ctx, id, c.FormValue("clinical") == "on")
+	if err != nil {
+		msg := "Could not update the role"
+		if errors.Is(err, usecase.ErrSystemRole) {
+			msg = "System roles cannot be changed"
+		}
+		rows, lerr := h.svc.ListRoles(ctx)
+		if lerr != nil {
+			return lerr
+		}
+		return server.Render(c, http.StatusBadRequest, views.RolesPage(
+			server.CSRFToken(c, h.csrf), server.Principal(c), h.roleViews(rows), msg))
+	}
+	h.audit.Record(ctx, audit.Event{
+		ActorID: server.ActorID(c), ActorMail: server.ActorMail(c),
+		Action: "role.update", Resource: "role:" + id,
+		Result: audit.ResultSuccess, Detail: "clinical flag changed",
+		IP: c.RealIP(), RequestID: c.Response().Header().Get(echo.HeaderXRequestID),
+	})
+	return server.HtmxRedirect(c, "/admin/roles")
+}
+
+// RoleDelete removes a non-system role that no account uses.
+func (h *Handler) RoleDelete(c echo.Context) error {
+	ctx := c.Request().Context()
+	id := c.Param("id")
+	err := h.svc.DeleteRole(ctx, id)
+	if err != nil {
+		msg := "Could not delete the role"
+		switch {
+		case errors.Is(err, usecase.ErrSystemRole):
+			msg = "System roles cannot be deleted"
+		case errors.Is(err, usecase.ErrRoleInUse):
+			msg = "This role is assigned to accounts and cannot be deleted"
+		}
+		rows, lerr := h.svc.ListRoles(ctx)
+		if lerr != nil {
+			return lerr
+		}
+		return server.Render(c, http.StatusBadRequest, views.RolesPage(
+			server.CSRFToken(c, h.csrf), server.Principal(c), h.roleViews(rows), msg))
+	}
+	h.audit.Record(ctx, audit.Event{
+		ActorID: server.ActorID(c), ActorMail: server.ActorMail(c),
+		Action: "role.delete", Resource: "role:" + id,
+		Result: audit.ResultSuccess,
+		IP: c.RealIP(), RequestID: c.Response().Header().Get(echo.HeaderXRequestID),
+	})
+	return server.HtmxRedirect(c, "/admin/roles")
+}
+
+
+// formRoles loads the role catalog for the user form select.
+func (h *Handler) formRoles(ctx context.Context) ([]views.RoleView, error) {
+	rows, err := h.svc.ListRoles(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return h.roleViews(rows), nil
+}
+
+
+// policiesReferencing returns the policy names whose expressions mention
+// the role name.
+func (h *Handler) policiesReferencing(ctx context.Context, roleName string) []string {
+	rows, err := h.policies.List(ctx)
+	if err != nil {
+		return nil
+	}
+	needle := "'" + roleName + "'"
+	var out []string
+	for _, r := range rows {
+		if strings.Contains(r.Expression, needle) {
+			out = append(out, r.Name)
+		}
+	}
+	return out
 }

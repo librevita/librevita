@@ -171,7 +171,7 @@ func (s *Service) ApproveStaffChangeRequest(ctx context.Context, id, decidedBy s
 		ID:          req.UserID,
 		Email:       change.Email,
 		DisplayName: change.Name,
-		Role:        user.Role,
+		RoleID:      user.RoleID,
 		Active:      active,
 	}); err != nil {
 		return ErrEmailInUse

@@ -1,26 +1,33 @@
 -- Queries for the user domain (authentication accounts).
 
 -- name: CreateUser :one
-INSERT INTO users (id, email, password_hash, display_name, role)
+INSERT INTO users (id, email, password_hash, display_name, role_id)
 VALUES (?, ?, ?, ?, ?)
 RETURNING *;
 
 -- name: GetUserByEmail :one
-SELECT *
-FROM users
-WHERE email = ? COLLATE NOCASE
+SELECT u.id, u.email, u.password_hash, u.display_name, u.active,
+       u.created_at, u.updated_at, u.role_id, r.name AS role_name,
+       r.is_clinical AS role_is_clinical
+FROM users u
+JOIN roles r ON r.id = u.role_id
+WHERE u.email = ? COLLATE NOCASE
 LIMIT 1;
 
 -- name: GetUserByID :one
-SELECT *
-FROM users
-WHERE id = ?
+SELECT u.id, u.email, u.password_hash, u.display_name, u.active,
+       u.created_at, u.updated_at, u.role_id, r.name AS role_name,
+       r.is_clinical AS role_is_clinical
+FROM users u
+JOIN roles r ON r.id = u.role_id
+WHERE u.id = ?
 LIMIT 1;
 
 -- name: ListRecentUsers :many
-SELECT display_name, email, role, created_at
-FROM users
-ORDER BY created_at DESC, id DESC
+SELECT u.display_name, u.email, r.name AS role_name, u.created_at
+FROM users u
+JOIN roles r ON r.id = u.role_id
+ORDER BY u.created_at DESC, u.id DESC
 LIMIT ?;
 
 -- name: CountUsers :one
@@ -29,46 +36,40 @@ FROM users;
 
 -- name: CountUsersByRole :one
 SELECT COUNT(*)
-FROM users
-WHERE role = ?;
+FROM users u
+JOIN roles r ON r.id = u.role_id
+WHERE r.name = ? COLLATE NOCASE;
 
--- name: GetMetaValue :one
-SELECT value
-FROM meta
-WHERE key = ?
-LIMIT 1;
-
--- name: SetMeta :exec
-INSERT INTO meta (key, value)
-VALUES (?, ?)
-ON CONFLICT(key) DO UPDATE SET value = excluded.value;
+-- name: CountActiveUsersByRole :one
+SELECT COUNT(*)
+FROM users u
+JOIN roles r ON r.id = u.role_id
+WHERE r.name = ? COLLATE NOCASE AND u.active = 1;
 
 -- name: ListUsers :many
-SELECT id, email, display_name, role, active, created_at
-FROM users
-WHERE (' ' || email || ' ' || display_name) LIKE '% ' || CAST(? AS TEXT) || '%'
-ORDER BY created_at DESC, id DESC
+SELECT u.id, u.email, u.display_name, u.active, u.created_at,
+       r.name AS role_name
+FROM users u
+JOIN roles r ON r.id = u.role_id
+WHERE (' ' || u.email || ' ' || u.display_name) LIKE '% ' || CAST(? AS TEXT) || '%'
+ORDER BY u.created_at DESC, u.id DESC
 LIMIT ? OFFSET ?;
 
 -- name: CountUsersMatching :one
 SELECT COUNT(*)
-FROM users
-WHERE (' ' || email || ' ' || display_name) LIKE '% ' || CAST(? AS TEXT) || '%';
+FROM users u
+JOIN roles r ON r.id = u.role_id
+WHERE (' ' || u.email || ' ' || u.display_name) LIKE '% ' || CAST(? AS TEXT) || '%';
 
 -- name: UpdateUser :one
 UPDATE users
 SET email = ?,
-display_name = ?,
-role = ?,
-active = ?,
-updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+    display_name = ?,
+    role_id = ?,
+    active = ?,
+    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
 WHERE id = ?
 RETURNING *;
-
--- name: CountActiveUsersByRole :one
-SELECT COUNT(*)
-FROM users
-WHERE role = ? AND active = 1;
 
 -- name: UpdateUserGuarded :one
 -- Applies the update only when the guard flag is zero or more than one
@@ -77,50 +78,21 @@ WHERE role = ? AND active = 1;
 UPDATE users
 SET email = ?,
     display_name = ?,
-    role = ?,
+    role_id = ?,
     active = ?,
     updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
 WHERE users.id = ?
-  AND (CAST(? AS INTEGER) = 0 OR (SELECT COUNT(*) FROM users AS u WHERE u.role = 'admin' AND u.active = 1) > 1)
+  AND (CAST(? AS INTEGER) = 0 OR (SELECT COUNT(*) FROM users AS u JOIN roles AS r ON r.id = u.role_id WHERE r.name = 'admin' AND u.active = 1) > 1)
 RETURNING *;
-
--- name: ListSpecialties :many
-SELECT *
-FROM specialties
-WHERE clinic_id = ?
-ORDER BY name COLLATE NOCASE;
-
--- name: CreateSpecialty :one
-INSERT INTO specialties (id, clinic_id, name)
-VALUES (?, ?, ?)
-RETURNING *;
-
--- name: DeleteSpecialty :exec
-DELETE FROM specialties
-WHERE id = ? AND clinic_id = ?;
-
--- name: ClearUserSpecialties :exec
-DELETE FROM user_specialties
-WHERE user_id = ?;
-
--- name: AddUserSpecialty :exec
-INSERT INTO user_specialties (user_id, specialty_id)
-VALUES (?, ?);
-
--- name: ListUserSpecialties :many
-SELECT s.id, s.clinic_id, s.name, s.created_at
-FROM specialties s
-JOIN user_specialties us ON us.specialty_id = s.id
-WHERE us.user_id = ?
-ORDER BY s.name COLLATE NOCASE;
 
 -- name: ListPhysicians :many
-SELECT u.id, u.email, u.display_name, u.role, u.active,
+SELECT u.id, u.email, u.display_name, u.active,
        COALESCE(CAST(GROUP_CONCAT(s.name, ', ') AS TEXT), '') AS specialties
 FROM users u
+JOIN roles r ON r.id = u.role_id
 LEFT JOIN user_specialties us ON us.user_id = u.id
 LEFT JOIN specialties s ON s.id = us.specialty_id
-WHERE u.role = 'physician'
+WHERE r.is_clinical = 1
 GROUP BY u.id
 ORDER BY u.display_name COLLATE NOCASE;
 
@@ -164,3 +136,88 @@ JOIN users u ON u.id = r.user_id
 WHERE r.requested_by = ?
 ORDER BY r.created_at DESC
 LIMIT ?;
+
+-- name: ListRoles :many
+SELECT *
+FROM roles
+ORDER BY system DESC, name COLLATE NOCASE;
+
+-- name: GetRoleByName :one
+SELECT *
+FROM roles
+WHERE name = ? COLLATE NOCASE
+LIMIT 1;
+
+-- name: GetRoleByID :one
+SELECT *
+FROM roles
+WHERE id = ?
+LIMIT 1;
+
+-- name: CreateRole :one
+INSERT INTO roles (id, name, system, is_clinical)
+VALUES (?, ?, 0, ?)
+RETURNING *;
+
+-- name: RenameRole :one
+UPDATE roles
+SET name = ?
+WHERE id = ? AND system = 0
+RETURNING *;
+
+-- name: SetRoleClinical :one
+UPDATE roles
+SET is_clinical = ?
+WHERE id = ? AND system = 0
+RETURNING *;
+
+-- name: DeleteRole :exec
+DELETE FROM roles
+WHERE roles.id = ? AND roles.system = 0
+  AND NOT EXISTS (SELECT 1 FROM users WHERE users.role_id = roles.id);
+
+-- name: CountUsersByRoleID :one
+SELECT COUNT(*)
+FROM users
+WHERE role_id = ?;
+
+-- name: GetMetaValue :one
+SELECT value
+FROM meta
+WHERE key = ?
+LIMIT 1;
+
+-- name: SetMeta :exec
+INSERT INTO meta (key, value)
+VALUES (?, ?)
+ON CONFLICT(key) DO UPDATE SET value = excluded.value;
+
+-- name: ListSpecialties :many
+SELECT *
+FROM specialties
+WHERE clinic_id = ?
+ORDER BY name COLLATE NOCASE;
+
+-- name: CreateSpecialty :one
+INSERT INTO specialties (id, clinic_id, name)
+VALUES (?, ?, ?)
+RETURNING *;
+
+-- name: DeleteSpecialty :exec
+DELETE FROM specialties
+WHERE id = ? AND clinic_id = ?;
+
+-- name: ClearUserSpecialties :exec
+DELETE FROM user_specialties
+WHERE user_id = ?;
+
+-- name: AddUserSpecialty :exec
+INSERT INTO user_specialties (user_id, specialty_id)
+VALUES (?, ?);
+
+-- name: ListUserSpecialties :many
+SELECT s.id, s.clinic_id, s.name, s.created_at
+FROM specialties s
+JOIN user_specialties us ON us.specialty_id = s.id
+WHERE us.user_id = ?
+ORDER BY s.name COLLATE NOCASE;

@@ -144,11 +144,9 @@ func (m *SessionManager) Authenticate(ctx context.Context, token string) (*Princ
 		return nil, fmt.Errorf("auth: resolve session: %w", err)
 	}
 
-	role, err := ParseRole(row.Role)
-	if err != nil {
-		return nil, err
-	}
-	return &Principal{ID: row.ID, Email: row.Email, Name: row.DisplayName, Role: role}, nil
+	// Roles are relational rows the administrator can extend, so the
+	// name is used as-is; validity is defined by the database.
+	return &Principal{ID: row.ID, Email: row.Email, Name: row.DisplayName, Role: Role(row.RoleName)}, nil
 }
 
 // Destroy revokes the session behind token.

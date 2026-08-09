@@ -15,8 +15,9 @@ DELETE FROM sessions
 WHERE expires_at <= ?;
 
 -- name: GetSessionUser :one
-SELECT u.id, u.email, u.display_name, u.role
+SELECT u.id, u.email, u.display_name, r.name AS role_name
 FROM sessions s
 JOIN users u ON u.id = s.user_id
+JOIN roles r ON r.id = u.role_id
 WHERE s.token_hash = ? AND u.active = 1
 LIMIT 1;

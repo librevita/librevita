@@ -137,19 +137,23 @@ func (s *Service) Register(ctx context.Context, in RegisterInput) (*auth.Princip
 		return nil, "", fmt.Errorf("usecase: generate user id: %w", err)
 	}
 
+	patientRole, err := s.roleID(ctx, auth.RolePatient.String())
+	if err != nil {
+		return nil, "", err
+	}
 	user, err := s.users.CreateUser(ctx, repository.CreateUserParams{
 		ID:           userID.String(),
 		Email:        email,
 		PasswordHash: hash,
 		DisplayName:  name,
-		Role:         auth.RolePatient.String(),
+		RoleID:       patientRole,
 	})
 	if err != nil {
 		// The UNIQUE COLLATE NOCASE constraint maps to a duplicate email.
 		return nil, "", ErrEmailTaken
 	}
 
-	principal, token, err := s.startSession(ctx, user)
+	principal, token, err := s.startSession(ctx, user.ID, user.Email, user.DisplayName, auth.RolePatient.String())
 	result := audit.ResultSuccess
 	detail := ""
 	if err != nil {
@@ -214,7 +218,7 @@ func (s *Service) ListRecentUsers(ctx context.Context, limit int) ([]repository.
 }
 
 // UserByID returns the account with the given id.
-func (s *Service) UserByID(ctx context.Context, id string) (*repository.User, error) {
+func (s *Service) UserByID(ctx context.Context, id string) (*repository.GetUserByIDRow, error) {
 	user, err := s.users.GetUserByID(ctx, id)
 	if err != nil {
 		return nil, fmt.Errorf("usecase: get user: %w", err)
@@ -292,12 +296,16 @@ func (s *Service) Onboard(ctx context.Context, admin RegisterInput, clinic Clini
 		return nil, "", fmt.Errorf("usecase: generate admin id: %w", err)
 	}
 
+	adminRole, err := qtx.GetRoleByName(ctx, auth.RoleAdmin.String())
+	if err != nil {
+		return nil, "", fmt.Errorf("usecase: resolve admin role: %w", err)
+	}
 	user, err := qtx.CreateUser(ctx, repository.CreateUserParams{
 		ID:           adminID.String(),
 		Email:        email,
 		PasswordHash: hash,
 		DisplayName:  name,
-		Role:         auth.RoleAdmin.String(),
+		RoleID:       adminRole.ID,
 	})
 	if err != nil {
 		// Unreachable on an empty system, but keep the mapping honest.
@@ -312,7 +320,7 @@ func (s *Service) Onboard(ctx context.Context, admin RegisterInput, clinic Clini
 		return nil, "", fmt.Errorf("usecase: commit onboard: %w", err)
 	}
 
-	principal, token, err := s.startSession(ctx, user)
+	principal, token, err := s.startSession(ctx, user.ID, user.Email, user.DisplayName, auth.RoleAdmin.String())
 	result := audit.ResultSuccess
 	detail := ""
 	if err != nil {
@@ -358,7 +366,7 @@ func (s *Service) Login(ctx context.Context, c Credentials) (*auth.Principal, st
 		return nil, "", ErrInvalidCredentials
 	}
 
-	principal, token, err := s.startSession(ctx, user)
+	principal, token, err := s.startSession(ctx, user.ID, user.Email, user.DisplayName, user.RoleName)
 	if err != nil {
 		s.auditLogin(ctx, user.ID, email, err.Error())
 		return nil, "", err
@@ -382,17 +390,12 @@ func (s *Service) Logout(ctx context.Context, token string) error {
 	return err
 }
 
-func (s *Service) startSession(ctx context.Context, user repository.User) (*auth.Principal, string, error) {
-	role, err := auth.ParseRole(user.Role)
-	if err != nil {
-		return nil, "", err
-	}
-
+func (s *Service) startSession(ctx context.Context, id, email, name, roleName string) (*auth.Principal, string, error) {
 	principal := &auth.Principal{
-		ID:    user.ID,
-		Email: user.Email,
-		Name:  user.DisplayName,
-		Role:  role,
+		ID:    id,
+		Email: email,
+		Name:  name,
+		Role:  auth.Role(roleName),
 	}
 
 	token, err := s.sessions.Create(ctx, *principal)
@@ -503,4 +506,14 @@ func strPtr(s string) *string {
 		return nil
 	}
 	return &s
+}
+
+
+// roleID resolves a role name to its relational id.
+func (s *Service) roleID(ctx context.Context, name string) (string, error) {
+	role, err := s.users.GetRoleByName(ctx, name)
+	if err != nil {
+		return "", fmt.Errorf("usecase: resolve role %q: %w", name, err)
+	}
+	return role.ID, nil
 }

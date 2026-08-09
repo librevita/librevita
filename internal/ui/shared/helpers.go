@@ -14,7 +14,9 @@ func Initials(name string) string {
 	return strings.ToUpper(parts[0][:1] + parts[1][:1])
 }
 
-// RoleBadgeClass returns the badge colors for an account role.
+// RoleBadgeClass returns the badge colors for an account role. Custom
+// roles pick a color deterministically from their name, so every role
+// stays distinguishable without new palette entries.
 func RoleBadgeClass(role string) string {
 	switch role {
 	case "admin":
@@ -24,7 +26,16 @@ func RoleBadgeClass(role string) string {
 	case "receptionist":
 		return "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300"
 	default:
-		return "bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300"
+		palettes := []string{
+			"gray", "red", "indigo", "green", "blue", "purple", "amber",
+		}
+		// Sum of the runes; stable for a given name.
+		sum := 0
+		for _, r := range role {
+			sum += int(r)
+		}
+		base := palettes[sum%len(palettes)]
+		return "bg-" + base + "-100 text-" + base + "-800 dark:bg-" + base + "-900 dark:text-" + base + "-300"
 	}
 }
 

@@ -42,13 +42,10 @@ type UpdateUserInput struct {
 func (s *Service) CreateUser(ctx context.Context, in CreateUserInput) (*repository.User, error) {
 	name := strings.TrimSpace(in.Name)
 	email := normalizeEmail(in.Email)
-	role := auth.Role(in.Role)
+	role := in.Role
 
 	if err := validateRegistration(name, email, in.Password); err != nil {
 		return nil, err
-	}
-	if !role.Valid() {
-		return nil, &ValidationError{Msg: "unsupported role"}
 	}
 
 	hash, err := auth.HashPassword(in.Password)
@@ -61,12 +58,16 @@ func (s *Service) CreateUser(ctx context.Context, in CreateUserInput) (*reposito
 		return nil, fmt.Errorf("usecase: generate user id: %w", err)
 	}
 
+	roleRow, err := s.users.GetRoleByName(ctx, role)
+	if err != nil {
+		return nil, &ValidationError{Msg: "unsupported role"}
+	}
 	user, err := s.users.CreateUser(ctx, repository.CreateUserParams{
 		ID:           userID.String(),
 		Email:        email,
 		PasswordHash: hash,
 		DisplayName:  name,
-		Role:         role.String(),
+		RoleID:       roleRow.ID,
 	})
 	if err != nil {
 		return nil, ErrEmailTaken
@@ -81,7 +82,7 @@ func (s *Service) CreateUser(ctx context.Context, in CreateUserInput) (*reposito
 func (s *Service) UpdateUser(ctx context.Context, id string, actorID string, in UpdateUserInput) (*repository.User, error) {
 	name := strings.TrimSpace(in.Name)
 	email := normalizeEmail(in.Email)
-	role := auth.Role(in.Role)
+	role := in.Role
 
 	if name == "" {
 		return nil, &ValidationError{Msg: "display name is required"}
@@ -92,14 +93,16 @@ func (s *Service) UpdateUser(ctx context.Context, id string, actorID string, in 
 	if err := validateEmail(email); err != nil {
 		return nil, err
 	}
-	if !role.Valid() {
-		return nil, &ValidationError{Msg: "unsupported role"}
-	}
 
 	if id == actorID {
-		if role != auth.RoleAdmin || !in.Active {
+		if role != auth.RoleAdmin.String() || !in.Active {
 			return nil, ErrCannotDemoteSelf
 		}
+	}
+
+	roleRow, err := s.users.GetRoleByName(ctx, role)
+	if err != nil {
+		return nil, &ValidationError{Msg: "unsupported role"}
 	}
 
 	current, err := s.users.GetUserByID(ctx, id)
@@ -110,8 +113,8 @@ func (s *Service) UpdateUser(ctx context.Context, id string, actorID string, in 
 		return nil, fmt.Errorf("usecase: load user: %w", err)
 	}
 
-	demotingOrDeactivating := (current.Role == auth.RoleAdmin.String() && current.Active == 1) &&
-		(role != auth.RoleAdmin || !in.Active)
+	demotingOrDeactivating := (current.RoleName == auth.RoleAdmin.String() && current.Active == 1) &&
+		(role != auth.RoleAdmin.String() || !in.Active)
 
 	active := int64(0)
 	if in.Active {
@@ -124,7 +127,7 @@ func (s *Service) UpdateUser(ctx context.Context, id string, actorID string, in 
 		// (single statement = atomic), so two concurrent admins cannot
 		// both pass a separate count check and leave no active admin.
 		u, err := s.users.UpdateUserGuarded(ctx, repository.UpdateUserGuardedParams{
-			Email: email, DisplayName: name, Role: role.String(), Active: active, ID: id, Column6: 1,
+			Email: email, DisplayName: name, RoleID: roleRow.ID, Active: active, ID: id, Column6: 1,
 		})
 		if err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
@@ -135,7 +138,7 @@ func (s *Service) UpdateUser(ctx context.Context, id string, actorID string, in 
 		user = u
 	} else {
 		u, err := s.users.UpdateUser(ctx, repository.UpdateUserParams{
-			ID: id, Email: email, DisplayName: name, Role: role.String(), Active: active,
+			ID: id, Email: email, DisplayName: name, RoleID: roleRow.ID, Active: active,
 		})
 		if err != nil {
 			return nil, ErrEmailTaken
@@ -175,8 +178,8 @@ func (s *Service) ListUsersPage(ctx context.Context, q string, limit, offset int
 	return rows, total, nil
 }
 
-// GetUser loads a single account.
-func (s *Service) GetUser(ctx context.Context, id string) (*repository.User, error) {
+// GetUser loads a single account with its role name.
+func (s *Service) GetUser(ctx context.Context, id string) (*repository.GetUserByIDRow, error) {
 	user, err := s.users.GetUserByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
