@@ -71,4 +71,14 @@ func registerRoutes(e *echo.Echo, h *httphandler.Handler, sessions *auth.Session
 	e.GET("/admin/specialties", h.SpecialtiesPage, gate, server.RequireAuth(sessions, log), server.RequirePolicy(policies, auditLogger, log, "users.manage"))
 	e.POST("/admin/specialties", h.SpecialtyCreate, gate, server.RequireAuth(sessions, log), server.RequirePolicy(policies, auditLogger, log, "users.manage"))
 	e.POST("/admin/specialties/:id/delete", h.SpecialtyDelete, gate, server.RequireAuth(sessions, log), server.RequirePolicy(policies, auditLogger, log, "users.manage"))
+
+	// Physician directory and the approval workflow.
+	e.GET("/staff", h.StaffPage, gate, server.RequireAuth(sessions, log), server.RequirePolicy(policies, auditLogger, log, "staff.view"))
+	e.GET("/staff/:id/edit", h.StaffEditPage, gate, server.RequireAuth(sessions, log), server.RequirePolicy(policies, auditLogger, log, "staff.view"))
+	e.POST("/staff/:id", h.StaffUpdate, gate, server.RequireAuth(sessions, log), server.RequirePolicy(policies, auditLogger, log, "staff.edit"))
+	e.POST("/staff/:id/request", h.StaffRequestChange, gate, server.RequireAuth(sessions, log), server.RequirePolicy(policies, auditLogger, log, "staff.request"))
+	e.GET("/staff/my-requests", h.MyStaffRequestsPage, gate, server.RequireAuth(sessions, log), server.RequirePolicy(policies, auditLogger, log, "staff.request"))
+	e.GET("/staff/requests", h.StaffRequestsPage, gate, server.RequireAuth(sessions, log), server.RequirePolicy(policies, auditLogger, log, "staff.approve"))
+	e.POST("/staff/requests/:id/approve", h.StaffRequestApprove, gate, server.RequireAuth(sessions, log), server.RequirePolicy(policies, auditLogger, log, "staff.approve"))
+	e.POST("/staff/requests/:id/reject", h.StaffRequestReject, gate, server.RequireAuth(sessions, log), server.RequirePolicy(policies, auditLogger, log, "staff.approve"))
 }

@@ -261,3 +261,132 @@ func TestSpecialties(t *testing.T) {
 		t.Fatalf("after specialty delete = %d, want 0", len(assigned))
 	}
 }
+
+func TestStaffChangeRequests(t *testing.T) {
+	db := openAuthDB(t)
+	svc := newService(t, db)
+	ctx := context.Background()
+
+	phys, err := svc.CreateUser(ctx, usecase.CreateUserInput{
+		Name: "Dr. Lima", Email: "dr.lima@example.org", Password: "senha-segura", Role: "physician",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	receptionist, err := svc.CreateUser(ctx, usecase.CreateUserInput{
+		Name: "Nurse", Email: "nurse@example.org", Password: "senha-segura", Role: "receptionist",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	psy, err := svc.CreateSpecialty(ctx, "clinic-1", "Psychologist")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Receptionist proposes changes.
+	req, err := svc.CreateStaffChangeRequest(ctx, phys.ID, receptionist.ID, usecase.StaffChange{
+		Name: "Dr. Lima Jr", Email: "dr.lima@example.org", Specialties: []string{psy.ID},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// An email that belongs to another account is caught at request time.
+	other, err := svc.CreateUser(ctx, usecase.CreateUserInput{
+		Name: "Other", Email: "other@example.org", Password: "senha-segura", Role: "receptionist",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.CreateStaffChangeRequest(ctx, phys.ID, receptionist.ID, usecase.StaffChange{
+		Name: "Dr. Lima", Email: "other@example.org", Specialties: nil,
+	}); !errors.Is(err, usecase.ErrEmailInUse) {
+		t.Errorf("email collision err = %v, want ErrEmailInUse", err)
+	}
+	_ = other
+
+	pend, err := svc.ListStaffChangeRequests(ctx, usecase.RequestPending)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(pend) != 1 {
+		t.Fatalf("pending = %d, want 1", len(pend))
+	}
+
+	// Approving applies the changes.
+	if err := svc.ApproveStaffChangeRequest(ctx, req.ID, "admin-1"); err != nil {
+		t.Fatal(err)
+	}
+	updated, err := svc.GetUser(ctx, phys.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.DisplayName != "Dr. Lima Jr" {
+		t.Errorf("approved name = %q, want Dr. Lima Jr", updated.DisplayName)
+	}
+	assigned, err := svc.UserSpecialties(ctx, phys.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(assigned) != 1 || assigned[0].ID != psy.ID {
+		t.Errorf("approved specialties = %+v, want the psychologist", assigned)
+	}
+	// A second approval of the same request is refused.
+	if err := svc.ApproveStaffChangeRequest(ctx, req.ID, "admin-1"); !errors.Is(err, usecase.ErrRequestNotPending) {
+		t.Errorf("double approve err = %v, want ErrRequestNotPending", err)
+	}
+
+	// Rejection keeps the profile untouched.
+	req2, err := svc.CreateStaffChangeRequest(ctx, phys.ID, receptionist.ID, usecase.StaffChange{
+		Name: "Dr. Nope", Email: "dr.lima@example.org", Specialties: nil,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.RejectStaffChangeRequest(ctx, req2.ID, "admin-1", "not needed"); err != nil {
+		t.Fatal(err)
+	}
+	updated, err = svc.GetUser(ctx, phys.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.DisplayName != "Dr. Lima Jr" {
+		t.Errorf("after reject name = %q, want unchanged", updated.DisplayName)
+	}
+}
+
+func TestListPhysicians(t *testing.T) {
+	db := openAuthDB(t)
+	svc := newService(t, db)
+	ctx := context.Background()
+
+	phys, err := svc.CreateUser(ctx, usecase.CreateUserInput{
+		Name: "Dr. Ana", Email: "dr.ana@example.org", Password: "senha-segura", Role: "physician",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.CreateUser(ctx, usecase.CreateUserInput{
+		Name: "Nurse", Email: "nurse@example.org", Password: "senha-segura", Role: "receptionist",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	psy, err := svc.CreateSpecialty(ctx, "clinic-1", "Psychologist")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.SetUserSpecialties(ctx, phys.ID, []string{psy.ID}); err != nil {
+		t.Fatal(err)
+	}
+
+	rows, err := svc.ListPhysicians(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("ListPhysicians = %d, want 1", len(rows))
+	}
+	if rows[0].Specialties != "Psychologist" {
+		t.Errorf("joined specialties = %q, want Psychologist", rows[0].Specialties)
+	}
+}

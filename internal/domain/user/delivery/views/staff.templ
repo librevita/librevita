@@ -1,0 +1,354 @@
+package views
+
+import (
+	"librevita.org/internal/core/auth"
+	"librevita.org/internal/ui/components"
+	"librevita.org/internal/ui/layouts"
+	"librevita.org/internal/ui/shared"
+)
+
+// PhysicianRow is one physician of the directory.
+type PhysicianRow struct {
+	ID          string
+	Name        string
+	Email       string
+	Active      int64
+	Specialties string
+}
+
+// StaffFormValues carries the physician profile form values.
+type StaffFormValues struct {
+	Name  string
+	Email string
+}
+
+// StaffRequestRow is a pending profile change proposal.
+type StaffRequestRow struct {
+	ID             string
+	UserID         string
+	UserName       string
+	UserEmail      string
+	RequesterEmail string
+	CreatedAt      string
+	Changes        string
+	Status         string
+}
+
+// StaffPage renders the physician directory.
+templ StaffPage(token string, p *auth.Principal, rows []PhysicianRow, errMsg string) {
+	@layouts.App("Physicians", token, p, "physicians") {
+		<div class="w-full">
+			<div class="border-b border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
+				<nav class="mb-4" aria-label="Breadcrumb">
+					<ol class="inline-flex items-center space-x-1 text-sm font-medium md:space-x-2">
+						<li class="inline-flex items-center">
+							<a href="/" class="inline-flex items-center text-gray-700 hover:text-indigo-600 dark:text-gray-300 dark:hover:text-white">
+								<svg class="mr-2.5 h-5 w-5" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true"><path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z"></path></svg>
+								Home
+							</a>
+						</li>
+						<li>
+							<div class="flex items-center">
+								<svg class="h-6 w-6 text-gray-400" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"></path></svg>
+								<span class="ml-1 text-gray-400 md:ml-2 dark:text-gray-500" aria-current="page">Physicians</span>
+							</div>
+						</li>
+					</ol>
+				</nav>
+				<h1 class="mb-4 text-xl font-semibold text-gray-900 sm:text-2xl dark:text-white">Physicians</h1>
+				if p != nil && p.Role == auth.RoleAdmin {
+					<div class="flex items-center gap-2">
+						@components.ButtonLink("secondary", "/admin/users/new", "New physician account", nil)
+					</div>
+				}
+			</div>
+			<div class="flex flex-col p-4">
+				if errMsg != "" {
+					<div class="mb-4">@components.Alert(errMsg, false)</div>
+				}
+				<div class="overflow-hidden shadow-sm">
+					<div class="overflow-x-auto">
+						<table class="min-w-full divide-y divide-gray-200 dark:divide-gray-600">
+							<thead class="bg-gray-100 dark:bg-gray-700">
+								<tr>
+									@components.Th("Physician", "p-4")
+									@components.Th("Specialties", "p-4")
+									@components.Th("Status", "p-4")
+									<th scope="col" class="p-4 text-right text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">Actions</th>
+								</tr>
+							</thead>
+							<tbody class="divide-y divide-gray-200 bg-white dark:divide-gray-700 dark:bg-gray-800">
+								for _, ph := range rows {
+									<tr class="hover:bg-gray-100 dark:hover:bg-gray-700">
+										<td class="p-4">
+											<div class="flex items-center gap-3">
+												@components.Avatar(shared.Initials(ph.Name), "h-10 w-10 text-sm bg-indigo-100 text-indigo-700 dark:bg-indigo-900 dark:text-indigo-300")
+												<div>
+													<p class="text-base font-semibold text-gray-900 dark:text-white">{ ph.Name }</p>
+													<p class="text-sm text-gray-500 dark:text-gray-400">{ ph.Email }</p>
+												</div>
+											</div>
+										</td>
+										<td class="p-4 text-base text-gray-700 dark:text-gray-300">{ ph.Specialties }</td>
+										<td class="p-4 whitespace-nowrap">@staffStatusCell(ph.Active)</td>
+										<td class="p-4 whitespace-nowrap">
+											<div class="flex items-center justify-end">
+												<a href={ "/staff/" + ph.ID + "/edit" } class="inline-flex items-center rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600">
+													<svg class="mr-2 h-4 w-4" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true"><path d="M17.414 2.586a2 2 0 00-2.828 0L7 10.172V13h2.828l7.586-7.586a2 2 0 000-2.828z"></path><path fill-rule="evenodd" d="M2 6a2 2 0 012-2h4a1 1 0 010 2H4v10h10v-4a1 1 0 112 0v4a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" clip-rule="evenodd"></path></svg>
+													Edit
+												</a>
+											</div>
+										</td>
+									</tr>
+								}
+								if len(rows) == 0 {
+									<tr>
+										<td colspan="4" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">No physicians registered.</td>
+									</tr>
+								}
+							</tbody>
+						</table>
+					</div>
+				</div>
+			</div>
+		</div>
+	}
+}
+
+// StaffEditPage renders the physician profile form. Admins edit directly;
+// other staff submit a change request that needs admin approval.
+templ StaffEditPage(token string, p *auth.Principal, id string, values StaffFormValues, specialties []SpecialtyView, admin bool, errMsg string) {
+	@layouts.App("Physicians", token, p, "physicians") {
+		<div class="mx-auto max-w-xl p-4 lg:p-6">
+			@components.Card() {
+				@components.CardHeader(staffEditTitle(admin)) {
+					<a class="inline-flex items-center rounded-lg p-2 text-sm font-medium text-indigo-700 hover:bg-gray-100 dark:text-indigo-400 dark:hover:bg-gray-700" href="/staff">Back to physicians</a>
+				}
+				@StaffForm(token, id, values, specialties, admin, errMsg)
+			}
+		</div>
+	}
+}
+
+// StaffForm is the profile form fragment. Admins post to /staff/:id
+// (applied directly); other staff post to /staff/:id/request (pending
+// approval).
+templ StaffForm(token string, id string, values StaffFormValues, specialties []SpecialtyView, admin bool, errMsg string) {
+	<form method="post" action={ staffFormAction(id, admin) } hx-post={ staffFormAction(id, admin) } hx-target="this" hx-swap="outerHTML" class="space-y-4">
+		<input type="hidden" name="_csrf" value={ token }>
+		if errMsg != "" {
+			@components.Alert(errMsg, false)
+		}
+		@components.Field("name", "Name") {
+			@components.Input("name", "", templ.Attributes{ "id": "name", "type": "text", "value": values.Name, "required": true, "autofocus": true })
+		}
+		@components.Field("email", "Email") {
+			@components.Input("email", "", templ.Attributes{ "id": "email", "type": "email", "value": values.Email, "required": true })
+		}
+		if len(specialties) > 0 {
+			<fieldset>
+				<legend class="text-sm font-semibold text-gray-900 dark:text-white">Specialties</legend>
+				<p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">A physician can have more than one.</p>
+				<div class="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+					for _, sp := range specialties {
+						<label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+							@components.Checkbox("specialties", "", templ.Attributes{ "value": sp.ID, "checked": sp.Selected })
+							{ sp.Name }
+						</label>
+					}
+				</div>
+			</fieldset>
+		}
+		<div class="flex items-center gap-3">
+			@components.Button("primary", staffFormSubmit(admin), templ.Attributes{ "type": "submit" })
+			@components.ButtonLink("secondary", "/staff", "Cancel", templ.Attributes{ "hx-target": "body" })
+		</div>
+	</form>
+}
+
+// StaffRequestsPage lists the pending change requests for the admin to
+// approve or reject.
+templ StaffRequestsPage(token string, p *auth.Principal, rows []StaffRequestRow, errMsg string) {
+	@layouts.App("Staff requests", token, p, "physicians") {
+		<div class="w-full">
+			<div class="border-b border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
+				<nav class="mb-4" aria-label="Breadcrumb">
+					<ol class="inline-flex items-center space-x-1 text-sm font-medium md:space-x-2">
+						<li class="inline-flex items-center">
+							<a href="/" class="inline-flex items-center text-gray-700 hover:text-indigo-600 dark:text-gray-300 dark:hover:text-white">
+								<svg class="mr-2.5 h-5 w-5" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true"><path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z"></path></svg>
+								Home
+							</a>
+						</li>
+						<li>
+							<div class="flex items-center">
+								<svg class="h-6 w-6 text-gray-400" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"></path></svg>
+								<span class="ml-1 text-gray-400 md:ml-2 dark:text-gray-500" aria-current="page">Staff requests</span>
+							</div>
+						</li>
+					</ol>
+				</nav>
+				<h1 class="mb-4 text-xl font-semibold text-gray-900 sm:text-2xl dark:text-white">Staff change requests</h1>
+			</div>
+			<div class="flex flex-col p-4">
+				if errMsg != "" {
+					<div class="mb-4">@components.Alert(errMsg, false)</div>
+				}
+				<div class="overflow-hidden shadow-sm">
+					<div class="overflow-x-auto">
+						<table class="min-w-full divide-y divide-gray-200 dark:divide-gray-600">
+							<thead class="bg-gray-100 dark:bg-gray-700">
+								<tr>
+									@components.Th("Physician", "p-4")
+									@components.Th("Requested by", "p-4")
+									@components.Th("Proposed changes", "p-4")
+									@components.Th("When", "p-4")
+									<th scope="col" class="p-4 text-right text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">Decision</th>
+								</tr>
+							</thead>
+							<tbody class="divide-y divide-gray-200 bg-white dark:divide-gray-700 dark:bg-gray-800">
+								for _, r := range rows {
+									<tr class="hover:bg-gray-100 dark:hover:bg-gray-700">
+										<td class="p-4">
+											<p class="text-base font-semibold text-gray-900 dark:text-white">{ r.UserName }</p>
+											<p class="text-sm text-gray-500 dark:text-gray-400">{ r.UserEmail }</p>
+										</td>
+										<td class="p-4 text-base text-gray-700 dark:text-gray-300">{ r.RequesterEmail }</td>
+										<td class="p-4 text-sm text-gray-700 dark:text-gray-300">{ r.Changes }</td>
+										<td class="p-4 whitespace-nowrap text-base text-gray-500 dark:text-gray-400">{ r.CreatedAt }</td>
+										<td class="p-4 whitespace-nowrap">
+											<div class="flex items-center justify-end gap-2">
+												<form method="post" action={ "/staff/requests/" + r.ID + "/approve" } class="inline">
+													<input type="hidden" name="_csrf" value={ token }>
+													@components.Button("primary", "Approve", templ.Attributes{ "type": "submit" })
+												</form>
+												<form method="post" action={ "/staff/requests/" + r.ID + "/reject" } class="inline">
+													<input type="hidden" name="_csrf" value={ token }>
+													@components.Button("danger", "Reject", templ.Attributes{ "type": "submit" })
+												</form>
+											</div>
+										</td>
+									</tr>
+								}
+								if len(rows) == 0 {
+									<tr>
+										<td colspan="5" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">No pending requests.</td>
+									</tr>
+								}
+							</tbody>
+						</table>
+					</div>
+				</div>
+			</div>
+		</div>
+	}
+}
+
+templ staffStatusCell(active int64) {
+	<div class="flex items-center">
+		if active == 1 {
+			<span class="mr-2 h-2.5 w-2.5 rounded-full bg-green-400 dark:bg-green-500"></span>
+			<span class="text-base text-gray-900 dark:text-white">Active</span>
+		} else {
+			<span class="mr-2 h-2.5 w-2.5 rounded-full bg-red-500"></span>
+			<span class="text-base text-gray-900 dark:text-white">Inactive</span>
+		}
+	</div>
+}
+
+func staffEditTitle(admin bool) string {
+	if admin {
+		return "Edit physician"
+	}
+	return "Request changes"
+}
+
+func staffFormAction(id string, admin bool) string {
+	if admin {
+		return "/staff/" + id
+	}
+	return "/staff/" + id + "/request"
+}
+
+func staffFormSubmit(admin bool) string {
+	if admin {
+		return "Save changes"
+	}
+	return "Send for approval"
+}
+
+// MyStaffRequestsPage lists the requester's own submissions with their
+// current status.
+templ MyStaffRequestsPage(token string, p *auth.Principal, rows []StaffRequestRow, errMsg string) {
+	@layouts.App("My requests", token, p, "physicians") {
+		<div class="w-full">
+			<div class="border-b border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
+				<nav class="mb-4" aria-label="Breadcrumb">
+					<ol class="inline-flex items-center space-x-1 text-sm font-medium md:space-x-2">
+						<li class="inline-flex items-center">
+							<a href="/" class="inline-flex items-center text-gray-700 hover:text-indigo-600 dark:text-gray-300 dark:hover:text-white">
+								<svg class="mr-2.5 h-5 w-5" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true"><path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z"></path></svg>
+								Home
+							</a>
+						</li>
+						<li>
+							<div class="flex items-center">
+								<svg class="h-6 w-6 text-gray-400" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"></path></svg>
+								<span class="ml-1 text-gray-400 md:ml-2 dark:text-gray-500" aria-current="page">My requests</span>
+							</div>
+						</li>
+					</ol>
+				</nav>
+				<h1 class="mb-4 text-xl font-semibold text-gray-900 sm:text-2xl dark:text-white">My change requests</h1>
+			</div>
+			<div class="flex flex-col p-4">
+				if errMsg != "" {
+					<div class="mb-4">@components.Alert(errMsg, false)</div>
+				}
+				<div class="overflow-hidden shadow-sm">
+					<div class="overflow-x-auto">
+						<table class="min-w-full divide-y divide-gray-200 dark:divide-gray-600">
+							<thead class="bg-gray-100 dark:bg-gray-700">
+								<tr>
+									@components.Th("Physician", "p-4")
+									@components.Th("Proposed changes", "p-4")
+									@components.Th("Status", "p-4")
+									@components.Th("When", "p-4")
+								</tr>
+							</thead>
+							<tbody class="divide-y divide-gray-200 bg-white dark:divide-gray-700 dark:bg-gray-800">
+								for _, r := range rows {
+									<tr class="hover:bg-gray-100 dark:hover:bg-gray-700">
+										<td class="p-4">
+											<p class="text-base font-semibold text-gray-900 dark:text-white">{ r.UserName }</p>
+											<p class="text-sm text-gray-500 dark:text-gray-400">{ r.UserEmail }</p>
+										</td>
+										<td class="p-4 text-sm text-gray-700 dark:text-gray-300">{ r.Changes }</td>
+										<td class="p-4 whitespace-nowrap">@requestStatusBadge(r.Status)</td>
+										<td class="p-4 whitespace-nowrap text-base text-gray-500 dark:text-gray-400">{ r.CreatedAt }</td>
+									</tr>
+								}
+								if len(rows) == 0 {
+									<tr>
+										<td colspan="4" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">You have not submitted any change requests.</td>
+									</tr>
+								}
+							</tbody>
+						</table>
+					</div>
+				</div>
+			</div>
+		</div>
+	}
+}
+
+templ requestStatusBadge(status string) {
+	switch status {
+	case "approved":
+		<span class="inline-flex items-center rounded-md bg-green-100 px-2.5 py-0.5 text-xs font-medium text-green-800 dark:bg-green-900 dark:text-green-300">Approved</span>
+	case "rejected":
+		<span class="inline-flex items-center rounded-md bg-red-100 px-2.5 py-0.5 text-xs font-medium text-red-800 dark:bg-red-900 dark:text-red-300">Rejected</span>
+	default:
+		<span class="inline-flex items-center rounded-md bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-900 dark:text-amber-300">Pending</span>
+	}
+}
