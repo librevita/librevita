@@ -20,6 +20,7 @@ Go module `librevita.org`, built with `CGO_ENABLED=0` into a static binary on a 
 | `github.com/pressly/goose/v3`              | v3.27.3        | MIT          | SQL migrations (embedded)                     |
 | `modernc.org/sqlite`                       | v1.56.0        | BSD-3-Clause | Pure-Go SQLite driver (no CGO)                |
 | `github.com/rqlite/gorqlite`               | `50d445fd0ab9` | MIT          | Optional rqlite backend client (HTTP)         |
+| `github.com/minio/minio-go/v7`            | v7.2.1         | Apache-2.0   | S3-compatible API client for file storage     |
 | `github.com/breml/rootcerts`               | v0.3.7         | BSD-2-Clause | Trusted roots for rqlite TLS connections      |
 | `go.uber.org/fx`                           | v1.24.0        | MIT          | Dependency injection container                |
 | `go.uber.org/zap`                          | v1.28.0        | MIT          | Structured logging (UTC)                      |
