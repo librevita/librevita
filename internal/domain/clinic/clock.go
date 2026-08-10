@@ -1,6 +1,10 @@
 package clinic
 
-import "time"
+import (
+	"time"
+
+	"librevita.org/internal/types"
+)
 
 // TimeLayout is the human-readable layout used across the UI.
 // Instants are rendered in the clinic's timezone.
@@ -33,16 +37,12 @@ func (c *Clock) FormatUI(t time.Time) string {
 	return c.Format(t, TimeLayout)
 }
 
-// utcMilliLayout matches the timestamps written by the database
-// (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')).
-const utcMilliLayout = "2006-01-02T15:04:05.000Z"
-
 // FormatStored renders a database timestamp in the clinic's timezone,
 // keeping the raw value when it cannot be parsed.
-func (c *Clock) FormatStored(stored string) string {
-	t, err := time.Parse(utcMilliLayout, stored)
+func (c *Clock) FormatStored(stored types.DateTime) string {
+	t, err := stored.Time()
 	if err != nil {
-		return stored
+		return stored.String()
 	}
 	return c.FormatUI(t)
 }

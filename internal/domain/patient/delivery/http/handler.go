@@ -121,13 +121,13 @@ func (h *Handler) Detail(c echo.Context) error {
 		return err
 	}
 	createdBy := orEmpty(row.CreatedByEmail)
-	pt := h.detailView(row, clock)
 	events, err := h.audit.ForResource(ctx, "patient:"+row.ID.String(), 50)
 	if err != nil {
 		return err
 	}
 	return server.Render(c, http.StatusOK, views.PatientDetailPage(
-		server.CSRFToken(c, h.csrf), server.Principal(c), pt, createdBy,
+		server.CSRFToken(c, h.csrf), server.Principal(c), row,
+		clock.FormatStored(row.CreatedAt), clock.FormatStored(row.UpdatedAt), createdBy,
 		h.historyView(events, clock), ""))
 }
 
@@ -434,13 +434,6 @@ func (h *Handler) rowOf(pt *repository.Patient, clock *clinic.Clock) views.Patie
 		Status:      pt.Status,
 		CreatedAt:   clock.FormatStored(pt.CreatedAt),
 	}
-}
-
-func (h *Handler) detailView(row *repository.GetPatientWithCreatorRow, clock *clinic.Clock) *repository.GetPatientWithCreatorRow {
-	clone := *row
-	clone.CreatedAt = clock.FormatStored(clone.CreatedAt)
-	clone.UpdatedAt = clock.FormatStored(clone.UpdatedAt)
-	return &clone
 }
 
 func values(in usecase.PatientInput) views.PatientFormValues {
