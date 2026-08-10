@@ -313,13 +313,21 @@ func TestStaffChangeRequests(t *testing.T) {
 	}
 	_ = other
 
-	pend, err := svc.ListStaffChangeRequests(ctx, usecase.RequestPending)
+	pend, total, err := svc.ListStaffChangeRequestsFiltered(ctx, usecase.RequestPending, "", 50, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(pend) != 1 {
-		t.Fatalf("pending = %d, want 1", len(pend))
+	if len(pend) != 1 || total != 1 {
+		t.Fatalf("pending = %d (total %d), want 1", len(pend), total)
 	}
+	all, totalAll, err := svc.ListStaffChangeRequestsFiltered(ctx, "", "", 50, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if totalAll != 1 {
+		t.Fatalf("all statuses total = %d, want 1", totalAll)
+	}
+	_ = all
 
 	// Approving applies the changes.
 	if err := svc.ApproveStaffChangeRequest(ctx, req.ID, "admin-1"); err != nil {

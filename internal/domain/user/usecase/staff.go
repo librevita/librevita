@@ -115,16 +115,26 @@ func (s *Service) ListMyStaffChangeRequests(ctx context.Context, requesterID str
 	return rows, nil
 }
 
-// ListStaffChangeRequests returns the requests in the given status,
-// newest first, joined with the target and requester emails.
-func (s *Service) ListStaffChangeRequests(ctx context.Context, status string) ([]repository.ListStaffChangeRequestsRow, error) {
-	rows, err := s.users.ListStaffChangeRequests(ctx, repository.ListStaffChangeRequestsParams{
-		Status: status, Limit: 50,
+// ListStaffChangeRequestsFiltered returns the change requests newest
+// first, filtered by status (empty for all) and a term matching the
+// physician or the requester, with the total match count.
+func (s *Service) ListStaffChangeRequestsFiltered(ctx context.Context, status, q string, limit, offset int) ([]repository.ListStaffChangeRequestsFilteredRow, int64, error) {
+	pattern := "%" + strings.TrimSpace(q) + "%"
+	rows, err := s.users.ListStaffChangeRequestsFiltered(ctx, repository.ListStaffChangeRequestsFilteredParams{
+		StatusEmpty: status, StatusFilter: status,
+		QEmpty: q, Q: pattern, Limit: int64(limit), Offset: int64(offset),
 	})
 	if err != nil {
-		return nil, fmt.Errorf("usecase: list staff change requests: %w", err)
+		return nil, 0, fmt.Errorf("usecase: list staff change requests: %w", err)
 	}
-	return rows, nil
+	total, err := s.users.CountStaffChangeRequestsFiltered(ctx, repository.CountStaffChangeRequestsFilteredParams{
+		StatusEmpty: status, StatusFilter: status,
+		QEmpty: q, Q: pattern,
+	})
+	if err != nil {
+		return nil, 0, fmt.Errorf("usecase: count staff change requests: %w", err)
+	}
+	return rows, total, nil
 }
 
 // ApproveStaffChangeRequest applies the proposed changes to the

@@ -1,6 +1,8 @@
 package views
 
 import (
+	"net/url"
+
 	"librevita.org/internal/core/auth"
 	"librevita.org/internal/ui/components"
 	"librevita.org/internal/ui/layouts"
@@ -22,7 +24,7 @@ type StaffFormValues struct {
 	Email string
 }
 
-// StaffRequestRow is a pending profile change proposal.
+// StaffRequestRow is a profile change proposal with its decision.
 type StaffRequestRow struct {
 	ID             string
 	UserID         string
@@ -32,6 +34,17 @@ type StaffRequestRow struct {
 	CreatedAt      string
 	Changes        string
 	Status         string
+	DecisionNote   string
+	DecidedByEmail string
+}
+
+// StaffRequestPager carries the pager state for the request history.
+type StaffRequestPager struct {
+	Q      string
+	Status string
+	Page   int
+	Total  int64
+	Shown  int64
 }
 
 // StaffPage renders the physician directory.
@@ -167,83 +180,6 @@ templ StaffForm(token string, id string, values StaffFormValues, specialties []S
 }
 
 // StaffRequestsPage lists the pending change requests for the admin to
-// approve or reject.
-templ StaffRequestsPage(token string, p *auth.Principal, rows []StaffRequestRow, errMsg string) {
-	@layouts.App("Staff requests", token, p, "physicians") {
-		<div class="w-full">
-			<div class="border-b border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-				<nav class="mb-4" aria-label="Breadcrumb">
-					<ol class="inline-flex items-center space-x-1 text-sm font-medium md:space-x-2">
-						<li class="inline-flex items-center">
-							<a href="/" class="inline-flex items-center text-gray-700 hover:text-indigo-600 dark:text-gray-300 dark:hover:text-white">
-								<svg class="mr-2.5 h-5 w-5" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true"><path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z"></path></svg>
-								Home
-							</a>
-						</li>
-						<li>
-							<div class="flex items-center">
-								<svg class="h-6 w-6 text-gray-400" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"></path></svg>
-								<span class="ml-1 text-gray-400 md:ml-2 dark:text-gray-500" aria-current="page">Staff requests</span>
-							</div>
-						</li>
-					</ol>
-				</nav>
-				<h1 class="mb-4 text-xl font-semibold text-gray-900 sm:text-2xl dark:text-white">Staff change requests</h1>
-			</div>
-			<div class="flex flex-col p-4">
-				if errMsg != "" {
-					<div class="mb-4">@components.Alert(errMsg, false)</div>
-				}
-				<div class="overflow-hidden shadow-sm">
-					<div class="overflow-x-auto">
-						<table class="min-w-full divide-y divide-gray-200 dark:divide-gray-600">
-							<thead class="bg-gray-100 dark:bg-gray-700">
-								<tr>
-									@components.Th("Physician", "p-4")
-									@components.Th("Requested by", "p-4")
-									@components.Th("Proposed changes", "p-4")
-									@components.Th("When", "p-4")
-									<th scope="col" class="p-4 text-right text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">Decision</th>
-								</tr>
-							</thead>
-							<tbody class="divide-y divide-gray-200 bg-white dark:divide-gray-700 dark:bg-gray-800">
-								for _, r := range rows {
-									<tr class="hover:bg-gray-100 dark:hover:bg-gray-700">
-										<td class="p-4">
-											<p class="text-base font-semibold text-gray-900 dark:text-white">{ r.UserName }</p>
-											<p class="text-sm text-gray-500 dark:text-gray-400">{ r.UserEmail }</p>
-										</td>
-										<td class="p-4 text-base text-gray-700 dark:text-gray-300">{ r.RequesterEmail }</td>
-										<td class="p-4 text-sm text-gray-700 dark:text-gray-300">{ r.Changes }</td>
-										<td class="p-4 whitespace-nowrap text-base text-gray-500 dark:text-gray-400">{ r.CreatedAt }</td>
-										<td class="p-4 whitespace-nowrap">
-											<div class="flex items-center justify-end gap-2">
-												<form method="post" action={ "/staff/requests/" + r.ID + "/approve" } class="inline">
-													<input type="hidden" name="_csrf" value={ token }>
-													@components.Button("primary", "Approve", templ.Attributes{ "type": "submit" })
-												</form>
-												<form method="post" action={ "/staff/requests/" + r.ID + "/reject" } class="inline">
-													<input type="hidden" name="_csrf" value={ token }>
-													@components.Button("danger", "Reject", templ.Attributes{ "type": "submit" })
-												</form>
-											</div>
-										</td>
-									</tr>
-								}
-								if len(rows) == 0 {
-									<tr>
-										<td colspan="5" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">No pending requests.</td>
-									</tr>
-								}
-							</tbody>
-						</table>
-					</div>
-				</div>
-			</div>
-		</div>
-	}
-}
-
 templ staffStatusCell(active int64) {
 	<div class="flex items-center">
 		if active == 1 {
@@ -280,7 +216,7 @@ func staffFormSubmit(admin bool) string {
 // MyStaffRequestsPage lists the requester's own submissions with their
 // current status.
 templ MyStaffRequestsPage(token string, p *auth.Principal, rows []StaffRequestRow, errMsg string) {
-	@layouts.App("My requests", token, p, "physicians") {
+	@layouts.App("My requests", token, p, "my-requests") {
 		<div class="w-full">
 			<div class="border-b border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
 				<nav class="mb-4" aria-label="Breadcrumb">
@@ -351,4 +287,153 @@ templ requestStatusBadge(status string) {
 	default:
 		<span class="inline-flex items-center rounded-md bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-900 dark:text-amber-300">Pending</span>
 	}
+}// StaffRequestsPage renders the change request history with status and
+// search filters.
+templ StaffRequestsPage(token string, p *auth.Principal, rows []StaffRequestRow, pager StaffRequestPager, errMsg string) {
+	@layouts.App("Staff requests", token, p, "staff-requests") {
+		<div class="w-full">
+			<div class="border-b border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
+				<nav class="mb-4" aria-label="Breadcrumb">
+					<ol class="inline-flex items-center space-x-1 text-sm font-medium md:space-x-2">
+						<li class="inline-flex items-center">
+							<a href="/" class="inline-flex items-center text-gray-700 hover:text-indigo-600 dark:text-gray-300 dark:hover:text-white">
+								<svg class="mr-2.5 h-5 w-5" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true"><path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z"></path></svg>
+								Home
+							</a>
+						</li>
+						<li>
+							<div class="flex items-center">
+								<svg class="h-6 w-6 text-gray-400" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"></path></svg>
+								<span class="ml-1 text-gray-400 md:ml-2 dark:text-gray-500" aria-current="page">Staff requests</span>
+							</div>
+						</li>
+					</ol>
+				</nav>
+				<h1 class="mb-4 text-xl font-semibold text-gray-900 sm:text-2xl dark:text-white">Staff change requests</h1>
+				<div class="flex flex-wrap items-center gap-3">
+					<div class="relative">
+						<svg class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400 dark:text-gray-500" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd"></path></svg>
+						@components.Input("q", "pl-9 md:w-64 xl:w-96", templ.Attributes{ "id": "sr-search", "type": "search", "value": pager.Q, "placeholder": "Search physician or requester", "hx-get": "/staff/requests", "hx-trigger": "input changed delay:300ms", "hx-target": "#staff-requests-list", "hx-swap": "innerHTML" })
+					</div>
+					<select id="sr-status" name="status" hx-get="/staff/requests" hx-trigger="change" hx-include="#sr-search" hx-target="#staff-requests-list" hx-swap="innerHTML" class="input mt-0 w-auto">
+						@requestStatusOption("", "All statuses", pager.Status)
+						@requestStatusOption("pending", "Pending", pager.Status)
+						@requestStatusOption("approved", "Approved", pager.Status)
+						@requestStatusOption("rejected", "Rejected", pager.Status)
+					</select>
+				</div>
+			</div>
+			<div class="flex flex-col">
+				<div id="staff-requests-list">
+					@StaffRequestsTable(token, rows, pager, errMsg)
+				</div>
+			</div>
+		</div>
+	}
 }
+
+// StaffRequestsTable is the fragment swapped by the search, the status
+// filter and the pager: the table plus the pager refresh together.
+templ StaffRequestsTable(token string, rows []StaffRequestRow, pager StaffRequestPager, errMsg string) {
+	if errMsg != "" {
+		<div class="mb-4 p-4">@components.Alert(errMsg, false)</div>
+	}
+	if len(rows) == 0 {
+		<div class="m-4 overflow-hidden rounded-lg bg-white p-6 text-center shadow-sm dark:bg-gray-800">
+			<p class="text-sm text-gray-500 dark:text-gray-400">No change requests match the filters.</p>
+		</div>
+	} else {
+		<div class="overflow-hidden shadow-sm">
+			<div class="overflow-x-auto">
+				<table class="min-w-full divide-y divide-gray-200 dark:divide-gray-600">
+					<thead class="bg-gray-100 dark:bg-gray-700">
+						<tr>
+							@components.Th("Physician", "p-4")
+							@components.Th("Requested by", "p-4")
+							@components.Th("Proposed changes", "p-4")
+							@components.Th("Status", "p-4")
+							@components.Th("When", "p-4")
+							<th scope="col" class="p-4 text-right text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">Decision</th>
+						</tr>
+					</thead>
+					<tbody class="divide-y divide-gray-200 bg-white dark:divide-gray-700 dark:bg-gray-800">
+						for _, r := range rows {
+							<tr class="hover:bg-gray-100 dark:hover:bg-gray-700">
+								<td class="p-4">
+									<p class="text-base font-semibold text-gray-900 dark:text-white">{ r.UserName }</p>
+									<p class="text-sm text-gray-500 dark:text-gray-400">{ r.UserEmail }</p>
+								</td>
+								<td class="p-4 text-base text-gray-700 dark:text-gray-300">{ r.RequesterEmail }</td>
+								<td class="p-4 text-sm text-gray-700 dark:text-gray-300">{ r.Changes }</td>
+								<td class="p-4 whitespace-nowrap">@requestStatusBadge(r.Status)</td>
+								<td class="p-4 whitespace-nowrap text-base text-gray-500 dark:text-gray-400">{ r.CreatedAt }</td>
+								<td class="p-4 text-right">
+									if r.Status == "pending" {
+										<div class="flex items-center justify-end gap-2">
+											<form method="post" action={ "/staff/requests/" + r.ID + "/approve" } class="inline">
+												<input type="hidden" name="_csrf" value={ token }>
+												@components.Button("primary", "Approve", templ.Attributes{ "type": "submit" })
+											</form>
+											<form method="post" action={ "/staff/requests/" + r.ID + "/reject" } class="inline">
+												<input type="hidden" name="_csrf" value={ token }>
+												@components.Button("danger", "Reject", templ.Attributes{ "type": "submit" })
+											</form>
+										</div>
+									} else {
+										<div class="text-right text-sm">
+											if r.DecisionNote != "" {
+												<p class="text-gray-700 dark:text-gray-300">{ r.DecisionNote }</p>
+											}
+											if r.DecidedByEmail != "" {
+												<p class="text-xs text-gray-500 dark:text-gray-400">by { r.DecidedByEmail }</p>
+											}
+										</div>
+									}
+								</td>
+							</tr>
+						}
+					</tbody>
+				</table>
+			</div>
+			@staffRequestPager(pager)
+		</div>
+	}
+}
+
+// staffRequestPager renders the shared flowbite pager with the request
+// history htmx wiring.
+templ staffRequestPager(pager StaffRequestPager) {
+	@components.Pager(components.PagerData{
+		Total: pager.Total, Shown: pager.Shown, Page: pager.Page, PageSize: staffRequestPageSize,
+		PrevHref: staffRequestHref(pager, pager.Page-1), NextHref: staffRequestHref(pager, pager.Page+1),
+		PrevDisabled: pager.Page <= 1, NextDisabled: int64(pager.Page)*staffRequestPageSize >= pager.Total,
+		HxGet: "/staff/requests", HxInclude: "#sr-search, #sr-status", HxTarget: "#staff-requests-list",
+		HxValsPrev: staffRequestVals(pager.Page - 1), HxValsNext: staffRequestVals(pager.Page + 1),
+	})
+}
+
+const staffRequestPageSize = 20
+
+func staffRequestHref(pager StaffRequestPager, page int) string {
+	href := "/staff/requests?page=" + itoa(int64(page))
+	if pager.Status != "" {
+		href += "&status=" + url.QueryEscape(pager.Status)
+	}
+	if pager.Q != "" {
+		href += "&q=" + url.QueryEscape(pager.Q)
+	}
+	return href
+}
+
+func staffRequestVals(page int) string {
+	return `{"page":` + itoa(int64(page)) + `}`
+}
+
+templ requestStatusOption(value string, label string, selected string) {
+	if value == selected {
+		<option value={ value } selected>{ label }</option>
+	} else {
+		<option value={ value }>{ label }</option>
+	}
+}
+
