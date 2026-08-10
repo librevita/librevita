@@ -161,7 +161,7 @@ type HistoryRow struct {
 
 // PatientDetailPage renders the patient record with the registrar and
 // the change history.
-templ PatientDetailPage(token string, p *auth.Principal, pt *repository.GetPatientWithCreatorRow, createdBy string, history []HistoryRow, errMsg string) {
+templ PatientDetailPage(token string, p *auth.Principal, pt *repository.GetPatientWithCreatorRow, createdAt, updatedAt, createdBy string, history []HistoryRow, errMsg string) {
 	@layouts.App("Patient", token, p, "patients") {
 		<div class="mx-auto max-w-4xl p-4 lg:p-6">
 			@components.Card() {
@@ -174,11 +174,11 @@ templ PatientDetailPage(token string, p *auth.Principal, pt *repository.GetPatie
 				<div class="flex items-center gap-4">
 					@components.Avatar(shared.Initials(pt.DisplayName), "h-16 w-16 bg-indigo-600 text-white text-xl")
 					<div>
-						<p class="text-sm text-gray-500 dark:text-gray-400">Registered { pt.CreatedAt }</p>
+						<p class="text-sm text-gray-500 dark:text-gray-400">Registered { createdAt }</p>
 						if createdBy != "" {
 							<p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">by <span class="font-medium text-gray-700 dark:text-gray-300">{ createdBy }</span></p>
 						}
-						<p class="mt-1 text-xs text-gray-400 dark:text-gray-400">Updated { pt.UpdatedAt }</p>
+						<p class="mt-1 text-xs text-gray-400 dark:text-gray-400">Updated { updatedAt }</p>
 					</div>
 					<div class="ml-auto">@patientStatusBadge(pt.Status)</div>
 				</div>

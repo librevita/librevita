@@ -17,6 +17,7 @@ import (
 	"github.com/google/uuid"
 	"librevita.org/internal/core/auth/repository"
 	"librevita.org/internal/core/config"
+	"librevita.org/internal/types"
 )
 
 const (
@@ -201,8 +202,8 @@ func hashToken(token string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-func formatTime(t time.Time) string {
-	return t.Format(time.RFC3339Nano)
+func formatTime(t time.Time) types.DateTime {
+	return types.DateTimeFromTime(t)
 }
 
 // decodeKey parses the base64 PASETO key. It returns nil, nil when the
