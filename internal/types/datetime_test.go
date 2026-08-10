@@ -47,13 +47,19 @@ func TestDateTime(t *testing.T) {
 		t.Fatal("Now() must be in an accepted stored form")
 	}
 
-	// NULL (never-decided request) scans to the empty DateTime.
+	// NULL (never-decided request) scans to the empty DateTime, and the
+	// empty DateTime writes back as a real NULL, never as "".
 	var d DateTime
 	if err := d.Scan(nil); err != nil || d != "" {
 		t.Fatalf("Scan(nil) = %q, %v; want empty", d, err)
 	}
 	v, err := d.Value()
-	if err != nil || v != "" {
-		t.Fatalf("Value() = %v, %v; want empty string", v, err)
+	if err != nil || v != nil {
+		t.Fatalf("Value() = %v, %v; want nil (real NULL)", v, err)
+	}
+	full := DateTimeFromTime(time.Date(2026, 8, 10, 17, 43, 37, 678000000, time.UTC))
+	v, err = full.Value()
+	if err != nil || v != "2026-08-10T17:43:37.678Z" {
+		t.Fatalf("Value() = %v, %v; want canonical string", v, err)
 	}
 }
