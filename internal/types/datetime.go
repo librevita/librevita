@@ -78,7 +78,12 @@ func (d *DateTime) Scan(src any) error {
 }
 
 // Value implements driver.Valuer so the canonical stored form is
-// written as a plain string.
+// written as a plain string. An empty DateTime (the in-memory form of
+// a NULL column) maps back to NULL, so nullable columns keep working
+// with WHERE ... IS NULL instead of storing an empty string.
 func (d DateTime) Value() (driver.Value, error) {
+	if d == "" {
+		return nil, nil
+	}
 	return string(d), nil
 }
