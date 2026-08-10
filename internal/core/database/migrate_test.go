@@ -10,50 +10,47 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-func TestUpgradeFromLegacyRoles(t *testing.T) {
-	db, err := sql.Open("sqlite", "file:upgrade-test?mode=memory&cache=shared")
+func TestStrictTables(t *testing.T) {
+	db, err := sql.Open("sqlite", "file:strict-test?mode=memory&cache=shared")
 	if err != nil {
 		t.Fatal(err)
 	}
 	db.SetMaxOpenConns(1)
 	t.Cleanup(func() { db.Close() })
 	ctx := context.Background()
-	log := slog.New(slog.DiscardHandler)
 
-	// Schema as it was before the relational roles migration.
-	if err := MigrateTo(ctx, db, 10, log); err != nil {
-		t.Fatalf("migrate to 10: %v", err)
-	}
-	if _, err := db.Exec(`INSERT INTO users (id, email, password_hash, display_name, role)
-		VALUES ('user-legacy', 'legacy@example.org', 'x', 'Legacy User', 'physician')`); err != nil {
-		t.Fatalf("seed legacy user: %v", err)
+	if err := Migrate(ctx, db, slog.New(slog.DiscardHandler)); err != nil {
+		t.Fatalf("migrate: %v", err)
 	}
 
-	// Apply the relational roles migration on top.
-	if err := MigrateTo(ctx, db, 11, log); err != nil {
-		t.Fatalf("migrate to 11: %v", err)
-	}
-
-	// The backfill mapped the legacy text role to the physician role row.
-	var roleName string
-	if err := db.QueryRow(`SELECT r.name FROM users u JOIN roles r ON r.id = u.role_id WHERE u.id = 'user-legacy'`).Scan(&roleName); err != nil {
-		t.Fatalf("load migrated role: %v", err)
-	}
-	if roleName != "physician" {
-		t.Errorf("migrated role = %q, want physician", roleName)
-	}
-
-	// The text role column is gone.
-	if _, err := db.Query(`SELECT role FROM users`); err == nil || !strings.Contains(err.Error(), "no such column") {
-		t.Errorf("role column still queryable: %v", err)
-	}
-
-	// The four system roles were seeded.
-	var roles int
-	if err := db.QueryRow(`SELECT COUNT(*) FROM roles WHERE system = 1`).Scan(&roles); err != nil {
+	// Every business table must be STRICT, so wrong column types are
+	// hard errors instead of silent coercion.
+	rows, err := db.Query(`SELECT name, strict FROM pragma_table_list WHERE type = 'table'`)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if roles != 4 {
-		t.Errorf("system roles = %d, want 4", roles)
+	defer rows.Close()
+	tables := map[string]int64{}
+	for rows.Next() {
+		var name string
+		var strict int64
+		if err := rows.Scan(&name, &strict); err != nil {
+			t.Fatal(err)
+		}
+		tables[name] = strict
+	}
+	expected := []string{"roles", "users", "sessions", "audit_log", "clinics", "meta", "policies", "policy_versions", "patients", "specialties", "user_specialties", "staff_change_requests"}
+	for _, name := range expected {
+		if tables[name] != 1 {
+			t.Errorf("table %q is not STRICT (strict=%d)", name, tables[name])
+		}
+	}
+
+	// Prove the strict typing is enforced: a text value in an INTEGER
+	// column must be rejected.
+	if _, err := db.Exec(`INSERT INTO roles (id, name, system) VALUES ('x', 'test-role', 'not-an-int')`); err == nil {
+		t.Errorf("STRICT accepted a text value in an INTEGER column")
+	} else if !strings.Contains(err.Error(), "cannot store TEXT value") {
+		t.Errorf("unexpected error for strict violation: %v", err)
 	}
 }

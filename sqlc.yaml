@@ -47,7 +47,12 @@ sql:
   - name: "user"
     engine: "sqlite"
     schema: "db/schema/"
-    queries: "db/query/user.sql"
+    queries:
+      - "db/query/user.sql"
+      - "db/query/roles.sql"
+      - "db/query/specialties.sql"
+      - "db/query/staff.sql"
+      - "db/query/meta.sql"
     gen:
       go:
         package: "repository"
