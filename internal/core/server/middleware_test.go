@@ -189,7 +189,7 @@ func TestRequirePolicyDenialIsAudited(t *testing.T) {
 		Scan(&action, &resource, &result); err != nil {
 		t.Fatalf("read audit_log: %v", err)
 	}
-	if action != "authorize" || resource != "policy:admin.view" || result != types.ResultFailure.String() {
+	if action != "authorize" || resource != "policy:admin.view" || result != types.AuditResultFailure.String() {
 		t.Fatalf("unexpected audit row: %q %q %q", action, resource, result)
 	}
 }
