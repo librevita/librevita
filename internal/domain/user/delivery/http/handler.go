@@ -799,12 +799,10 @@ func (h *Handler) SpecialtyCreate(c echo.Context) error {
 		case errors.Is(err, usecase.ErrDuplicateSpecialty):
 			msg = "A specialty with this name already exists"
 		}
-		rows, lerr := h.svc.ListSpecialties(ctx, clinicID)
-		if lerr != nil {
-			return lerr
-		}
-		return server.Render(c, http.StatusBadRequest, views.SpecialtiesPage(
-			server.CSRFToken(c, h.csrf), server.Principal(c), h.specialtyRows(rows), msg))
+		// htmx does not swap 4xx responses, so errors return 200 and
+		// re-render the form fragment inside the dialog.
+		return server.Render(c, http.StatusOK, views.SpecialtyForm(
+			server.CSRFToken(c, h.csrf), msg))
 	}
 	h.audit.Record(ctx, audit.Event{
 		ActorID: server.ActorID(c), ActorMail: server.ActorMail(c),
@@ -867,12 +865,10 @@ func (h *Handler) RoleCreate(c echo.Context) error {
 		case errors.Is(err, usecase.ErrDuplicateRole):
 			msg = "A role with this name already exists"
 		}
-		rows, lerr := h.svc.ListRoles(ctx)
-		if lerr != nil {
-			return lerr
-		}
-		return server.Render(c, http.StatusBadRequest, views.RolesPage(
-			server.CSRFToken(c, h.csrf), server.Principal(c), h.roleViews(rows), msg))
+		// htmx does not swap 4xx responses, so errors return 200 and
+		// re-render the form fragment inside the dialog.
+		return server.Render(c, http.StatusOK, views.RoleForm(
+			server.CSRFToken(c, h.csrf), msg))
 	}
 	h.audit.Record(ctx, audit.Event{
 		ActorID: server.ActorID(c), ActorMail: server.ActorMail(c),

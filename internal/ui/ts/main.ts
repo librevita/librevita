@@ -10,6 +10,7 @@ import * as sidebar from './sidebar.ts';
 import * as userMenu from './user-menu.ts';
 import * as tabs from './tabs.ts';
 import * as themePref from './theme-pref.ts';
+import * as modal from './modal.ts';
 import * as tableSelect from './table-select.ts';
 
 configureHtmx();
@@ -20,6 +21,7 @@ userMenu.init();
 tabs.init();
 themePref.init();
 tableSelect.init();
+modal.init();
 
 document.addEventListener('htmx:afterSwap', (evt) => {
   const detail = (evt as CustomEvent<HtmxAfterSwapDetail>).detail;
@@ -32,6 +34,7 @@ document.addEventListener('htmx:afterSwap', (evt) => {
   tabs.refresh(root);
   themePref.refresh(root);
   tableSelect.refresh(root);
+  modal.refresh(root);
   // Only page navigations (boosted swaps target the body) move the focus
   // to the main content; fragment swaps (search, pager, row updates) must
   // leave the focus where the user is typing or clicking.
