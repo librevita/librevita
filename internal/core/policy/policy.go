@@ -25,6 +25,7 @@ import (
 
 	"librevita.org/internal/core/auth"
 	"librevita.org/internal/core/policy/repository"
+	lvtypes "librevita.org/internal/types"
 )
 
 // Every expression receives the same variables:
@@ -78,14 +79,6 @@ type RequestInfo struct {
 	Method string
 	Path   string
 }
-
-// Origin of a policy version: startup defaults, the admin panel, or an
-// internal system change.
-const (
-	OriginSeed   = "seed"
-	OriginAdmin  = "admin"
-	OriginSystem = "system"
-)
 
 // criticalPolicies guard their own management: if an admin saved an
 // expression that denies the admin role, the admin panel would become
@@ -168,7 +161,7 @@ func (pe *PolicyEngine) Load(ctx context.Context) error {
 				return fmt.Errorf("policy: seed %q: %w", name, err)
 			}
 			if err := queries.CreatePolicyVersion(ctx, repository.CreatePolicyVersionParams{
-				PolicyID: created.ID.String(), Expression: expr, Origin: OriginSeed,
+				PolicyID: created.ID.String(), Expression: expr, Origin: lvtypes.PolicyOriginSeed.String(),
 			}); err != nil {
 				return fmt.Errorf("policy: seed version %q: %w", name, err)
 			}
@@ -227,9 +220,9 @@ func (pe *PolicyEngine) Set(ctx context.Context, name, expression string, actor 
 	pe.setMu.Lock()
 	defer pe.setMu.Unlock()
 
-	origin := OriginSystem
+	origin := lvtypes.PolicyOriginSystem
 	if actor.ID != "" {
-		origin = OriginAdmin
+		origin = lvtypes.PolicyOriginAdmin
 	}
 
 	tx, err := pe.db.BeginTx(ctx, nil)
@@ -273,7 +266,7 @@ func (pe *PolicyEngine) Set(ctx context.Context, name, expression string, actor 
 		actorID, actorMail = &id, &mail
 	}
 	if err := qtx.CreatePolicyVersion(ctx, repository.CreatePolicyVersionParams{
-		PolicyID: policy.ID.String(), Expression: expression, Origin: origin,
+		PolicyID: policy.ID.String(), Expression: expression, Origin: origin.String(),
 		ChangedBy: actorID, ChangedByEmail: actorMail,
 	}); err != nil {
 		return fmt.Errorf("policy: version %q: %w", name, err)

@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 
 	"librevita.org/internal/domain/user/usecase"
+	"librevita.org/internal/types"
 )
 
 var (
@@ -321,7 +322,7 @@ func TestStaffChangeRequests(t *testing.T) {
 	}
 	_ = other
 
-	pend, total, err := svc.ListStaffChangeRequestsFiltered(ctx, usecase.RequestPending, "", 50, 0)
+	pend, total, err := svc.ListStaffChangeRequestsFiltered(ctx, types.StaffRequestPending.String(), "", 50, 0)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -13,6 +13,7 @@ import (
 
 	"librevita.org/internal/core/auth"
 	"librevita.org/internal/core/database"
+	"librevita.org/internal/types"
 )
 
 func testPolicyEngine(t *testing.T) *PolicyEngine {
@@ -269,7 +270,7 @@ func TestSetRecordsVersionWithActor(t *testing.T) {
 	if len(rows) != 1 {
 		t.Fatalf("seed created %d version rows, want 1", len(rows))
 	}
-	if rows[0].Origin != OriginSeed || rows[0].ChangedByEmail != nil {
+	if rows[0].Origin != types.PolicyOriginSeed.String() || rows[0].ChangedByEmail != nil {
 		t.Fatalf("seed version must have origin seed and no actor: %+v", rows[0])
 	}
 
@@ -288,10 +289,10 @@ func TestSetRecordsVersionWithActor(t *testing.T) {
 		t.Fatalf("history has %d entries, want 3", len(rows))
 	}
 	// Newest first.
-	if rows[0].Expression != "false" || rows[1].Expression != `principal.role == 'admin'` || rows[2].Origin != OriginSeed {
+	if rows[0].Expression != "false" || rows[1].Expression != `principal.role == 'admin'` || rows[2].Origin != types.PolicyOriginSeed.String() {
 		t.Fatalf("unexpected history order: %+v", rows)
 	}
-	if rows[0].Origin != OriginAdmin || rows[1].Origin != OriginAdmin {
+	if rows[0].Origin != types.PolicyOriginAdmin.String() || rows[1].Origin != types.PolicyOriginAdmin.String() {
 		t.Fatalf("admin edits must carry origin admin: %+v", rows)
 	}
 	if rows[0].ChangedByEmail == nil || *rows[0].ChangedByEmail != "bruno@example.org" {

@@ -19,8 +19,8 @@ import (
 	"librevita.org/internal/domain/patient/delivery/views"
 	"librevita.org/internal/domain/patient/repository"
 	"librevita.org/internal/domain/patient/usecase"
-	"librevita.org/internal/ui/components"
 	"librevita.org/internal/types"
+	"librevita.org/internal/ui/components"
 )
 
 // utcMilliLayout matches the timestamps written by the database.
@@ -159,7 +159,7 @@ func historyText(ev audit.EventRow) string {
 		}
 		return "Updated by " + actor
 	case "patient.status":
-		if ev.Detail != nil && *ev.Detail == usecase.StatusInactive {
+		if ev.Detail != nil && *ev.Detail == types.PatientStatusInactive.String() {
 			return "Archived by " + actor
 		}
 		return "Restored by " + actor
@@ -195,7 +195,7 @@ func (h *Handler) Update(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-	if err := h.authorizePatientEdit(c, uuidStrPtr(before.CreatedBy), before.ID.String(), before.Status); err != nil {
+	if err := h.authorizePatientEdit(c, uuidStrPtr(before.CreatedBy), before.ID.String(), types.PatientStatus(before.Status)); err != nil {
 		return err
 	}
 	patient, err := h.svc.Update(ctx, clinicID, id, input)
@@ -226,7 +226,7 @@ func patientChanges(before *repository.GetPatientWithCreatorRow, input usecase.P
 	fields := []field{
 		{"display name", before.DisplayName, input.DisplayName},
 		{"birth date", orEmpty(before.BirthDate), input.BirthDate},
-		{"sex", before.Sex, input.Sex},
+		{"sex", before.Sex, input.Sex.String()},
 		{"document", orEmpty(before.Document), input.Document},
 		{"phone", orEmpty(before.Phone), input.Phone},
 		{"email", orEmpty(before.Email), input.Email},
@@ -263,12 +263,12 @@ func displayValue(s string) string {
 // Archive sets the patient inactive. htmx responses carry only an OOB
 // alert so the row is removed from the list.
 func (h *Handler) Archive(c echo.Context) error {
-	return h.setStatus(c, usecase.StatusInactive, "Patient archived")
+	return h.setStatus(c, types.PatientStatusInactive, "Patient archived")
 }
 
 // Restore sets the patient active again.
 func (h *Handler) Restore(c echo.Context) error {
-	return h.setStatus(c, usecase.StatusActive, "Patient restored")
+	return h.setStatus(c, types.PatientStatusActive, "Patient restored")
 }
 
 // BulkArchive archives the patients whose ids are in the form. The
@@ -299,13 +299,13 @@ func (h *Handler) BulkArchive(c echo.Context) error {
 		if err != nil {
 			continue
 		}
-		if err := h.authorizePatientEdit(c, uuidStrPtr(pt.CreatedBy), pt.ID.String(), pt.Status); err != nil {
+		if err := h.authorizePatientEdit(c, uuidStrPtr(pt.CreatedBy), pt.ID.String(), types.PatientStatus(pt.Status)); err != nil {
 			continue
 		}
-		if err := h.svc.SetStatus(ctx, clinicID, id, usecase.StatusInactive); err == nil {
+		if err := h.svc.SetStatus(ctx, clinicID, id, types.PatientStatusInactive); err == nil {
 			archived++
 			h.audit.Record(ctx, server.EventFromRequest(c, types.ResultSuccess,
-				"patient.status", "patient:"+id, "", usecase.StatusInactive))
+				"patient.status", "patient:"+id, "", types.PatientStatusInactive.String()))
 		} else {
 			h.audit.Record(ctx, server.EventFromRequest(c, types.ResultFailure,
 				"patient.status", "patient:"+id, "", "bulk archive failed: "+err.Error()))
@@ -325,7 +325,7 @@ func (h *Handler) BulkArchive(c echo.Context) error {
 	return server.Render(c, http.StatusOK, views.PatientListTableWithAlert(rows, pager, msg))
 }
 
-func (h *Handler) setStatus(c echo.Context, status, successMsg string) error {
+func (h *Handler) setStatus(c echo.Context, status types.PatientStatus, successMsg string) error {
 	ctx := c.Request().Context()
 	id := c.Param("id")
 	clinicID, err := h.clinicID(ctx)
@@ -336,16 +336,16 @@ func (h *Handler) setStatus(c echo.Context, status, successMsg string) error {
 	if err != nil {
 		return err
 	}
-	if err := h.authorizePatientEdit(c, uuidStrPtr(pt.CreatedBy), pt.ID.String(), pt.Status); err != nil {
+	if err := h.authorizePatientEdit(c, uuidStrPtr(pt.CreatedBy), pt.ID.String(), types.PatientStatus(pt.Status)); err != nil {
 		return err
 	}
 	err = h.svc.SetStatus(ctx, clinicID, id, status)
 	if err == nil {
 		h.audit.Record(ctx, server.EventFromRequest(c, types.ResultSuccess,
-			"patient.status", "patient:"+id, "", status))
+			"patient.status", "patient:"+id, "", status.String()))
 	} else {
 		h.audit.Record(ctx, server.EventFromRequest(c, types.ResultFailure,
-			"patient.status", "patient:"+id, "", "could not set status "+status))
+			"patient.status", "patient:"+id, "", "could not set status "+status.String()))
 	}
 	if server.IsHtmx(c) {
 		if err != nil {
@@ -385,7 +385,7 @@ func (h *Handler) input(c echo.Context) usecase.PatientInput {
 	return usecase.PatientInput{
 		DisplayName: c.FormValue("display_name"),
 		BirthDate:   c.FormValue("birth_date"),
-		Sex:         c.FormValue("sex"),
+		Sex:         types.Sex(c.FormValue("sex")),
 		Document:    c.FormValue("document"),
 		Phone:       c.FormValue("phone"),
 		Email:       c.FormValue("email"),
@@ -447,7 +447,7 @@ func values(in usecase.PatientInput) views.PatientFormValues {
 	return views.PatientFormValues{
 		DisplayName: in.DisplayName,
 		BirthDate:   in.BirthDate,
-		Sex:         in.Sex,
+		Sex:         in.Sex.String(),
 		Document:    in.Document,
 		Phone:       in.Phone,
 		Email:       in.Email,
@@ -463,7 +463,7 @@ func patientInput(pt *repository.GetPatientWithCreatorRow) usecase.PatientInput 
 	return usecase.PatientInput{
 		DisplayName: pt.DisplayName,
 		BirthDate:   orEmpty(pt.BirthDate),
-		Sex:         pt.Sex,
+		Sex:         types.Sex(pt.Sex),
 		Document:    orEmpty(pt.Document),
 		Phone:       orEmpty(pt.Phone),
 		Email:       orEmpty(pt.Email),
@@ -551,7 +551,7 @@ func (h *Handler) CheckDocument(c echo.Context) error {
 
 // authorizePatientEdit enforces the fine-grained patient.edit policy
 // against the record and audits denials.
-func (h *Handler) authorizePatientEdit(c echo.Context, createdBy *string, ptID, ptStatus string) error {
+func (h *Handler) authorizePatientEdit(c echo.Context, createdBy *string, ptID string, ptStatus types.PatientStatus) error {
 	principal := server.Principal(c)
 	if principal == nil {
 		return echo.NewHTTPError(http.StatusForbidden)
