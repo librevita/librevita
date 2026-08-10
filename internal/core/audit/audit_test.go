@@ -71,3 +71,64 @@ func TestRecordSwallowsWriteErrors(t *testing.T) {
 		Action: "login", Resource: "user", Result: ResultFailure,
 	})
 }
+
+func TestHashChain(t *testing.T) {
+	db := openAuditDB(t)
+	logger := slog.New(slog.DiscardHandler)
+	l, err := NewLogger(db, logger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+
+	for _, ev := range []Event{
+		{Action: "login", Resource: "user", Result: ResultSuccess},
+		{Action: "patient.update", Resource: "patient:1", Result: ResultSuccess, Detail: "phone changed"},
+		{Action: "authorize", Resource: "policy:admin.view", Result: ResultFailure},
+	} {
+		l.Record(ctx, ev)
+	}
+	if broken, err := l.VerifyChain(ctx); err != nil || broken != 0 {
+		t.Fatalf("intact chain: broken=%d err=%v", broken, err)
+	}
+
+	// Every row must carry a hash derived from the previous one.
+	rows, err := l.queries.ListAuditChain(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 3 {
+		t.Fatalf("rows = %d, want 3", len(rows))
+	}
+	for i, r := range rows {
+		if r.Signature == "" {
+			t.Fatalf("row %d has no chain hash", i)
+		}
+	}
+
+	// Forging an entry with a wrong hash breaks the chain from there on.
+	if _, err := db.Exec(`INSERT INTO audit_log (actor_name, actor_role, user_agent, action, resource, resource_name, result, created_at, signature)
+		VALUES ('', '', '', 'forged', 'user', '', 'success', '2026-01-01T00:00:00.000Z', 'deadbeef')`); err != nil {
+		t.Fatal(err)
+	}
+	if broken, err := l.VerifyChain(ctx); err != nil || broken == 0 {
+		t.Fatalf("broken chain must be detected, broken=%d err=%v", broken, err)
+	}
+}
+
+func TestAuditLogAppendOnly(t *testing.T) {
+	db := openAuditDB(t)
+	l, err := NewLogger(db, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	l.Record(ctx, Event{Action: "login", Resource: "user", Result: ResultSuccess})
+
+	if _, err := db.Exec(`UPDATE audit_log SET detail = 'tampered'`); err == nil {
+		t.Fatal("UPDATE on audit_log must be refused")
+	}
+	if _, err := db.Exec(`DELETE FROM audit_log`); err == nil {
+		t.Fatal("DELETE on audit_log must be refused")
+	}
+}
