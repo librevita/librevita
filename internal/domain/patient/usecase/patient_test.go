@@ -15,6 +15,7 @@ import (
 
 	"librevita.org/internal/core/database"
 	"librevita.org/internal/domain/patient/usecase"
+	"librevita.org/internal/types"
 )
 
 func openDB(t *testing.T) *sql.DB {
@@ -69,7 +70,7 @@ func validInput() usecase.PatientInput {
 	return usecase.PatientInput{
 		DisplayName: "Maria Oliveira",
 		BirthDate:   "1985-03-14",
-		Sex:         "female",
+		Sex:         types.SexFemale,
 		Document:    "123.456.789-00",
 		Phone:       "+55 11 99999-0000",
 		Email:       "maria@example.org",
@@ -86,7 +87,7 @@ func TestCreateAndGet(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if pt.ID == uuid.Nil || pt.Status != "active" {
+	if pt.ID == uuid.Nil || pt.Status != types.PatientStatusActive.String() {
 		t.Fatalf("created patient = %+v, want id and active status", pt)
 	}
 
@@ -108,7 +109,7 @@ func TestCreateValidation(t *testing.T) {
 		mutate func(*usecase.PatientInput)
 	}{
 		{"missing name", func(in *usecase.PatientInput) { in.DisplayName = " " }},
-		{"bad sex", func(in *usecase.PatientInput) { in.Sex = "alien" }},
+		{"bad sex", func(in *usecase.PatientInput) { in.Sex = types.Sex("alien") }},
 		{"bad birth date", func(in *usecase.PatientInput) { in.BirthDate = "14/03/1985" }},
 		{"bad email", func(in *usecase.PatientInput) { in.Email = "not-an-email" }},
 	}
@@ -199,17 +200,17 @@ func TestListAndSearch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := svc.SetStatus(context.Background(), testClinicID.String(), pt.ID.String(), usecase.StatusInactive); err != nil {
+	if err := svc.SetStatus(context.Background(), testClinicID.String(), pt.ID.String(), types.PatientStatusInactive); err != nil {
 		t.Fatal(err)
 	}
-	active, _, err := svc.ListPage(context.Background(), testClinicID.String(), "", usecase.StatusActive, 50, 0)
+	active, _, err := svc.ListPage(context.Background(), testClinicID.String(), "", types.PatientStatusActive.String(), 50, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(active) != 2 {
 		t.Fatalf("active = %d, want 2", len(active))
 	}
-	inactive, _, err := svc.ListPage(context.Background(), testClinicID.String(), "", usecase.StatusInactive, 50, 0)
+	inactive, _, err := svc.ListPage(context.Background(), testClinicID.String(), "", types.PatientStatusInactive.String(), 50, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -226,11 +227,11 @@ func TestSetStatus(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := svc.SetStatus(context.Background(), testClinicID.String(), pt.ID.String(), usecase.StatusInactive); err != nil {
+	if err := svc.SetStatus(context.Background(), testClinicID.String(), pt.ID.String(), types.PatientStatusInactive); err != nil {
 		t.Fatal(err)
 	}
 	got, _ := svc.Get(context.Background(), pt.ID.String())
-	if got.Status != usecase.StatusInactive {
+	if got.Status != types.PatientStatusInactive.String() {
 		t.Fatalf("status = %q, want inactive", got.Status)
 	}
 	if err := svc.SetStatus(context.Background(), testClinicID.String(), pt.ID.String(), "banana"); err == nil {
@@ -308,13 +309,13 @@ func TestAuthorizePatientEdit(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := svc.AuthorizePatientEdit(ctx, admin, pt.ID.String(), uuidStrPtrTest(pt.CreatedBy), pt.Status); err != nil {
+	if err := svc.AuthorizePatientEdit(ctx, admin, pt.ID.String(), uuidStrPtrTest(pt.CreatedBy), types.PatientStatus(pt.Status)); err != nil {
 		t.Errorf("admin edit denied: %v", err)
 	}
-	if err := svc.AuthorizePatientEdit(ctx, owner, pt.ID.String(), uuidStrPtrTest(pt.CreatedBy), pt.Status); err != nil {
+	if err := svc.AuthorizePatientEdit(ctx, owner, pt.ID.String(), uuidStrPtrTest(pt.CreatedBy), types.PatientStatus(pt.Status)); err != nil {
 		t.Errorf("owner edit denied: %v", err)
 	}
-	if err := svc.AuthorizePatientEdit(ctx, other, pt.ID.String(), uuidStrPtrTest(pt.CreatedBy), pt.Status); !errors.Is(err, usecase.ErrForbidden) {
+	if err := svc.AuthorizePatientEdit(ctx, other, pt.ID.String(), uuidStrPtrTest(pt.CreatedBy), types.PatientStatus(pt.Status)); !errors.Is(err, usecase.ErrForbidden) {
 		t.Errorf("other physician err = %v, want ErrForbidden", err)
 	}
 }

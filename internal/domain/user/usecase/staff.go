@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 
 	"librevita.org/internal/domain/user/repository"
+	"librevita.org/internal/types"
 )
 
 // Staff request errors.
@@ -18,13 +19,6 @@ var (
 	ErrRequestNotFound   = errors.New("usecase: staff change request not found")
 	ErrRequestNotPending = errors.New("usecase: staff change request is not pending")
 	ErrEmailInUse        = errors.New("usecase: that email already belongs to another account")
-)
-
-// Staff change request states.
-const (
-	RequestPending  = "pending"
-	RequestApproved = "approved"
-	RequestRejected = "rejected"
 )
 
 // StaffChange is the JSON payload of a proposed physician profile change.
@@ -167,7 +161,7 @@ func (s *Service) ApproveStaffChangeRequest(ctx context.Context, id, decidedBy s
 		}
 		return fmt.Errorf("usecase: load staff change request: %w", err)
 	}
-	if req.Status != RequestPending {
+	if types.StaffRequestStatus(req.Status) != types.StaffRequestPending {
 		return ErrRequestNotPending
 	}
 	var change StaffChange
@@ -202,7 +196,7 @@ func (s *Service) ApproveStaffChangeRequest(ctx context.Context, id, decidedBy s
 		}
 	}
 	if err := queries.DecideStaffChangeRequest(ctx, repository.DecideStaffChangeRequestParams{
-		Status: RequestApproved, DecisionNote: sql.NullString{}, DecidedBy: uuid.MustParse(decidedBy), ID: uuid.MustParse(id),
+		Status: types.StaffRequestApproved.String(), DecisionNote: sql.NullString{}, DecidedBy: uuid.MustParse(decidedBy), ID: uuid.MustParse(id),
 	}); err != nil {
 		return fmt.Errorf("usecase: approve staff change request: %w", err)
 	}
@@ -222,12 +216,12 @@ func (s *Service) RejectStaffChangeRequest(ctx context.Context, id, decidedBy, n
 		}
 		return fmt.Errorf("usecase: load staff change request: %w", err)
 	}
-	if req.Status != RequestPending {
+	if types.StaffRequestStatus(req.Status) != types.StaffRequestPending {
 		return ErrRequestNotPending
 	}
 	note = strings.TrimSpace(note)
 	if err := s.users.DecideStaffChangeRequest(ctx, repository.DecideStaffChangeRequestParams{
-		Status: RequestRejected, DecisionNote: sql.NullString{String: note, Valid: note != ""},
+		Status: types.StaffRequestRejected.String(), DecisionNote: sql.NullString{String: note, Valid: note != ""},
 		DecidedBy: uuid.MustParse(decidedBy), ID: uuid.MustParse(id),
 	}); err != nil {
 		return fmt.Errorf("usecase: reject staff change request: %w", err)

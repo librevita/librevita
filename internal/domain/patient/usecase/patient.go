@@ -17,6 +17,7 @@ import (
 	"librevita.org/internal/core/auth"
 	"librevita.org/internal/core/policy"
 	"librevita.org/internal/domain/patient/repository"
+	"librevita.org/internal/types"
 )
 
 const (
@@ -27,16 +28,6 @@ const (
 	maxAddressLen     = 120
 	maxNotesLen       = 4000
 )
-
-// PatientStatus values for the patients.status column.
-const (
-	StatusActive   = "active"
-	StatusInactive = "inactive"
-)
-
-var validSex = map[string]bool{
-	"female": true, "male": true, "other": true, "unknown": true,
-}
 
 // ValidationError is returned for invalid patient input.
 type ValidationError struct{ Msg string }
@@ -50,7 +41,7 @@ var ErrNotFound = errors.New("patient: not found")
 type PatientInput struct {
 	DisplayName string
 	BirthDate   string
-	Sex         string
+	Sex         types.Sex
 	Document    string
 	Phone       string
 	Email       string
@@ -80,11 +71,11 @@ var ErrForbidden = errors.New("usecase: permission denied")
 // AuthorizePatientEdit evaluates the fine-grained patient.edit policy
 // against the record itself: an admin edits anything, a physician only
 // the patients they registered. Callers audit the denial.
-func (s *Service) AuthorizePatientEdit(ctx context.Context, principal *auth.Principal, id string, createdBy *string, status string) error {
+func (s *Service) AuthorizePatientEdit(ctx context.Context, principal *auth.Principal, id string, createdBy *string, status types.PatientStatus) error {
 	resource := map[string]any{
 		"id":         id,
 		"created_by": orEmpty(createdBy),
-		"status":     status,
+		"status":     status.String(),
 	}
 	allowed, err := s.policies.AllowedResource(ctx, "patient.edit", principal,
 		policy.RequestInfo{Method: "POST", Path: "/patients/" + id}, resource, nil)
@@ -113,7 +104,7 @@ func (s *Service) Create(ctx context.Context, clinicID, createdBy string, in Pat
 		ClinicID:    uuid.MustParse(clinicID),
 		DisplayName: normalized.DisplayName,
 		BirthDate:   strPtr(normalized.BirthDate),
-		Sex:         normalized.Sex,
+		Sex:         normalized.Sex.String(),
 		Document:    strPtr(normalized.Document),
 		Phone:       strPtr(normalized.Phone),
 		Email:       strPtr(normalized.Email),
@@ -163,7 +154,7 @@ func (s *Service) Update(ctx context.Context, clinicID, id string, in PatientInp
 	patient, err := s.q.UpdatePatient(ctx, repository.UpdatePatientParams{
 		DisplayName: normalized.DisplayName,
 		BirthDate:   strPtr(normalized.BirthDate),
-		Sex:         normalized.Sex,
+		Sex:         normalized.Sex.String(),
 		Document:    strPtr(normalized.Document),
 		Phone:       strPtr(normalized.Phone),
 		Email:       strPtr(normalized.Email),
@@ -185,9 +176,9 @@ func (s *Service) Update(ctx context.Context, clinicID, id string, in PatientInp
 }
 
 // SetStatus updates the patient status, scoped to the clinic.
-func (s *Service) SetStatus(ctx context.Context, clinicID, id, status string) error {
+func (s *Service) SetStatus(ctx context.Context, clinicID, id string, status types.PatientStatus) error {
 	err := s.q.UpdatePatientStatus(ctx, repository.UpdatePatientStatusParams{
-		Status: status, ID: uuid.MustParse(id), ClinicID: uuid.MustParse(clinicID),
+		Status: status.String(), ID: uuid.MustParse(id), ClinicID: uuid.MustParse(clinicID),
 	})
 	if err != nil {
 		return fmt.Errorf("usecase: set patient status: %w", err)
@@ -244,7 +235,7 @@ func normalize(in PatientInput) (PatientInput, error) {
 	out := PatientInput{
 		DisplayName: strings.TrimSpace(in.DisplayName),
 		BirthDate:   strings.TrimSpace(in.BirthDate),
-		Sex:         strings.TrimSpace(in.Sex),
+		Sex:         types.Sex(strings.TrimSpace(in.Sex.String())),
 		Document:    strings.TrimSpace(in.Document),
 		Phone:       strings.TrimSpace(in.Phone),
 		Email:       strings.TrimSpace(in.Email),
@@ -261,9 +252,9 @@ func normalize(in PatientInput) (PatientInput, error) {
 		return out, &ValidationError{Msg: "patient name is too long"}
 	}
 	if out.Sex == "" {
-		out.Sex = "unknown"
+		out.Sex = types.SexUnknown
 	}
-	if !validSex[out.Sex] {
+	if !out.Sex.Valid() {
 		return out, &ValidationError{Msg: "invalid sex"}
 	}
 	if out.BirthDate != "" {
