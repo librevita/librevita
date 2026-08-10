@@ -5,7 +5,15 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/google/uuid"
+
 	"librevita.org/internal/domain/user/usecase"
+)
+
+var (
+	testClinic  = uuid.MustParse("00000000-0000-0000-0000-000000000011")
+	testClinic2 = uuid.MustParse("00000000-0000-0000-0000-000000000012")
+	testAdminID = uuid.MustParse("00000000-0000-0000-0000-000000000021")
 )
 
 func TestCreateUser(t *testing.T) {
@@ -19,15 +27,15 @@ func TestCreateUser(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateUser: %v", err)
 	}
-	loaded, err := svc.GetUser(ctx, user.ID)
+	loaded, err := svc.GetUser(ctx, user.ID.String())
 	if err != nil {
 		t.Fatal(err)
 	}
 	if loaded.RoleName != "physician" || user.DisplayName != "Dr. Lima" {
 		t.Errorf("CreateUser = %+v, want physician/Dr. Lima", user)
 	}
-	if user.Active != 1 {
-		t.Errorf("new account must start active, got %d", user.Active)
+	if !user.Active {
+		t.Errorf("new account must start active, got %v", user.Active)
 	}
 	if user.PasswordHash == "" || user.PasswordHash == "senha-segura" {
 		t.Errorf("password must be hashed")
@@ -72,28 +80,28 @@ func TestUpdateUserRoleAndStatus(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	updated, err := svc.UpdateUser(ctx, staff.ID, "someone-else", usecase.UpdateUserInput{
+	updated, err := svc.UpdateUser(ctx, staff.ID.String(), "someone-else", usecase.UpdateUserInput{
 		Name: "Nurse Chefe", Email: "nurse@example.org", Role: "physician", Active: false,
 	})
 	if err != nil {
 		t.Fatalf("UpdateUser: %v", err)
 	}
-	loaded, err := svc.GetUser(ctx, staff.ID)
+	loaded, err := svc.GetUser(ctx, staff.ID.String())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if updated.DisplayName != "Nurse Chefe" || loaded.RoleName != "physician" || updated.Active != 0 {
+	if updated.DisplayName != "Nurse Chefe" || loaded.RoleName != "physician" || updated.Active {
 		t.Errorf("UpdateUser = %+v", updated)
 	}
 
 	// Reactivate.
-	updated, err = svc.UpdateUser(ctx, staff.ID, "someone-else", usecase.UpdateUserInput{
+	updated, err = svc.UpdateUser(ctx, staff.ID.String(), "someone-else", usecase.UpdateUserInput{
 		Name: "Nurse Chefe", Email: "nurse@example.org", Role: "physician", Active: true,
 	})
 	if err != nil {
 		t.Fatalf("reactivate: %v", err)
 	}
-	if updated.Active != 1 {
+	if !updated.Active {
 		t.Errorf("reactivated user must be active")
 	}
 }
@@ -132,14 +140,14 @@ func TestUpdateUserAntiLockout(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.UpdateUser(ctx, admin.ID, second.ID, usecase.UpdateUserInput{
+	if _, err := svc.UpdateUser(ctx, admin.ID, second.ID.String(), usecase.UpdateUserInput{
 		Name: "Admin", Email: "admin@example.org", Role: "receptionist", Active: true,
 	}); err != nil {
 		t.Errorf("demote with backup admin: %v", err)
 	}
 
 	// The second admin alone cannot be deactivated either.
-	_, err = svc.UpdateUser(ctx, second.ID, second.ID, usecase.UpdateUserInput{
+	_, err = svc.UpdateUser(ctx, second.ID.String(), second.ID.String(), usecase.UpdateUserInput{
 		Name: "Backup", Email: "backup@example.org", Role: "admin", Active: false,
 	})
 	if !errors.Is(err, usecase.ErrCannotDemoteSelf) {
@@ -148,7 +156,7 @@ func TestUpdateUserAntiLockout(t *testing.T) {
 
 	// Once the first admin was demoted, the second is the last active
 	// admin: demoting it must be refused regardless of the actor.
-	_, err = svc.UpdateUser(ctx, second.ID, admin.ID, usecase.UpdateUserInput{
+	_, err = svc.UpdateUser(ctx, second.ID.String(), admin.ID, usecase.UpdateUserInput{
 		Name: "Backup", Email: "backup@example.org", Role: "patient", Active: true,
 	})
 	if !errors.Is(err, usecase.ErrLastActiveAdmin) {
@@ -200,26 +208,26 @@ func TestSpecialties(t *testing.T) {
 	svc := newService(t, db)
 	ctx := context.Background()
 
-	psy, err := svc.CreateSpecialty(ctx, "clinic-1", "Psychologist")
+	psy, err := svc.CreateSpecialty(ctx, testClinic.String(), "Psychologist")
 	if err != nil {
 		t.Fatal(err)
 	}
-	physio, err := svc.CreateSpecialty(ctx, "clinic-1", "Physiotherapist")
+	physio, err := svc.CreateSpecialty(ctx, testClinic.String(), "Physiotherapist")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.CreateSpecialty(ctx, "clinic-1", " psychologist "); !errors.Is(err, usecase.ErrDuplicateSpecialty) {
+	if _, err := svc.CreateSpecialty(ctx, testClinic.String(), " psychologist "); !errors.Is(err, usecase.ErrDuplicateSpecialty) {
 		t.Errorf("duplicate specialty err = %v, want ErrDuplicateSpecialty", err)
 	}
-	if _, err := svc.CreateSpecialty(ctx, "clinic-1", ""); err == nil {
+	if _, err := svc.CreateSpecialty(ctx, testClinic.String(), ""); err == nil {
 		t.Errorf("empty specialty name must fail")
 	}
 	// The other clinic has its own catalog.
-	if _, err := svc.CreateSpecialty(ctx, "clinic-2", "Psychologist"); err != nil {
+	if _, err := svc.CreateSpecialty(ctx, testClinic2.String(), "Psychologist"); err != nil {
 		t.Errorf("same name in another clinic must be allowed: %v", err)
 	}
 
-	rows, err := svc.ListSpecialties(ctx, "clinic-1")
+	rows, err := svc.ListSpecialties(ctx, testClinic.String())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -234,10 +242,10 @@ func TestSpecialties(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := svc.SetUserSpecialties(ctx, staff.ID, []string{psy.ID, physio.ID}); err != nil {
+	if err := svc.SetUserSpecialties(ctx, staff.ID.String(), []string{psy.ID.String(), physio.ID.String()}); err != nil {
 		t.Fatal(err)
 	}
-	assigned, err := svc.UserSpecialties(ctx, staff.ID)
+	assigned, err := svc.UserSpecialties(ctx, staff.ID.String())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -246,22 +254,22 @@ func TestSpecialties(t *testing.T) {
 	}
 
 	// Replacing the set drops the first assignment.
-	if err := svc.SetUserSpecialties(ctx, staff.ID, []string{physio.ID}); err != nil {
+	if err := svc.SetUserSpecialties(ctx, staff.ID.String(), []string{physio.ID.String()}); err != nil {
 		t.Fatal(err)
 	}
-	assigned, err = svc.UserSpecialties(ctx, staff.ID)
+	assigned, err = svc.UserSpecialties(ctx, staff.ID.String())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(assigned) != 1 || assigned[0].ID != physio.ID {
+	if len(assigned) != 1 || assigned[0].ID.String() != physio.ID.String() {
 		t.Fatalf("after replace = %+v, want only physiotherapy", assigned)
 	}
 
 	// Deleting the specialty removes the mapping too.
-	if err := svc.DeleteSpecialty(ctx, "clinic-1", physio.ID); err != nil {
+	if err := svc.DeleteSpecialty(ctx, testClinic.String(), physio.ID.String()); err != nil {
 		t.Fatal(err)
 	}
-	assigned, err = svc.UserSpecialties(ctx, staff.ID)
+	assigned, err = svc.UserSpecialties(ctx, staff.ID.String())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -287,14 +295,14 @@ func TestStaffChangeRequests(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	psy, err := svc.CreateSpecialty(ctx, "clinic-1", "Psychologist")
+	psy, err := svc.CreateSpecialty(ctx, testClinic.String(), "Psychologist")
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// Receptionist proposes changes.
-	req, err := svc.CreateStaffChangeRequest(ctx, phys.ID, receptionist.ID, usecase.StaffChange{
-		Name: "Dr. Lima Jr", Email: "dr.lima@example.org", Specialties: []string{psy.ID},
+	req, err := svc.CreateStaffChangeRequest(ctx, phys.ID.String(), receptionist.ID.String(), usecase.StaffChange{
+		Name: "Dr. Lima Jr", Email: "dr.lima@example.org", Specialties: []string{psy.ID.String()},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -306,7 +314,7 @@ func TestStaffChangeRequests(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := svc.CreateStaffChangeRequest(ctx, phys.ID, receptionist.ID, usecase.StaffChange{
+	if _, err := svc.CreateStaffChangeRequest(ctx, phys.ID.String(), receptionist.ID.String(), usecase.StaffChange{
 		Name: "Dr. Lima", Email: "other@example.org", Specialties: nil,
 	}); !errors.Is(err, usecase.ErrEmailInUse) {
 		t.Errorf("email collision err = %v, want ErrEmailInUse", err)
@@ -330,17 +338,17 @@ func TestStaffChangeRequests(t *testing.T) {
 	_ = all
 
 	// Approving applies the changes.
-	if err := svc.ApproveStaffChangeRequest(ctx, req.ID, "admin-1"); err != nil {
+	if err := svc.ApproveStaffChangeRequest(ctx, req.ID.String(), testAdminID.String()); err != nil {
 		t.Fatal(err)
 	}
-	updated, err := svc.GetUser(ctx, phys.ID)
+	updated, err := svc.GetUser(ctx, phys.ID.String())
 	if err != nil {
 		t.Fatal(err)
 	}
 	if updated.DisplayName != "Dr. Lima Jr" {
 		t.Errorf("approved name = %q, want Dr. Lima Jr", updated.DisplayName)
 	}
-	assigned, err := svc.UserSpecialties(ctx, phys.ID)
+	assigned, err := svc.UserSpecialties(ctx, phys.ID.String())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -348,21 +356,21 @@ func TestStaffChangeRequests(t *testing.T) {
 		t.Errorf("approved specialties = %+v, want the psychologist", assigned)
 	}
 	// A second approval of the same request is refused.
-	if err := svc.ApproveStaffChangeRequest(ctx, req.ID, "admin-1"); !errors.Is(err, usecase.ErrRequestNotPending) {
+	if err := svc.ApproveStaffChangeRequest(ctx, req.ID.String(), testAdminID.String()); !errors.Is(err, usecase.ErrRequestNotPending) {
 		t.Errorf("double approve err = %v, want ErrRequestNotPending", err)
 	}
 
 	// Rejection keeps the profile untouched.
-	req2, err := svc.CreateStaffChangeRequest(ctx, phys.ID, receptionist.ID, usecase.StaffChange{
+	req2, err := svc.CreateStaffChangeRequest(ctx, phys.ID.String(), receptionist.ID.String(), usecase.StaffChange{
 		Name: "Dr. Nope", Email: "dr.lima@example.org", Specialties: nil,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := svc.RejectStaffChangeRequest(ctx, req2.ID, "admin-1", "not needed"); err != nil {
+	if err := svc.RejectStaffChangeRequest(ctx, req2.ID.String(), testAdminID.String(), "not needed"); err != nil {
 		t.Fatal(err)
 	}
-	updated, err = svc.GetUser(ctx, phys.ID)
+	updated, err = svc.GetUser(ctx, phys.ID.String())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -387,11 +395,11 @@ func TestListPhysicians(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	psy, err := svc.CreateSpecialty(ctx, "clinic-1", "Psychologist")
+	psy, err := svc.CreateSpecialty(ctx, testClinic.String(), "Psychologist")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := svc.SetUserSpecialties(ctx, phys.ID, []string{psy.ID}); err != nil {
+	if err := svc.SetUserSpecialties(ctx, phys.ID.String(), []string{psy.ID.String()}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -430,10 +438,10 @@ func TestRolesCRUD(t *testing.T) {
 	}
 
 	// System roles cannot be renamed or deleted.
-	if _, err := svc.RenameRole(ctx, rows[0].ID, "director"); !errors.Is(err, usecase.ErrSystemRole) {
+	if _, err := svc.RenameRole(ctx, rows[0].ID.String(), "director"); !errors.Is(err, usecase.ErrSystemRole) {
 		t.Errorf("rename system err = %v, want ErrSystemRole", err)
 	}
-	if err := svc.DeleteRole(ctx, rows[0].ID); !errors.Is(err, usecase.ErrSystemRole) {
+	if err := svc.DeleteRole(ctx, rows[0].ID.String()); !errors.Is(err, usecase.ErrSystemRole) {
 		t.Errorf("delete system err = %v, want ErrSystemRole", err)
 	}
 
@@ -445,19 +453,19 @@ func TestRolesCRUD(t *testing.T) {
 		t.Fatal(err)
 	}
 	_ = staff
-	if err := svc.DeleteRole(ctx, psy.ID); !errors.Is(err, usecase.ErrRoleInUse) {
+	if err := svc.DeleteRole(ctx, psy.ID.String()); !errors.Is(err, usecase.ErrRoleInUse) {
 		t.Errorf("delete in-use err = %v, want ErrRoleInUse", err)
 	}
 
 	// Rename works on custom roles and the account reflects it.
-	renamed, err := svc.RenameRole(ctx, psy.ID, "psychotherapist")
+	renamed, err := svc.RenameRole(ctx, psy.ID.String(), "psychotherapist")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if renamed.Name != "psychotherapist" {
 		t.Errorf("renamed = %q, want psychotherapist", renamed.Name)
 	}
-	loaded, err := svc.GetUser(ctx, staff.ID)
+	loaded, err := svc.GetUser(ctx, staff.ID.String())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -471,7 +479,7 @@ func TestRolesCRUD(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := svc.DeleteRole(ctx, spare.ID); err != nil {
+	if err := svc.DeleteRole(ctx, spare.ID.String()); err != nil {
 		t.Fatalf("delete unused role: %v", err)
 	}
 }

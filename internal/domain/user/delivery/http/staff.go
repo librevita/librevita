@@ -49,7 +49,7 @@ func (h *Handler) physicianRows(rows []repository.ListPhysiciansPageRow) []views
 	out := make([]views.PhysicianRow, 0, len(rows))
 	for _, r := range rows {
 		out = append(out, views.PhysicianRow{
-			ID: r.ID, Name: r.DisplayName, Email: r.Email,
+			ID: r.ID.String(), Name: r.DisplayName, Email: r.Email,
 			Active: r.Active, Specialties: asString(r.Specialties),
 		})
 	}
@@ -76,7 +76,7 @@ func (h *Handler) StaffEditPage(c echo.Context) error {
 		}
 		return err
 	}
-	if user.RoleIsClinical != 1 {
+	if !user.RoleIsClinical {
 		return echo.NewHTTPError(http.StatusNotFound)
 	}
 	clinicID, err := h.clocks.ClinicID(ctx)
@@ -87,13 +87,13 @@ func (h *Handler) StaffEditPage(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-	selected, err := h.svc.UserSpecialties(ctx, user.ID)
+	selected, err := h.svc.UserSpecialties(ctx, user.ID.String())
 	if err != nil {
 		return err
 	}
 	admin := server.Principal(c) != nil && server.Principal(c).Role == auth.RoleAdmin
 	return server.Render(c, http.StatusOK, views.StaffEditPage(
-		server.CSRFToken(c, h.csrf), server.Principal(c), user.ID, views.StaffFormValues{
+		server.CSRFToken(c, h.csrf), server.Principal(c), user.ID.String(), views.StaffFormValues{
 			Name: user.DisplayName, Email: user.Email,
 		}, h.specialtyViews(specialties, selected), admin, ""))
 }
@@ -172,11 +172,11 @@ func (h *Handler) MyStaffRequestsPage(c echo.Context) error {
 	}
 	out := make([]views.StaffRequestRow, 0, len(rows))
 	for _, r := range rows {
-		view, err := h.staffRequestView(ctx, r.UserID, r.Changes, r.Status, "")
+		view, err := h.staffRequestView(ctx, r.UserID.String(), r.Changes, r.Status, "")
 		if err != nil {
 			return err
 		}
-		view.ID = r.ID
+		view.ID = r.ID.String()
 		view.UserName = r.UserName
 		view.UserEmail = r.UserEmail
 		view.CreatedAt = clock.FormatStored(r.CreatedAt)
@@ -195,11 +195,11 @@ func (h *Handler) staffRequestViews(ctx context.Context, rows []repository.ListS
 	}
 	out := make([]views.StaffRequestRow, 0, len(rows))
 	for _, r := range rows {
-		view, err := h.staffRequestView(ctx, r.UserID, r.Changes, r.Status, r.RequesterEmail)
+		view, err := h.staffRequestView(ctx, r.UserID.String(), r.Changes, r.Status, r.RequesterEmail)
 		if err != nil {
 			return nil, err
 		}
-		view.ID = r.ID
+		view.ID = r.ID.String()
 		view.UserName = r.UserName
 		view.UserEmail = r.UserEmail
 		view.CreatedAt = clock.FormatStored(r.CreatedAt)
@@ -226,7 +226,7 @@ func (h *Handler) staffRequestView(ctx context.Context, userID, changes, status,
 	}
 	names := make(map[string]string, len(catalog))
 	for _, sp := range catalog {
-		names[sp.ID] = sp.Name
+		names[sp.ID.String()] = sp.Name
 	}
 
 	// Requests snapshot the profile at creation time; fall back to the
@@ -328,7 +328,7 @@ func (h *Handler) applyStaffChange(ctx context.Context, id string, change usecas
 		return err
 	}
 	if _, err := h.svc.UpdateUser(ctx, id, actorID, usecase.UpdateUserInput{
-		Name: change.Name, Email: change.Email, Role: current.RoleName, Active: current.Active == 1,
+		Name: change.Name, Email: change.Email, Role: current.RoleName, Active: current.Active,
 	}); err != nil {
 		return err
 	}
@@ -417,10 +417,10 @@ func (h *Handler) StaffCreate(c echo.Context) error {
 		return server.Render(c, http.StatusOK, views.StaffCreatePage(
 			server.CSRFToken(c, h.csrf), server.Principal(c), nil, msg))
 	}
-	if err := h.svc.SetUserSpecialties(ctx, user.ID, c.Request().PostForm["specialties"]); err != nil {
+	if err := h.svc.SetUserSpecialties(ctx, user.ID.String(), c.Request().PostForm["specialties"]); err != nil {
 		return err
 	}
 	h.audit.Record(ctx, server.EventFromRequest(c, audit.ResultSuccess,
-		"staff.create", "user:"+user.ID, "", "physician account created"))
+		"staff.create", "user:"+user.ID.String(), "", "physician account created"))
 	return server.HtmxRedirect(c, "/staff")
 }

@@ -2,6 +2,7 @@ package usecase_test
 
 import (
 	"context"
+	"github.com/google/uuid"
 	"database/sql"
 	"errors"
 	"log/slog"
@@ -43,6 +44,20 @@ func newService(t *testing.T, db *sql.DB) *usecase.Service {
 	return usecase.NewService(db, slog.New(slog.DiscardHandler), policies)
 }
 
+var (
+	testClinicID = uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	testUserID   = uuid.MustParse("00000000-0000-0000-0000-000000000002")
+	missingID    = uuid.MustParse("00000000-0000-0000-0000-00000000ffff")
+	ghostID      = uuid.MustParse("00000000-0000-0000-0000-00000000fffe")
+)
+
+// uuidStrPtrTest converts a stored uuid to the nullable string form the
+// policy checks use.
+func uuidStrPtrTest(u uuid.UUID) *string {
+	s := u.String()
+	return &s
+}
+
 func orEmpty(s *string) string {
 	if s == nil {
 		return ""
@@ -67,15 +82,15 @@ func TestCreateAndGet(t *testing.T) {
 	db := openDB(t)
 	svc := newService(t, db)
 
-	pt, err := svc.Create(context.Background(), "clinic-1", "user-1", validInput())
+	pt, err := svc.Create(context.Background(), testClinicID.String(), testUserID.String(), validInput())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if pt.ID == "" || pt.Status != "active" {
+	if pt.ID == uuid.Nil || pt.Status != "active" {
 		t.Fatalf("created patient = %+v, want id and active status", pt)
 	}
 
-	got, err := svc.Get(context.Background(), pt.ID)
+	got, err := svc.Get(context.Background(), pt.ID.String())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -101,7 +116,7 @@ func TestCreateValidation(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			in := validInput()
 			tc.mutate(&in)
-			_, err := svc.Create(context.Background(), "clinic-1", "user-1", in)
+			_, err := svc.Create(context.Background(), testClinicID.String(), testUserID.String(), in)
 			var v *usecase.ValidationError
 			if !errors.As(err, &v) {
 				t.Fatalf("Create = %v, want ValidationError", err)
@@ -114,20 +129,20 @@ func TestUpdate(t *testing.T) {
 	db := openDB(t)
 	svc := newService(t, db)
 
-	pt, err := svc.Create(context.Background(), "clinic-1", "user-1", validInput())
+	pt, err := svc.Create(context.Background(), testClinicID.String(), testUserID.String(), validInput())
 	if err != nil {
 		t.Fatal(err)
 	}
 	in := validInput()
 	in.DisplayName = "Maria O. Lima"
-	updated, err := svc.Update(context.Background(), "clinic-1", pt.ID, in)
+	updated, err := svc.Update(context.Background(), testClinicID.String(), pt.ID.String(), in)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if updated.DisplayName != "Maria O. Lima" {
 		t.Fatalf("Update = %+v", updated)
 	}
-	if _, err := svc.Update(context.Background(), "clinic-1", "missing", in); !errors.Is(err, usecase.ErrNotFound) {
+	if _, err := svc.Update(context.Background(), testClinicID.String(), missingID.String(), in); !errors.Is(err, usecase.ErrNotFound) {
 		t.Fatalf("Update missing = %v, want ErrNotFound", err)
 	}
 }
@@ -140,12 +155,12 @@ func TestListAndSearch(t *testing.T) {
 		in := validInput()
 		in.DisplayName = name
 		in.Document = name
-		if _, err := svc.Create(context.Background(), "clinic-1", "user-1", in); err != nil {
+		if _, err := svc.Create(context.Background(), testClinicID.String(), testUserID.String(), in); err != nil {
 			t.Fatal(err)
 		}
 	}
 
-	all, total, err := svc.ListPage(context.Background(), "clinic-1", "", "", 50, 0)
+	all, total, err := svc.ListPage(context.Background(), testClinicID.String(), "", "", 50, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -154,14 +169,14 @@ func TestListAndSearch(t *testing.T) {
 	}
 
 	// Whole-word prefix: 're' must not match 'Moreno'.
-	hit, _, err := svc.ListPage(context.Background(), "clinic-1", "bruno", "", 50, 0)
+	hit, _, err := svc.ListPage(context.Background(), testClinicID.String(), "bruno", "", 50, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(hit) != 1 || hit[0].DisplayName != "Bruno Lima" {
 		t.Fatalf("search 'bruno' = %+v, want only Bruno Lima", hit)
 	}
-	moreno, _, err := svc.ListPage(context.Background(), "clinic-1", "re", "", 50, 0)
+	moreno, _, err := svc.ListPage(context.Background(), testClinicID.String(), "re", "", 50, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -171,7 +186,7 @@ func TestListAndSearch(t *testing.T) {
 		}
 	}
 
-	none, _, err := svc.ListPage(context.Background(), "clinic-1", "zzz", "", 50, 0)
+	none, _, err := svc.ListPage(context.Background(), testClinicID.String(), "zzz", "", 50, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -180,21 +195,21 @@ func TestListAndSearch(t *testing.T) {
 	}
 
 	// Status filter.
-	pt, err := svc.Get(context.Background(), hit[0].ID)
+	pt, err := svc.Get(context.Background(), hit[0].ID.String())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := svc.SetStatus(context.Background(), "clinic-1", pt.ID, usecase.StatusInactive); err != nil {
+	if err := svc.SetStatus(context.Background(), testClinicID.String(), pt.ID.String(), usecase.StatusInactive); err != nil {
 		t.Fatal(err)
 	}
-	active, _, err := svc.ListPage(context.Background(), "clinic-1", "", usecase.StatusActive, 50, 0)
+	active, _, err := svc.ListPage(context.Background(), testClinicID.String(), "", usecase.StatusActive, 50, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(active) != 2 {
 		t.Fatalf("active = %d, want 2", len(active))
 	}
-	inactive, _, err := svc.ListPage(context.Background(), "clinic-1", "", usecase.StatusInactive, 50, 0)
+	inactive, _, err := svc.ListPage(context.Background(), testClinicID.String(), "", usecase.StatusInactive, 50, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -207,18 +222,18 @@ func TestSetStatus(t *testing.T) {
 	db := openDB(t)
 	svc := newService(t, db)
 
-	pt, err := svc.Create(context.Background(), "clinic-1", "user-1", validInput())
+	pt, err := svc.Create(context.Background(), testClinicID.String(), testUserID.String(), validInput())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := svc.SetStatus(context.Background(), "clinic-1", pt.ID, usecase.StatusInactive); err != nil {
+	if err := svc.SetStatus(context.Background(), testClinicID.String(), pt.ID.String(), usecase.StatusInactive); err != nil {
 		t.Fatal(err)
 	}
-	got, _ := svc.Get(context.Background(), pt.ID)
+	got, _ := svc.Get(context.Background(), pt.ID.String())
 	if got.Status != usecase.StatusInactive {
 		t.Fatalf("status = %q, want inactive", got.Status)
 	}
-	if err := svc.SetStatus(context.Background(), "clinic-1", pt.ID, "banana"); err == nil {
+	if err := svc.SetStatus(context.Background(), testClinicID.String(), pt.ID.String(), "banana"); err == nil {
 		t.Fatal("invalid status accepted")
 	}
 }
@@ -227,14 +242,14 @@ func TestCount(t *testing.T) {
 	db := openDB(t)
 	svc := newService(t, db)
 
-	if n, _ := svc.Count(context.Background(), "clinic-1"); n != 0 {
+	if n, _ := svc.Count(context.Background(), testClinicID.String()); n != 0 {
 		t.Fatalf("count = %d, want 0", n)
 	}
 	in := validInput()
-	if _, err := svc.Create(context.Background(), "clinic-1", "user-1", in); err != nil {
+	if _, err := svc.Create(context.Background(), testClinicID.String(), testUserID.String(), in); err != nil {
 		t.Fatal(err)
 	}
-	if n, _ := svc.Count(context.Background(), "clinic-1"); n != 1 {
+	if n, _ := svc.Count(context.Background(), testClinicID.String()); n != 1 {
 		t.Fatalf("count = %d, want 1", n)
 	}
 }
@@ -244,19 +259,19 @@ func TestCreateRecordsRegistrar(t *testing.T) {
 	svc := newService(t, db)
 
 	if _, err := db.Exec(`INSERT INTO users (id, email, password_hash, display_name, role_id)
-		VALUES ('user-1', 'ana@example.org', 'x', 'Ana Souza', '00000000-0000-7000-8000-000000000001')`); err != nil {
+		VALUES ('`+testUserID.String()+`', 'ana@example.org', 'x', 'Ana Souza', '00000000-0000-7000-8000-000000000001')`); err != nil {
 		t.Fatal(err)
 	}
-	pt, err := svc.Create(context.Background(), "clinic-1", "user-1", validInput())
+	pt, err := svc.Create(context.Background(), testClinicID.String(), testUserID.String(), validInput())
 	if err != nil {
 		t.Fatal(err)
 	}
-	row, err := svc.GetWithCreator(context.Background(), pt.ID)
+	row, err := svc.GetWithCreator(context.Background(), pt.ID.String())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if orEmpty(row.CreatedBy) != "user-1" {
-		t.Fatalf("CreatedBy = %q, want user-1", orEmpty(row.CreatedBy))
+	if row.CreatedBy.String() != testUserID.String() {
+		t.Fatalf("CreatedBy = %s, want %s", row.CreatedBy, testUserID)
 	}
 	if orEmpty(row.CreatedByEmail) != "ana@example.org" {
 		t.Fatalf("CreatedByEmail = %q, want ana@example.org", orEmpty(row.CreatedByEmail))
@@ -267,11 +282,11 @@ func TestGetWithCreatorMissingUser(t *testing.T) {
 	db := openDB(t)
 	svc := newService(t, db)
 
-	pt, err := svc.Create(context.Background(), "clinic-1", "ghost", validInput())
+	pt, err := svc.Create(context.Background(), testClinicID.String(), ghostID.String(), validInput())
 	if err != nil {
 		t.Fatal(err)
 	}
-	row, err := svc.GetWithCreator(context.Background(), pt.ID)
+	row, err := svc.GetWithCreator(context.Background(), pt.ID.String())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -289,17 +304,17 @@ func TestAuthorizePatientEdit(t *testing.T) {
 	owner := &auth.Principal{ID: "01990000-0000-7000-8000-000000000002", Email: "owner@c.org", Name: "Owner", Role: auth.RolePhysician}
 	other := &auth.Principal{ID: "01990000-0000-7000-8000-000000000003", Email: "other@c.org", Name: "Other", Role: auth.RolePhysician}
 
-	pt, err := svc.Create(ctx, "clinic-1", owner.ID, validInput())
+	pt, err := svc.Create(ctx, testClinicID.String(), owner.ID, validInput())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := svc.AuthorizePatientEdit(ctx, admin, pt.ID, pt.CreatedBy, pt.Status); err != nil {
+	if err := svc.AuthorizePatientEdit(ctx, admin, pt.ID.String(), uuidStrPtrTest(pt.CreatedBy), pt.Status); err != nil {
 		t.Errorf("admin edit denied: %v", err)
 	}
-	if err := svc.AuthorizePatientEdit(ctx, owner, pt.ID, pt.CreatedBy, pt.Status); err != nil {
+	if err := svc.AuthorizePatientEdit(ctx, owner, pt.ID.String(), uuidStrPtrTest(pt.CreatedBy), pt.Status); err != nil {
 		t.Errorf("owner edit denied: %v", err)
 	}
-	if err := svc.AuthorizePatientEdit(ctx, other, pt.ID, pt.CreatedBy, pt.Status); !errors.Is(err, usecase.ErrForbidden) {
+	if err := svc.AuthorizePatientEdit(ctx, other, pt.ID.String(), uuidStrPtrTest(pt.CreatedBy), pt.Status); !errors.Is(err, usecase.ErrForbidden) {
 		t.Errorf("other physician err = %v, want ErrForbidden", err)
 	}
 }

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"aidanwoods.dev/go-paseto"
+	"github.com/google/uuid"
 	"librevita.org/internal/core/auth/repository"
 	"librevita.org/internal/core/config"
 )
@@ -116,7 +117,7 @@ func (m *SessionManager) Create(ctx context.Context, p Principal) (string, error
 	rawToken := token.V4Encrypt(m.key, nil)
 
 	if err := m.queries.CreateSession(ctx, repository.CreateSessionParams{
-		TokenHash: hashToken(jtiHex), UserID: p.ID, ExpiresAt: formatTime(expires),
+		TokenHash: hashToken(jtiHex), UserID: uuid.MustParse(p.ID), ExpiresAt: formatTime(expires),
 	}); err != nil {
 		return "", fmt.Errorf("auth: store session: %w", err)
 	}

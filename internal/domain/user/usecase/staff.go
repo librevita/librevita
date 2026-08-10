@@ -64,7 +64,7 @@ func (s *Service) CreateStaffChangeRequest(ctx context.Context, userID, requeste
 	}
 
 	// Reject proposals that would collide with another account's email.
-	current, err := s.users.GetUserByID(ctx, userID)
+	current, err := s.users.GetUserByID(ctx, uuid.MustParse(userID))
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrUserNotFound
@@ -74,17 +74,17 @@ func (s *Service) CreateStaffChangeRequest(ctx context.Context, userID, requeste
 	// Snapshot the profile at request time so the diff stays readable
 	// after the change was applied or rejected.
 	previous := &StaffChange{Name: current.DisplayName, Email: current.Email}
-	assigned, err := s.users.ListUserSpecialties(ctx, userID)
+	assigned, err := s.users.ListUserSpecialties(ctx, uuid.MustParse(userID))
 	if err != nil {
 		return nil, fmt.Errorf("usecase: load staff specialties: %w", err)
 	}
 	for _, sp := range assigned {
-		previous.Specialties = append(previous.Specialties, sp.ID)
+		previous.Specialties = append(previous.Specialties, sp.ID.String())
 	}
 	change.Previous = previous
 	if change.Email != current.Email {
 		other, err := s.users.GetUserByEmail(ctx, change.Email)
-		if err == nil && other.ID != userID {
+		if err == nil && other.ID.String() != userID {
 			return nil, ErrEmailInUse
 		}
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
@@ -101,7 +101,7 @@ func (s *Service) CreateStaffChangeRequest(ctx context.Context, userID, requeste
 		return nil, fmt.Errorf("usecase: generate request id: %w", err)
 	}
 	req, err := s.users.CreateStaffChangeRequest(ctx, repository.CreateStaffChangeRequestParams{
-		ID: id.String(), UserID: userID, RequestedBy: requestedBy, Changes: string(payload),
+		ID: id, UserID: uuid.MustParse(userID), RequestedBy: uuid.MustParse(requestedBy), Changes: string(payload),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("usecase: create staff change request: %w", err)
@@ -113,7 +113,7 @@ func (s *Service) CreateStaffChangeRequest(ctx context.Context, userID, requeste
 // requester, newest first, with the current status.
 func (s *Service) ListMyStaffChangeRequests(ctx context.Context, requesterID string) ([]repository.ListStaffChangeRequestsByRequesterRow, error) {
 	rows, err := s.users.ListStaffChangeRequestsByRequester(ctx, repository.ListStaffChangeRequestsByRequesterParams{
-		RequestedBy: requesterID, Limit: 50,
+		RequestedBy: uuid.MustParse(requesterID), Limit: 50,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("usecase: list my staff change requests: %w", err)
@@ -160,7 +160,7 @@ func (s *Service) ApproveStaffChangeRequest(ctx context.Context, id, decidedBy s
 		}
 	}()
 
-	req, err := queries.GetStaffChangeRequest(ctx, id)
+	req, err := queries.GetStaffChangeRequest(ctx, uuid.MustParse(id))
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return ErrRequestNotFound
@@ -175,20 +175,16 @@ func (s *Service) ApproveStaffChangeRequest(ctx context.Context, id, decidedBy s
 		return fmt.Errorf("usecase: decode staff change: %w", err)
 	}
 
-	active := int64(1)
 	user, err := queries.GetUserByID(ctx, req.UserID)
 	if err != nil {
 		return fmt.Errorf("usecase: load staff user: %w", err)
-	}
-	if user.Active == 0 {
-		active = 0
 	}
 	if _, err := queries.UpdateUser(ctx, repository.UpdateUserParams{
 		ID:          req.UserID,
 		Email:       change.Email,
 		DisplayName: change.Name,
 		RoleID:      user.RoleID,
-		Active:      active,
+		Active:      user.Active,
 	}); err != nil {
 		return ErrEmailInUse
 	}
@@ -200,13 +196,13 @@ func (s *Service) ApproveStaffChangeRequest(ctx context.Context, id, decidedBy s
 			continue
 		}
 		if err := queries.AddUserSpecialty(ctx, repository.AddUserSpecialtyParams{
-			UserID: req.UserID, SpecialtyID: spID,
+			UserID: req.UserID, SpecialtyID: uuid.MustParse(spID),
 		}); err != nil {
 			return fmt.Errorf("usecase: add staff specialty: %w", err)
 		}
 	}
 	if err := queries.DecideStaffChangeRequest(ctx, repository.DecideStaffChangeRequestParams{
-		Status: RequestApproved, DecisionNote: sql.NullString{}, DecidedBy: sql.NullString{String: decidedBy, Valid: true}, ID: id,
+		Status: RequestApproved, DecisionNote: sql.NullString{}, DecidedBy: uuid.MustParse(decidedBy), ID: uuid.MustParse(id),
 	}); err != nil {
 		return fmt.Errorf("usecase: approve staff change request: %w", err)
 	}
@@ -219,7 +215,7 @@ func (s *Service) ApproveStaffChangeRequest(ctx context.Context, id, decidedBy s
 
 // RejectStaffChangeRequest marks the request rejected with a note.
 func (s *Service) RejectStaffChangeRequest(ctx context.Context, id, decidedBy, note string) error {
-	req, err := s.users.GetStaffChangeRequest(ctx, id)
+	req, err := s.users.GetStaffChangeRequest(ctx, uuid.MustParse(id))
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return ErrRequestNotFound
@@ -232,7 +228,7 @@ func (s *Service) RejectStaffChangeRequest(ctx context.Context, id, decidedBy, n
 	note = strings.TrimSpace(note)
 	if err := s.users.DecideStaffChangeRequest(ctx, repository.DecideStaffChangeRequestParams{
 		Status: RequestRejected, DecisionNote: sql.NullString{String: note, Valid: note != ""},
-		DecidedBy: sql.NullString{String: decidedBy, Valid: true}, ID: id,
+		DecidedBy: uuid.MustParse(decidedBy), ID: uuid.MustParse(id),
 	}); err != nil {
 		return fmt.Errorf("usecase: reject staff change request: %w", err)
 	}

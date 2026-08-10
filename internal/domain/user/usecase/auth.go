@@ -142,7 +142,7 @@ func (s *Service) Register(ctx context.Context, in RegisterInput) (*auth.Princip
 		return nil, "", err
 	}
 	user, err := s.users.CreateUser(ctx, repository.CreateUserParams{
-		ID:           userID.String(),
+		ID:           userID,
 		Email:        email,
 		PasswordHash: hash,
 		DisplayName:  name,
@@ -153,7 +153,7 @@ func (s *Service) Register(ctx context.Context, in RegisterInput) (*auth.Princip
 		return nil, "", ErrEmailTaken
 	}
 
-	principal, token, err := s.startSession(ctx, user.ID, user.Email, user.DisplayName, auth.RolePatient.String())
+	principal, token, err := s.startSession(ctx, user.ID.String(), user.Email, user.DisplayName, auth.RolePatient.String())
 	result := audit.ResultSuccess
 	detail := ""
 	if err != nil {
@@ -161,7 +161,7 @@ func (s *Service) Register(ctx context.Context, in RegisterInput) (*auth.Princip
 		detail = err.Error()
 	}
 	s.audit.Record(ctx, audit.Event{
-		ActorID: user.ID, ActorMail: user.Email,
+		ActorID: user.ID.String(), ActorMail: user.Email,
 		Action: "register", Resource: "user", Result: result, Detail: detail,
 	})
 	return principal, token, err
@@ -219,7 +219,7 @@ func (s *Service) ListRecentUsers(ctx context.Context, limit int) ([]repository.
 
 // UserByID returns the account with the given id.
 func (s *Service) UserByID(ctx context.Context, id string) (*repository.GetUserByIDRow, error) {
-	user, err := s.users.GetUserByID(ctx, id)
+	user, err := s.users.GetUserByID(ctx, uuid.MustParse(id))
 	if err != nil {
 		return nil, fmt.Errorf("usecase: get user: %w", err)
 	}
@@ -271,7 +271,7 @@ func (s *Service) Onboard(ctx context.Context, admin RegisterInput, clinic Clini
 		return nil, "", fmt.Errorf("usecase: generate clinic id: %w", err)
 	}
 	if _, err := s.clinics.WithTx(tx).CreateClinic(ctx, clinicrepo.CreateClinicParams{
-		ID:         clinicID.String(),
+		ID:         clinicID,
 		Name:       strings.TrimSpace(clinic.Name),
 		TaxID:      strPtr(clinic.TaxID),
 		Phone:      strPtr(clinic.Phone),
@@ -301,7 +301,7 @@ func (s *Service) Onboard(ctx context.Context, admin RegisterInput, clinic Clini
 		return nil, "", fmt.Errorf("usecase: resolve admin role: %w", err)
 	}
 	user, err := qtx.CreateUser(ctx, repository.CreateUserParams{
-		ID:           adminID.String(),
+		ID:           adminID,
 		Email:        email,
 		PasswordHash: hash,
 		DisplayName:  name,
@@ -320,7 +320,7 @@ func (s *Service) Onboard(ctx context.Context, admin RegisterInput, clinic Clini
 		return nil, "", fmt.Errorf("usecase: commit onboard: %w", err)
 	}
 
-	principal, token, err := s.startSession(ctx, user.ID, user.Email, user.DisplayName, auth.RoleAdmin.String())
+	principal, token, err := s.startSession(ctx, user.ID.String(), user.Email, user.DisplayName, auth.RoleAdmin.String())
 	result := audit.ResultSuccess
 	detail := ""
 	if err != nil {
@@ -328,7 +328,7 @@ func (s *Service) Onboard(ctx context.Context, admin RegisterInput, clinic Clini
 		detail = err.Error()
 	}
 	s.audit.Record(ctx, audit.Event{
-		ActorID: user.ID, ActorMail: user.Email,
+		ActorID: user.ID.String(), ActorMail: user.Email,
 		Action: "onboard", Resource: "setup", Result: result, Detail: detail,
 	})
 	return principal, token, err
@@ -348,9 +348,9 @@ func (s *Service) Login(ctx context.Context, c Credentials) (*auth.Principal, st
 	if err != nil {
 		return nil, "", fmt.Errorf("usecase: lookup email: %w", err)
 	}
-	if user.Active != 1 {
+	if !user.Active {
 		s.timingDummy(c.Password)
-		s.auditLogin(ctx, user.ID, email, "account deactivated")
+		s.auditLogin(ctx, user.ID.String(), email, "account deactivated")
 		return nil, "", ErrInvalidCredentials
 	}
 
@@ -358,20 +358,20 @@ func (s *Service) Login(ctx context.Context, c Credentials) (*auth.Principal, st
 	if err != nil {
 		s.log.Warn("stored password hash rejected", "user_id", user.ID)
 		s.timingDummy(c.Password)
-		s.auditLogin(ctx, user.ID, email, "malformed stored hash")
+		s.auditLogin(ctx, user.ID.String(), email, "malformed stored hash")
 		return nil, "", ErrInvalidCredentials
 	}
 	if !ok {
-		s.auditLogin(ctx, user.ID, email, "wrong password")
+		s.auditLogin(ctx, user.ID.String(), email, "wrong password")
 		return nil, "", ErrInvalidCredentials
 	}
 
-	principal, token, err := s.startSession(ctx, user.ID, user.Email, user.DisplayName, user.RoleName)
+	principal, token, err := s.startSession(ctx, user.ID.String(), user.Email, user.DisplayName, user.RoleName)
 	if err != nil {
-		s.auditLogin(ctx, user.ID, email, err.Error())
+		s.auditLogin(ctx, user.ID.String(), email, err.Error())
 		return nil, "", err
 	}
-	s.auditLogin(ctx, user.ID, email, "")
+	s.auditLogin(ctx, user.ID.String(), email, "")
 	return principal, token, nil
 }
 
@@ -508,12 +508,11 @@ func strPtr(s string) *string {
 	return &s
 }
 
-
 // roleID resolves a role name to its relational id.
-func (s *Service) roleID(ctx context.Context, name string) (string, error) {
+func (s *Service) roleID(ctx context.Context, name string) (uuid.UUID, error) {
 	role, err := s.users.GetRoleByName(ctx, name)
 	if err != nil {
-		return "", fmt.Errorf("usecase: resolve role %q: %w", name, err)
+		return uuid.Nil, fmt.Errorf("usecase: resolve role %q: %w", name, err)
 	}
 	return role.ID, nil
 }

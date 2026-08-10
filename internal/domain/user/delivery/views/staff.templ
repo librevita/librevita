@@ -21,7 +21,7 @@ type PhysicianRow struct {
 	ID          string
 	Name        string
 	Email       string
-	Active      int64
+	Active      bool
 	Specialties string
 }
 
@@ -225,9 +225,9 @@ templ StaffForm(token string, id string, values StaffFormValues, specialties []S
 }
 
 // StaffRequestsPage lists the pending change requests for the admin to
-templ staffStatusCell(active int64) {
+templ staffStatusCell(active bool) {
 	<div class="flex items-center">
-		if active == 1 {
+		if active {
 			<span class="mr-2 h-2.5 w-2.5 rounded-full bg-green-400 dark:bg-green-500"></span>
 			<span class="text-base text-gray-900 dark:text-white">Active</span>
 		} else {

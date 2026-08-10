@@ -59,8 +59,8 @@ var DefaultPolicies = map[string]string{
 
 	// Physician directory: visible to staff, edited directly by admins,
 	// and changeable by receptionists through admin-approved requests.
-	"staff.view": `principal.role in ['admin', 'physician', 'receptionist']`,
-	"staff.edit": `principal.role == 'admin'`,
+	"staff.view":    `principal.role in ['admin', 'physician', 'receptionist']`,
+	"staff.edit":    `principal.role == 'admin'`,
 	"staff.request": `principal.role in ['admin', 'receptionist']`,
 	"staff.approve": `principal.role == 'admin'`,
 
@@ -162,13 +162,13 @@ func (pe *PolicyEngine) Load(ctx context.Context) error {
 				return fmt.Errorf("policy: seed id for %q: %w", name, err)
 			}
 			created, err := queries.CreatePolicy(ctx, repository.CreatePolicyParams{
-				ID: id.String(), Name: name, Expression: expr,
+				ID: id, Name: name, Expression: expr,
 			})
 			if err != nil {
 				return fmt.Errorf("policy: seed %q: %w", name, err)
 			}
 			if err := queries.CreatePolicyVersion(ctx, repository.CreatePolicyVersionParams{
-				PolicyID: created.ID, Expression: expr, Origin: OriginSeed,
+				PolicyID: created.ID.String(), Expression: expr, Origin: OriginSeed,
 			}); err != nil {
 				return fmt.Errorf("policy: seed version %q: %w", name, err)
 			}
@@ -249,7 +249,7 @@ func (pe *PolicyEngine) Set(ctx context.Context, name, expression string, actor 
 			return fmt.Errorf("policy: generate id for %q: %w", name, err)
 		}
 		created, err := qtx.CreatePolicy(ctx, repository.CreatePolicyParams{
-			ID: id.String(), Name: name, Expression: expression,
+			ID: id, Name: name, Expression: expression,
 		})
 		if err != nil {
 			return fmt.Errorf("policy: create %q: %w", name, err)
@@ -273,7 +273,7 @@ func (pe *PolicyEngine) Set(ctx context.Context, name, expression string, actor 
 		actorID, actorMail = &id, &mail
 	}
 	if err := qtx.CreatePolicyVersion(ctx, repository.CreatePolicyVersionParams{
-		PolicyID: policy.ID, Expression: expression, Origin: origin,
+		PolicyID: policy.ID.String(), Expression: expression, Origin: origin,
 		ChangedBy: actorID, ChangedByEmail: actorMail,
 	}); err != nil {
 		return fmt.Errorf("policy: version %q: %w", name, err)
