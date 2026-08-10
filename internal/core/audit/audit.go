@@ -10,8 +10,14 @@ package audit
 import (
 	"context"
 	"database/sql"
+	"encoding/hex"
+	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
+	"time"
+
+	"golang.org/x/crypto/blake2b"
 
 	"librevita.org/internal/core/audit/repository"
 )
@@ -23,20 +29,28 @@ const (
 )
 
 // Event is one audit record. Sensitive values (passwords, tokens, CSRF)
-// must never be placed in Detail.
+// must never be placed in Detail. The actor_name/actor_role,
+// user_agent and resource_name fields are denormalized so every row is
+// a self-contained snapshot (Event Sourcing): no lookup against
+// external tables is needed to rebuild the context of an event.
 type Event struct {
-	ActorID   string // UUIDv7 of the user account; empty when anonymous.
-	ActorMail string // Best-effort actor identity.
-	Action    string // e.g. "register", "login", "logout", "authorize".
-	Resource  string // e.g. "user", "session", "policy:admin.view".
-	Result    string // ResultSuccess or ResultFailure.
-	IP        string
-	RequestID string
-	Detail    string
+	ActorID      string // UUIDv7 of the user account; empty when anonymous.
+	ActorMail    string // Best-effort actor identity.
+	ActorName    string // Denormalized actor display name.
+	ActorRole    string // Denormalized actor role name.
+	UserAgent    string // Client user agent of the request.
+	Action       string // e.g. "register", "login", "logout", "authorize".
+	Resource     string // e.g. "user", "session", "policy:admin.view".
+	ResourceName string // Denormalized human-readable resource name.
+	Result       string // ResultSuccess or ResultFailure.
+	IP           string
+	RequestID    string
+	Detail       string
 }
 
 // Logger persists audit events to SQLite.
 type Logger struct {
+	db      *sql.DB
 	queries *repository.Queries
 	log     *slog.Logger
 }
@@ -47,7 +61,7 @@ func NewLogger(db *sql.DB, log *slog.Logger) (*Logger, error) {
 	if db == nil {
 		return nil, fmt.Errorf("audit: requires the SQLite backend")
 	}
-	return &Logger{queries: repository.New(db), log: log}, nil
+	return &Logger{db: db, queries: repository.New(db), log: log}, nil
 }
 
 // EventRow is a stored audit event with its cursor id.
@@ -123,23 +137,139 @@ func eventsFromResource(rows []repository.ListAuditEventsForResourceRow) []Event
 	return out
 }
 
-// Record persists ev. Failures are logged and swallowed so that auditing
-// never breaks the audited operation.
+// Record persists ev with a BLAKE2b hash chained to the previous entry:
+// each row carries the digest of the preceding hash plus its own
+// payload, so any modification of an existing entry breaks the chain
+// for every following row. The read-hash + insert runs inside one
+// transaction so concurrent writers cannot interleave. Failures are
+// logged and swallowed so that auditing never breaks the audited
+// operation.
 func (l *Logger) Record(ctx context.Context, ev Event) {
-	err := l.queries.CreateAuditEvent(ctx, repository.CreateAuditEventParams{
-		ActorID:    strPtr(ev.ActorID),
-		ActorEmail: strPtr(ev.ActorMail),
-		Action:     ev.Action,
-		Resource:   ev.Resource,
-		Result:     ev.Result,
-		Ip:         strPtr(ev.IP),
-		RequestID:  strPtr(ev.RequestID),
-		Detail:     strPtr(ev.Detail),
+	// The event time is authoritative for auditing, so the application
+	// generates it (not the database DEFAULT) and includes it in the
+	// signed payload.
+	createdAt := time.Now().UTC().Format(utcMilliLayout)
+	tx, err := l.db.BeginTx(ctx, nil)
+	if err != nil {
+		l.log.Error("audit record failed", "action", ev.Action, "error", err)
+		return
+	}
+	queries := repository.New(tx)
+	committed := false
+	defer func() {
+		if !committed {
+			_ = tx.Rollback()
+		}
+	}()
+
+	prev := ""
+	prevSig, err := queries.GetLastAuditSignature(ctx)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		l.log.Error("audit record failed", "action", ev.Action, "error", err)
+		return
+	}
+	if err == nil {
+		prev = prevSig
+	}
+	err = queries.CreateAuditEvent(ctx, repository.CreateAuditEventParams{
+		ActorID:      strPtr(ev.ActorID),
+		ActorEmail:   strPtr(ev.ActorMail),
+		ActorName:    ev.ActorName,
+		ActorRole:    ev.ActorRole,
+		UserAgent:    ev.UserAgent,
+		Action:       ev.Action,
+		Resource:     ev.Resource,
+		ResourceName: ev.ResourceName,
+		Result:       ev.Result,
+		Ip:           strPtr(ev.IP),
+		RequestID:    strPtr(ev.RequestID),
+		Detail:       strPtr(ev.Detail),
+		CreatedAt:    createdAt,
+		Signature:    chainHash(prev, ev, createdAt),
 	})
 	if err != nil {
 		l.log.Error("audit record failed",
 			"action", ev.Action, "resource", ev.Resource, "error", err)
+		return
 	}
+	if err := tx.Commit(); err != nil {
+		l.log.Error("audit record failed", "action", ev.Action, "error", err)
+		return
+	}
+	committed = true
+}
+
+// VerifyChain recomputes the hash chain over the whole trail and returns
+// the id of the first entry whose hash does not match, or zero when the
+// chain is intact. A broken chain means an entry was modified or
+// reordered after it was written.
+func (l *Logger) VerifyChain(ctx context.Context) (int64, error) {
+	rows, err := l.queries.ListAuditChain(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("audit: verify chain: %w", err)
+	}
+	var prev string
+	for _, r := range rows {
+		want := chainHash(prev, eventFromRow(r), r.CreatedAt)
+		if r.Signature != want {
+			return r.ID, nil
+		}
+		prev = r.Signature
+	}
+	return 0, nil
+}
+
+// eventFromRow rebuilds the Event that produced the stored row, so the
+// signature payload can be recomputed.
+func eventFromRow(r repository.ListAuditChainRow) Event {
+	return Event{
+		ActorID:      orEmpty(r.ActorID),
+		ActorMail:    orEmpty(r.ActorEmail),
+		ActorName:    r.ActorName,
+		ActorRole:    r.ActorRole,
+		UserAgent:    r.UserAgent,
+		Action:       r.Action,
+		Resource:     r.Resource,
+		ResourceName: r.ResourceName,
+		Result:       r.Result,
+		IP:           orEmpty(r.Ip),
+		RequestID:    orEmpty(r.RequestID),
+		Detail:       orEmpty(r.Detail),
+	}
+}
+
+// esc prevents delimiter injection: a literal "|" inside a field is
+// escaped to "\|" so crafted values cannot shift the payload blocks.
+func esc(v string) string {
+	return strings.ReplaceAll(v, "|", "\\|")
+}
+
+// chainPayload serializes the event fields and the event time with the
+// delimiter, so the signature covers every value the application
+// controls. The id (generated by the database) is excluded.
+func chainPayload(ev Event, createdAt string) string {
+	return esc(ev.ActorID) + "|" + esc(ev.ActorMail) + "|" + esc(ev.ActorName) + "|" +
+		esc(ev.ActorRole) + "|" + esc(ev.UserAgent) + "|" + esc(ev.Action) + "|" +
+		esc(ev.Resource) + "|" + esc(ev.ResourceName) + "|" + esc(ev.Result) + "|" +
+		esc(ev.IP) + "|" + esc(ev.RequestID) + "|" + esc(ev.Detail) + "|" + esc(createdAt)
+}
+
+// chainHash digests the previous signature plus the new payload with
+// BLAKE2b.
+func chainHash(prev string, ev Event, createdAt string) string {
+	sum := blake2b.Sum256([]byte(prev + "|" + chainPayload(ev, createdAt)))
+	return hex.EncodeToString(sum[:])
+}
+
+// utcMilliLayout matches the timestamp format of the application
+// (previously the database strftime default).
+const utcMilliLayout = "2006-01-02T15:04:05.000Z"
+
+func orEmpty(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
 }
 
 func strPtr(s string) *string {

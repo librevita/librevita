@@ -37,16 +37,21 @@ CREATE TABLE sessions (
 -- Durable audit trail, owned by internal/core/audit.
 -- See db/migrations/00003_audit.sql.
 CREATE TABLE audit_log (
-id          INTEGER PRIMARY KEY AUTOINCREMENT,
-actor_id    TEXT,
-actor_email TEXT,
-action      TEXT    NOT NULL,
-resource    TEXT    NOT NULL,
-result      TEXT    NOT NULL CHECK (result IN ('success', 'failure')),
-ip          TEXT,
-request_id  TEXT,
-detail      TEXT,
-created_at  TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+id            INTEGER PRIMARY KEY AUTOINCREMENT,
+actor_id      TEXT,
+actor_email   TEXT,
+actor_name    TEXT    NOT NULL,
+actor_role    TEXT    NOT NULL,
+user_agent    TEXT    NOT NULL,
+action        TEXT    NOT NULL,
+resource      TEXT    NOT NULL,
+resource_name TEXT    NOT NULL,
+result        TEXT    NOT NULL CHECK (result IN ('success', 'failure')),
+ip            TEXT,
+request_id    TEXT,
+detail        TEXT,
+created_at    TEXT    NOT NULL,
+signature     TEXT    NOT NULL
 ) STRICT;
 
 -- Clinic profile created during onboarding, owned by the clinic domain,

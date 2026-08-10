@@ -73,12 +73,8 @@ func RequirePolicy(pe *policy.PolicyEngine, auditLogger *audit.Logger, log *slog
 				return echo.NewHTTPError(http.StatusInternalServerError, "authorization failure")
 			}
 			if !allowed {
-				auditLogger.Record(ctx.Request().Context(), audit.Event{
-					ActorID: p.ID, ActorMail: p.Email,
-					Action: "authorize", Resource: "policy:" + name, Result: audit.ResultFailure,
-					IP: ctx.RealIP(), RequestID: ctx.Response().Header().Get(echo.HeaderXRequestID),
-					Detail: "denied",
-				})
+				auditLogger.Record(ctx.Request().Context(), EventFromRequest(ctx, audit.ResultFailure,
+					"authorize", "policy:"+name, name, "denied"))
 				return echo.NewHTTPError(http.StatusForbidden, "insufficient permissions")
 			}
 			return next(ctx)

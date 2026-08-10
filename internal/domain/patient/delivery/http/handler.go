@@ -99,12 +99,8 @@ func (h *Handler) Create(c echo.Context) error {
 		}
 		return err
 	}
-	h.audit.Record(ctx, audit.Event{
-		ActorID: server.ActorID(c), ActorMail: server.ActorMail(c),
-		Action: "patient.create", Resource: "patient:" + patient.ID,
-		Result: audit.ResultSuccess,
-		IP:     c.RealIP(), RequestID: c.Response().Header().Get(echo.HeaderXRequestID),
-	})
+	h.audit.Record(ctx, server.EventFromRequest(c, audit.ResultSuccess,
+		"patient.create", "patient:"+patient.ID, patient.DisplayName, ""))
 	return server.HtmxRedirect(c, "/patients/"+patient.ID)
 }
 
@@ -212,12 +208,8 @@ func (h *Handler) Update(c echo.Context) error {
 			return err
 		}
 	}
-	h.audit.Record(ctx, audit.Event{
-		ActorID: server.ActorID(c), ActorMail: server.ActorMail(c),
-		Action: "patient.update", Resource: "patient:" + patient.ID,
-		Result: audit.ResultSuccess, Detail: patientChanges(before, input),
-		IP: c.RealIP(), RequestID: c.Response().Header().Get(echo.HeaderXRequestID),
-	})
+	h.audit.Record(ctx, server.EventFromRequest(c, audit.ResultSuccess,
+		"patient.update", "patient:"+patient.ID, patient.DisplayName, patientChanges(before, input)))
 	return server.HtmxRedirect(c, "/patients/"+patient.ID)
 }
 
@@ -310,19 +302,11 @@ func (h *Handler) BulkArchive(c echo.Context) error {
 		}
 		if err := h.svc.SetStatus(ctx, clinicID, id, usecase.StatusInactive); err == nil {
 			archived++
-			h.audit.Record(ctx, audit.Event{
-				ActorID: server.ActorID(c), ActorMail: server.ActorMail(c),
-				Action: "patient.status", Resource: "patient:" + id,
-				Result: audit.ResultSuccess, Detail: usecase.StatusInactive,
-				IP: c.RealIP(), RequestID: c.Response().Header().Get(echo.HeaderXRequestID),
-			})
+			h.audit.Record(ctx, server.EventFromRequest(c, audit.ResultSuccess,
+				"patient.status", "patient:"+id, "", usecase.StatusInactive))
 		} else {
-			h.audit.Record(ctx, audit.Event{
-				ActorID: server.ActorID(c), ActorMail: server.ActorMail(c),
-				Action: "patient.status", Resource: "patient:" + id, Result: audit.ResultFailure,
-				Detail: "bulk archive failed: " + err.Error(),
-				IP: c.RealIP(), RequestID: c.Response().Header().Get(echo.HeaderXRequestID),
-			})
+			h.audit.Record(ctx, server.EventFromRequest(c, audit.ResultFailure,
+				"patient.status", "patient:"+id, "", "bulk archive failed: "+err.Error()))
 		}
 	}
 
@@ -355,19 +339,11 @@ func (h *Handler) setStatus(c echo.Context, status, successMsg string) error {
 	}
 	err = h.svc.SetStatus(ctx, clinicID, id, status)
 	if err == nil {
-		h.audit.Record(ctx, audit.Event{
-			ActorID: server.ActorID(c), ActorMail: server.ActorMail(c),
-			Action: "patient.status", Resource: "patient:" + id,
-			Result: audit.ResultSuccess, Detail: status,
-			IP: c.RealIP(), RequestID: c.Response().Header().Get(echo.HeaderXRequestID),
-		})
+		h.audit.Record(ctx, server.EventFromRequest(c, audit.ResultSuccess,
+			"patient.status", "patient:"+id, "", status))
 	} else {
-		h.audit.Record(ctx, audit.Event{
-			ActorID: server.ActorID(c), ActorMail: server.ActorMail(c),
-			Action: "patient.status", Resource: "patient:" + id, Result: audit.ResultFailure,
-			Detail: "could not set status " + status,
-			IP: c.RealIP(), RequestID: c.Response().Header().Get(echo.HeaderXRequestID),
-		})
+		h.audit.Record(ctx, server.EventFromRequest(c, audit.ResultFailure,
+			"patient.status", "patient:"+id, "", "could not set status "+status))
 	}
 	if server.IsHtmx(c) {
 		if err != nil {
@@ -572,12 +548,8 @@ func (h *Handler) authorizePatientEdit(c echo.Context, createdBy *string, ptID, 
 	ctx := c.Request().Context()
 	if err := h.svc.AuthorizePatientEdit(ctx, principal, ptID, createdBy, ptStatus); err != nil {
 		if errors.Is(err, usecase.ErrForbidden) {
-			h.audit.Record(ctx, audit.Event{
-				ActorID: principal.ID, ActorMail: principal.Email,
-				Action: "authorize", Resource: "policy:patient.edit", Result: audit.ResultFailure,
-				Detail: "denied patient " + ptID,
-				IP: c.RealIP(), RequestID: c.Response().Header().Get(echo.HeaderXRequestID),
-			})
+			h.audit.Record(ctx, server.EventFromRequest(c, audit.ResultFailure,
+				"authorize", "policy:patient.edit", "", "denied patient "+ptID))
 			return echo.NewHTTPError(http.StatusForbidden)
 		}
 		return err

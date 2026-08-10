@@ -372,12 +372,8 @@ func (h *Handler) AdminPolicySave(c echo.Context) error {
 		detail = err.Error()
 	}
 
-	h.audit.Record(c.Request().Context(), audit.Event{
-		ActorID: actor.ID, ActorMail: actor.Email,
-		Action: "policy.update", Resource: "policy:" + name,
-		Result: result, Detail: detail,
-		IP: c.RealIP(), RequestID: c.Response().Header().Get(echo.HeaderXRequestID),
-	})
+	h.audit.Record(c.Request().Context(), server.EventFromRequest(c, result,
+		"policy.update", "policy:"+name, name, detail))
 
 	if server.IsHtmx(c) {
 		return h.policyCardFragment(c, name, detail)
@@ -398,12 +394,8 @@ func (h *Handler) AdminPolicyReset(c echo.Context) error {
 		actor = policy.Actor{ID: p.ID, Email: p.Email}
 	}
 	err := h.policies.Set(c.Request().Context(), name, expression, actor)
-	h.audit.Record(c.Request().Context(), audit.Event{
-		ActorID: actor.ID, ActorMail: actor.Email,
-		Action: "policy.update", Resource: "policy:" + name,
-		Result: audit.ResultSuccess, Detail: "reset to default",
-		IP: c.RealIP(), RequestID: c.Response().Header().Get(echo.HeaderXRequestID),
-	})
+	h.audit.Record(c.Request().Context(), server.EventFromRequest(c, audit.ResultSuccess,
+		"policy.update", "policy:"+name, name, "reset to default"))
 	if err != nil {
 		return err
 	}
@@ -555,12 +547,8 @@ func (h *Handler) UserCreate(c echo.Context) error {
 			return err
 		}
 	}
-	h.audit.Record(ctx, audit.Event{
-		ActorID: server.ActorID(c), ActorMail: server.ActorMail(c),
-		Action: "user.create", Resource: "user:" + user.ID,
-		Result: audit.ResultSuccess, Detail: "role: " + in.Role,
-		IP: c.RealIP(), RequestID: c.Response().Header().Get(echo.HeaderXRequestID),
-	})
+	h.audit.Record(ctx, server.EventFromRequest(c, audit.ResultSuccess,
+		"user.create", "user:"+user.ID, "", "role: "+in.Role))
 	return server.HtmxRedirect(c, "/users")
 }
 
@@ -622,12 +610,8 @@ func (h *Handler) UserUpdate(c echo.Context) error {
 			return err
 		}
 	}
-	h.audit.Record(ctx, audit.Event{
-		ActorID: server.ActorID(c), ActorMail: server.ActorMail(c),
-		Action: "user.update", Resource: "user:" + id,
-		Result: audit.ResultSuccess, Detail: h.userChanges(before, user, in),
-		IP: c.RealIP(), RequestID: c.Response().Header().Get(echo.HeaderXRequestID),
-	})
+	h.audit.Record(ctx, server.EventFromRequest(c, audit.ResultSuccess,
+		"user.update", "user:"+id, "", h.userChanges(before, user, in)))
 	return server.HtmxRedirect(c, "/users")
 }
 
@@ -690,23 +674,15 @@ func (h *Handler) UserStatus(c echo.Context) error {
 		case errors.Is(err, usecase.ErrLastActiveAdmin):
 			msg = "The system needs at least one active admin"
 		}
-		h.audit.Record(ctx, audit.Event{
-			ActorID: server.ActorID(c), ActorMail: server.ActorMail(c),
-			Action: "user.update", Resource: "user:" + id, Result: audit.ResultFailure,
-			Detail: msg,
-			IP: c.RealIP(), RequestID: c.Response().Header().Get(echo.HeaderXRequestID),
-		})
+		h.audit.Record(ctx, server.EventFromRequest(c, audit.ResultFailure,
+			"user.update", "user:"+id, "", msg))
 		// htmx does not swap 4xx responses, so errors return 200 with an
 		// OOB alert that lands in the shell's #app-alert container.
 		return server.Render(c, http.StatusOK, components.Alert(msg, true))
 	}
 	roleName := user.RoleName
-	h.audit.Record(ctx, audit.Event{
-		ActorID: server.ActorID(c), ActorMail: server.ActorMail(c),
-		Action: "user.update", Resource: "user:" + id,
-		Result: audit.ResultSuccess, Detail: h.userChanges(user, updated, usecase.UpdateUserInput{Active: updated.Active == 1, Role: roleName}),
-		IP: c.RealIP(), RequestID: c.Response().Header().Get(echo.HeaderXRequestID),
-	})
+	h.audit.Record(ctx, server.EventFromRequest(c, audit.ResultSuccess,
+		"user.update", "user:"+id, "", h.userChanges(user, updated, usecase.UpdateUserInput{Active: updated.Active == 1, Role: roleName})))
 	return server.Render(c, http.StatusOK, views.UserRowOnly([]views.UserListRow{{
 		ID: updated.ID, Name: updated.DisplayName, Email: updated.Email,
 		Role: roleName, Active: updated.Active, CreatedAt: clock.FormatStored(user.CreatedAt),
@@ -786,12 +762,8 @@ func (h *Handler) SpecialtyCreate(c echo.Context) error {
 		return server.Render(c, http.StatusOK, views.SpecialtyForm(
 			server.CSRFToken(c, h.csrf), msg))
 	}
-	h.audit.Record(ctx, audit.Event{
-		ActorID: server.ActorID(c), ActorMail: server.ActorMail(c),
-		Action: "specialty.create", Resource: "specialty:" + specialty.ID,
-		Result: audit.ResultSuccess, Detail: specialty.Name,
-		IP: c.RealIP(), RequestID: c.Response().Header().Get(echo.HeaderXRequestID),
-	})
+	h.audit.Record(ctx, server.EventFromRequest(c, audit.ResultSuccess,
+		"specialty.create", "specialty:"+specialty.ID, specialty.Name, specialty.Name))
 	return server.HtmxRedirect(c, "/specialties")
 }
 
@@ -806,12 +778,8 @@ func (h *Handler) SpecialtyDelete(c echo.Context) error {
 	if err := h.svc.DeleteSpecialty(ctx, clinicID, id); err != nil {
 		return err
 	}
-	h.audit.Record(ctx, audit.Event{
-		ActorID: server.ActorID(c), ActorMail: server.ActorMail(c),
-		Action: "specialty.delete", Resource: "specialty:" + id,
-		Result: audit.ResultSuccess,
-		IP: c.RealIP(), RequestID: c.Response().Header().Get(echo.HeaderXRequestID),
-	})
+	h.audit.Record(ctx, server.EventFromRequest(c, audit.ResultSuccess,
+		"specialty.delete", "specialty:"+id, "", ""))
 	return server.HtmxRedirect(c, "/specialties")
 }
 
@@ -852,12 +820,8 @@ func (h *Handler) RoleCreate(c echo.Context) error {
 		return server.Render(c, http.StatusOK, views.RoleForm(
 			server.CSRFToken(c, h.csrf), msg))
 	}
-	h.audit.Record(ctx, audit.Event{
-		ActorID: server.ActorID(c), ActorMail: server.ActorMail(c),
-		Action: "role.create", Resource: "role:" + role.ID,
-		Result: audit.ResultSuccess, Detail: role.Name,
-		IP: c.RealIP(), RequestID: c.Response().Header().Get(echo.HeaderXRequestID),
-	})
+	h.audit.Record(ctx, server.EventFromRequest(c, audit.ResultSuccess,
+		"role.create", "role:"+role.ID, role.Name, role.Name))
 	return server.HtmxRedirect(c, "/roles")
 }
 
@@ -899,12 +863,8 @@ func (h *Handler) RoleRename(c echo.Context) error {
 		return server.Render(c, http.StatusBadRequest, views.RolesPage(
 			server.CSRFToken(c, h.csrf), server.Principal(c), h.roleViews(rows), msg))
 	}
-	h.audit.Record(ctx, audit.Event{
-		ActorID: server.ActorID(c), ActorMail: server.ActorMail(c),
-		Action: "role.rename", Resource: "role:" + id,
-		Result: audit.ResultSuccess, Detail: role.Name,
-		IP: c.RealIP(), RequestID: c.Response().Header().Get(echo.HeaderXRequestID),
-	})
+	h.audit.Record(ctx, server.EventFromRequest(c, audit.ResultSuccess,
+		"role.rename", "role:"+id, role.Name, role.Name))
 	return server.HtmxRedirect(c, "/roles")
 }
 
@@ -925,12 +885,8 @@ func (h *Handler) RoleClinical(c echo.Context) error {
 		return server.Render(c, http.StatusBadRequest, views.RolesPage(
 			server.CSRFToken(c, h.csrf), server.Principal(c), h.roleViews(rows), msg))
 	}
-	h.audit.Record(ctx, audit.Event{
-		ActorID: server.ActorID(c), ActorMail: server.ActorMail(c),
-		Action: "role.update", Resource: "role:" + id,
-		Result: audit.ResultSuccess, Detail: "clinical flag changed",
-		IP: c.RealIP(), RequestID: c.Response().Header().Get(echo.HeaderXRequestID),
-	})
+	h.audit.Record(ctx, server.EventFromRequest(c, audit.ResultSuccess,
+		"role.update", "role:"+id, "", "clinical flag changed"))
 	return server.HtmxRedirect(c, "/roles")
 }
 
@@ -954,12 +910,8 @@ func (h *Handler) RoleDelete(c echo.Context) error {
 		return server.Render(c, http.StatusBadRequest, views.RolesPage(
 			server.CSRFToken(c, h.csrf), server.Principal(c), h.roleViews(rows), msg))
 	}
-	h.audit.Record(ctx, audit.Event{
-		ActorID: server.ActorID(c), ActorMail: server.ActorMail(c),
-		Action: "role.delete", Resource: "role:" + id,
-		Result: audit.ResultSuccess,
-		IP: c.RealIP(), RequestID: c.Response().Header().Get(echo.HeaderXRequestID),
-	})
+	h.audit.Record(ctx, server.EventFromRequest(c, audit.ResultSuccess,
+		"role.delete", "role:"+id, "", ""))
 	return server.HtmxRedirect(c, "/roles")
 }
 
@@ -989,4 +941,17 @@ func (h *Handler) policiesReferencing(ctx context.Context, roleName string) []st
 		}
 	}
 	return out
+}
+
+// AuditIntegrity verifies the append-only audit trail hash chain and
+// reports whether it is intact.
+func (h *Handler) AuditIntegrity(c echo.Context) error {
+	brokenAt, err := h.audit.VerifyChain(c.Request().Context())
+	if err != nil {
+		return err
+	}
+	if brokenAt != 0 {
+		return c.JSON(http.StatusOK, map[string]any{"ok": false, "broken_at": brokenAt})
+	}
+	return c.JSON(http.StatusOK, map[string]any{"ok": true})
 }

@@ -107,12 +107,8 @@ func (h *Handler) StaffUpdate(c echo.Context) error {
 	if err := h.applyStaffChange(ctx, id, change, server.ActorID(c), "admin update"); err != nil {
 		return h.staffUpdateError(c, id, change, err)
 	}
-	h.audit.Record(ctx, audit.Event{
-		ActorID: server.ActorID(c), ActorMail: server.ActorMail(c),
-		Action: "staff.update", Resource: "user:" + id,
-		Result: audit.ResultSuccess, Detail: "direct admin edit",
-		IP: c.RealIP(), RequestID: c.Response().Header().Get(echo.HeaderXRequestID),
-	})
+	h.audit.Record(ctx, server.EventFromRequest(c, audit.ResultSuccess,
+		"staff.update", "user:"+id, "", "direct admin edit"))
 	return server.HtmxRedirect(c, "/staff")
 }
 
@@ -125,12 +121,8 @@ func (h *Handler) StaffRequestChange(c echo.Context) error {
 	if _, err := h.svc.CreateStaffChangeRequest(ctx, id, server.ActorID(c), change); err != nil {
 		return h.staffRequestError(c, id, change, err)
 	}
-	h.audit.Record(ctx, audit.Event{
-		ActorID: server.ActorID(c), ActorMail: server.ActorMail(c),
-		Action: "staff.request", Resource: "user:" + id,
-		Result: audit.ResultSuccess, Detail: "change requested for approval",
-		IP: c.RealIP(), RequestID: c.Response().Header().Get(echo.HeaderXRequestID),
-	})
+	h.audit.Record(ctx, server.EventFromRequest(c, audit.ResultSuccess,
+		"staff.request", "user:"+id, "", "change requested for approval"))
 	return server.HtmxRedirect(c, "/staff")
 }
 
@@ -303,12 +295,8 @@ func (h *Handler) StaffRequestApprove(c echo.Context) error {
 	if err := h.svc.ApproveStaffChangeRequest(ctx, id, server.ActorID(c)); err != nil {
 		return h.requestError(c, err)
 	}
-	h.audit.Record(ctx, audit.Event{
-		ActorID: server.ActorID(c), ActorMail: server.ActorMail(c),
-		Action: "staff.approve", Resource: "request:" + id,
-		Result: audit.ResultSuccess,
-		IP:     c.RealIP(), RequestID: c.Response().Header().Get(echo.HeaderXRequestID),
-	})
+	h.audit.Record(ctx, server.EventFromRequest(c, audit.ResultSuccess,
+		"staff.approve", "request:"+id, "", ""))
 	return server.HtmxRedirect(c, "/staff/requests")
 }
 
@@ -319,12 +307,8 @@ func (h *Handler) StaffRequestReject(c echo.Context) error {
 	if err := h.svc.RejectStaffChangeRequest(ctx, id, server.ActorID(c), c.FormValue("note")); err != nil {
 		return h.requestError(c, err)
 	}
-	h.audit.Record(ctx, audit.Event{
-		ActorID: server.ActorID(c), ActorMail: server.ActorMail(c),
-		Action: "staff.reject", Resource: "request:" + id,
-		Result: audit.ResultSuccess, Detail: c.FormValue("note"),
-		IP: c.RealIP(), RequestID: c.Response().Header().Get(echo.HeaderXRequestID),
-	})
+	h.audit.Record(ctx, server.EventFromRequest(c, audit.ResultSuccess,
+		"staff.reject", "request:"+id, "", c.FormValue("note")))
 	return server.HtmxRedirect(c, "/staff/requests")
 }
 
@@ -436,11 +420,7 @@ func (h *Handler) StaffCreate(c echo.Context) error {
 	if err := h.svc.SetUserSpecialties(ctx, user.ID, c.Request().PostForm["specialties"]); err != nil {
 		return err
 	}
-	h.audit.Record(ctx, audit.Event{
-		ActorID: server.ActorID(c), ActorMail: server.ActorMail(c),
-		Action: "staff.create", Resource: "user:" + user.ID,
-		Result: audit.ResultSuccess, Detail: "physician account created",
-		IP: c.RealIP(), RequestID: c.Response().Header().Get(echo.HeaderXRequestID),
-	})
+	h.audit.Record(ctx, server.EventFromRequest(c, audit.ResultSuccess,
+		"staff.create", "user:"+user.ID, "", "physician account created"))
 	return server.HtmxRedirect(c, "/staff")
 }
