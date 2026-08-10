@@ -101,17 +101,28 @@ INSERT INTO staff_change_requests (id, user_id, requested_by, status, changes)
 VALUES (?, ?, ?, 'pending', ?)
 RETURNING *;
 
--- name: ListStaffChangeRequests :many
+-- name: ListStaffChangeRequestsFiltered :many
 SELECT r.id, r.user_id, r.requested_by, r.status, r.changes, r.decision_note,
        r.created_at, r.decided_at, r.decided_by,
        u.email AS user_email, u.display_name AS user_name,
-       req.email AS requester_email
+       req.email AS requester_email,
+       dec.email AS decided_by_email
 FROM staff_change_requests r
 JOIN users u ON u.id = r.user_id
 JOIN users req ON req.id = r.requested_by
-WHERE r.status = ?
+LEFT JOIN users dec ON dec.id = r.decided_by
+WHERE (@status_empty = '' OR r.status = @status_filter)
+  AND (@q_empty = '' OR (u.display_name || ' ' || u.email || ' ' || req.email || ' ' || r.changes) LIKE @q COLLATE NOCASE)
 ORDER BY r.created_at DESC
-LIMIT ?;
+LIMIT ? OFFSET ?;
+
+-- name: CountStaffChangeRequestsFiltered :one
+SELECT COUNT(*)
+FROM staff_change_requests r
+JOIN users u ON u.id = r.user_id
+JOIN users req ON req.id = r.requested_by
+WHERE (@status_empty = '' OR r.status = @status_filter)
+  AND (@q_empty = '' OR (u.display_name || ' ' || u.email || ' ' || req.email || ' ' || r.changes) LIKE @q COLLATE NOCASE);
 
 -- name: GetStaffChangeRequest :one
 SELECT *

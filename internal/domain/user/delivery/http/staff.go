@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/labstack/echo/v4"
@@ -119,11 +120,23 @@ func (h *Handler) StaffRequestChange(c echo.Context) error {
 	return server.HtmxRedirect(c, "/staff")
 }
 
-// StaffRequestsPage lists the pending requests for the admin, each with
-// a readable summary of the proposed changes.
+// staffRequestPageSize is the page size of the change request history.
+const staffRequestPageSize = 20
+
+// StaffRequestsPage lists the change request history with status and
+// search filters, each row carrying a readable summary of the proposed
+// changes and the decision.
 func (h *Handler) StaffRequestsPage(c echo.Context) error {
 	ctx := c.Request().Context()
-	rows, err := h.svc.ListStaffChangeRequests(ctx, usecase.RequestPending)
+	q := strings.TrimSpace(c.QueryParam("q"))
+	status := c.QueryParam("status")
+	page := 1
+	if p := c.QueryParam("page"); p != "" {
+		if n, err := strconv.Atoi(p); err == nil && n > 0 {
+			page = n
+		}
+	}
+	rows, total, err := h.svc.ListStaffChangeRequestsFiltered(ctx, status, q, staffRequestPageSize, (page-1)*staffRequestPageSize)
 	if err != nil {
 		return err
 	}
@@ -131,8 +144,12 @@ func (h *Handler) StaffRequestsPage(c echo.Context) error {
 	if err != nil {
 		return err
 	}
+	pager := views.StaffRequestPager{Q: q, Status: status, Page: page, Total: total, Shown: int64(len(out))}
+	if server.IsHtmx(c) && c.Request().Header.Get("HX-Boosted") != "true" {
+		return server.Render(c, http.StatusOK, views.StaffRequestsTable(server.CSRFToken(c, h.csrf), out, pager, ""))
+	}
 	return server.Render(c, http.StatusOK, views.StaffRequestsPage(
-		server.CSRFToken(c, h.csrf), server.Principal(c), out, ""))
+		server.CSRFToken(c, h.csrf), server.Principal(c), out, pager, ""))
 }
 
 // MyStaffRequestsPage lists the requester's own requests with their
@@ -163,8 +180,9 @@ func (h *Handler) MyStaffRequestsPage(c echo.Context) error {
 		server.CSRFToken(c, h.csrf), server.Principal(c), out, ""))
 }
 
-// staffRequestViews builds the admin queue rows with readable summaries.
-func (h *Handler) staffRequestViews(ctx context.Context, rows []repository.ListStaffChangeRequestsRow) ([]views.StaffRequestRow, error) {
+// staffRequestViews builds the change request rows with readable
+// summaries and decision details.
+func (h *Handler) staffRequestViews(ctx context.Context, rows []repository.ListStaffChangeRequestsFilteredRow) ([]views.StaffRequestRow, error) {
 	clock, err := h.clocks.Clock(ctx)
 	if err != nil {
 		return nil, err
@@ -179,6 +197,8 @@ func (h *Handler) staffRequestViews(ctx context.Context, rows []repository.ListS
 		view.UserName = r.UserName
 		view.UserEmail = r.UserEmail
 		view.CreatedAt = clock.FormatStored(r.CreatedAt)
+		view.DecisionNote = r.DecisionNote.String
+		view.DecidedByEmail = r.DecidedByEmail.String
 		out = append(out, view)
 	}
 	return out, nil
