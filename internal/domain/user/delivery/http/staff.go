@@ -166,7 +166,7 @@ func (h *Handler) MyStaffRequestsPage(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-	clock, err := h.clocks.Clock(ctx)
+	clock, err := h.userClock(ctx)
 	if err != nil {
 		return err
 	}
@@ -189,7 +189,7 @@ func (h *Handler) MyStaffRequestsPage(c echo.Context) error {
 // staffRequestViews builds the change request rows with readable
 // summaries and decision details.
 func (h *Handler) staffRequestViews(ctx context.Context, rows []repository.ListStaffChangeRequestsFilteredRow) ([]views.StaffRequestRow, error) {
-	clock, err := h.clocks.Clock(ctx)
+	clock, err := h.userClock(ctx)
 	if err != nil {
 		return nil, err
 	}

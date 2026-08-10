@@ -63,6 +63,15 @@ func (p *ClockProvider) Clock(ctx context.Context) (*Clock, error) {
 	return NewClock(row.Timezone), nil
 }
 
+// ClockFor returns the clock for the user's personal timezone, falling
+// back to the clinic zone when tz is empty (the default preference).
+func (p *ClockProvider) ClockFor(ctx context.Context, tz string) (*Clock, error) {
+	if tz != "" {
+		return NewClock(tz), nil
+	}
+	return p.Clock(ctx)
+}
+
 // ClinicID returns the clinic's id, cached briefly.
 func (p *ClockProvider) ClinicID(ctx context.Context) (string, error) {
 	row, err := p.load(ctx)

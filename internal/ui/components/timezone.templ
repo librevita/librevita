@@ -1,0 +1,29 @@
+package components
+
+import (
+	"librevita.org/internal/domain/clinic"
+)
+
+// TimezoneSelect renders the IANA zone picker used in onboarding and in
+// the profile preferences. An empty selected value means "inherit the
+// clinic timezone" and is offered as the first option.
+templ TimezoneSelect(selected string) {
+	<select class="input" id="timezone" name="timezone">
+		if selected == "" {
+			<option value="" selected="selected">Default (clinic timezone)</option>
+		} else {
+			<option value="">Default (clinic timezone)</option>
+		}
+		for _, g := range clinic.TimeZones {
+			<optgroup label={ g.Label }>
+				for _, zone := range g.Zones {
+					if zone == selected {
+						<option value={ zone } selected>{ zone }</option>
+					} else {
+						<option value={ zone }>{ zone }</option>
+					}
+				}
+			</optgroup>
+		}
+	</select>
+}

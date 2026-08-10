@@ -7,11 +7,11 @@
 -- Relational roles: the account role is a row in roles instead of a
 -- fixed TEXT CHECK enum. See db/migrations/00011_roles.sql.
 CREATE TABLE roles (
-    id          TEXT PRIMARY KEY,
-    name        TEXT NOT NULL UNIQUE COLLATE NOCASE,
-    system      INTEGER NOT NULL DEFAULT 0 CHECK (system IN (0, 1)),
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE COLLATE nocase,
+    system INTEGER NOT NULL DEFAULT 0 CHECK (system IN (0, 1)),
     is_clinical INTEGER NOT NULL DEFAULT 0 CHECK (is_clinical IN (0, 1)),
-    created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 ) STRICT;
 
 CREATE TABLE users (
@@ -21,6 +21,10 @@ CREATE TABLE users (
     display_name TEXT NOT NULL,
     role_id TEXT NOT NULL REFERENCES roles(id),
     active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+    timezone TEXT NOT NULL DEFAULT '',
+    ui_theme TEXT NOT NULL DEFAULT 'system' CHECK (
+        ui_theme IN ('system', 'light', 'dark')
+    ),
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
     updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 ) STRICT;
@@ -100,49 +104,49 @@ created_at       TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ',
 ) STRICT;
 
 CREATE TABLE patients (
-    id          TEXT    PRIMARY KEY,
-    clinic_id   TEXT    NOT NULL REFERENCES clinics(id) ON DELETE CASCADE,
-    display_name TEXT   NOT NULL,
-    birth_date  TEXT,
-    sex         TEXT    NOT NULL DEFAULT 'unknown'
-                        CHECK (sex IN ('female', 'male', 'other', 'unknown')),
-    document    TEXT,
-    phone       TEXT,
-    email       TEXT,
-    street      TEXT,
-    city        TEXT,
-    state       TEXT,
-    postal_code TEXT,
-    notes       TEXT,
-    status      TEXT    NOT NULL DEFAULT 'active'
-                        CHECK (status IN ('active', 'inactive')),
-    created_by  TEXT    REFERENCES users(id),
-    created_at  TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-    updated_at  TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+id          TEXT    PRIMARY KEY,
+clinic_id   TEXT    NOT NULL REFERENCES clinics(id) ON DELETE CASCADE,
+display_name TEXT   NOT NULL,
+birth_date  TEXT,
+sex         TEXT    NOT NULL DEFAULT 'unknown'
+CHECK (sex IN ('female', 'male', 'other', 'unknown')),
+document    TEXT,
+phone       TEXT,
+email       TEXT,
+street      TEXT,
+city        TEXT,
+state       TEXT,
+postal_code TEXT,
+notes       TEXT,
+status      TEXT    NOT NULL DEFAULT 'active'
+CHECK (status IN ('active', 'inactive')),
+created_by  TEXT    REFERENCES users(id),
+created_at  TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+updated_at  TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 ) STRICT;
 
 CREATE INDEX idx_patients_clinic ON patients (clinic_id);
 CREATE INDEX idx_patients_name ON patients (display_name COLLATE NOCASE);
 CREATE UNIQUE INDEX idx_patients_clinic_document
-    ON patients (clinic_id, document)
-    WHERE document IS NOT NULL;
+ON patients (clinic_id, document)
+WHERE document IS NOT NULL;
 
 -- Clinician specialties and their mapping to users. Owned by the user
 -- domain; see db/migrations/00009_specialties.sql.
 CREATE TABLE specialties (
-    id         TEXT PRIMARY KEY,
-    clinic_id  TEXT NOT NULL,
-    name       TEXT NOT NULL,
-    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+id         TEXT PRIMARY KEY,
+clinic_id  TEXT NOT NULL,
+name       TEXT NOT NULL,
+created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 ) STRICT;
 
 CREATE UNIQUE INDEX idx_specialties_clinic_name
-    ON specialties (clinic_id, name COLLATE NOCASE);
+ON specialties (clinic_id, name COLLATE NOCASE);
 
 CREATE TABLE user_specialties (
-    user_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    specialty_id TEXT NOT NULL REFERENCES specialties(id) ON DELETE CASCADE,
-    PRIMARY KEY (user_id, specialty_id)
+user_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+specialty_id TEXT NOT NULL REFERENCES specialties(id) ON DELETE CASCADE,
+PRIMARY KEY (user_id, specialty_id)
 ) STRICT;
 
 CREATE INDEX idx_user_specialties_specialty ON user_specialties (specialty_id);
@@ -151,18 +155,18 @@ CREATE INDEX idx_user_specialties_specialty ON user_specialties (specialty_id);
 -- approves or rejects. Owned by the user domain; see
 -- db/migrations/00010_staff_requests.sql.
 CREATE TABLE staff_change_requests (
-    id            TEXT PRIMARY KEY,
-    user_id       TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    requested_by  TEXT NOT NULL REFERENCES users(id),
-    status        TEXT NOT NULL DEFAULT 'pending'
-                  CHECK (status IN ('pending', 'approved', 'rejected')),
-    changes       TEXT NOT NULL,
-    decision_note TEXT,
-    created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-    decided_at    TEXT,
-    decided_by    TEXT REFERENCES users(id)
+id            TEXT PRIMARY KEY,
+user_id       TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+requested_by  TEXT NOT NULL REFERENCES users(id),
+status        TEXT NOT NULL DEFAULT 'pending'
+CHECK (status IN ('pending', 'approved', 'rejected')),
+changes       TEXT NOT NULL,
+decision_note TEXT,
+created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+decided_at    TEXT,
+decided_by    TEXT REFERENCES users(id)
 ) STRICT;
 
-CREATE INDEX idx_staff_requests_status ON staff_change_requests (status, created_at DESC);
+CREATE INDEX idx_staff_requests_status ON staff_change_requests (status,
+created_at DESC);
 CREATE INDEX idx_staff_requests_user ON staff_change_requests (user_id);
-

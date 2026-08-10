@@ -1,8 +1,15 @@
 package layouts
 
-templ Base(title string) {
+import (
+	"librevita.org/internal/types"
+)
+
+// Base is the bare document shell used by the anonymous pages (login,
+// registration, setup). The UI theme comes from the authenticated
+// shell; anonymous pages always follow the system scheme.
+templ Base(title string, theme types.UITheme) {
 	<!DOCTYPE html>
-	<html lang="en" class="h-full">
+	<html lang="en" data-ui-theme={ theme.String() } class={ "h-full" + darkClass(theme) }>
 		<head>
 			<meta charset="utf-8">
 			<meta name="viewport" content="width=device-width, initial-scale=1">
@@ -17,4 +24,13 @@ templ Base(title string) {
 			{ children... }
 		</body>
 	</html>
+}
+
+// darkClass pre-applies the dark class when the theme is fixed dark, so
+// the first paint is already dark before theme.js runs.
+func darkClass(theme types.UITheme) string {
+	if theme == types.UIThemeDark {
+		return " dark"
+	}
+	return ""
 }

@@ -191,6 +191,12 @@ sql:
               package: "types"
               type: "DateTime"
             column: "staff_change_requests.decided_at"
+
+          - go_type:
+              import: "librevita.org/internal/types"
+              package: "types"
+              type: "UITheme"
+            column: "users.ui_theme"
   - name: "audit"
     engine: "sqlite"
     schema: "db/schema/"
@@ -302,3 +308,9 @@ sql:
               package: "types"
               type: "DateTime"
             column: "sessions.expires_at"
+
+          - go_type:
+              import: "librevita.org/internal/types"
+              package: "types"
+              type: "UITheme"
+            column: "users.ui_theme"
