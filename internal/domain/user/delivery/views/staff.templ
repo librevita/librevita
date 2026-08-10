@@ -85,7 +85,7 @@ templ StaffPage(token string, p *auth.Principal, rows []PhysicianRow, pager Staf
 				<div class="flex flex-wrap items-center justify-between gap-3">
 					<p class="text-sm text-gray-500 dark:text-gray-400">Clinical staff directory</p>
 					if p != nil && p.Role == auth.RoleAdmin {
-						@components.ButtonLink("primary", "/users/new", "New physician account", nil)
+						@components.ButtonLink("primary", "/staff/new", "New physician", nil)
 					}
 				</div>
 			</div>
@@ -481,3 +481,57 @@ templ requestStatusOption(value string, label string, selected string) {
 	}
 }
 
+
+// StaffCreatePage renders the physician account creation form, specific
+// to clinical staff (the role is physician; the specialties come from
+// the catalog).
+templ StaffCreatePage(token string, p *auth.Principal, specialties []SpecialtyView, errMsg string) {
+	@layouts.App("Physicians", token, p, "physicians") {
+		<div class="mx-auto max-w-xl p-4 lg:p-6">
+			@components.Card() {
+				@components.CardHeader("New physician") {
+					<a class="inline-flex items-center rounded-lg p-2 text-sm font-medium text-indigo-700 hover:bg-gray-100 dark:text-indigo-400 dark:hover:bg-gray-700" href="/staff">Back to physicians</a>
+				}
+				@StaffCreateForm(token, specialties, errMsg)
+			}
+		</div>
+	}
+}
+
+// StaffCreateForm is the physician creation form fragment: htmx posts
+// replace it in place so validation errors keep the typed values.
+templ StaffCreateForm(token string, specialties []SpecialtyView, errMsg string) {
+	<form method="post" action="/staff" hx-post="/staff" hx-target="this" hx-swap="outerHTML" class="space-y-4">
+		<input type="hidden" name="_csrf" value={ token }>
+		if errMsg != "" {
+			@components.Alert(errMsg, false)
+		}
+		@components.Field("name", "Name") {
+			@components.Input("name", "", templ.Attributes{ "id": "name", "type": "text", "required": true, "autofocus": true })
+		}
+		@components.Field("email", "Email") {
+			@components.Input("email", "", templ.Attributes{ "id": "email", "type": "email", "required": true })
+		}
+		@components.Field("password", "Password") {
+			@components.Input("password", "", templ.Attributes{ "id": "password", "type": "password", "minlength": "8", "required": true })
+		}
+		if len(specialties) > 0 {
+			<fieldset>
+				<legend class="text-sm font-semibold text-gray-900 dark:text-white">Specialties</legend>
+				<p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">A physician can have more than one.</p>
+				<div class="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+					for _, sp := range specialties {
+						<label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+							@components.Checkbox("specialties", "", templ.Attributes{ "value": sp.ID, "checked": sp.Selected })
+							{ sp.Name }
+						</label>
+					}
+				</div>
+			</fieldset>
+		}
+		<div class="flex items-center gap-3">
+			@components.Button("primary", "Create physician", templ.Attributes{ "type": "submit" })
+			@components.ButtonLink("secondary", "/staff", "Cancel", templ.Attributes{ "hx-target": "body" })
+		</div>
+	</form>
+}

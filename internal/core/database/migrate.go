@@ -29,19 +29,6 @@ func Migrate(ctx context.Context, db *sql.DB, log *slog.Logger) error {
 	return nil
 }
 
-// MigrateTo applies migrations up to the given version. It supports
-// controlled upgrades and tests of incremental migrations.
-func MigrateTo(ctx context.Context, db *sql.DB, version int64, log *slog.Logger) error {
-	provider, err := newProvider(db, log)
-	if err != nil {
-		return err
-	}
-	if _, err := provider.UpTo(ctx, version); err != nil {
-		return fmt.Errorf("migrate: goose up to %d: %w", version, err)
-	}
-	return nil
-}
-
 func newProvider(db *sql.DB, log *slog.Logger) (*goose.Provider, error) {
 	migrations, err := fs.Sub(dbassets.Migrations, migrationsDir)
 	if err != nil {

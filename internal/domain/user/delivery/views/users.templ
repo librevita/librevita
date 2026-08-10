@@ -194,14 +194,14 @@ templ userStatusCell(u UserListRow) {
 
 // UserFormPage renders the create (id empty) or edit form with the
 // specialty checkboxes.
-templ UserFormPage(token string, p *auth.Principal, id string, values UserFormValues, roles []RoleView, specialties []SpecialtyView, errMsg string) {
+templ UserFormPage(token string, p *auth.Principal, id string, values UserFormValues, roles []RoleView, errMsg string) {
 	@layouts.App(userFormTitle(id), token, p, "users") {
 		<div class="mx-auto max-w-xl p-4 lg:p-6">
 			@components.Card() {
 				@components.CardHeader(userFormTitle(id)) {
 					<a class="inline-flex items-center rounded-lg p-2 text-sm font-medium text-indigo-700 hover:bg-gray-100 dark:text-indigo-400 dark:hover:bg-gray-700" href="/users">Back to users</a>
 				}
-				@UserForm(token, id, values, roles, specialties, errMsg)
+				@UserForm(token, id, values, roles, errMsg)
 			}
 		</div>
 	}
@@ -211,7 +211,7 @@ templ UserFormPage(token string, p *auth.Principal, id string, values UserFormVa
 // so validation errors keep the typed values. The specialty checkboxes
 // are shown when the catalog has entries, so a physician can carry more
 // than one specialty.
-templ UserForm(token string, id string, values UserFormValues, roles []RoleView, specialties []SpecialtyView, errMsg string) {
+templ UserForm(token string, id string, values UserFormValues, roles []RoleView, errMsg string) {
 	<form method="post" action={ userFormAction(id) } hx-post={ userFormAction(id) } hx-target="this" hx-swap="outerHTML" class="space-y-4">
 		<input type="hidden" name="_csrf" value={ token }>
 		if errMsg != "" {
@@ -240,20 +240,6 @@ templ UserForm(token string, id string, values UserFormValues, roles []RoleView,
 				@components.Checkbox("active", "", templ.Attributes{ "id": "active", "checked": values.Active })
 				<label class="text-sm text-gray-700 dark:text-gray-300" for="active">Active account</label>
 			</div>
-		}
-		if len(specialties) > 0 {
-			<fieldset>
-				<legend class="text-sm font-semibold text-gray-900 dark:text-white">Specialties</legend>
-				<p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">A clinician can have more than one.</p>
-				<div class="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
-					for _, sp := range specialties {
-						<label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-							@components.Checkbox("specialties", "", templ.Attributes{ "value": sp.ID, "checked": sp.Selected })
-							{ sp.Name }
-						</label>
-					}
-				</div>
-			</fieldset>
 		}
 		<div class="flex items-center gap-3">
 			@components.Button("primary", userFormSubmit(id), templ.Attributes{ "type": "submit" })

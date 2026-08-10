@@ -523,21 +523,13 @@ func (h *Handler) userRows(rows []repository.ListUsersRow, clock *clinic.Clock) 
 // UserNewPage renders the staff account creation form.
 func (h *Handler) UserNewPage(c echo.Context) error {
 	ctx := c.Request().Context()
-	clinicID, err := h.clocks.ClinicID(ctx)
-	if err != nil {
-		return err
-	}
-	specialties, err := h.svc.ListSpecialties(ctx, clinicID)
-	if err != nil {
-		return err
-	}
 	roles, err := h.formRoles(ctx)
 	if err != nil {
 		return err
 	}
 	return server.Render(c, http.StatusOK, views.UserFormPage(
 		server.CSRFToken(c, h.csrf), server.Principal(c), "", views.UserFormValues{},
-		roles, h.specialtyViews(specialties, nil), ""))
+		roles, ""))
 }
 
 // UserCreate creates a staff account.
@@ -555,16 +547,13 @@ func (h *Handler) UserCreate(c echo.Context) error {
 		switch {
 		case errors.As(err, &v):
 			return server.Render(c, http.StatusBadRequest, views.UserFormPage(
-				server.CSRFToken(c, h.csrf), server.Principal(c), "", createFormValues(in), nil, nil, v.Msg))
+				server.CSRFToken(c, h.csrf), server.Principal(c), "", createFormValues(in), nil, v.Msg))
 		case errors.Is(err, usecase.ErrEmailTaken):
 			return server.Render(c, http.StatusConflict, views.UserFormPage(
-				server.CSRFToken(c, h.csrf), server.Principal(c), "", createFormValues(in), nil, nil, "That email is already registered"))
+				server.CSRFToken(c, h.csrf), server.Principal(c), "", createFormValues(in), nil, "That email is already registered"))
 		default:
 			return err
 		}
-	}
-	if err := h.setFormSpecialties(c, user.ID); err != nil {
-		return err
 	}
 	h.audit.Record(ctx, audit.Event{
 		ActorID: server.ActorID(c), ActorMail: server.ActorMail(c),
@@ -586,18 +575,6 @@ func (h *Handler) UserEditPage(c echo.Context) error {
 		}
 		return err
 	}
-	clinicID, err := h.clocks.ClinicID(ctx)
-	if err != nil {
-		return err
-	}
-	specialties, err := h.svc.ListSpecialties(ctx, clinicID)
-	if err != nil {
-		return err
-	}
-	selected, err := h.svc.UserSpecialties(ctx, user.ID)
-	if err != nil {
-		return err
-	}
 	roles, err := h.formRoles(ctx)
 	if err != nil {
 		return err
@@ -605,7 +582,7 @@ func (h *Handler) UserEditPage(c echo.Context) error {
 	return server.Render(c, http.StatusOK, views.UserFormPage(
 		server.CSRFToken(c, h.csrf), server.Principal(c), user.ID, views.UserFormValues{
 			Name: user.DisplayName, Email: user.Email, Role: user.RoleName, Active: user.Active == 1,
-		}, roles, h.specialtyViews(specialties, selected), ""))
+		}, roles, ""))
 }
 
 // UserUpdate applies the account changes.
@@ -631,22 +608,19 @@ func (h *Handler) UserUpdate(c echo.Context) error {
 		switch {
 		case errors.As(err, &v):
 			return server.Render(c, http.StatusBadRequest, views.UserFormPage(
-				server.CSRFToken(c, h.csrf), server.Principal(c), id, updateFormValues(in), nil, nil, v.Msg))
+				server.CSRFToken(c, h.csrf), server.Principal(c), id, updateFormValues(in), nil, v.Msg))
 		case errors.Is(err, usecase.ErrEmailTaken):
 			return server.Render(c, http.StatusConflict, views.UserFormPage(
-				server.CSRFToken(c, h.csrf), server.Principal(c), id, updateFormValues(in), nil, nil, "That email is already registered"))
+				server.CSRFToken(c, h.csrf), server.Principal(c), id, updateFormValues(in), nil, "That email is already registered"))
 		case errors.Is(err, usecase.ErrCannotDemoteSelf):
 			return server.Render(c, http.StatusBadRequest, views.UserFormPage(
-				server.CSRFToken(c, h.csrf), server.Principal(c), id, updateFormValues(in), nil, nil, "You cannot change your own role or status"))
+				server.CSRFToken(c, h.csrf), server.Principal(c), id, updateFormValues(in), nil, "You cannot change your own role or status"))
 		case errors.Is(err, usecase.ErrLastActiveAdmin):
 			return server.Render(c, http.StatusBadRequest, views.UserFormPage(
-				server.CSRFToken(c, h.csrf), server.Principal(c), id, updateFormValues(in), nil, nil, "The system needs at least one active admin"))
+				server.CSRFToken(c, h.csrf), server.Principal(c), id, updateFormValues(in), nil, "The system needs at least one active admin"))
 		default:
 			return err
 		}
-	}
-	if err := h.setFormSpecialties(c, id); err != nil {
-		return err
 	}
 	h.audit.Record(ctx, audit.Event{
 		ActorID: server.ActorID(c), ActorMail: server.ActorMail(c),
@@ -737,13 +711,6 @@ func (h *Handler) UserStatus(c echo.Context) error {
 		ID: updated.ID, Name: updated.DisplayName, Email: updated.Email,
 		Role: roleName, Active: updated.Active, CreatedAt: clock.FormatStored(user.CreatedAt),
 	}}))
-}
-
-// setFormSpecialties applies the submitted specialty checkboxes to the
-// account.
-func (h *Handler) setFormSpecialties(c echo.Context, userID string) error {
-	ids := c.Request().PostForm["specialties"]
-	return h.svc.SetUserSpecialties(c.Request().Context(), userID, ids)
 }
 
 // specialtyViews joins the catalog with the user's selection.

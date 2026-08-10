@@ -78,6 +78,8 @@ func registerRoutes(e *echo.Echo, h *httphandler.Handler, sessions *auth.Session
 
 	// Physician directory and the approval workflow.
 	e.GET("/staff", h.StaffPage, gate, server.RequireAuth(sessions, log), server.RequirePolicy(policies, auditLogger, log, "staff.view"))
+	e.GET("/staff/new", h.StaffCreatePage, gate, server.RequireAuth(sessions, log), server.RequirePolicy(policies, auditLogger, log, "staff.edit"))
+	e.POST("/staff", h.StaffCreate, gate, server.RequireAuth(sessions, log), server.RequirePolicy(policies, auditLogger, log, "staff.edit"))
 	e.GET("/staff/:id/edit", h.StaffEditPage, gate, server.RequireAuth(sessions, log), server.RequirePolicy(policies, auditLogger, log, "staff.view"))
 	e.POST("/staff/:id", h.StaffUpdate, gate, server.RequireAuth(sessions, log), server.RequirePolicy(policies, auditLogger, log, "staff.edit"))
 	e.POST("/staff/:id/request", h.StaffRequestChange, gate, server.RequireAuth(sessions, log), server.RequirePolicy(policies, auditLogger, log, "staff.request"))

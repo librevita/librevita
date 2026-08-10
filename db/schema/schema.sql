@@ -12,7 +12,7 @@ CREATE TABLE roles (
     system      INTEGER NOT NULL DEFAULT 0 CHECK (system IN (0, 1)),
     is_clinical INTEGER NOT NULL DEFAULT 0 CHECK (is_clinical IN (0, 1)),
     created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-);
+) STRICT;
 
 CREATE TABLE users (
     id TEXT PRIMARY KEY,
@@ -23,7 +23,7 @@ CREATE TABLE users (
     active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
     updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-);
+) STRICT;
 
 CREATE INDEX idx_users_role ON users (role_id);
 
@@ -32,7 +32,7 @@ CREATE TABLE sessions (
     token_hash TEXT PRIMARY KEY,
     user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     expires_at TEXT NOT NULL
-);
+) STRICT;
 
 -- Durable audit trail, owned by internal/core/audit.
 -- See db/migrations/00003_audit.sql.
@@ -47,7 +47,7 @@ ip          TEXT,
 request_id  TEXT,
 detail      TEXT,
 created_at  TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-);
+) STRICT;
 
 -- Clinic profile created during onboarding, owned by the clinic domain,
 -- and the system metadata table. See db/migrations/00004_onboarding.sql.
@@ -65,13 +65,13 @@ country     TEXT    NOT NULL DEFAULT 'BR',
 timezone    TEXT    NOT NULL DEFAULT 'America/Sao_Paulo',
 created_at  TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
 updated_at  TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-);
+) STRICT;
 
 CREATE TABLE meta (
 key        TEXT    PRIMARY KEY,
 value      TEXT    NOT NULL,
 updated_at TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-);
+) STRICT;
 
 -- Dynamic CEL authorization policies, owned by internal/core/policy.
 -- See db/migrations/00005_policy.sql and 00006_policy_version.sql.
@@ -80,7 +80,7 @@ id         TEXT    PRIMARY KEY,
 name       TEXT    NOT NULL UNIQUE,
 expression TEXT    NOT NULL,
 updated_at TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-);
+) STRICT;
 
 CREATE TABLE policy_versions (
 id               INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -92,7 +92,7 @@ origin           TEXT    NOT NULL DEFAULT 'system'
 CHECK (origin IN ('seed', 'admin', 'system')),
 created_at       TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ',
 'now'))
-);
+) STRICT;
 
 CREATE TABLE patients (
     id          TEXT    PRIMARY KEY,
@@ -114,7 +114,7 @@ CREATE TABLE patients (
     created_by  TEXT    REFERENCES users(id),
     created_at  TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
     updated_at  TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-);
+) STRICT;
 
 CREATE INDEX idx_patients_clinic ON patients (clinic_id);
 CREATE INDEX idx_patients_name ON patients (display_name COLLATE NOCASE);
@@ -129,7 +129,7 @@ CREATE TABLE specialties (
     clinic_id  TEXT NOT NULL,
     name       TEXT NOT NULL,
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
-);
+) STRICT;
 
 CREATE UNIQUE INDEX idx_specialties_clinic_name
     ON specialties (clinic_id, name COLLATE NOCASE);
@@ -138,7 +138,7 @@ CREATE TABLE user_specialties (
     user_id      TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     specialty_id TEXT NOT NULL REFERENCES specialties(id) ON DELETE CASCADE,
     PRIMARY KEY (user_id, specialty_id)
-);
+) STRICT;
 
 CREATE INDEX idx_user_specialties_specialty ON user_specialties (specialty_id);
 
@@ -156,7 +156,8 @@ CREATE TABLE staff_change_requests (
     created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
     decided_at    TEXT,
     decided_by    TEXT REFERENCES users(id)
-);
+) STRICT;
 
 CREATE INDEX idx_staff_requests_status ON staff_change_requests (status, created_at DESC);
 CREATE INDEX idx_staff_requests_user ON staff_change_requests (user_id);
+

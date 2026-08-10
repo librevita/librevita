@@ -393,3 +393,54 @@ func (h *Handler) requestError(c echo.Context, err error) error {
 	}
 	return err
 }
+
+// StaffCreatePage renders the physician creation form with the
+// specialty catalog checkboxes.
+func (h *Handler) StaffCreatePage(c echo.Context) error {
+	ctx := c.Request().Context()
+	clinicID, err := h.clocks.ClinicID(ctx)
+	if err != nil {
+		return err
+	}
+	specialties, err := h.svc.ListSpecialties(ctx, clinicID)
+	if err != nil {
+		return err
+	}
+	return server.Render(c, http.StatusOK, views.StaffCreatePage(
+		server.CSRFToken(c, h.csrf), server.Principal(c),
+		h.specialtyViews(specialties, nil), ""))
+}
+
+// StaffCreate creates a physician account (the role is fixed to
+// physician) and assigns the submitted specialties.
+func (h *Handler) StaffCreate(c echo.Context) error {
+	ctx := c.Request().Context()
+	user, err := h.svc.CreateUser(ctx, usecase.CreateUserInput{
+		Name:     c.FormValue("name"),
+		Email:    c.FormValue("email"),
+		Password: c.FormValue("password"),
+		Role:     auth.RolePhysician.String(),
+	})
+	if err != nil {
+		msg := "Could not create the physician"
+		var v *usecase.ValidationError
+		switch {
+		case errors.As(err, &v):
+			msg = v.Msg
+		case errors.Is(err, usecase.ErrEmailTaken):
+			msg = "That email is already registered"
+		}
+		return server.Render(c, http.StatusOK, views.StaffCreatePage(
+			server.CSRFToken(c, h.csrf), server.Principal(c), nil, msg))
+	}
+	if err := h.svc.SetUserSpecialties(ctx, user.ID, c.Request().PostForm["specialties"]); err != nil {
+		return err
+	}
+	h.audit.Record(ctx, audit.Event{
+		ActorID: server.ActorID(c), ActorMail: server.ActorMail(c),
+		Action: "staff.create", Resource: "user:" + user.ID,
+		Result: audit.ResultSuccess, Detail: "physician account created",
+		IP: c.RealIP(), RequestID: c.Response().Header().Get(echo.HeaderXRequestID),
+	})
+	return server.HtmxRedirect(c, "/staff")
+}
