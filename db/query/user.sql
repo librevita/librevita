@@ -232,3 +232,33 @@ FROM specialties s
 JOIN user_specialties us ON us.specialty_id = s.id
 WHERE us.user_id = ?
 ORDER BY s.name COLLATE NOCASE;
+
+-- name: ListPhysiciansPage :many
+SELECT u.id, u.email, u.display_name, u.active,
+       COALESCE(CAST(GROUP_CONCAT(s.name, ', ') AS TEXT), '') AS specialties
+FROM users u
+JOIN roles r ON r.id = u.role_id
+LEFT JOIN user_specialties us ON us.user_id = u.id
+LEFT JOIN specialties s ON s.id = us.specialty_id
+WHERE r.is_clinical = 1
+GROUP BY u.id
+ORDER BY u.display_name COLLATE NOCASE
+LIMIT ? OFFSET ?;
+
+-- name: CountPhysicians :one
+SELECT COUNT(*)
+FROM users u
+JOIN roles r ON r.id = u.role_id
+WHERE r.is_clinical = 1;
+
+-- name: ListSpecialtiesPage :many
+SELECT *
+FROM specialties
+WHERE clinic_id = ?
+ORDER BY name COLLATE NOCASE
+LIMIT ? OFFSET ?;
+
+-- name: CountSpecialties :one
+SELECT COUNT(*)
+FROM specialties
+WHERE clinic_id = ?;

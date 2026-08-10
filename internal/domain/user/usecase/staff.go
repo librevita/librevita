@@ -35,14 +35,20 @@ type StaffChange struct {
 	Previous    *StaffChange `json:"previous,omitempty"`
 }
 
-// ListPhysicians returns the physician accounts with their specialties
-// joined as a comma-separated string.
-func (s *Service) ListPhysicians(ctx context.Context) ([]repository.ListPhysiciansRow, error) {
-	rows, err := s.users.ListPhysicians(ctx)
+// ListPhysiciansPage returns one page of clinical staff accounts with
+// their specialties joined as a comma-separated string, plus the total.
+func (s *Service) ListPhysiciansPage(ctx context.Context, limit, offset int) ([]repository.ListPhysiciansPageRow, int64, error) {
+	rows, err := s.users.ListPhysiciansPage(ctx, repository.ListPhysiciansPageParams{
+		Limit: int64(limit), Offset: int64(offset),
+	})
 	if err != nil {
-		return nil, fmt.Errorf("usecase: list physicians: %w", err)
+		return nil, 0, fmt.Errorf("usecase: list physicians: %w", err)
 	}
-	return rows, nil
+	total, err := s.users.CountPhysicians(ctx)
+	if err != nil {
+		return nil, 0, fmt.Errorf("usecase: count physicians: %w", err)
+	}
+	return rows, total, nil
 }
 
 // CreateStaffChangeRequest records a receptionist's proposal to change a

@@ -25,6 +25,22 @@ func (s *Service) ListSpecialties(ctx context.Context, clinicID string) ([]repos
 	return rows, nil
 }
 
+// ListSpecialtiesPage returns one page of the clinic's specialties plus
+// the total.
+func (s *Service) ListSpecialtiesPage(ctx context.Context, clinicID string, limit, offset int) ([]repository.Specialty, int64, error) {
+	rows, err := s.users.ListSpecialtiesPage(ctx, repository.ListSpecialtiesPageParams{
+		ClinicID: clinicID, Limit: int64(limit), Offset: int64(offset),
+	})
+	if err != nil {
+		return nil, 0, fmt.Errorf("usecase: list specialties page: %w", err)
+	}
+	total, err := s.users.CountSpecialties(ctx, clinicID)
+	if err != nil {
+		return nil, 0, fmt.Errorf("usecase: count specialties: %w", err)
+	}
+	return rows, total, nil
+}
+
 // CreateSpecialty adds a specialty to the clinic catalog.
 func (s *Service) CreateSpecialty(ctx context.Context, clinicID, name string) (*repository.Specialty, error) {
 	name = strings.TrimSpace(name)

@@ -4,10 +4,11 @@
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { parseHTML } from 'linkedom';
+import { Event, parseHTML } from 'linkedom';
 import { selectTab } from './tabs.ts';
 import { rowBoxes } from './table-select.ts';
 import { applyThemeClass, readStored } from './theme-pref.ts';
+import * as dropdown from './dropdown.ts';
 
 test('tabs.selectTab toggles panels and active classes', () => {
   const { document } = parseHTML(
@@ -60,4 +61,27 @@ test('themePref.applyThemeClass sets the dark class', () => {
     (globalThis as Record<string, unknown>).document = origDocument;
     (globalThis as Record<string, unknown>).window = origWindow;
   }
+});
+
+test('dropdown opens pinned to the viewport and closes outside', () => {
+  const { document } = parseHTML(
+    '<div data-lv-dropdown>' +
+      '<button type="button" data-lv-dropdown-toggle>...</button>' +
+      '<div data-lv-dropdown-menu class="hidden"></div>' +
+      '</div>' +
+      '<button id="outside">x</button>',
+  );
+  (globalThis as unknown as { document: Document }).document = document;
+  (globalThis as unknown as { window: unknown }).window = { innerWidth: 1024, innerHeight: 768 };
+  dropdown.init();
+
+  const toggle = document.querySelector('[data-lv-dropdown-toggle]') as HTMLElement;
+  const menu = document.querySelector('[data-lv-dropdown-menu]') as HTMLElement;
+  toggle.dispatchEvent(new Event('click', { bubbles: true }) as Event);
+  assert.equal(menu.classList.contains('hidden'), false);
+  assert.equal(menu.style.position, 'fixed');
+
+  const outside = document.getElementById('outside') as HTMLElement;
+  outside.dispatchEvent(new Event('click', { bubbles: true }) as Event);
+  assert.equal(menu.classList.contains('hidden'), true);
 });

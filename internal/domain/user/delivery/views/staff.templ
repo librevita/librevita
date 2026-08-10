@@ -9,6 +9,13 @@ import (
 	"librevita.org/internal/ui/shared"
 )
 
+// StaffPager carries the pager state for the physician directory.
+type StaffPager struct {
+	Page  int
+	Total int64
+	Shown int64
+}
+
 // PhysicianRow is one physician of the directory.
 type PhysicianRow struct {
 	ID          string
@@ -48,7 +55,7 @@ type StaffRequestPager struct {
 }
 
 // StaffPage renders the physician directory.
-templ StaffPage(token string, p *auth.Principal, rows []PhysicianRow, errMsg string) {
+templ StaffPage(token string, p *auth.Principal, rows []PhysicianRow, pager StaffPager, errMsg string) {
 	@layouts.App("Physicians", token, p, "physicians") {
 		<div class="w-full">
 			<div class="border-b border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
@@ -63,69 +70,107 @@ templ StaffPage(token string, p *auth.Principal, rows []PhysicianRow, errMsg str
 						<li>
 							<div class="flex items-center">
 								<svg class="h-6 w-6 text-gray-400" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"></path></svg>
-								<span class="ml-1 text-gray-400 md:ml-2 dark:text-gray-500" aria-current="page">Physicians</span>
+								<a href="/staff" class="ml-1 text-gray-700 hover:text-indigo-600 md:ml-2 dark:text-gray-300 dark:hover:text-white">Physicians</a>
+							</div>
+						</li>
+						<li>
+							<div class="flex items-center">
+								<svg class="h-6 w-6 text-gray-400" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"></path></svg>
+								<span class="ml-1 text-gray-400 md:ml-2 dark:text-gray-500" aria-current="page">List</span>
 							</div>
 						</li>
 					</ol>
 				</nav>
 				<h1 class="mb-4 text-xl font-semibold text-gray-900 sm:text-2xl dark:text-white">Physicians</h1>
-				if p != nil && p.Role == auth.RoleAdmin {
-					<div class="flex items-center gap-2">
-						@components.ButtonLink("secondary", "/users/new", "New physician account", nil)
-					</div>
-				}
+				<div class="flex flex-wrap items-center justify-between gap-3">
+					<p class="text-sm text-gray-500 dark:text-gray-400">Clinical staff directory</p>
+					if p != nil && p.Role == auth.RoleAdmin {
+						@components.ButtonLink("primary", "/users/new", "New physician account", nil)
+					}
+				</div>
 			</div>
-			<div class="flex flex-col p-4">
-				if errMsg != "" {
-					<div class="mb-4">@components.Alert(errMsg, false)</div>
-				}
-				<div class="overflow-hidden shadow-sm">
-					<div class="overflow-x-auto">
-						<table class="min-w-full divide-y divide-gray-200 dark:divide-gray-600">
-							<thead class="bg-gray-100 dark:bg-gray-700">
-								<tr>
-									@components.Th("Physician", "p-4")
-									@components.Th("Specialties", "p-4")
-									@components.Th("Status", "p-4")
-									<th scope="col" class="p-4 text-right text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">Actions</th>
-								</tr>
-							</thead>
-							<tbody class="divide-y divide-gray-200 bg-white dark:divide-gray-700 dark:bg-gray-800">
-								for _, ph := range rows {
-									<tr class="hover:bg-gray-100 dark:hover:bg-gray-700">
-										<td class="p-4">
-											<div class="flex items-center gap-3">
-												@components.Avatar(shared.Initials(ph.Name), "h-10 w-10 text-sm bg-indigo-100 text-indigo-700 dark:bg-indigo-900 dark:text-indigo-300")
-												<div>
-													<p class="text-base font-semibold text-gray-900 dark:text-white">{ ph.Name }</p>
-													<p class="text-sm text-gray-500 dark:text-gray-400">{ ph.Email }</p>
-												</div>
-											</div>
-										</td>
-										<td class="p-4 text-base text-gray-700 dark:text-gray-300">{ ph.Specialties }</td>
-										<td class="p-4 whitespace-nowrap">@staffStatusCell(ph.Active)</td>
-										<td class="p-4 whitespace-nowrap">
-											<div class="flex items-center justify-end">
-												<a href={ "/staff/" + ph.ID + "/edit" } class="inline-flex items-center rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600">
-													<svg class="mr-2 h-4 w-4" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true"><path d="M17.414 2.586a2 2 0 00-2.828 0L7 10.172V13h2.828l7.586-7.586a2 2 0 000-2.828z"></path><path fill-rule="evenodd" d="M2 6a2 2 0 012-2h4a1 1 0 010 2H4v10h10v-4a1 1 0 112 0v4a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" clip-rule="evenodd"></path></svg>
-													Edit
-												</a>
-											</div>
-										</td>
-									</tr>
-								}
-								if len(rows) == 0 {
-									<tr>
-										<td colspan="4" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">No physicians registered.</td>
-									</tr>
-								}
-							</tbody>
-						</table>
-					</div>
+			<div class="flex flex-col">
+				<div id="staff-list">
+					@StaffTable(token, rows, pager, errMsg)
 				</div>
 			</div>
 		</div>
 	}
+}
+
+// StaffTable is the fragment swapped by the pager: the table plus the
+// pager refresh together.
+templ StaffTable(token string, rows []PhysicianRow, pager StaffPager, errMsg string) {
+	if errMsg != "" {
+		<div class="mb-4">@components.Alert(errMsg, false)</div>
+	}
+	if len(rows) == 0 {
+		<div class="overflow-hidden rounded-lg bg-white p-6 text-center shadow-sm dark:bg-gray-800">
+			<p class="text-sm text-gray-500 dark:text-gray-400">No physicians registered.</p>
+		</div>
+	} else {
+		<div class="overflow-hidden shadow-sm">
+			<div class="overflow-x-auto">
+				<table class="min-w-full divide-y divide-gray-200 dark:divide-gray-600">
+					<thead class="bg-gray-100 dark:bg-gray-700">
+						<tr>
+							@components.Th("Physician", "p-4")
+							@components.Th("Specialties", "p-4")
+							@components.Th("Status", "p-4")
+							<th scope="col" class="p-4 text-right text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">Actions</th>
+						</tr>
+					</thead>
+					<tbody class="divide-y divide-gray-200 bg-white dark:divide-gray-700 dark:bg-gray-800">
+						for _, ph := range rows {
+							<tr class="hover:bg-gray-100 dark:hover:bg-gray-700">
+								<td class="p-4">
+									<div class="flex items-center gap-3">
+										@components.Avatar(shared.Initials(ph.Name), "h-10 w-10 text-sm bg-indigo-100 text-indigo-700 dark:bg-indigo-900 dark:text-indigo-300")
+										<div>
+											<p class="text-base font-semibold text-gray-900 dark:text-white">{ ph.Name }</p>
+											<p class="text-sm text-gray-500 dark:text-gray-400">{ ph.Email }</p>
+										</div>
+									</div>
+								</td>
+								<td class="p-4 text-base text-gray-700 dark:text-gray-300">{ ph.Specialties }</td>
+								<td class="p-4 whitespace-nowrap">@staffStatusCell(ph.Active)</td>
+								<td class="p-4 whitespace-nowrap">
+									<div class="flex items-center justify-end">
+										@components.DropdownMenu() {
+											@components.DropdownItem("/staff/"+ph.ID+"/edit", nil) {
+												Edit
+											}
+										}
+									</div>
+								</td>
+							</tr>
+						}
+					</tbody>
+				</table>
+			</div>
+			@staffPager(pager)
+		</div>
+	}
+}
+
+// staffPager renders the shared number pager for the directory.
+templ staffPager(pager StaffPager) {
+	@components.Pager(components.PagerData{
+		Total: pager.Total, Shown: pager.Shown, Page: pager.Page, PageSize: staffPageSize,
+		Href: func(p int) string { return staffPageHref(p) },
+		HxVals: func(p int) string { return staffPageVals(p) },
+		HxGet: "/staff", HxTarget: "#staff-list",
+	})
+}
+
+const staffPageSize = 20
+
+func staffPageHref(page int) string {
+	return "/staff?page=" + itoa(int64(page))
+}
+
+func staffPageVals(page int) string {
+	return `{"page":` + itoa(int64(page)) + `}`
 }
 
 // StaffEditPage renders the physician profile form. Admins edit directly;
@@ -336,10 +381,10 @@ templ StaffRequestsPage(token string, p *auth.Principal, rows []StaffRequestRow,
 // filter and the pager: the table plus the pager refresh together.
 templ StaffRequestsTable(token string, rows []StaffRequestRow, pager StaffRequestPager, errMsg string) {
 	if errMsg != "" {
-		<div class="mb-4 p-4">@components.Alert(errMsg, false)</div>
+		<div class="mb-4">@components.Alert(errMsg, false)</div>
 	}
 	if len(rows) == 0 {
-		<div class="m-4 overflow-hidden rounded-lg bg-white p-6 text-center shadow-sm dark:bg-gray-800">
+		<div class="overflow-hidden rounded-lg bg-white p-6 text-center shadow-sm dark:bg-gray-800">
 			<p class="text-sm text-gray-500 dark:text-gray-400">No change requests match the filters.</p>
 		</div>
 	} else {
@@ -400,15 +445,14 @@ templ StaffRequestsTable(token string, rows []StaffRequestRow, pager StaffReques
 	}
 }
 
-// staffRequestPager renders the shared flowbite pager with the request
+// staffRequestPager renders the shared number pager with the request
 // history htmx wiring.
 templ staffRequestPager(pager StaffRequestPager) {
 	@components.Pager(components.PagerData{
 		Total: pager.Total, Shown: pager.Shown, Page: pager.Page, PageSize: staffRequestPageSize,
-		PrevHref: staffRequestHref(pager, pager.Page-1), NextHref: staffRequestHref(pager, pager.Page+1),
-		PrevDisabled: pager.Page <= 1, NextDisabled: int64(pager.Page)*staffRequestPageSize >= pager.Total,
+		Href: func(p int) string { return staffRequestHref(pager, p) },
+		HxVals: func(p int) string { return staffRequestVals(p) },
 		HxGet: "/staff/requests", HxInclude: "#sr-search, #sr-status", HxTarget: "#staff-requests-list",
-		HxValsPrev: staffRequestVals(pager.Page - 1), HxValsNext: staffRequestVals(pager.Page + 1),
 	})
 }
 

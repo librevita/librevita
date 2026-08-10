@@ -6,6 +6,13 @@ import (
 	"librevita.org/internal/ui/layouts"
 )
 
+// SpecialtyPager carries the pager state for the specialty catalog.
+type SpecialtyPager struct {
+	Page  int
+	Total int64
+	Shown int64
+}
+
 // SpecialtyRow is one entry of the clinic's specialty catalog.
 type SpecialtyRow struct {
 	ID   string
@@ -21,7 +28,7 @@ type SpecialtyView struct {
 
 // SpecialtiesPage lists the clinician specialties the administrator can
 // assign to accounts (psychologist, physiotherapist, ...).
-templ SpecialtiesPage(token string, p *auth.Principal, rows []SpecialtyRow, errMsg string) {
+templ SpecialtiesPage(token string, p *auth.Principal, rows []SpecialtyRow, pager SpecialtyPager, errMsg string) {
 	@layouts.App("Specialties", token, p, "specialties") {
 		<div class="w-full">
 			<div class="border-b border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
@@ -48,44 +55,17 @@ templ SpecialtiesPage(token string, p *auth.Principal, rows []SpecialtyRow, errM
 					</ol>
 				</nav>
 				<h1 class="mb-4 text-xl font-semibold text-gray-900 sm:text-2xl dark:text-white">Specialties</h1>
-				<button type="button" data-lv-modal-open="add-specialty-modal" class="inline-flex items-center rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600">
-					<svg class="mr-2 h-5 w-5 -ml-1" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true"><path fill-rule="evenodd" d="M10 5a1 1 0 011 1v3h3a1 1 0 110 2h-3v3a1 1 0 11-2 0v-3H6a1 1 0 110-2h3V6a1 1 0 011-1z" clip-rule="evenodd"></path></svg>
-					Add specialty
-				</button>
+				<div class="flex flex-wrap items-center justify-between gap-3">
+					<p class="text-sm text-gray-500 dark:text-gray-400">Clinician specialties catalog</p>
+					<button type="button" data-lv-modal-open="add-specialty-modal" class="inline-flex items-center rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600">
+						<svg class="mr-2 h-5 w-5 -ml-1" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true"><path fill-rule="evenodd" d="M10 5a1 1 0 011 1v3h3a1 1 0 110 2h-3v3a1 1 0 11-2 0v-3H6a1 1 0 110-2h3V6a1 1 0 011-1z" clip-rule="evenodd"></path></svg>
+						Add specialty
+					</button>
+				</div>
 			</div>
-			<div class="flex flex-col p-4">
-				if errMsg != "" {
-					<div class="mb-4">@components.Alert(errMsg, false)</div>
-				}
-				<div class="overflow-hidden shadow-sm">
-					<div class="overflow-x-auto">
-						<table class="min-w-full divide-y divide-gray-200 dark:divide-gray-600">
-							<thead class="bg-gray-100 dark:bg-gray-700">
-								<tr>
-									@components.Th("Name", "p-4")
-									<th scope="col" class="p-4 text-right text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">Actions</th>
-								</tr>
-							</thead>
-							<tbody class="divide-y divide-gray-200 bg-white dark:divide-gray-700 dark:bg-gray-800">
-								for _, sp := range rows {
-									<tr class="hover:bg-gray-100 dark:hover:bg-gray-700">
-										<td class="p-4 text-base font-medium text-gray-900 dark:text-white">{ sp.Name }</td>
-										<td class="p-4 text-right">
-											<form method="post" action={ "/specialties/" + sp.ID + "/delete" } class="inline">
-												<input type="hidden" name="_csrf" value={ token }>
-												@components.Button("danger", "Delete", templ.Attributes{ "type": "submit" })
-											</form>
-										</td>
-									</tr>
-								}
-								if len(rows) == 0 {
-									<tr>
-										<td colspan="2" class="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400">No specialties yet. Add the clinician specialties your clinic works with.</td>
-									</tr>
-								}
-							</tbody>
-						</table>
-					</div>
+			<div class="flex flex-col">
+				<div id="specialties-list">
+					@SpecialtiesTable(token, rows, pager, errMsg)
 				</div>
 			</div>
 		</div>
@@ -93,6 +73,66 @@ templ SpecialtiesPage(token string, p *auth.Principal, rows []SpecialtyRow, errM
 			@SpecialtyForm(token, "")
 		}
 	}
+}
+
+// SpecialtiesTable is the fragment swapped by the pager: the table plus
+// the pager refresh together.
+templ SpecialtiesTable(token string, rows []SpecialtyRow, pager SpecialtyPager, errMsg string) {
+	if errMsg != "" {
+		<div class="mb-4">@components.Alert(errMsg, false)</div>
+	}
+	if len(rows) == 0 {
+		<div class="overflow-hidden rounded-lg bg-white p-6 text-center shadow-sm dark:bg-gray-800">
+			<p class="text-sm text-gray-500 dark:text-gray-400">No specialties yet. Add the clinician specialties your clinic works with.</p>
+		</div>
+	} else {
+		<div class="overflow-hidden shadow-sm">
+			<div class="overflow-x-auto">
+				<table class="min-w-full divide-y divide-gray-200 dark:divide-gray-600">
+					<thead class="bg-gray-100 dark:bg-gray-700">
+						<tr>
+							@components.Th("Name", "p-4")
+							<th scope="col" class="p-4 text-right text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">Actions</th>
+						</tr>
+					</thead>
+					<tbody class="divide-y divide-gray-200 bg-white dark:divide-gray-700 dark:bg-gray-800">
+						for _, sp := range rows {
+							<tr class="hover:bg-gray-100 dark:hover:bg-gray-700">
+								<td class="p-4 text-base font-medium text-gray-900 dark:text-white">{ sp.Name }</td>
+								<td class="p-4 text-right">
+									<form method="post" action={ "/specialties/" + sp.ID + "/delete" } class="inline">
+										<input type="hidden" name="_csrf" value={ token }>
+										@components.Button("danger", "Delete", templ.Attributes{ "type": "submit" })
+									</form>
+								</td>
+							</tr>
+						}
+					</tbody>
+				</table>
+			</div>
+			@specialtyPager(pager)
+		</div>
+	}
+}
+
+// specialtyPager renders the shared number pager for the catalog.
+templ specialtyPager(pager SpecialtyPager) {
+	@components.Pager(components.PagerData{
+		Total: pager.Total, Shown: pager.Shown, Page: pager.Page, PageSize: specialtyPageSize,
+		Href: func(p int) string { return specialtyPageHref(p) },
+		HxVals: func(p int) string { return specialtyPageVals(p) },
+		HxGet: "/specialties", HxTarget: "#specialties-list",
+	})
+}
+
+const specialtyPageSize = 20
+
+func specialtyPageHref(page int) string {
+	return "/specialties?page=" + itoa(int64(page))
+}
+
+func specialtyPageVals(page int) string {
+	return `{"page":` + itoa(int64(page)) + `}`
 }
 
 // SpecialtyForm is the modal form fragment: htmx posts replace it in

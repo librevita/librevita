@@ -20,18 +20,32 @@ import (
 	"librevita.org/internal/ui/components"
 )
 
-// StaffPage lists the physician directory with their specialties.
+// StaffPage lists the physician directory with their specialties,
+// paginated like the other registries.
 func (h *Handler) StaffPage(c echo.Context) error {
 	ctx := c.Request().Context()
-	rows, err := h.svc.ListPhysicians(ctx)
+	page := 1
+	if p := c.QueryParam("page"); p != "" {
+		if n, err := strconv.Atoi(p); err == nil && n > 0 {
+			page = n
+		}
+	}
+	rows, total, err := h.svc.ListPhysiciansPage(ctx, staffPageSize, (page-1)*staffPageSize)
 	if err != nil {
 		return err
 	}
+	out := h.physicianRows(rows)
+	pager := views.StaffPager{Page: page, Total: total, Shown: int64(len(out))}
+	if server.IsHtmx(c) && c.Request().Header.Get("HX-Boosted") != "true" {
+		return server.Render(c, http.StatusOK, views.StaffTable(server.CSRFToken(c, h.csrf), out, pager, ""))
+	}
 	return server.Render(c, http.StatusOK, views.StaffPage(
-		server.CSRFToken(c, h.csrf), server.Principal(c), h.physicianRows(rows), ""))
+		server.CSRFToken(c, h.csrf), server.Principal(c), out, pager, ""))
 }
 
-func (h *Handler) physicianRows(rows []repository.ListPhysiciansRow) []views.PhysicianRow {
+const staffPageSize = 20
+
+func (h *Handler) physicianRows(rows []repository.ListPhysiciansPageRow) []views.PhysicianRow {
 	out := make([]views.PhysicianRow, 0, len(rows))
 	for _, r := range rows {
 		out = append(out, views.PhysicianRow{
