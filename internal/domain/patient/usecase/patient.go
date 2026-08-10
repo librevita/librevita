@@ -109,8 +109,8 @@ func (s *Service) Create(ctx context.Context, clinicID, createdBy string, in Pat
 		return nil, fmt.Errorf("usecase: generate patient id: %w", err)
 	}
 	patient, err := s.q.CreatePatient(ctx, repository.CreatePatientParams{
-		ID:          id.String(),
-		ClinicID:    clinicID,
+		ID:          id,
+		ClinicID:    uuid.MustParse(clinicID),
 		DisplayName: normalized.DisplayName,
 		BirthDate:   strPtr(normalized.BirthDate),
 		Sex:         normalized.Sex,
@@ -122,7 +122,7 @@ func (s *Service) Create(ctx context.Context, clinicID, createdBy string, in Pat
 		State:       strPtr(normalized.State),
 		PostalCode:  strPtr(normalized.PostalCode),
 		Notes:       strPtr(normalized.Notes),
-		CreatedBy:   strPtr(createdBy),
+		CreatedBy:   uuidOrNil(createdBy),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("usecase: create patient: %w", err)
@@ -132,7 +132,7 @@ func (s *Service) Create(ctx context.Context, clinicID, createdBy string, in Pat
 
 // GetWithCreator returns a patient with the registrar's email.
 func (s *Service) GetWithCreator(ctx context.Context, id string) (*repository.GetPatientWithCreatorRow, error) {
-	row, err := s.q.GetPatientWithCreator(ctx, id)
+	row, err := s.q.GetPatientWithCreator(ctx, uuid.MustParse(id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -144,7 +144,7 @@ func (s *Service) GetWithCreator(ctx context.Context, id string) (*repository.Ge
 
 // Get returns a patient by id.
 func (s *Service) Get(ctx context.Context, id string) (*repository.Patient, error) {
-	patient, err := s.q.GetPatientByID(ctx, id)
+	patient, err := s.q.GetPatientByID(ctx, uuid.MustParse(id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -172,8 +172,8 @@ func (s *Service) Update(ctx context.Context, clinicID, id string, in PatientInp
 		State:       strPtr(normalized.State),
 		PostalCode:  strPtr(normalized.PostalCode),
 		Notes:       strPtr(normalized.Notes),
-		ID:          id,
-		ClinicID:    clinicID,
+		ID:          uuid.MustParse(id),
+		ClinicID:    uuid.MustParse(clinicID),
 	})
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
@@ -187,7 +187,7 @@ func (s *Service) Update(ctx context.Context, clinicID, id string, in PatientInp
 // SetStatus updates the patient status, scoped to the clinic.
 func (s *Service) SetStatus(ctx context.Context, clinicID, id, status string) error {
 	err := s.q.UpdatePatientStatus(ctx, repository.UpdatePatientStatusParams{
-		Status: status, ID: id, ClinicID: clinicID,
+		Status: status, ID: uuid.MustParse(id), ClinicID: uuid.MustParse(clinicID),
 	})
 	if err != nil {
 		return fmt.Errorf("usecase: set patient status: %w", err)
@@ -202,14 +202,14 @@ func (s *Service) ListPage(ctx context.Context, clinicID, q, status string, limi
 	// word in the name or a document/email value.
 	pattern := strings.TrimSpace(q)
 	rows, err := s.q.ListPatientsPage(ctx, repository.ListPatientsPageParams{
-		ClinicID: clinicID, StatusEmpty: status, StatusFilter: status,
+		ClinicID: uuid.MustParse(clinicID), StatusEmpty: status, StatusFilter: status,
 		QueryEmpty: q, Pattern: strPtr(pattern), Limit: int64(limit), Offset: int64(offset),
 	})
 	if err != nil {
 		return nil, 0, fmt.Errorf("usecase: list patients page: %w", err)
 	}
 	total, err := s.q.CountPatientsMatching(ctx, repository.CountPatientsMatchingParams{
-		ClinicID: clinicID, StatusEmpty: status, StatusFilter: status,
+		ClinicID: uuid.MustParse(clinicID), StatusEmpty: status, StatusFilter: status,
 		QueryEmpty: q, Pattern: strPtr(pattern),
 	})
 	if err != nil {
@@ -219,7 +219,7 @@ func (s *Service) ListPage(ctx context.Context, clinicID, q, status string, limi
 }
 
 func (s *Service) Count(ctx context.Context, clinicID string) (int64, error) {
-	count, err := s.q.CountPatients(ctx, clinicID)
+	count, err := s.q.CountPatients(ctx, uuid.MustParse(clinicID))
 	if err != nil {
 		return 0, fmt.Errorf("usecase: count patients: %w", err)
 	}
@@ -230,9 +230,9 @@ func (s *Service) Count(ctx context.Context, clinicID string) (int64, error) {
 // holds the document. excludeID skips the record being edited.
 func (s *Service) DocumentExists(ctx context.Context, clinicID, document, excludeID string) (bool, error) {
 	exists, err := s.q.PatientDocumentExists(ctx, repository.PatientDocumentExistsParams{
-		ClinicID: clinicID,
+		ClinicID: uuid.MustParse(clinicID),
 		Document: strPtr(document),
-		ID:       excludeID,
+		ID:       uuid.MustParse(excludeID),
 	})
 	if err != nil {
 		return false, fmt.Errorf("usecase: check patient document: %w", err)
@@ -292,6 +292,15 @@ func normalize(in PatientInput) (PatientInput, error) {
 		return out, &ValidationError{Msg: "notes are too long"}
 	}
 	return out, nil
+}
+
+// uuidOrNil maps an empty optional id to the Nil uuid the storage layer
+// stores as NULL.
+func uuidOrNil(s string) uuid.UUID {
+	if s == "" {
+		return uuid.Nil
+	}
+	return uuid.MustParse(s)
 }
 
 func strPtr(s string) *string {

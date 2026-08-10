@@ -1,6 +1,8 @@
 # Generate typed Go repositories from SQL.
 # SQLite uses modernc.org/sqlite; CGO is disabled.
 # Each domain has an isolated query package.
+# UUID columns are typed as uuid.UUID and 0/1 flags as bool (see the
+# overrides under each gen block).
 version: "2"
 sql:
   - name: "patient"
@@ -14,6 +16,22 @@ sql:
         sql_package: "database/sql"
         emit_empty_slices: true
         emit_pointers_for_null_types: true
+        overrides:
+          - go_type:
+              import: "github.com/google/uuid"
+              package: "uuid"
+              type: "UUID"
+            column: "patients.id"
+          - go_type:
+              import: "github.com/google/uuid"
+              package: "uuid"
+              type: "UUID"
+            column: "patients.clinic_id"
+          - go_type:
+              import: "github.com/google/uuid"
+              package: "uuid"
+              type: "UUID"
+            column: "patients.created_by"
   - name: "appointment"
     engine: "sqlite"
     schema: "db/schema/"
@@ -59,6 +77,68 @@ sql:
         out: "internal/domain/user/repository"
         sql_package: "database/sql"
         emit_empty_slices: true
+        overrides:
+          - go_type:
+              import: "github.com/google/uuid"
+              package: "uuid"
+              type: "UUID"
+            column: "users.id"
+          - go_type:
+              import: "github.com/google/uuid"
+              package: "uuid"
+              type: "UUID"
+            column: "users.role_id"
+          - go_type:
+              import: "github.com/google/uuid"
+              package: "uuid"
+              type: "UUID"
+            column: "roles.id"
+          - go_type:
+              import: "github.com/google/uuid"
+              package: "uuid"
+              type: "UUID"
+            column: "specialties.id"
+          - go_type:
+              import: "github.com/google/uuid"
+              package: "uuid"
+              type: "UUID"
+            column: "specialties.clinic_id"
+          - go_type:
+              import: "github.com/google/uuid"
+              package: "uuid"
+              type: "UUID"
+            column: "user_specialties.user_id"
+          - go_type:
+              import: "github.com/google/uuid"
+              package: "uuid"
+              type: "UUID"
+            column: "user_specialties.specialty_id"
+          - go_type:
+              import: "github.com/google/uuid"
+              package: "uuid"
+              type: "UUID"
+            column: "staff_change_requests.id"
+          - go_type:
+              import: "github.com/google/uuid"
+              package: "uuid"
+              type: "UUID"
+            column: "staff_change_requests.user_id"
+          - go_type:
+              import: "github.com/google/uuid"
+              package: "uuid"
+              type: "UUID"
+            column: "staff_change_requests.requested_by"
+          - go_type:
+              import: "github.com/google/uuid"
+              package: "uuid"
+              type: "UUID"
+            column: "staff_change_requests.decided_by"
+          - go_type: "bool"
+            column: "users.active"
+          - go_type: "bool"
+            column: "roles.system"
+          - go_type: "bool"
+            column: "roles.is_clinical"
   - name: "audit"
     engine: "sqlite"
     schema: "db/schema/"
@@ -70,6 +150,12 @@ sql:
         sql_package: "database/sql"
         emit_empty_slices: true
         emit_pointers_for_null_types: true
+        overrides:
+          - go_type:
+              import: "github.com/google/uuid"
+              package: "uuid"
+              type: "UUID"
+            column: "audit_log.actor_id"
   - name: "clinic"
     engine: "sqlite"
     schema: "db/schema/"
@@ -81,6 +167,12 @@ sql:
         sql_package: "database/sql"
         emit_empty_slices: true
         emit_pointers_for_null_types: true
+        overrides:
+          - go_type:
+              import: "github.com/google/uuid"
+              package: "uuid"
+              type: "UUID"
+            column: "clinics.id"
   - name: "policy"
     engine: "sqlite"
     schema: "db/schema/"
@@ -92,6 +184,12 @@ sql:
         sql_package: "database/sql"
         emit_empty_slices: true
         emit_pointers_for_null_types: true
+        overrides:
+          - go_type:
+              import: "github.com/google/uuid"
+              package: "uuid"
+              type: "UUID"
+            column: "policies.id"
   - name: "session"
     engine: "sqlite"
     schema: "db/schema/"
@@ -102,3 +200,9 @@ sql:
         out: "internal/core/auth/repository"
         sql_package: "database/sql"
         emit_empty_slices: true
+        overrides:
+          - go_type:
+              import: "github.com/google/uuid"
+              package: "uuid"
+              type: "UUID"
+            column: "sessions.user_id"

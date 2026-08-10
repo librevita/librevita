@@ -199,7 +199,7 @@ func (h *Handler) Home(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-	patients, err := h.patients.Count(ctx, clinicRow.ID)
+	patients, err := h.patients.Count(ctx, clinicRow.ID.String())
 	if err != nil {
 		return err
 	}
@@ -505,7 +505,7 @@ func (h *Handler) userRows(rows []repository.ListUsersRow, clock *clinic.Clock) 
 	out := make([]views.UserListRow, 0, len(rows))
 	for _, r := range rows {
 		out = append(out, views.UserListRow{
-			ID: r.ID, Name: r.DisplayName, Email: r.Email, Role: r.RoleName,
+			ID: r.ID.String(), Name: r.DisplayName, Email: r.Email, Role: r.RoleName,
 			Active: r.Active, CreatedAt: clock.FormatStored(r.CreatedAt),
 		})
 	}
@@ -548,7 +548,7 @@ func (h *Handler) UserCreate(c echo.Context) error {
 		}
 	}
 	h.audit.Record(ctx, server.EventFromRequest(c, audit.ResultSuccess,
-		"user.create", "user:"+user.ID, "", "role: "+in.Role))
+		"user.create", "user:"+user.ID.String(), "", "role: "+in.Role))
 	return server.HtmxRedirect(c, "/users")
 }
 
@@ -568,8 +568,8 @@ func (h *Handler) UserEditPage(c echo.Context) error {
 		return err
 	}
 	return server.Render(c, http.StatusOK, views.UserFormPage(
-		server.CSRFToken(c, h.csrf), server.Principal(c), user.ID, views.UserFormValues{
-			Name: user.DisplayName, Email: user.Email, Role: user.RoleName, Active: user.Active == 1,
+		server.CSRFToken(c, h.csrf), server.Principal(c), user.ID.String(), views.UserFormValues{
+			Name: user.DisplayName, Email: user.Email, Role: user.RoleName, Active: user.Active,
 		}, roles, ""))
 }
 
@@ -630,7 +630,7 @@ func (h *Handler) userChanges(before *repository.GetUserByIDRow, after *reposito
 		parts = append(parts, "role: "+before.RoleName+" -> "+in.Role)
 	}
 	if before.Active != after.Active {
-		if after.Active == 1 {
+		if after.Active {
 			parts = append(parts, "status: inactive -> active")
 		} else {
 			parts = append(parts, "status: active -> inactive")
@@ -664,7 +664,7 @@ func (h *Handler) UserStatus(c echo.Context) error {
 		Name:   user.DisplayName,
 		Email:  user.Email,
 		Role:   user.RoleName,
-		Active: user.Active != 1,
+		Active: !user.Active,
 	})
 	if err != nil {
 		msg := "Could not update the user"
@@ -682,9 +682,9 @@ func (h *Handler) UserStatus(c echo.Context) error {
 	}
 	roleName := user.RoleName
 	h.audit.Record(ctx, server.EventFromRequest(c, audit.ResultSuccess,
-		"user.update", "user:"+id, "", h.userChanges(user, updated, usecase.UpdateUserInput{Active: updated.Active == 1, Role: roleName})))
+		"user.update", "user:"+id, "", h.userChanges(user, updated, usecase.UpdateUserInput{Active: updated.Active, Role: roleName})))
 	return server.Render(c, http.StatusOK, views.UserRowOnly([]views.UserListRow{{
-		ID: updated.ID, Name: updated.DisplayName, Email: updated.Email,
+		ID: updated.ID.String(), Name: updated.DisplayName, Email: updated.Email,
 		Role: roleName, Active: updated.Active, CreatedAt: clock.FormatStored(user.CreatedAt),
 	}}))
 }
@@ -693,11 +693,11 @@ func (h *Handler) UserStatus(c echo.Context) error {
 func (h *Handler) specialtyViews(all, selected []repository.Specialty) []views.SpecialtyView {
 	sel := make(map[string]bool, len(selected))
 	for _, sp := range selected {
-		sel[sp.ID] = true
+		sel[sp.ID.String()] = true
 	}
 	out := make([]views.SpecialtyView, 0, len(all))
 	for _, sp := range all {
-		out = append(out, views.SpecialtyView{ID: sp.ID, Name: sp.Name, Selected: sel[sp.ID]})
+		out = append(out, views.SpecialtyView{ID: sp.ID.String(), Name: sp.Name, Selected: sel[sp.ID.String()]})
 	}
 	return out
 }
@@ -735,7 +735,7 @@ const specialtyPageSize = 20
 func (h *Handler) specialtyRows(rows []repository.Specialty) []views.SpecialtyRow {
 	out := make([]views.SpecialtyRow, 0, len(rows))
 	for _, sp := range rows {
-		out = append(out, views.SpecialtyRow{ID: sp.ID, Name: sp.Name})
+		out = append(out, views.SpecialtyRow{ID: sp.ID.String(), Name: sp.Name})
 	}
 	return out
 }
@@ -763,7 +763,7 @@ func (h *Handler) SpecialtyCreate(c echo.Context) error {
 			server.CSRFToken(c, h.csrf), msg))
 	}
 	h.audit.Record(ctx, server.EventFromRequest(c, audit.ResultSuccess,
-		"specialty.create", "specialty:"+specialty.ID, specialty.Name, specialty.Name))
+		"specialty.create", "specialty:"+specialty.ID.String(), specialty.Name, specialty.Name))
 	return server.HtmxRedirect(c, "/specialties")
 }
 
@@ -797,7 +797,7 @@ func (h *Handler) RolesPage(c echo.Context) error {
 func (h *Handler) roleViews(rows []repository.Role) []views.RoleView {
 	out := make([]views.RoleView, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, views.RoleView{ID: r.ID, Name: r.Name, System: r.System == 1, IsClinical: r.IsClinical == 1})
+		out = append(out, views.RoleView{ID: r.ID.String(), Name: r.Name, System: r.System, IsClinical: r.IsClinical})
 	}
 	return out
 }
@@ -821,7 +821,7 @@ func (h *Handler) RoleCreate(c echo.Context) error {
 			server.CSRFToken(c, h.csrf), msg))
 	}
 	h.audit.Record(ctx, server.EventFromRequest(c, audit.ResultSuccess,
-		"role.create", "role:"+role.ID, role.Name, role.Name))
+		"role.create", "role:"+role.ID.String(), role.Name, role.Name))
 	return server.HtmxRedirect(c, "/roles")
 }
 

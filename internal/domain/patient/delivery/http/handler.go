@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 
 	"librevita.org/internal/core/audit"
@@ -100,8 +101,8 @@ func (h *Handler) Create(c echo.Context) error {
 		return err
 	}
 	h.audit.Record(ctx, server.EventFromRequest(c, audit.ResultSuccess,
-		"patient.create", "patient:"+patient.ID, patient.DisplayName, ""))
-	return server.HtmxRedirect(c, "/patients/"+patient.ID)
+		"patient.create", "patient:"+patient.ID.String(), patient.DisplayName, ""))
+	return server.HtmxRedirect(c, "/patients/"+patient.ID.String())
 }
 
 // Detail renders the patient record with the registrar.
@@ -120,7 +121,7 @@ func (h *Handler) Detail(c echo.Context) error {
 	}
 	createdBy := orEmpty(row.CreatedByEmail)
 	pt := h.detailView(row, clock)
-	events, err := h.audit.ForResource(ctx, "patient:"+row.ID, 50)
+	events, err := h.audit.ForResource(ctx, "patient:"+row.ID.String(), 50)
 	if err != nil {
 		return err
 	}
@@ -177,7 +178,7 @@ func (h *Handler) EditPage(c echo.Context) error {
 		return err
 	}
 	return server.Render(c, http.StatusOK, views.PatientFormPage(
-		server.CSRFToken(c, h.csrf), server.Principal(c), row.ID, values(patientInput(row)), ""))
+		server.CSRFToken(c, h.csrf), server.Principal(c), row.ID.String(), values(patientInput(row)), ""))
 }
 
 // Update applies the edited values and navigates to the detail page.
@@ -193,7 +194,7 @@ func (h *Handler) Update(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-	if err := h.authorizePatientEdit(c, before.CreatedBy, before.ID, before.Status); err != nil {
+	if err := h.authorizePatientEdit(c, uuidStrPtr(before.CreatedBy), before.ID.String(), before.Status); err != nil {
 		return err
 	}
 	patient, err := h.svc.Update(ctx, clinicID, id, input)
@@ -209,8 +210,8 @@ func (h *Handler) Update(c echo.Context) error {
 		}
 	}
 	h.audit.Record(ctx, server.EventFromRequest(c, audit.ResultSuccess,
-		"patient.update", "patient:"+patient.ID, patient.DisplayName, patientChanges(before, input)))
-	return server.HtmxRedirect(c, "/patients/"+patient.ID)
+		"patient.update", "patient:"+patient.ID.String(), patient.DisplayName, patientChanges(before, input)))
+	return server.HtmxRedirect(c, "/patients/"+patient.ID.String())
 }
 
 // patientChanges renders the changed fields as "name: old -> new"
@@ -297,7 +298,7 @@ func (h *Handler) BulkArchive(c echo.Context) error {
 		if err != nil {
 			continue
 		}
-		if err := h.authorizePatientEdit(c, pt.CreatedBy, pt.ID, pt.Status); err != nil {
+		if err := h.authorizePatientEdit(c, uuidStrPtr(pt.CreatedBy), pt.ID.String(), pt.Status); err != nil {
 			continue
 		}
 		if err := h.svc.SetStatus(ctx, clinicID, id, usecase.StatusInactive); err == nil {
@@ -334,7 +335,7 @@ func (h *Handler) setStatus(c echo.Context, status, successMsg string) error {
 	if err != nil {
 		return err
 	}
-	if err := h.authorizePatientEdit(c, pt.CreatedBy, pt.ID, pt.Status); err != nil {
+	if err := h.authorizePatientEdit(c, uuidStrPtr(pt.CreatedBy), pt.ID.String(), pt.Status); err != nil {
 		return err
 	}
 	err = h.svc.SetStatus(ctx, clinicID, id, status)
@@ -421,7 +422,7 @@ func (h *Handler) rows(ctx context.Context, patients []repository.Patient) []vie
 
 func (h *Handler) rowOf(pt *repository.Patient, clock *clinic.Clock) views.PatientRow {
 	return views.PatientRow{
-		ID:          pt.ID,
+		ID:          pt.ID.String(),
 		DisplayName: pt.DisplayName,
 		BirthDate:   orEmpty(pt.BirthDate),
 		Sex:         pt.Sex,
@@ -471,6 +472,16 @@ func patientInput(pt *repository.GetPatientWithCreatorRow) usecase.PatientInput 
 		PostalCode:  orEmpty(pt.PostalCode),
 		Notes:       orEmpty(pt.Notes),
 	}
+}
+
+// uuidStrPtr maps a stored uuid to the nullable string form the policy
+// checks use; a Nil uuid (no registrar recorded) becomes nil.
+func uuidStrPtr(u uuid.UUID) *string {
+	if u == uuid.Nil {
+		return nil
+	}
+	s := u.String()
+	return &s
 }
 
 func orEmpty(s *string) string {
@@ -536,7 +547,6 @@ func (h *Handler) CheckDocument(c echo.Context) error {
 	}
 	return server.Render(c, http.StatusOK, views.PatientDocumentError(""))
 }
-
 
 // authorizePatientEdit enforces the fine-grained patient.edit policy
 // against the record and audits denials.

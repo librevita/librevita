@@ -63,7 +63,7 @@ func (s *Service) CreateUser(ctx context.Context, in CreateUserInput) (*reposito
 		return nil, &ValidationError{Msg: "unsupported role"}
 	}
 	user, err := s.users.CreateUser(ctx, repository.CreateUserParams{
-		ID:           userID.String(),
+		ID:           userID,
 		Email:        email,
 		PasswordHash: hash,
 		DisplayName:  name,
@@ -105,7 +105,7 @@ func (s *Service) UpdateUser(ctx context.Context, id string, actorID string, in 
 		return nil, &ValidationError{Msg: "unsupported role"}
 	}
 
-	current, err := s.users.GetUserByID(ctx, id)
+	current, err := s.users.GetUserByID(ctx, uuid.MustParse(id))
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrUserNotFound
@@ -113,13 +113,8 @@ func (s *Service) UpdateUser(ctx context.Context, id string, actorID string, in 
 		return nil, fmt.Errorf("usecase: load user: %w", err)
 	}
 
-	demotingOrDeactivating := (current.RoleName == auth.RoleAdmin.String() && current.Active == 1) &&
+	demotingOrDeactivating := (current.RoleName == auth.RoleAdmin.String() && current.Active) &&
 		(role != auth.RoleAdmin.String() || !in.Active)
-
-	active := int64(0)
-	if in.Active {
-		active = 1
-	}
 
 	var user repository.User
 	if demotingOrDeactivating {
@@ -127,7 +122,7 @@ func (s *Service) UpdateUser(ctx context.Context, id string, actorID string, in 
 		// (single statement = atomic), so two concurrent admins cannot
 		// both pass a separate count check and leave no active admin.
 		u, err := s.users.UpdateUserGuarded(ctx, repository.UpdateUserGuardedParams{
-			Email: email, DisplayName: name, RoleID: roleRow.ID, Active: active, ID: id, Column6: 1,
+			Email: email, DisplayName: name, RoleID: roleRow.ID, Active: in.Active, ID: uuid.MustParse(id), Column6: 1,
 		})
 		if err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
@@ -138,7 +133,7 @@ func (s *Service) UpdateUser(ctx context.Context, id string, actorID string, in 
 		user = u
 	} else {
 		u, err := s.users.UpdateUser(ctx, repository.UpdateUserParams{
-			ID: id, Email: email, DisplayName: name, RoleID: roleRow.ID, Active: active,
+			ID: uuid.MustParse(id), Email: email, DisplayName: name, RoleID: roleRow.ID, Active: in.Active,
 		})
 		if err != nil {
 			return nil, ErrEmailTaken
@@ -180,7 +175,7 @@ func (s *Service) ListUsersPage(ctx context.Context, q string, limit, offset int
 
 // GetUser loads a single account with its role name.
 func (s *Service) GetUser(ctx context.Context, id string) (*repository.GetUserByIDRow, error) {
-	user, err := s.users.GetUserByID(ctx, id)
+	user, err := s.users.GetUserByID(ctx, uuid.MustParse(id))
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrUserNotFound

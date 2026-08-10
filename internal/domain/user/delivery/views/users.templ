@@ -16,7 +16,7 @@ type UserListRow struct {
 	Name      string
 	Email     string
 	Role      string
-	Active    int64
+	Active    bool
 	CreatedAt string
 }
 
@@ -173,8 +173,8 @@ func userPageVals(page int) string {
 	return `{"page":` + itoaUser(page) + `}`
 }
 
-func userToggleLabel(active int64) string {
-	if active == 1 {
+func userToggleLabel(active bool) string {
+	if active {
 		return "Deactivate"
 	}
 	return "Activate"
@@ -182,7 +182,7 @@ func userToggleLabel(active int64) string {
 
 templ userStatusCell(u UserListRow) {
 	<div class="flex items-center">
-		if u.Active == 1 {
+		if u.Active {
 			<span class="mr-2 h-2.5 w-2.5 rounded-full bg-green-400 dark:bg-green-500"></span>
 			<span class="text-base font-normal text-gray-900 dark:text-white">Active</span>
 		} else {

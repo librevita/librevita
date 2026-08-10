@@ -197,8 +197,8 @@ templ PatientDetailPage(token string, p *auth.Principal, pt *repository.GetPatie
 					</div>
 				}
 				<div class="mt-6 flex items-center gap-3">
-					@components.ButtonLink("primary", "/patients/" + pt.ID + "/edit", "Edit patient", nil)
-					<form method="post" action={ "/patients/" + pt.ID + "/archive" }>
+					@components.ButtonLink("primary", "/patients/" + pt.ID.String() + "/edit", "Edit patient", nil)
+					<form method="post" action={ "/patients/" + pt.ID.String() + "/archive" }>
 						<input type="hidden" name="_csrf" value={ token }>
 						@components.Button("secondary", "Archive", templ.Attributes{ "type": "submit" })
 					</form>

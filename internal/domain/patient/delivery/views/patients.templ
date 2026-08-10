@@ -203,7 +203,7 @@ templ PatientRowCells(pt PatientRow) {
 	<td class="p-4 whitespace-nowrap">
 		<div class="flex items-center justify-end">
 			@components.DropdownMenu() {
-				@components.DropdownItem("/patients/"+pt.ID+"/edit", nil) {
+				@components.DropdownItem("/patients/"+ pt.ID+"/edit", nil) {
 					Edit
 				}
 				if pt.Status == "active" {

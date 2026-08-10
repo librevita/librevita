@@ -18,7 +18,7 @@ const maxSpecialtyNameLen = 60
 
 // ListSpecialties returns the clinic's specialties, alphabetically.
 func (s *Service) ListSpecialties(ctx context.Context, clinicID string) ([]repository.Specialty, error) {
-	rows, err := s.users.ListSpecialties(ctx, clinicID)
+	rows, err := s.users.ListSpecialties(ctx, uuid.MustParse(clinicID))
 	if err != nil {
 		return nil, fmt.Errorf("usecase: list specialties: %w", err)
 	}
@@ -29,12 +29,12 @@ func (s *Service) ListSpecialties(ctx context.Context, clinicID string) ([]repos
 // the total.
 func (s *Service) ListSpecialtiesPage(ctx context.Context, clinicID string, limit, offset int) ([]repository.Specialty, int64, error) {
 	rows, err := s.users.ListSpecialtiesPage(ctx, repository.ListSpecialtiesPageParams{
-		ClinicID: clinicID, Limit: int64(limit), Offset: int64(offset),
+		ClinicID: uuid.MustParse(clinicID), Limit: int64(limit), Offset: int64(offset),
 	})
 	if err != nil {
 		return nil, 0, fmt.Errorf("usecase: list specialties page: %w", err)
 	}
-	total, err := s.users.CountSpecialties(ctx, clinicID)
+	total, err := s.users.CountSpecialties(ctx, uuid.MustParse(clinicID))
 	if err != nil {
 		return nil, 0, fmt.Errorf("usecase: count specialties: %w", err)
 	}
@@ -55,7 +55,7 @@ func (s *Service) CreateSpecialty(ctx context.Context, clinicID, name string) (*
 		return nil, fmt.Errorf("usecase: generate specialty id: %w", err)
 	}
 	specialty, err := s.users.CreateSpecialty(ctx, repository.CreateSpecialtyParams{
-		ID: id.String(), ClinicID: clinicID, Name: name,
+		ID: id, ClinicID: uuid.MustParse(clinicID), Name: name,
 	})
 	if err != nil {
 		if strings.Contains(err.Error(), "UNIQUE") {
@@ -70,7 +70,7 @@ func (s *Service) CreateSpecialty(ctx context.Context, clinicID, name string) (*
 // cascade drops the user mappings.
 func (s *Service) DeleteSpecialty(ctx context.Context, clinicID, id string) error {
 	if err := s.users.DeleteSpecialty(ctx, repository.DeleteSpecialtyParams{
-		ID: id, ClinicID: clinicID,
+		ID: uuid.MustParse(id), ClinicID: uuid.MustParse(clinicID),
 	}); err != nil {
 		return fmt.Errorf("usecase: delete specialty: %w", err)
 	}
@@ -79,7 +79,7 @@ func (s *Service) DeleteSpecialty(ctx context.Context, clinicID, id string) erro
 
 // UserSpecialties returns the specialties assigned to a user account.
 func (s *Service) UserSpecialties(ctx context.Context, userID string) ([]repository.Specialty, error) {
-	rows, err := s.users.ListUserSpecialties(ctx, userID)
+	rows, err := s.users.ListUserSpecialties(ctx, uuid.MustParse(userID))
 	if err != nil {
 		return nil, fmt.Errorf("usecase: list user specialties: %w", err)
 	}
@@ -100,7 +100,7 @@ func (s *Service) SetUserSpecialties(ctx context.Context, userID string, special
 			_ = tx.Rollback()
 		}
 	}()
-	if err := queries.ClearUserSpecialties(ctx, userID); err != nil {
+	if err := queries.ClearUserSpecialties(ctx, uuid.MustParse(userID)); err != nil {
 		return fmt.Errorf("usecase: clear user specialties: %w", err)
 	}
 	for _, id := range specialtyIDs {
@@ -108,7 +108,7 @@ func (s *Service) SetUserSpecialties(ctx context.Context, userID string, special
 			continue
 		}
 		if err := queries.AddUserSpecialty(ctx, repository.AddUserSpecialtyParams{
-			UserID: userID, SpecialtyID: id,
+			UserID: uuid.MustParse(userID), SpecialtyID: uuid.MustParse(id),
 		}); err != nil {
 			return fmt.Errorf("usecase: add user specialty: %w", err)
 		}

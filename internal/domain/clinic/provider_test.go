@@ -37,7 +37,7 @@ func seedClinic(t *testing.T, db *sql.DB, zone string) {
 		t.Fatal(err)
 	}
 	if _, err := repository.New(db).CreateClinic(context.Background(), repository.CreateClinicParams{
-		ID: id.String(), Name: "Test Clinic", Country: "BR", Timezone: zone,
+		ID: id, Name: "Test Clinic", Country: "BR", Timezone: zone,
 	}); err != nil {
 		t.Fatalf("create clinic: %v", err)
 	}
@@ -81,7 +81,7 @@ func TestClockProviderRefreshesAfterTTL(t *testing.T) {
 
 	id := clinicID(t, db)
 	if err := repository.New(db).UpdateClinicTimezone(context.Background(),
-		repository.UpdateClinicTimezoneParams{ID: id, Timezone: "Asia/Tokyo"}); err != nil {
+		repository.UpdateClinicTimezoneParams{ID: uuid.MustParse(id), Timezone: "Asia/Tokyo"}); err != nil {
 		t.Fatalf("update clinic: %v", err)
 	}
 
@@ -110,5 +110,5 @@ func clinicID(t *testing.T, db *sql.DB) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return row.ID
+	return row.ID.String()
 }

@@ -69,7 +69,7 @@ func (p *ClockProvider) ClinicID(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return row.ID, nil
+	return row.ID.String(), nil
 }
 
 // Profile returns the clinic profile row, cached briefly.

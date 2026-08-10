@@ -349,7 +349,7 @@ func TestPolicyIDIsStableUUIDv7(t *testing.T) {
 	var firstID string
 	for _, row := range rows {
 		if row.Name == "admin.view" {
-			firstID = row.ID
+			firstID = row.ID.String()
 			break
 		}
 	}
@@ -374,7 +374,7 @@ func TestPolicyIDIsStableUUIDv7(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, row := range rows {
-		if row.Name == "admin.view" && row.ID != firstID {
+		if row.Name == "admin.view" && row.ID.String() != firstID {
 			t.Fatalf("policy id changed across updates: %q -> %q", firstID, row.ID)
 		}
 	}

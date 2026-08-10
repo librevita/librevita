@@ -19,6 +19,8 @@ import (
 
 	"golang.org/x/crypto/blake2b"
 
+	"github.com/google/uuid"
+
 	"librevita.org/internal/core/audit/repository"
 )
 
@@ -110,7 +112,7 @@ func (l *Logger) ForResource(ctx context.Context, resource string, limit int) ([
 func eventsFromRecent(rows []repository.ListRecentAuditEventsRow) []EventRow {
 	out := make([]EventRow, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, EventRow{ID: r.ID, CreatedAt: r.CreatedAt, ActorID: r.ActorID,
+		out = append(out, EventRow{ID: r.ID, CreatedAt: r.CreatedAt, ActorID: uuidOrEmptyPtr(r.ActorID),
 			ActorEmail: r.ActorEmail, Action: r.Action, Resource: r.Resource,
 			Result: r.Result, Detail: r.Detail})
 	}
@@ -120,7 +122,7 @@ func eventsFromRecent(rows []repository.ListRecentAuditEventsRow) []EventRow {
 func eventsFromBefore(rows []repository.ListAuditEventsBeforeRow) []EventRow {
 	out := make([]EventRow, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, EventRow{ID: r.ID, CreatedAt: r.CreatedAt, ActorID: r.ActorID,
+		out = append(out, EventRow{ID: r.ID, CreatedAt: r.CreatedAt, ActorID: uuidOrEmptyPtr(r.ActorID),
 			ActorEmail: r.ActorEmail, Action: r.Action, Resource: r.Resource,
 			Result: r.Result, Detail: r.Detail})
 	}
@@ -130,7 +132,7 @@ func eventsFromBefore(rows []repository.ListAuditEventsBeforeRow) []EventRow {
 func eventsFromResource(rows []repository.ListAuditEventsForResourceRow) []EventRow {
 	out := make([]EventRow, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, EventRow{ID: r.ID, CreatedAt: r.CreatedAt, ActorID: r.ActorID,
+		out = append(out, EventRow{ID: r.ID, CreatedAt: r.CreatedAt, ActorID: uuidOrEmptyPtr(r.ActorID),
 			ActorEmail: r.ActorEmail, Action: r.Action, Resource: r.Resource,
 			Result: r.Result, Detail: r.Detail})
 	}
@@ -172,7 +174,7 @@ func (l *Logger) Record(ctx context.Context, ev Event) {
 		prev = prevSig
 	}
 	err = queries.CreateAuditEvent(ctx, repository.CreateAuditEventParams{
-		ActorID:      strPtr(ev.ActorID),
+		ActorID:      uuidPtr(ev.ActorID),
 		ActorEmail:   strPtr(ev.ActorMail),
 		ActorName:    ev.ActorName,
 		ActorRole:    ev.ActorRole,
@@ -223,7 +225,7 @@ func (l *Logger) VerifyChain(ctx context.Context) (int64, error) {
 // signature payload can be recomputed.
 func eventFromRow(r repository.ListAuditChainRow) Event {
 	return Event{
-		ActorID:      orEmpty(r.ActorID),
+		ActorID:      uuidOrEmpty(r.ActorID),
 		ActorMail:    orEmpty(r.ActorEmail),
 		ActorName:    r.ActorName,
 		ActorRole:    r.ActorRole,
@@ -276,5 +278,31 @@ func strPtr(s string) *string {
 	if s == "" {
 		return nil
 	}
+	return &s
+}
+
+// uuidPtr converts the public string id to the uuid type used by the
+// storage layer; an empty actor id (anonymous event) stays Nil.
+func uuidPtr(s string) uuid.UUID {
+	if s == "" {
+		return uuid.Nil
+	}
+	return uuid.MustParse(s)
+}
+
+// uuidOrEmpty converts a stored uuid back to the public string form.
+func uuidOrEmpty(u uuid.UUID) string {
+	if u == uuid.Nil {
+		return ""
+	}
+	return u.String()
+}
+
+// uuidOrEmptyPtr is uuidOrEmpty for the pointer-based EventRow id.
+func uuidOrEmptyPtr(u uuid.UUID) *string {
+	if u == uuid.Nil {
+		return nil
+	}
+	s := u.String()
 	return &s
 }
