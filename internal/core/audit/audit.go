@@ -22,12 +22,7 @@ import (
 	"github.com/google/uuid"
 
 	"librevita.org/internal/core/audit/repository"
-)
-
-// Outcome of an audited operation.
-const (
-	ResultSuccess = "success"
-	ResultFailure = "failure"
+	"librevita.org/internal/types"
 )
 
 // Event is one audit record. Sensitive values (passwords, tokens, CSRF)
@@ -36,15 +31,15 @@ const (
 // a self-contained snapshot (Event Sourcing): no lookup against
 // external tables is needed to rebuild the context of an event.
 type Event struct {
-	ActorID      string // UUIDv7 of the user account; empty when anonymous.
-	ActorMail    string // Best-effort actor identity.
-	ActorName    string // Denormalized actor display name.
-	ActorRole    string // Denormalized actor role name.
-	UserAgent    string // Client user agent of the request.
-	Action       string // e.g. "register", "login", "logout", "authorize".
-	Resource     string // e.g. "user", "session", "policy:admin.view".
-	ResourceName string // Denormalized human-readable resource name.
-	Result       string // ResultSuccess or ResultFailure.
+	ActorID      string       // UUIDv7 of the user account; empty when anonymous.
+	ActorMail    string       // Best-effort actor identity.
+	ActorName    string       // Denormalized actor display name.
+	ActorRole    string       // Denormalized actor role name.
+	UserAgent    string       // Client user agent of the request.
+	Action       string       // e.g. "register", "login", "logout", "authorize".
+	Resource     string       // e.g. "user", "session", "policy:admin.view".
+	ResourceName string       // Denormalized human-readable resource name.
+	Result       types.Result // ResultSuccess or ResultFailure.
 	IP           string
 	RequestID    string
 	Detail       string
@@ -147,6 +142,15 @@ func eventsFromResource(rows []repository.ListAuditEventsForResourceRow) []Event
 // logged and swallowed so that auditing never breaks the audited
 // operation.
 func (l *Logger) Record(ctx context.Context, ev Event) {
+	// The result set is closed by the database CHECK constraint and by
+	// this enum; an unknown value is a programming error and must not
+	// reach the trail.
+	if !ev.Result.Valid() {
+		l.log.Error("audit record failed",
+			"action", ev.Action, "resource", ev.Resource, "result", ev.Result,
+			"error", "invalid result value")
+		return
+	}
 	// The event time is authoritative for auditing, so the application
 	// generates it (not the database DEFAULT) and includes it in the
 	// signed payload.
@@ -182,7 +186,7 @@ func (l *Logger) Record(ctx context.Context, ev Event) {
 		Action:       ev.Action,
 		Resource:     ev.Resource,
 		ResourceName: ev.ResourceName,
-		Result:       ev.Result,
+		Result:       ev.Result.String(),
 		Ip:           strPtr(ev.IP),
 		RequestID:    strPtr(ev.RequestID),
 		Detail:       strPtr(ev.Detail),
@@ -233,7 +237,7 @@ func eventFromRow(r repository.ListAuditChainRow) Event {
 		Action:       r.Action,
 		Resource:     r.Resource,
 		ResourceName: r.ResourceName,
-		Result:       r.Result,
+		Result:       types.Result(r.Result),
 		IP:           orEmpty(r.Ip),
 		RequestID:    orEmpty(r.RequestID),
 		Detail:       orEmpty(r.Detail),
@@ -252,7 +256,7 @@ func esc(v string) string {
 func chainPayload(ev Event, createdAt string) string {
 	return esc(ev.ActorID) + "|" + esc(ev.ActorMail) + "|" + esc(ev.ActorName) + "|" +
 		esc(ev.ActorRole) + "|" + esc(ev.UserAgent) + "|" + esc(ev.Action) + "|" +
-		esc(ev.Resource) + "|" + esc(ev.ResourceName) + "|" + esc(ev.Result) + "|" +
+		esc(ev.Resource) + "|" + esc(ev.ResourceName) + "|" + esc(ev.Result.String()) + "|" +
 		esc(ev.IP) + "|" + esc(ev.RequestID) + "|" + esc(ev.Detail) + "|" + esc(createdAt)
 }
 

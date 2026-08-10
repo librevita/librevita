@@ -17,6 +17,7 @@ import (
 	"librevita.org/internal/core/config"
 	"librevita.org/internal/core/database"
 	"librevita.org/internal/core/policy"
+	"librevita.org/internal/types"
 )
 
 func openTestDB(t *testing.T) *sql.DB {
@@ -188,7 +189,7 @@ func TestRequirePolicyDenialIsAudited(t *testing.T) {
 		Scan(&action, &resource, &result); err != nil {
 		t.Fatalf("read audit_log: %v", err)
 	}
-	if action != "authorize" || resource != "policy:admin.view" || result != audit.ResultFailure {
+	if action != "authorize" || resource != "policy:admin.view" || result != types.ResultFailure.String() {
 		t.Fatalf("unexpected audit row: %q %q %q", action, resource, result)
 	}
 }

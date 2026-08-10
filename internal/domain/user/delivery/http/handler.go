@@ -20,6 +20,7 @@ import (
 	"librevita.org/internal/domain/user/delivery/views"
 	"librevita.org/internal/domain/user/repository"
 	"librevita.org/internal/domain/user/usecase"
+	"librevita.org/internal/types"
 )
 
 // Handler renders the auth pages and processes form submissions.
@@ -365,10 +366,10 @@ func (h *Handler) AdminPolicySave(c echo.Context) error {
 	}
 
 	err := h.policies.Set(c.Request().Context(), name, expression, actor)
-	result := audit.ResultSuccess
+	result := types.ResultSuccess
 	detail := ""
 	if err != nil {
-		result = audit.ResultFailure
+		result = types.ResultFailure
 		detail = err.Error()
 	}
 
@@ -394,7 +395,7 @@ func (h *Handler) AdminPolicyReset(c echo.Context) error {
 		actor = policy.Actor{ID: p.ID, Email: p.Email}
 	}
 	err := h.policies.Set(c.Request().Context(), name, expression, actor)
-	h.audit.Record(c.Request().Context(), server.EventFromRequest(c, audit.ResultSuccess,
+	h.audit.Record(c.Request().Context(), server.EventFromRequest(c, types.ResultSuccess,
 		"policy.update", "policy:"+name, name, "reset to default"))
 	if err != nil {
 		return err
@@ -547,7 +548,7 @@ func (h *Handler) UserCreate(c echo.Context) error {
 			return err
 		}
 	}
-	h.audit.Record(ctx, server.EventFromRequest(c, audit.ResultSuccess,
+	h.audit.Record(ctx, server.EventFromRequest(c, types.ResultSuccess,
 		"user.create", "user:"+user.ID.String(), "", "role: "+in.Role))
 	return server.HtmxRedirect(c, "/users")
 }
@@ -610,7 +611,7 @@ func (h *Handler) UserUpdate(c echo.Context) error {
 			return err
 		}
 	}
-	h.audit.Record(ctx, server.EventFromRequest(c, audit.ResultSuccess,
+	h.audit.Record(ctx, server.EventFromRequest(c, types.ResultSuccess,
 		"user.update", "user:"+id, "", h.userChanges(before, user, in)))
 	return server.HtmxRedirect(c, "/users")
 }
@@ -674,14 +675,14 @@ func (h *Handler) UserStatus(c echo.Context) error {
 		case errors.Is(err, usecase.ErrLastActiveAdmin):
 			msg = "The system needs at least one active admin"
 		}
-		h.audit.Record(ctx, server.EventFromRequest(c, audit.ResultFailure,
+		h.audit.Record(ctx, server.EventFromRequest(c, types.ResultFailure,
 			"user.update", "user:"+id, "", msg))
 		// htmx does not swap 4xx responses, so errors return 200 with an
 		// OOB alert that lands in the shell's #app-alert container.
 		return server.Render(c, http.StatusOK, components.Alert(msg, true))
 	}
 	roleName := user.RoleName
-	h.audit.Record(ctx, server.EventFromRequest(c, audit.ResultSuccess,
+	h.audit.Record(ctx, server.EventFromRequest(c, types.ResultSuccess,
 		"user.update", "user:"+id, "", h.userChanges(user, updated, usecase.UpdateUserInput{Active: updated.Active, Role: roleName})))
 	return server.Render(c, http.StatusOK, views.UserRowOnly([]views.UserListRow{{
 		ID: updated.ID.String(), Name: updated.DisplayName, Email: updated.Email,
@@ -762,7 +763,7 @@ func (h *Handler) SpecialtyCreate(c echo.Context) error {
 		return server.Render(c, http.StatusOK, views.SpecialtyForm(
 			server.CSRFToken(c, h.csrf), msg))
 	}
-	h.audit.Record(ctx, server.EventFromRequest(c, audit.ResultSuccess,
+	h.audit.Record(ctx, server.EventFromRequest(c, types.ResultSuccess,
 		"specialty.create", "specialty:"+specialty.ID.String(), specialty.Name, specialty.Name))
 	return server.HtmxRedirect(c, "/specialties")
 }
@@ -778,7 +779,7 @@ func (h *Handler) SpecialtyDelete(c echo.Context) error {
 	if err := h.svc.DeleteSpecialty(ctx, clinicID, id); err != nil {
 		return err
 	}
-	h.audit.Record(ctx, server.EventFromRequest(c, audit.ResultSuccess,
+	h.audit.Record(ctx, server.EventFromRequest(c, types.ResultSuccess,
 		"specialty.delete", "specialty:"+id, "", ""))
 	return server.HtmxRedirect(c, "/specialties")
 }
@@ -820,7 +821,7 @@ func (h *Handler) RoleCreate(c echo.Context) error {
 		return server.Render(c, http.StatusOK, views.RoleForm(
 			server.CSRFToken(c, h.csrf), msg))
 	}
-	h.audit.Record(ctx, server.EventFromRequest(c, audit.ResultSuccess,
+	h.audit.Record(ctx, server.EventFromRequest(c, types.ResultSuccess,
 		"role.create", "role:"+role.ID.String(), role.Name, role.Name))
 	return server.HtmxRedirect(c, "/roles")
 }
@@ -863,7 +864,7 @@ func (h *Handler) RoleRename(c echo.Context) error {
 		return server.Render(c, http.StatusBadRequest, views.RolesPage(
 			server.CSRFToken(c, h.csrf), server.Principal(c), h.roleViews(rows), msg))
 	}
-	h.audit.Record(ctx, server.EventFromRequest(c, audit.ResultSuccess,
+	h.audit.Record(ctx, server.EventFromRequest(c, types.ResultSuccess,
 		"role.rename", "role:"+id, role.Name, role.Name))
 	return server.HtmxRedirect(c, "/roles")
 }
@@ -885,7 +886,7 @@ func (h *Handler) RoleClinical(c echo.Context) error {
 		return server.Render(c, http.StatusBadRequest, views.RolesPage(
 			server.CSRFToken(c, h.csrf), server.Principal(c), h.roleViews(rows), msg))
 	}
-	h.audit.Record(ctx, server.EventFromRequest(c, audit.ResultSuccess,
+	h.audit.Record(ctx, server.EventFromRequest(c, types.ResultSuccess,
 		"role.update", "role:"+id, "", "clinical flag changed"))
 	return server.HtmxRedirect(c, "/roles")
 }
@@ -910,7 +911,7 @@ func (h *Handler) RoleDelete(c echo.Context) error {
 		return server.Render(c, http.StatusBadRequest, views.RolesPage(
 			server.CSRFToken(c, h.csrf), server.Principal(c), h.roleViews(rows), msg))
 	}
-	h.audit.Record(ctx, server.EventFromRequest(c, audit.ResultSuccess,
+	h.audit.Record(ctx, server.EventFromRequest(c, types.ResultSuccess,
 		"role.delete", "role:"+id, "", ""))
 	return server.HtmxRedirect(c, "/roles")
 }
