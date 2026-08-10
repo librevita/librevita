@@ -23,12 +23,12 @@ templ Profile(token string, p *auth.Principal, joined string, errMsg string) {
 					<span class="ml-auto shrink-0">@components.Badge(p.Role.String())</span>
 				</div>
 			</section>
-			<form method="post" action="/profile" class="mt-4 space-y-6 rounded-lg border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+			<form method="post" action="/profile" hx-post="/profile" hx-target="body" hx-trigger="change from:input[name='ui_theme'], change from:select[name='timezone'], submit" class="mt-4 space-y-6 rounded-lg border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-800">
 				<input type="hidden" name="_csrf" value={ token }>
 				<section>
 					@components.CardHeader("Appearance")
 					<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-						Choose how LibreVita looks. System follows your browser or operating system preference.
+						Choose how LibreVita looks. System follows your browser or operating system preference. Your choice is applied immediately.
 					</p>
 					<fieldset class="mt-4">
 						<legend class="sr-only">Color scheme</legend>
@@ -61,17 +61,22 @@ templ Profile(token string, p *auth.Principal, joined string, errMsg string) {
 }
 
 // themeChoice is one color scheme option: a hidden radio styled by its
-// peer label, so no JavaScript is needed to persist the choice.
+// peer label, so no JavaScript is needed to persist the choice. Each
+// option lives in its own wrapper: the Tailwind peer selector is a
+// general sibling combinator, so with all radios as siblings the
+// checked state would also highlight every later label.
 templ themeChoice(value string, label string, selected string) {
-	if selected == value {
-		<input type="radio" name="ui_theme" id={ "theme-" + value } value={ value } class="peer sr-only" checked>
-	} else {
-		<input type="radio" name="ui_theme" id={ "theme-" + value } value={ value } class="peer sr-only">
-	}
-	<label for={ "theme-" + value } class="flex cursor-pointer items-center gap-3 rounded-lg border border-gray-200 px-4 py-3 text-sm font-medium text-gray-700 hover:bg-gray-50 focus-within:ring-2 focus-within:ring-indigo-500 peer-checked:border-indigo-500 peer-checked:bg-indigo-50 peer-checked:text-indigo-700 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700 dark:peer-checked:border-indigo-400 dark:peer-checked:bg-indigo-900/40 dark:peer-checked:text-indigo-300">
-		@themeIcon(value)
-		{ label }
-	</label>
+	<div>
+		if selected == value {
+			<input type="radio" name="ui_theme" id={ "theme-" + value } value={ value } class="peer sr-only" checked>
+		} else {
+			<input type="radio" name="ui_theme" id={ "theme-" + value } value={ value } class="peer sr-only">
+		}
+		<label for={ "theme-" + value } class="flex cursor-pointer items-center gap-3 rounded-lg border border-gray-200 px-4 py-3 text-sm font-medium text-gray-700 hover:bg-gray-50 focus-within:ring-2 focus-within:ring-indigo-500 peer-checked:border-indigo-500 peer-checked:bg-indigo-50 peer-checked:text-indigo-700 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700 dark:peer-checked:border-indigo-400 dark:peer-checked:bg-indigo-900/40 dark:peer-checked:text-indigo-300">
+			@themeIcon(value)
+			{ label }
+		</label>
+	</div>
 }
 
 templ themeIcon(name string) {
