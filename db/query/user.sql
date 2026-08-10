@@ -5,16 +5,16 @@ VALUES (?, ?, ?, ?, ?)
 RETURNING *;
 -- name: GetUserByEmail :one
 SELECT u.id, u.email, u.password_hash, u.display_name, u.active,
-       u.created_at, u.updated_at, u.role_id, r.name AS role_name,
-       r.is_clinical AS role_is_clinical
+       u.timezone, u.ui_theme, u.created_at, u.updated_at, u.role_id,
+       r.name AS role_name, r.is_clinical AS role_is_clinical
 FROM users u
 JOIN roles r ON r.id = u.role_id
 WHERE u.email = ? COLLATE NOCASE
 LIMIT 1;
 -- name: GetUserByID :one
 SELECT u.id, u.email, u.password_hash, u.display_name, u.active,
-       u.created_at, u.updated_at, u.role_id, r.name AS role_name,
-       r.is_clinical AS role_is_clinical
+       u.timezone, u.ui_theme, u.created_at, u.updated_at, u.role_id,
+       r.name AS role_name, r.is_clinical AS role_is_clinical
 FROM users u
 JOIN roles r ON r.id = u.role_id
 WHERE u.id = ?
@@ -72,4 +72,14 @@ SET email = ?,
     updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
 WHERE users.id = ?
   AND (CAST(? AS INTEGER) = 0 OR (SELECT COUNT(*) FROM users AS u JOIN roles AS r ON r.id = u.role_id WHERE r.name = 'admin' AND u.active = 1) > 1)
+RETURNING *;
+
+-- name: UpdateUserPreferences :one
+-- Stores the user's UI theme and personal timezone. The timezone may be
+-- empty, which means "inherit the clinic timezone".
+UPDATE users
+SET timezone = ?,
+    ui_theme = ?,
+    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+WHERE id = ?
 RETURNING *;

@@ -2,13 +2,14 @@ package layouts
 
 import (
 	"librevita.org/internal/core/auth"
+	"librevita.org/internal/types"
 )
 
 // App is the authenticated application shell: topbar and sidebar around
 // the page content, following the flowbite admin dashboard. Interactions
 // are progressive enhancements only; navigation is plain links.
 templ App(title string, token string, principal *auth.Principal, active string) {
-	@Base(title) {
+	@Base(title, themeOf(principal)) {
 		<div class="flex h-full flex-col">
 			@Topbar(title, token, principal)
 			<div class="flex min-h-0 flex-1">
@@ -20,4 +21,13 @@ templ App(title string, token string, principal *auth.Principal, active string) 
 			</div>
 		</div>
 	}
+}
+
+// themeOf resolves the shell theme; anonymous sessions follow the
+// system scheme.
+func themeOf(p *auth.Principal) types.UITheme {
+	if p == nil {
+		return types.UIThemeSystem
+	}
+	return p.UITheme
 }

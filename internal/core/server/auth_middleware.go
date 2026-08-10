@@ -1,10 +1,11 @@
 package server
 
 import (
-	"net/url"
+	"context"
 	"errors"
 	"log/slog"
 	"net/http"
+	"net/url"
 
 	"github.com/labstack/echo/v4"
 
@@ -23,6 +24,16 @@ const principalKey = "server.principal"
 // Callers must use RequireAuth (or RequirePolicy) before reading it.
 func Principal(ctx echo.Context) *auth.Principal {
 	if p, ok := ctx.Get(principalKey).(*auth.Principal); ok {
+		return p
+	}
+	return nil
+}
+
+// PrincipalCtx reads the principal from a request context, for helpers
+// that receive only the context. It returns nil when the request was
+// not authenticated.
+func PrincipalCtx(ctx context.Context) *auth.Principal {
+	if p, ok := ctx.Value(principalKey).(*auth.Principal); ok {
 		return p
 	}
 	return nil
@@ -49,6 +60,11 @@ func RequireAuth(s *auth.SessionManager, log *slog.Logger) echo.MiddlewareFunc {
 			}
 
 			ctx.Set(principalKey, p)
+			// The principal also rides on the request context, so helper
+			// functions without an echo.Context (rows, staff views) can
+			// resolve the user's timezone preference.
+			rctx := context.WithValue(ctx.Request().Context(), principalKey, p)
+			ctx.SetRequest(ctx.Request().WithContext(rctx))
 			return next(ctx)
 		}
 	}

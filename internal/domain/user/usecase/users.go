@@ -7,11 +7,13 @@ import (
 	"fmt"
 	"net/mail"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 
 	"librevita.org/internal/core/auth"
 	"librevita.org/internal/domain/user/repository"
+	"librevita.org/internal/types"
 )
 
 // User errors.
@@ -196,4 +198,26 @@ func (s *Service) CountStaff(ctx context.Context) (int64, error) {
 		total += count
 	}
 	return total, nil
+}
+
+// UpdatePreferences stores the user's UI theme and personal timezone.
+// An empty timezone inherits the clinic timezone. The theme is a closed
+// set (types.UITheme, mirrored by the database CHECK constraint) and
+// the timezone must be a valid IANA zone.
+func (s *Service) UpdatePreferences(ctx context.Context, userID, timezone string, theme types.UITheme) error {
+	timezone = strings.TrimSpace(timezone)
+	if !theme.Valid() {
+		return &ValidationError{Msg: "invalid UI theme"}
+	}
+	if timezone != "" {
+		if _, err := time.LoadLocation(timezone); err != nil {
+			return &ValidationError{Msg: "unknown timezone"}
+		}
+	}
+	if _, err := s.users.UpdateUserPreferences(ctx, repository.UpdateUserPreferencesParams{
+		Timezone: timezone, UiTheme: theme, ID: uuid.MustParse(userID),
+	}); err != nil {
+		return fmt.Errorf("usecase: update preferences: %w", err)
+	}
+	return nil
 }

@@ -8,8 +8,8 @@ import (
 )
 
 // Profile renders the signed-in user's profile: identity card and the
-// color scheme preference (light, system, or dark).
-templ Profile(token string, p *auth.Principal, joined string) {
+// preference form (color scheme and personal timezone).
+templ Profile(token string, p *auth.Principal, joined string, errMsg string) {
 	@layouts.App("Profile", token, p, "profile") {
 		<div class="mx-auto max-w-3xl p-4 lg:p-6">
 			<section class="rounded-lg border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-800">
@@ -23,33 +23,55 @@ templ Profile(token string, p *auth.Principal, joined string) {
 					<span class="ml-auto shrink-0">@components.Badge(p.Role.String())</span>
 				</div>
 			</section>
-			<section class="mt-4 rounded-lg border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-800">
-				@components.CardHeader("Appearance")
-				<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-					Choose how LibreVita looks. System follows your browser or operating system preference.
-				</p>
-				<div data-lv-theme-pref data-lv-active-class="border-indigo-500 bg-indigo-50 text-indigo-700 dark:border-indigo-400 dark:bg-indigo-900/40 dark:text-indigo-300" class="mt-4">
-					<fieldset>
+			<form method="post" action="/profile" class="mt-4 space-y-6 rounded-lg border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+				<input type="hidden" name="_csrf" value={ token }>
+				<section>
+					@components.CardHeader("Appearance")
+					<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+						Choose how LibreVita looks. System follows your browser or operating system preference.
+					</p>
+					<fieldset class="mt-4">
 						<legend class="sr-only">Color scheme</legend>
 						<div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
-							<button type="button" data-lv-theme="light" class="flex items-center gap-3 rounded-lg border border-gray-200 px-4 py-3 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700" aria-pressed="false">
-								@themeIcon("light")
-								Light
-							</button>
-							<button type="button" data-lv-theme="system" class="flex items-center gap-3 rounded-lg border border-gray-200 px-4 py-3 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700" aria-pressed="false">
-								@themeIcon("system")
-								System
-							</button>
-							<button type="button" data-lv-theme="dark" class="flex items-center gap-3 rounded-lg border border-gray-200 px-4 py-3 text-sm font-medium text-gray-700 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700" aria-pressed="false">
-								@themeIcon("dark")
-								Dark
-							</button>
+							@themeChoice("light", "Light", p.UITheme.String())
+							@themeChoice("system", "System", p.UITheme.String())
+							@themeChoice("dark", "Dark", p.UITheme.String())
 						</div>
 					</fieldset>
+				</section>
+				<section>
+					@components.CardHeader("Timezone")
+					<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+						Timestamps are shown in your timezone. Default uses the clinic timezone.
+					</p>
+					<div class="mt-4 max-w-md">
+						<label class="label" for="timezone">Timezone</label>
+						@components.TimezoneSelect(p.Timezone)
+					</div>
+				</section>
+				if errMsg != "" {
+					<div>@components.Alert(errMsg, false)</div>
+				}
+				<div class="flex justify-end">
+					<button class="btn" type="submit">Save preferences</button>
 				</div>
-			</section>
+			</form>
 		</div>
 	}
+}
+
+// themeChoice is one color scheme option: a hidden radio styled by its
+// peer label, so no JavaScript is needed to persist the choice.
+templ themeChoice(value string, label string, selected string) {
+	if selected == value {
+		<input type="radio" name="ui_theme" id={ "theme-" + value } value={ value } class="peer sr-only" checked>
+	} else {
+		<input type="radio" name="ui_theme" id={ "theme-" + value } value={ value } class="peer sr-only">
+	}
+	<label for={ "theme-" + value } class="flex cursor-pointer items-center gap-3 rounded-lg border border-gray-200 px-4 py-3 text-sm font-medium text-gray-700 hover:bg-gray-50 focus-within:ring-2 focus-within:ring-indigo-500 peer-checked:border-indigo-500 peer-checked:bg-indigo-50 peer-checked:text-indigo-700 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700 dark:peer-checked:border-indigo-400 dark:peer-checked:bg-indigo-900/40 dark:peer-checked:text-indigo-300">
+		@themeIcon(value)
+		{ label }
+	</label>
 }
 
 templ themeIcon(name string) {

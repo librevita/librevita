@@ -116,7 +116,7 @@ func (h *Handler) Detail(c echo.Context) error {
 		}
 		return err
 	}
-	clock, err := h.clocks.Clock(ctx)
+	clock, err := h.userClock(ctx)
 	if err != nil {
 		return err
 	}
@@ -360,7 +360,7 @@ func (h *Handler) setStatus(c echo.Context, status types.PatientStatus, successM
 		if err != nil {
 			return err
 		}
-		clock, err := h.clocks.Clock(ctx)
+		clock, err := h.userClock(ctx)
 		if err != nil {
 			return err
 		}
@@ -379,6 +379,16 @@ func (h *Handler) setStatus(c echo.Context, status types.PatientStatus, successM
 
 func (h *Handler) clinicID(ctx context.Context) (string, error) {
 	return h.clocks.ClinicID(ctx)
+}
+
+// userClock resolves the display clock: the user's personal timezone
+// when set, otherwise the clinic timezone.
+func (h *Handler) userClock(ctx context.Context) (*clinic.Clock, error) {
+	tz := ""
+	if p := server.PrincipalCtx(ctx); p != nil {
+		tz = p.Timezone
+	}
+	return h.clocks.ClockFor(ctx, tz)
 }
 
 func (h *Handler) input(c echo.Context) usecase.PatientInput {
@@ -410,7 +420,7 @@ func nextLimit(sortParam string, pageLimit int, hasMore bool) int {
 }
 
 func (h *Handler) rows(ctx context.Context, patients []repository.Patient) []views.PatientRow {
-	clock, err := h.clocks.Clock(ctx)
+	clock, err := h.userClock(ctx)
 	if err != nil {
 		clock = clinic.NewClock(clinic.DefaultTimezone)
 	}

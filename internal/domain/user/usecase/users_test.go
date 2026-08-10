@@ -484,3 +484,47 @@ func TestRolesCRUD(t *testing.T) {
 		t.Fatalf("delete unused role: %v", err)
 	}
 }
+
+func TestUpdatePreferences(t *testing.T) {
+	db := openAuthDB(t)
+	svc := newService(t, db)
+	ctx := context.Background()
+
+	user, err := svc.CreateUser(ctx, usecase.CreateUserInput{
+		Name: "Ana", Email: "ana.prefs@example.org", Password: "senha-segura", Role: "physician",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Invalid theme and timezone are rejected before touching the row.
+	if err := svc.UpdatePreferences(ctx, user.ID.String(), "America/Sao_Paulo", types.UITheme("sepia")); err == nil {
+		t.Error("invalid theme must be rejected")
+	}
+	if err := svc.UpdatePreferences(ctx, user.ID.String(), "Mars/Olympus", types.UIThemeDark); err == nil {
+		t.Error("unknown timezone must be rejected")
+	}
+
+	if err := svc.UpdatePreferences(ctx, user.ID.String(), "Asia/Tokyo", types.UIThemeDark); err != nil {
+		t.Fatalf("UpdatePreferences: %v", err)
+	}
+	loaded, err := svc.GetUser(ctx, user.ID.String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Timezone != "Asia/Tokyo" || loaded.UiTheme != types.UIThemeDark {
+		t.Errorf("preferences = %q/%q, want Asia/Tokyo/dark", loaded.Timezone, loaded.UiTheme)
+	}
+
+	// Empty timezone means "inherit the clinic timezone".
+	if err := svc.UpdatePreferences(ctx, user.ID.String(), "", types.UIThemeSystem); err != nil {
+		t.Fatalf("reset preferences: %v", err)
+	}
+	loaded, err = svc.GetUser(ctx, user.ID.String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Timezone != "" || loaded.UiTheme != types.UIThemeSystem {
+		t.Errorf("reset preferences = %q/%q, want empty/system", loaded.Timezone, loaded.UiTheme)
+	}
+}

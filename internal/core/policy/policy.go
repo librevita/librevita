@@ -45,6 +45,10 @@ var DefaultPolicies = map[string]string{
 	// Authenticated dashboard, available to every active account.
 	"dashboard.view": `principal.role in ['admin', 'physician', 'receptionist', 'patient']`,
 
+	// Self-service profile preferences (UI theme, personal timezone):
+	// every authenticated account manages its own settings.
+	"profile.update": `principal.role in ['admin', 'physician', 'receptionist', 'patient']`,
+
 	// Admin area, restricted to the admin role.
 	"admin.view": `principal.role == 'admin'`,
 

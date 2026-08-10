@@ -14,13 +14,13 @@ import (
 	"librevita.org/internal/core/auth"
 	"librevita.org/internal/core/policy"
 	"librevita.org/internal/core/server"
-	"librevita.org/internal/ui/components"
 	"librevita.org/internal/domain/clinic"
 	patientusecase "librevita.org/internal/domain/patient/usecase"
 	"librevita.org/internal/domain/user/delivery/views"
 	"librevita.org/internal/domain/user/repository"
 	"librevita.org/internal/domain/user/usecase"
 	"librevita.org/internal/types"
+	"librevita.org/internal/ui/components"
 )
 
 // Handler renders the auth pages and processes form submissions.
@@ -224,7 +224,7 @@ func (h *Handler) Home(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-	clock, err := h.clocks.Clock(ctx)
+	clock, err := h.userClock(ctx)
 	if err != nil {
 		return err
 	}
@@ -283,7 +283,7 @@ func (h *Handler) HomeActivity(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-	clock, err := h.clocks.Clock(ctx)
+	clock, err := h.userClock(ctx)
 	if err != nil {
 		return err
 	}
@@ -330,6 +330,16 @@ func orEmpty(s *string) string {
 
 // ProfilePage renders the signed-in user's profile with the color scheme
 // preference.
+// userClock resolves the display clock: the user's personal timezone
+// when set, otherwise the clinic timezone.
+func (h *Handler) userClock(ctx context.Context) (*clinic.Clock, error) {
+	tz := ""
+	if p := server.PrincipalCtx(ctx); p != nil {
+		tz = p.Timezone
+	}
+	return h.clocks.ClockFor(ctx, tz)
+}
+
 func (h *Handler) ProfilePage(c echo.Context) error {
 	ctx := c.Request().Context()
 	p := server.Principal(c)
@@ -340,11 +350,40 @@ func (h *Handler) ProfilePage(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-	clock, err := h.clocks.Clock(ctx)
+	clock, err := h.clocks.ClockFor(ctx, p.Timezone)
 	if err != nil {
 		return err
 	}
-	return server.Render(c, http.StatusOK, views.Profile(server.CSRFToken(c, h.csrf), p, clock.FormatStored(user.CreatedAt)))
+	return server.Render(c, http.StatusOK, views.Profile(
+		server.CSRFToken(c, h.csrf), p, clock.FormatStored(user.CreatedAt), ""))
+}
+
+// ProfileUpdate stores the user's UI theme and personal timezone.
+func (h *Handler) ProfileUpdate(c echo.Context) error {
+	ctx := c.Request().Context()
+	p := server.Principal(c)
+	if p == nil {
+		return c.Redirect(http.StatusFound, server.LoginPath)
+	}
+	theme := types.UITheme(c.FormValue("ui_theme"))
+	timezone := c.FormValue("timezone")
+	if err := h.svc.UpdatePreferences(ctx, p.ID, timezone, theme); err != nil {
+		var v *usecase.ValidationError
+		if errors.As(err, &v) {
+			return server.Render(c, http.StatusBadRequest, views.Profile(
+				server.CSRFToken(c, h.csrf), p, "", v.Msg))
+		}
+		return err
+	}
+	detail := "theme: " + theme.String()
+	if timezone != "" {
+		detail += ", timezone: " + timezone
+	} else {
+		detail += ", timezone: clinic default"
+	}
+	h.audit.Record(ctx, server.EventFromRequest(c, types.AuditResultSuccess,
+		"profile.update", "user:"+p.ID, "", detail))
+	return server.HtmxRedirect(c, "/profile")
 }
 
 // Admin renders the admin-only area.
@@ -437,7 +476,7 @@ func (h *Handler) policyViews(c echo.Context, ctx context.Context) ([]views.Poli
 	if err != nil {
 		return nil, err
 	}
-	clock, err := h.clocks.Clock(ctx)
+	clock, err := h.userClock(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -481,7 +520,7 @@ func (h *Handler) UsersPage(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-	clock, err := h.clocks.Clock(ctx)
+	clock, err := h.userClock(ctx)
 	if err != nil {
 		return err
 	}
@@ -657,7 +696,7 @@ func (h *Handler) UserStatus(c echo.Context) error {
 		}
 		return err
 	}
-	clock, err := h.clocks.Clock(ctx)
+	clock, err := h.userClock(ctx)
 	if err != nil {
 		return err
 	}
@@ -916,7 +955,6 @@ func (h *Handler) RoleDelete(c echo.Context) error {
 	return server.HtmxRedirect(c, "/roles")
 }
 
-
 // formRoles loads the role catalog for the user form select.
 func (h *Handler) formRoles(ctx context.Context) ([]views.RoleView, error) {
 	rows, err := h.svc.ListRoles(ctx)
@@ -925,7 +963,6 @@ func (h *Handler) formRoles(ctx context.Context) ([]views.RoleView, error) {
 	}
 	return h.roleViews(rows), nil
 }
-
 
 // policiesReferencing returns the policy names whose expressions mention
 // the role name.

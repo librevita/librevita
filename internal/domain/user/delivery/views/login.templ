@@ -1,12 +1,15 @@
 package views
 
-import "librevita.org/internal/ui/layouts"
+import (
+	"librevita.org/internal/types"
+	"librevita.org/internal/ui/layouts"
+)
 
 // Login renders the sign-in page. The layout follows the Flowbite admin
 // dashboard sign-in card: centered logo, then a wide white card with the
 // email and password fields.
 templ Login(token string, next string, errMsg string) {
-	@layouts.Base("Sign in") {
+	@layouts.Base("Sign in", types.UIThemeSystem) {
 		<main class="flex min-h-full flex-col items-center justify-center px-6 pt-8">
 			<a href="/auth/login" class="mb-8 flex items-center justify-center text-2xl font-semibold text-gray-900 dark:text-white">
 				<span class="mr-4">@layouts.Logo("h-11 w-11 text-indigo-600")</span>

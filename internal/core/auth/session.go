@@ -37,6 +37,11 @@ type Principal struct {
 	Email string
 	Name  string
 	Role  Role
+	// Timezone is the user's personal IANA zone; empty inherits the
+	// clinic timezone.
+	Timezone string
+	// UITheme is the user's color scheme preference.
+	UITheme types.UITheme
 }
 
 // SessionManager issues PASETO v4.local session tokens and keeps a
@@ -148,7 +153,8 @@ func (m *SessionManager) Authenticate(ctx context.Context, token string) (*Princ
 
 	// Roles are relational rows the administrator can extend, so the
 	// name is used as-is; validity is defined by the database.
-	return &Principal{ID: row.ID, Email: row.Email, Name: row.DisplayName, Role: Role(row.RoleName)}, nil
+	return &Principal{ID: row.ID, Email: row.Email, Name: row.DisplayName,
+		Role: Role(row.RoleName), Timezone: row.Timezone, UITheme: row.UiTheme}, nil
 }
 
 // Destroy revokes the session behind token.
