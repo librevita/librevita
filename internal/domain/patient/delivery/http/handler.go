@@ -20,6 +20,7 @@ import (
 	"librevita.org/internal/domain/patient/repository"
 	"librevita.org/internal/domain/patient/usecase"
 	"librevita.org/internal/ui/components"
+	"librevita.org/internal/types"
 )
 
 // utcMilliLayout matches the timestamps written by the database.
@@ -100,7 +101,7 @@ func (h *Handler) Create(c echo.Context) error {
 		}
 		return err
 	}
-	h.audit.Record(ctx, server.EventFromRequest(c, audit.ResultSuccess,
+	h.audit.Record(ctx, server.EventFromRequest(c, types.ResultSuccess,
 		"patient.create", "patient:"+patient.ID.String(), patient.DisplayName, ""))
 	return server.HtmxRedirect(c, "/patients/"+patient.ID.String())
 }
@@ -209,7 +210,7 @@ func (h *Handler) Update(c echo.Context) error {
 			return err
 		}
 	}
-	h.audit.Record(ctx, server.EventFromRequest(c, audit.ResultSuccess,
+	h.audit.Record(ctx, server.EventFromRequest(c, types.ResultSuccess,
 		"patient.update", "patient:"+patient.ID.String(), patient.DisplayName, patientChanges(before, input)))
 	return server.HtmxRedirect(c, "/patients/"+patient.ID.String())
 }
@@ -303,10 +304,10 @@ func (h *Handler) BulkArchive(c echo.Context) error {
 		}
 		if err := h.svc.SetStatus(ctx, clinicID, id, usecase.StatusInactive); err == nil {
 			archived++
-			h.audit.Record(ctx, server.EventFromRequest(c, audit.ResultSuccess,
+			h.audit.Record(ctx, server.EventFromRequest(c, types.ResultSuccess,
 				"patient.status", "patient:"+id, "", usecase.StatusInactive))
 		} else {
-			h.audit.Record(ctx, server.EventFromRequest(c, audit.ResultFailure,
+			h.audit.Record(ctx, server.EventFromRequest(c, types.ResultFailure,
 				"patient.status", "patient:"+id, "", "bulk archive failed: "+err.Error()))
 		}
 	}
@@ -340,10 +341,10 @@ func (h *Handler) setStatus(c echo.Context, status, successMsg string) error {
 	}
 	err = h.svc.SetStatus(ctx, clinicID, id, status)
 	if err == nil {
-		h.audit.Record(ctx, server.EventFromRequest(c, audit.ResultSuccess,
+		h.audit.Record(ctx, server.EventFromRequest(c, types.ResultSuccess,
 			"patient.status", "patient:"+id, "", status))
 	} else {
-		h.audit.Record(ctx, server.EventFromRequest(c, audit.ResultFailure,
+		h.audit.Record(ctx, server.EventFromRequest(c, types.ResultFailure,
 			"patient.status", "patient:"+id, "", "could not set status "+status))
 	}
 	if server.IsHtmx(c) {
@@ -558,7 +559,7 @@ func (h *Handler) authorizePatientEdit(c echo.Context, createdBy *string, ptID, 
 	ctx := c.Request().Context()
 	if err := h.svc.AuthorizePatientEdit(ctx, principal, ptID, createdBy, ptStatus); err != nil {
 		if errors.Is(err, usecase.ErrForbidden) {
-			h.audit.Record(ctx, server.EventFromRequest(c, audit.ResultFailure,
+			h.audit.Record(ctx, server.EventFromRequest(c, types.ResultFailure,
 				"authorize", "policy:patient.edit", "", "denied patient "+ptID))
 			return echo.NewHTTPError(http.StatusForbidden)
 		}

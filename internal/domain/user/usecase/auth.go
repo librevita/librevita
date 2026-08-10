@@ -17,6 +17,7 @@ import (
 	clinicdomain "librevita.org/internal/domain/clinic"
 	clinicrepo "librevita.org/internal/domain/clinic/repository"
 	"librevita.org/internal/domain/user/repository"
+	"librevita.org/internal/types"
 )
 
 // Domain errors. Handlers translate these into user-facing messages.
@@ -119,7 +120,7 @@ func (s *Service) Register(ctx context.Context, in RegisterInput) (*auth.Princip
 
 	if err := validateRegistration(name, email, password); err != nil {
 		s.audit.Record(ctx, audit.Event{
-			Action: "register", Resource: "user", Result: audit.ResultFailure,
+			Action: "register", Resource: "user", Result: types.ResultFailure,
 			Detail: err.Error(),
 		})
 		return nil, "", err
@@ -154,10 +155,10 @@ func (s *Service) Register(ctx context.Context, in RegisterInput) (*auth.Princip
 	}
 
 	principal, token, err := s.startSession(ctx, user.ID.String(), user.Email, user.DisplayName, auth.RolePatient.String())
-	result := audit.ResultSuccess
+	result := types.ResultSuccess
 	detail := ""
 	if err != nil {
-		result = audit.ResultFailure
+		result = types.ResultFailure
 		detail = err.Error()
 	}
 	s.audit.Record(ctx, audit.Event{
@@ -321,10 +322,10 @@ func (s *Service) Onboard(ctx context.Context, admin RegisterInput, clinic Clini
 	}
 
 	principal, token, err := s.startSession(ctx, user.ID.String(), user.Email, user.DisplayName, auth.RoleAdmin.String())
-	result := audit.ResultSuccess
+	result := types.ResultSuccess
 	detail := ""
 	if err != nil {
-		result = audit.ResultFailure
+		result = types.ResultFailure
 		detail = err.Error()
 	}
 	s.audit.Record(ctx, audit.Event{
@@ -378,10 +379,10 @@ func (s *Service) Login(ctx context.Context, c Credentials) (*auth.Principal, st
 // Logout destroys the session behind token.
 func (s *Service) Logout(ctx context.Context, token string) error {
 	err := s.sessions.Destroy(ctx, token)
-	result := audit.ResultSuccess
+	result := types.ResultSuccess
 	detail := ""
 	if err != nil {
-		result = audit.ResultFailure
+		result = types.ResultFailure
 		detail = err.Error()
 	}
 	s.audit.Record(ctx, audit.Event{
@@ -413,9 +414,9 @@ func (s *Service) timingDummy(password string) {
 }
 
 func (s *Service) auditLogin(ctx context.Context, userID string, email, failure string) {
-	result := audit.ResultSuccess
+	result := types.ResultSuccess
 	if failure != "" {
-		result = audit.ResultFailure
+		result = types.ResultFailure
 	}
 	s.audit.Record(ctx, audit.Event{
 		ActorID: userID, ActorMail: email,
@@ -454,7 +455,7 @@ func validateRegistration(name, email, password string) error {
 
 func (s *Service) auditOnboard(ctx context.Context, failure string) {
 	s.audit.Record(ctx, audit.Event{
-		Action: "onboard", Resource: "setup", Result: audit.ResultFailure, Detail: failure,
+		Action: "onboard", Resource: "setup", Result: types.ResultFailure, Detail: failure,
 	})
 }
 

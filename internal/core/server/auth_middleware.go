@@ -11,6 +11,7 @@ import (
 	"librevita.org/internal/core/audit"
 	"librevita.org/internal/core/auth"
 	"librevita.org/internal/core/policy"
+	"librevita.org/internal/types"
 )
 
 // LoginPath is the unauthenticated redirect destination.
@@ -73,7 +74,7 @@ func RequirePolicy(pe *policy.PolicyEngine, auditLogger *audit.Logger, log *slog
 				return echo.NewHTTPError(http.StatusInternalServerError, "authorization failure")
 			}
 			if !allowed {
-				auditLogger.Record(ctx.Request().Context(), EventFromRequest(ctx, audit.ResultFailure,
+				auditLogger.Record(ctx.Request().Context(), EventFromRequest(ctx, types.ResultFailure,
 					"authorize", "policy:"+name, name, "denied"))
 				return echo.NewHTTPError(http.StatusForbidden, "insufficient permissions")
 			}
