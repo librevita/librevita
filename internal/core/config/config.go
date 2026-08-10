@@ -80,6 +80,10 @@ type Config struct {
 	// Auth tunes authentication behavior.
 	Auth AuthConfig `koanf:"auth"`
 
+	// Storage selects the file storage backend (local directory or
+	// S3-compatible API).
+	Storage StorageConfig `koanf:"storage"`
+
 	// PasetoKey is the base64-encoded 32-byte key for PASETO v4.local
 	// session tokens. Required outside development; generated at startup
 	// otherwise.
@@ -114,6 +118,39 @@ type LoggingConfig struct {
 	Compress   bool   `koanf:"compress"`
 }
 
+// StorageConfig selects the file storage backend.
+type StorageConfig struct {
+	// Backend is "local" (default) or "s3".
+	Backend string      `koanf:"backend"`
+	Local   LocalConfig `koanf:"local"`
+	S3      S3Config    `koanf:"s3"`
+}
+
+// LocalConfig configures the directory backend.
+type LocalConfig struct {
+	// Dir is the storage root; empty defaults to <data_dir>/files.
+	Dir string `koanf:"dir"`
+}
+
+// S3Config configures an S3-compatible API (MinIO, Garage, ...).
+type S3Config struct {
+	// Endpoint is the API base, e.g. "minio.example.org:9000".
+	Endpoint string `koanf:"endpoint"`
+	// Bucket stores every object.
+	Bucket string `koanf:"bucket"`
+	// AccessKey and SecretKey are the API credentials.
+	AccessKey string `koanf:"access_key"`
+	SecretKey string `koanf:"secret_key"`
+	// Region is used for signature calculation; may be empty outside
+	// AWS.
+	Region string `koanf:"region"`
+	// Secure selects HTTPS.
+	Secure bool `koanf:"secure"`
+	// PathStyle forces path-style addressing; on by default for
+	// S3-compatible servers.
+	PathStyle bool `koanf:"path_style"`
+}
+
 // RegisterFlags registers the application flags. It is safe to call more
 // than once.
 func RegisterFlags(fs *pflag.FlagSet) {
@@ -133,6 +170,15 @@ func RegisterFlags(fs *pflag.FlagSet) {
 	boolFlag(fs, "log-compress", true, "compress rotated log files")
 	stringFlag(fs, "paseto-key", "", "PASETO v4.local session key (base64, 32 bytes)")
 	intFlag(fs, "auth-max-concurrent-hashes", defaultMaxConcurrentHashes, "bound on concurrent Argon2id operations")
+	stringFlag(fs, "storage-backend", "local", "file storage backend: local or s3")
+	stringFlag(fs, "storage-dir", "", "local file storage directory (default <data-dir>/files)")
+	stringFlag(fs, "s3-endpoint", "", "S3-compatible API endpoint, e.g. minio.example.org:9000")
+	stringFlag(fs, "s3-bucket", "", "S3 bucket for stored files")
+	stringFlag(fs, "s3-access-key", "", "S3 access key")
+	stringFlag(fs, "s3-secret-key", "", "S3 secret key")
+	stringFlag(fs, "s3-region", "", "S3 region (may be empty outside AWS)")
+	boolFlag(fs, "s3-secure", true, "use HTTPS for the S3 endpoint")
+	boolFlag(fs, "s3-path-style", true, "use path-style S3 addressing")
 }
 
 // IsProduction reports whether the application runs in production.
@@ -343,6 +389,24 @@ func mapFlagKey(name string) string {
 		return "paseto_key"
 	case "auth-max-concurrent-hashes", "auth_max_concurrent_hashes":
 		return "auth.max_concurrent_hashes"
+	case "storage-backend", "storage_backend":
+		return "storage.backend"
+	case "storage-dir", "storage_dir":
+		return "storage.local.dir"
+	case "s3-endpoint", "s3_endpoint":
+		return "storage.s3.endpoint"
+	case "s3-bucket", "s3_bucket":
+		return "storage.s3.bucket"
+	case "s3-access-key", "s3_access_key":
+		return "storage.s3.access_key"
+	case "s3-secret-key", "s3_secret_key":
+		return "storage.s3.secret_key"
+	case "s3-region", "s3_region":
+		return "storage.s3.region"
+	case "s3-secure", "s3_secure":
+		return "storage.s3.secure"
+	case "s3-path-style", "s3_path_style":
+		return "storage.s3.path_style"
 	default:
 		return ""
 	}
@@ -381,6 +445,24 @@ func mapEnvironmentKey(key string) string {
 		return "paseto_key"
 	case "auth_max_concurrent_hashes":
 		return "auth.max_concurrent_hashes"
+	case "storage_backend":
+		return "storage.backend"
+	case "storage_local_dir":
+		return "storage.local.dir"
+	case "storage_s3_endpoint":
+		return "storage.s3.endpoint"
+	case "storage_s3_bucket":
+		return "storage.s3.bucket"
+	case "storage_s3_access_key":
+		return "storage.s3.access_key"
+	case "storage_s3_secret_key":
+		return "storage.s3.secret_key"
+	case "storage_s3_region":
+		return "storage.s3.region"
+	case "storage_s3_secure":
+		return "storage.s3.secure"
+	case "storage_s3_path_style":
+		return "storage.s3.path_style"
 	default:
 		return ""
 	}

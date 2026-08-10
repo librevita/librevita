@@ -18,6 +18,7 @@ import (
 	"librevita.org/internal/core/database"
 	"librevita.org/internal/core/policy"
 	"librevita.org/internal/core/server"
+	"librevita.org/internal/core/storage"
 	"librevita.org/internal/core/telemetry"
 	"librevita.org/internal/domain/clinic"
 	"librevita.org/internal/domain/patient"
@@ -39,6 +40,7 @@ func main() {
 			return fxLogger
 		}),
 		database.Module, // Runs embedded migrations during OnStart.
+		storage.Module,
 		audit.Module,
 		auth.Module,
 		clinic.Module,
