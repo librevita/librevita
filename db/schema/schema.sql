@@ -170,3 +170,22 @@ decided_by    TEXT REFERENCES users(id)
 CREATE INDEX idx_staff_requests_status ON staff_change_requests (status,
 created_at DESC);
 CREATE INDEX idx_staff_requests_user ON staff_change_requests (user_id);
+
+-- Master index of stored files, owned by internal/core/storage. The
+-- object store (local directory or S3-compatible API) is an opaque blob
+-- store addressed by key; this table makes blobs findable and auditable
+-- by domain and entity. See db/migrations/00010_storage_objects.sql.
+CREATE TABLE storage_objects (
+    id            TEXT    PRIMARY KEY,
+    key           TEXT    NOT NULL UNIQUE,
+    domain        TEXT    NOT NULL,
+    resource_id   TEXT    NOT NULL,
+    original_name TEXT    NOT NULL,
+    content_type  TEXT    NOT NULL,
+    size          INTEGER NOT NULL CHECK (size >= 0),
+    etag          TEXT    NOT NULL,
+    created_by    TEXT    NOT NULL REFERENCES users(id),
+    created_at    TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+) STRICT;
+
+CREATE INDEX idx_storage_objects_resource ON storage_objects (domain, resource_id, created_at DESC);

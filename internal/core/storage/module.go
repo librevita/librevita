@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"path/filepath"
+	"time"
 
 	"go.uber.org/fx"
 
@@ -17,12 +18,44 @@ const (
 )
 
 // Module provides the file storage backend selected by
-// config.Storage. In s3 mode the startup hook verifies the bucket so a
-// misconfigured backend fails fast.
+// config.Storage, the FileManager saga coordinator, and the periodic
+// orphan reconciler. In s3 mode the startup hook verifies the bucket so
+// a misconfigured backend fails fast.
 var Module = fx.Module("storage",
 	fx.Provide(NewStore),
-	fx.Invoke(registerLifecycle),
+	fx.Provide(NewFileManager),
+	fx.Invoke(registerLifecycle, registerReconciler),
 )
+
+// reconcileInterval is how often the saga reconciler scans the blob
+// store for orphaned objects.
+const reconcileInterval = 15 * time.Minute
+
+// registerReconciler runs Reconcile periodically: it removes blobs that
+// have no master-index row, compensating uploads that crashed between
+// the blob write and the index write. The first pass runs shortly after
+// startup, then every reconcileInterval.
+func registerReconciler(lc fx.Lifecycle, manager *FileManager, log *slog.Logger) {
+	lc.Append(fx.Hook{
+		OnStart: func(ctx context.Context) error {
+			go func() {
+				ticker := time.NewTicker(reconcileInterval)
+				defer ticker.Stop()
+				for {
+					if _, err := manager.Reconcile(ctx); err != nil {
+						log.Warn("storage reconcile failed", "error", err)
+					}
+					select {
+					case <-ticker.C:
+					case <-ctx.Done():
+						return
+					}
+				}
+			}()
+			return nil
+		},
+	})
+}
 
 // NewStore builds the backend named by the configuration.
 func NewStore(cfg *config.Config, log *slog.Logger) (Store, error) {

@@ -281,6 +281,39 @@ sql:
               package: "types"
               type: "DateTime"
             column: "policy_versions.created_at"
+  - name: "storage"
+    engine: "sqlite"
+    schema: "db/schema/"
+    queries: "db/query/storage.sql"
+    gen:
+      go:
+        package: "repository"
+        out: "internal/core/storage/repository"
+        sql_package: "database/sql"
+        emit_empty_slices: true
+        emit_pointers_for_null_types: true
+        overrides:
+          - go_type:
+              import: "github.com/google/uuid"
+              package: "uuid"
+              type: "UUID"
+            column: "storage_objects.id"
+          - go_type:
+              import: "github.com/google/uuid"
+              package: "uuid"
+              type: "UUID"
+            column: "storage_objects.resource_id"
+          - go_type:
+              import: "github.com/google/uuid"
+              package: "uuid"
+              type: "UUID"
+            column: "storage_objects.created_by"
+          - go_type:
+              import: "librevita.org/internal/types"
+              package: "types"
+              type: "DateTime"
+            column: "storage_objects.created_at"
+
   - name: "session"
     engine: "sqlite"
     schema: "db/schema/"
