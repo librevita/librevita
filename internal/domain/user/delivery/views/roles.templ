@@ -44,12 +44,15 @@ templ RolesPage(token string, p *auth.Principal, rows []RoleView, errMsg string)
 					</ol>
 				</nav>
 				<h1 class="mb-4 text-xl font-semibold text-gray-900 sm:text-2xl dark:text-white">Roles</h1>
-				<button type="button" data-lv-modal-open="add-role-modal" class="inline-flex items-center rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600">
-					<svg class="mr-2 h-5 w-5 -ml-1" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true"><path fill-rule="evenodd" d="M10 5a1 1 0 011 1v3h3a1 1 0 110 2h-3v3a1 1 0 11-2 0v-3H6a1 1 0 110-2h3V6a1 1 0 011-1z" clip-rule="evenodd"></path></svg>
-					Add role
-				</button>
+				<div class="flex flex-wrap items-center justify-between gap-3">
+					<p class="text-sm text-gray-500 dark:text-gray-400">Account roles, system and custom</p>
+					<button type="button" data-lv-modal-open="add-role-modal" class="inline-flex items-center rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600">
+						<svg class="mr-2 h-5 w-5 -ml-1" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true"><path fill-rule="evenodd" d="M10 5a1 1 0 011 1v3h3a1 1 0 110 2h-3v3a1 1 0 11-2 0v-3H6a1 1 0 110-2h3V6a1 1 0 011-1z" clip-rule="evenodd"></path></svg>
+						Add role
+					</button>
+				</div>
 			</div>
-			<div class="flex flex-col p-4">
+			<div class="flex flex-col">
 				if errMsg != "" {
 					<div class="mb-4">@components.Alert(errMsg, false)</div>
 				}

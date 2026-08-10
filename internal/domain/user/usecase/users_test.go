@@ -395,12 +395,12 @@ func TestListPhysicians(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	rows, err := svc.ListPhysicians(ctx)
+	rows, total, err := svc.ListPhysiciansPage(ctx, 50, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(rows) != 1 {
-		t.Fatalf("ListPhysicians = %d, want 1", len(rows))
+	if len(rows) != 1 || total != 1 {
+		t.Fatalf("ListPhysiciansPage = %d (total %d), want 1", len(rows), total)
 	}
 	if rows[0].Specialties != "Psychologist" {
 		t.Errorf("joined specialties = %q, want Psychologist", rows[0].Specialties)

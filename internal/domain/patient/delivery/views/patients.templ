@@ -141,15 +141,14 @@ templ PatientListTable(patients []PatientRow, pager PatientPager, errMsg string)
 	}
 }
 
-// patientPager renders the shared flowbite pager with the registry
-// htmx wiring (search and status filter are included in the request).
+// patientPager renders the shared number pager with the registry htmx
+// wiring (search and status filter are included in the request).
 templ patientPager(pager PatientPager) {
 	@components.Pager(components.PagerData{
 		Total: pager.Total, Shown: pager.Shown, Page: pager.Page, PageSize: patientPageSize,
-		PrevHref: patientPageHref(pager, pager.Page-1), NextHref: patientPageHref(pager, pager.Page+1),
-		PrevDisabled: pager.Page <= 1, NextDisabled: int64(pager.Page)*patientPageSize >= pager.Total,
+		Href: func(p int) string { return patientPageHref(pager, p) },
+		HxVals: func(p int) string { return patientPageVals(pager, p) },
 		HxGet: "/patients", HxInclude: "#patient-search, #status-filter", HxTarget: "#patient-list",
-		HxValsPrev: patientPageVals(pager, pager.Page-1), HxValsNext: patientPageVals(pager, pager.Page+1),
 	})
 }
 
@@ -202,21 +201,20 @@ templ PatientRowCells(pt PatientRow) {
 	<td class="p-4 whitespace-nowrap text-base text-gray-500 dark:text-gray-400">{ orDash(pt.Phone) }</td>
 	<td class="p-4 whitespace-nowrap">@patientStatusCell(pt.Status)</td>
 	<td class="p-4 whitespace-nowrap">
-		<div class="flex items-center justify-end gap-2">
-			<a href={ "/patients/" + pt.ID + "/edit" } class="inline-flex items-center rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600">
-				<svg class="mr-2 h-4 w-4" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true"><path d="M17.414 2.586a2 2 0 00-2.828 0L7 10.172V13h2.828l7.586-7.586a2 2 0 000-2.828z"></path><path fill-rule="evenodd" d="M2 6a2 2 0 012-2h4a1 1 0 010 2H4v10h10v-4a1 1 0 112 0v4a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" clip-rule="evenodd"></path></svg>
-				Edit
-			</a>
-			if pt.Status == "active" {
-				<button type="button" hx-post={ "/patients/" + pt.ID + "/archive" } hx-target="closest tr" hx-swap="outerHTML" class="inline-flex items-center rounded-lg bg-red-600 px-3 py-2 text-sm font-medium text-white hover:bg-red-700 dark:bg-red-500 dark:hover:bg-red-600">
-					<svg class="mr-2 h-4 w-4" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clip-rule="evenodd"></path></svg>
-					Archive
-				</button>
-			} else {
-				<button type="button" hx-post={ "/patients/" + pt.ID + "/restore" } hx-target="closest tr" hx-swap="outerHTML" class="inline-flex items-center rounded-lg bg-green-600 px-3 py-2 text-sm font-medium text-white hover:bg-green-700 dark:bg-green-500 dark:hover:bg-green-600">
-					<svg class="mr-2 h-4 w-4" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true"><path fill-rule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clip-rule="evenodd"></path></svg>
-					Restore
-				</button>
+		<div class="flex items-center justify-end">
+			@components.DropdownMenu() {
+				@components.DropdownItem("/patients/"+pt.ID+"/edit", nil) {
+					Edit
+				}
+				if pt.Status == "active" {
+					@components.DropdownAction(templ.Attributes{ "hx-post": "/patients/" + pt.ID + "/archive", "hx-target": "closest tr", "hx-swap": "outerHTML" }) {
+						Archive
+					}
+				} else {
+					@components.DropdownAction(templ.Attributes{ "hx-post": "/patients/" + pt.ID + "/restore", "hx-target": "closest tr", "hx-swap": "outerHTML" }) {
+						Restore
+					}
+				}
 			}
 		</div>
 	</td>

@@ -759,20 +759,35 @@ func (h *Handler) specialtyViews(all, selected []repository.Specialty) []views.S
 	return out
 }
 
-// SpecialtiesPage lists the clinic's specialty catalog.
+// SpecialtiesPage lists the clinic's specialty catalog, paginated like
+// the other registries.
 func (h *Handler) SpecialtiesPage(c echo.Context) error {
 	ctx := c.Request().Context()
 	clinicID, err := h.clocks.ClinicID(ctx)
 	if err != nil {
 		return err
 	}
-	rows, err := h.svc.ListSpecialties(ctx, clinicID)
+	page := 1
+	if p := c.QueryParam("page"); p != "" {
+		if n, err := strconv.Atoi(p); err == nil && n > 0 {
+			page = n
+		}
+	}
+	rows, total, err := h.svc.ListSpecialtiesPage(ctx, clinicID, specialtyPageSize, (page-1)*specialtyPageSize)
 	if err != nil {
 		return err
 	}
+	out := h.specialtyRows(rows)
+	pager := views.SpecialtyPager{Page: page, Total: total, Shown: int64(len(out))}
+	if server.IsHtmx(c) && c.Request().Header.Get("HX-Boosted") != "true" {
+		return server.Render(c, http.StatusOK, views.SpecialtiesTable(
+			server.CSRFToken(c, h.csrf), out, pager, ""))
+	}
 	return server.Render(c, http.StatusOK, views.SpecialtiesPage(
-		server.CSRFToken(c, h.csrf), server.Principal(c), h.specialtyRows(rows), ""))
+		server.CSRFToken(c, h.csrf), server.Principal(c), out, pager, ""))
 }
+
+const specialtyPageSize = 20
 
 func (h *Handler) specialtyRows(rows []repository.Specialty) []views.SpecialtyRow {
 	out := make([]views.SpecialtyRow, 0, len(rows))
