@@ -36,7 +36,7 @@ func TestRecordPersistsEvent(t *testing.T) {
 
 	logger.Record(context.Background(), Event{
 		ActorID: "01990000-0000-7000-8000-000000000001", ActorMail: "ana@example.org",
-		Action: "login", Resource: "user", Result: types.ResultSuccess,
+		Action: "login", Resource: "user", Result: types.AuditResultSuccess,
 		IP: "127.0.0.1", RequestID: "req-123", Detail: "",
 	})
 
@@ -47,7 +47,7 @@ func TestRecordPersistsEvent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read audit_log: %v", err)
 	}
-	if actorID != "01990000-0000-7000-8000-000000000001" || action != "login" || result != types.ResultSuccess.String() || requestID != "req-123" {
+	if actorID != "01990000-0000-7000-8000-000000000001" || action != "login" || result != types.AuditResultSuccess.String() || requestID != "req-123" {
 		t.Fatalf("unexpected row: %q %q %q %q", actorID, action, result, requestID)
 	}
 }
@@ -69,7 +69,7 @@ func TestRecordSwallowsWriteErrors(t *testing.T) {
 	db.Close()
 
 	logger.Record(context.Background(), Event{
-		Action: "login", Resource: "user", Result: types.ResultFailure,
+		Action: "login", Resource: "user", Result: types.AuditResultFailure,
 	})
 }
 
@@ -83,9 +83,9 @@ func TestHashChain(t *testing.T) {
 	ctx := context.Background()
 
 	for _, ev := range []Event{
-		{Action: "login", Resource: "user", Result: types.ResultSuccess},
-		{Action: "patient.update", Resource: "patient:1", Result: types.ResultSuccess, Detail: "phone changed"},
-		{Action: "authorize", Resource: "policy:admin.view", Result: types.ResultFailure},
+		{Action: "login", Resource: "user", Result: types.AuditResultSuccess},
+		{Action: "patient.update", Resource: "patient:1", Result: types.AuditResultSuccess, Detail: "phone changed"},
+		{Action: "authorize", Resource: "policy:admin.view", Result: types.AuditResultFailure},
 	} {
 		l.Record(ctx, ev)
 	}
@@ -124,7 +124,7 @@ func TestAuditLogAppendOnly(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx := context.Background()
-	l.Record(ctx, Event{Action: "login", Resource: "user", Result: types.ResultSuccess})
+	l.Record(ctx, Event{Action: "login", Resource: "user", Result: types.AuditResultSuccess})
 
 	if _, err := db.Exec(`UPDATE audit_log SET detail = 'tampered'`); err == nil {
 		t.Fatal("UPDATE on audit_log must be refused")

@@ -39,7 +39,7 @@ type Event struct {
 	Action       string       // e.g. "register", "login", "logout", "authorize".
 	Resource     string       // e.g. "user", "session", "policy:admin.view".
 	ResourceName string       // Denormalized human-readable resource name.
-	Result       types.Result // ResultSuccess or ResultFailure.
+	Result       types.AuditResult // AuditResultSuccess or AuditResultFailure.
 	IP           string
 	RequestID    string
 	Detail       string
@@ -237,7 +237,7 @@ func eventFromRow(r repository.ListAuditChainRow) Event {
 		Action:       r.Action,
 		Resource:     r.Resource,
 		ResourceName: r.ResourceName,
-		Result:       types.Result(r.Result),
+		Result:       types.AuditResult(r.Result),
 		IP:           orEmpty(r.Ip),
 		RequestID:    orEmpty(r.RequestID),
 		Detail:       orEmpty(r.Detail),

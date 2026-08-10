@@ -11,7 +11,7 @@ import (
 // denormalized: the actor identity (id, email, name, role), the user
 // agent, the IP and the request id. resourceName is the human-readable
 // name of the affected resource (e.g. the patient display name).
-func EventFromRequest(c echo.Context, result types.Result, action, resource, resourceName, detail string) audit.Event {
+func EventFromRequest(c echo.Context, result types.AuditResult, action, resource, resourceName, detail string) audit.Event {
 	ev := audit.Event{
 		Action:       action,
 		Resource:     resource,
