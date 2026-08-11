@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v4/middleware"
 	"go.uber.org/fx"
 
 	"librevita.org/internal/core/audit"
@@ -59,6 +60,10 @@ func registerRoutes(e *echo.Echo, h *httphandler.Handler, sessions *auth.Session
 	e.GET("/activity/recent", h.HomeActivity, gate, server.RequireAuth(sessions, log), server.RequirePolicy(policies, auditLogger, log, "dashboard.view"))
 	e.GET("/profile", h.ProfilePage, gate, server.RequireAuth(sessions, log), server.RequirePolicy(policies, auditLogger, log, "dashboard.view"))
 	e.POST("/profile", h.ProfileUpdate, gate, server.RequireAuth(sessions, log), server.RequirePolicy(policies, auditLogger, log, "profile.update"))
+	e.GET("/profile/avatar", h.Avatar, gate, server.RequireAuth(sessions, log), server.RequirePolicy(policies, auditLogger, log, "dashboard.view"))
+	e.POST("/profile/avatar", h.AvatarUpload, gate, server.RequireAuth(sessions, log), server.RequirePolicy(policies, auditLogger, log, "profile.update"), middleware.BodyLimit("2M"))
+	e.POST("/profile/avatar/remove", h.AvatarRemove, gate, server.RequireAuth(sessions, log), server.RequirePolicy(policies, auditLogger, log, "profile.update"))
+	e.GET("/users/:id/avatar", h.UserAvatar, gate, server.RequireAuth(sessions, log), server.RequirePolicy(policies, auditLogger, log, "users.manage"))
 	e.GET("/policies", h.AdminPoliciesPage, gate, server.RequireAuth(sessions, log), server.RequirePolicy(policies, auditLogger, log, "admin.view"))
 	e.POST("/policies", h.AdminPolicySave, gate, server.RequireAuth(sessions, log), server.RequirePolicy(policies, auditLogger, log, "admin.view"))
 	e.POST("/policies/reset", h.AdminPolicyReset, gate, server.RequireAuth(sessions, log), server.RequirePolicy(policies, auditLogger, log, "admin.view"))
