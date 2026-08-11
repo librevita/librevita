@@ -91,7 +91,7 @@ func TestCreateAndGet(t *testing.T) {
 		t.Fatalf("created patient = %+v, want id and active status", pt)
 	}
 
-	got, err := svc.Get(context.Background(), pt.ID.String())
+	got, err := svc.Get(context.Background(), testClinicID.String(), pt.ID.String())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -196,7 +196,7 @@ func TestListAndSearch(t *testing.T) {
 	}
 
 	// Status filter.
-	pt, err := svc.Get(context.Background(), hit[0].ID.String())
+	pt, err := svc.Get(context.Background(), testClinicID.String(), hit[0].ID.String())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -230,7 +230,7 @@ func TestSetStatus(t *testing.T) {
 	if err := svc.SetStatus(context.Background(), testClinicID.String(), pt.ID.String(), types.PatientStatusInactive); err != nil {
 		t.Fatal(err)
 	}
-	got, _ := svc.Get(context.Background(), pt.ID.String())
+	got, _ := svc.Get(context.Background(), testClinicID.String(), pt.ID.String())
 	if got.Status != types.PatientStatusInactive.String() {
 		t.Fatalf("status = %q, want inactive", got.Status)
 	}
@@ -267,7 +267,7 @@ func TestCreateRecordsRegistrar(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	row, err := svc.GetWithCreator(context.Background(), pt.ID.String())
+	row, err := svc.GetWithCreator(context.Background(), testClinicID.String(), pt.ID.String())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -287,7 +287,7 @@ func TestGetWithCreatorMissingUser(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	row, err := svc.GetWithCreator(context.Background(), pt.ID.String())
+	row, err := svc.GetWithCreator(context.Background(), testClinicID.String(), pt.ID.String())
 	if err != nil {
 		t.Fatal(err)
 	}
