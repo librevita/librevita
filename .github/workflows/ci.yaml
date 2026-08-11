@@ -9,12 +9,14 @@ jobs:
     env:
       FORCE_COLOR: 1
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Install Earthly
         # Pin the same version as the Earthfile's VERSION, with the
         # release sha256 verified (trust-on-first-use, like the toolchain
         # digests in the Earthfile). The runner has Docker, so the CLI
-        # starts its own BuildKit daemon as a container.
+        # starts its own BuildKit daemon as a container; every earthly
+        # step below reuses that daemon, so layers stay cached between
+        # steps.
         env:
           EARTHLY_SHA256: 3ef3163c81bdd10e28ab31cd96e35c1856d97478c8ce7f20954b8bea7a598404
         run: |
@@ -23,6 +25,15 @@ jobs:
           echo "$EARTHLY_SHA256  earthly-linux-amd64" | sha256sum -c -
           sudo install -m 0755 earthly-linux-amd64 /usr/local/bin/earthly
       # --ci = --no-output --use-inline-cache --save-inline-cache --strict.
-      # +all covers the Go suite, vet, lint, the frontend unit tests, the
-      # production build, and the scratch image.
-      - run: earthly --ci +all
+      - name: Go tests
+        run: earthly --ci +test
+      - name: Frontend tests
+        run: earthly --ci +test-js
+      - name: go vet
+        run: earthly --ci +vet
+      - name: golangci-lint
+        run: earthly --ci +lint
+      - name: Build binary
+        run: earthly --ci +build
+      - name: Build image
+        run: earthly --ci +image
