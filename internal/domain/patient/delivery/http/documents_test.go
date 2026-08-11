@@ -137,8 +137,8 @@ func TestDocumentsUploadDownloadIDOR(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	fw.Write([]byte("pdf-data"))
-	w.Close()
+	_, _ = fw.Write([]byte("pdf-data"))
+	_ = w.Close()
 
 	req := httptest.NewRequest(http.MethodPost, "/patients/"+patientID.String()+"/documents", &buf)
 	req.Header.Set("Content-Type", w.FormDataContentType())
@@ -200,8 +200,8 @@ func TestDocumentsUploadRequiresAuth(t *testing.T) {
 	var buf bytes.Buffer
 	w := multipart.NewWriter(&buf)
 	fw, _ := w.CreateFormFile("file", "x.pdf")
-	fw.Write([]byte("x"))
-	w.Close()
+	_, _ = fw.Write([]byte("x"))
+	_ = w.Close()
 	req := httptest.NewRequest(http.MethodPost, "/patients/01990000-0000-7000-8000-0000000000d0/documents", &buf)
 	req.Header.Set("Content-Type", w.FormDataContentType())
 	rec := httptest.NewRecorder()

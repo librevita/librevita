@@ -40,7 +40,6 @@ func registerLifecycle(lc fx.Lifecycle, e *echo.Echo, cfg *config.Config, log *s
 	})
 }
 
-
 // registerNotFound sends unauthenticated navigation on unknown routes to
 // the login page (remembering the destination), so every URL — valid or
 // not — returns to where the user was going after signing in. Unknown

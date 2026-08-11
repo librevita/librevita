@@ -5,7 +5,6 @@ import (
 	"testing"
 )
 
-
 func TestPagesWindow(t *testing.T) {
 	labels := func(items []pageItem) []string {
 		out := make([]string, 0, len(items))

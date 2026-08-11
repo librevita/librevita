@@ -258,9 +258,7 @@ func (pe *PolicyEngine) Set(ctx context.Context, name, expression string, actor 
 		if err != nil {
 			return fmt.Errorf("policy: create %q: %w", name, err)
 		}
-		policy = repository.GetPolicyByNameRow{
-			ID: created.ID, Name: created.Name, Expression: created.Expression,
-		}
+		policy = repository.GetPolicyByNameRow(created)
 	} else if err != nil {
 		return fmt.Errorf("policy: read %q: %w", name, err)
 	} else {

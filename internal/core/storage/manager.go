@@ -39,9 +39,9 @@ type StoredFile struct {
 	ETag         string
 	// Checksum is the canonical BLAKE2b-256 digest of the payload,
 	// witnessed in the audit trail at upload time.
-	Checksum     string
-	CreatedBy    uuid.UUID
-	CreatedAt    types.DateTime
+	Checksum  string
+	CreatedBy uuid.UUID
+	CreatedAt types.DateTime
 }
 
 // UploadInput describes a new file before it is stored.

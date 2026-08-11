@@ -31,10 +31,10 @@ func IsNotFound(err error) bool {
 
 // ObjectInfo describes a stored object without its contents.
 type ObjectInfo struct {
-	Key          string
-	Size         int64
-	ContentType  string
-	ETag         string
+	Key         string
+	Size        int64
+	ContentType string
+	ETag        string
 	// Checksum is the canonical application-level digest (BLAKE2b-256,
 	// hex) of the whole payload. Backend ETags are not comparable (S3
 	// multipart ETags digest the parts, not the object), so this value

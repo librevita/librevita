@@ -16,8 +16,8 @@ var Module = fx.Module("ui",
 
 // vendorFiles are cacheable forever because their names embed the version.
 var vendorFiles = map[string]bool{
-	"js/htmx-1.9.12.min.js":        true,
-	"js/htmx-sse-1.9.12.js":        true,
+	"js/htmx-1.9.12.min.js": true,
+	"js/htmx-sse-1.9.12.js": true,
 }
 
 func registerStatic(e *echo.Echo) {

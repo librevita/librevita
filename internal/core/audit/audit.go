@@ -30,14 +30,14 @@ import (
 // a self-contained snapshot (Event Sourcing): no lookup against
 // external tables is needed to rebuild the context of an event.
 type Event struct {
-	ActorID      string       // UUIDv7 of the user account; empty when anonymous.
-	ActorMail    string       // Best-effort actor identity.
-	ActorName    string       // Denormalized actor display name.
-	ActorRole    string       // Denormalized actor role name.
-	UserAgent    string       // Client user agent of the request.
-	Action       string       // e.g. "register", "login", "logout", "authorize".
-	Resource     string       // e.g. "user", "session", "policy:admin.view".
-	ResourceName string       // Denormalized human-readable resource name.
+	ActorID      string            // UUIDv7 of the user account; empty when anonymous.
+	ActorMail    string            // Best-effort actor identity.
+	ActorName    string            // Denormalized actor display name.
+	ActorRole    string            // Denormalized actor role name.
+	UserAgent    string            // Client user agent of the request.
+	Action       string            // e.g. "register", "login", "logout", "authorize".
+	Resource     string            // e.g. "user", "session", "policy:admin.view".
+	ResourceName string            // Denormalized human-readable resource name.
 	Result       types.AuditResult // AuditResultSuccess or AuditResultFailure.
 	IP           string
 	RequestID    string

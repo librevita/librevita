@@ -50,7 +50,7 @@ func (h *consoleHandler) Handle(_ context.Context, record slog.Record) error {
 	var line strings.Builder
 	line.WriteString(record.Time.UTC().Format("2006-01-02T15:04:05.000-07:00"))
 	line.WriteString("   ")
-	line.WriteString(fmt.Sprintf("%-5s", strings.ToUpper(record.Level.String())))
+	fmt.Fprintf(&line, "%-5s", strings.ToUpper(record.Level.String()))
 	line.WriteByte(' ')
 
 	sourceInfo := record.Source()
@@ -59,7 +59,7 @@ func (h *consoleHandler) Handle(_ context.Context, record slog.Record) error {
 		source = filepath.Base(sourceInfo.File) + ":" + strconv.Itoa(sourceInfo.Line)
 	}
 	source = string(truncateRunes([]byte(source), consoleSourceWidth))
-	line.WriteString(fmt.Sprintf("%-*s", consoleSourceWidth, source))
+	fmt.Fprintf(&line, "%-*s", consoleSourceWidth, source)
 	line.WriteString("   ")
 	line.WriteString(strings.ReplaceAll(record.Message, "\n", " "))
 

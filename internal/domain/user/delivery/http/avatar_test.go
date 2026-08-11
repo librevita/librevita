@@ -117,11 +117,11 @@ func avatarMultipart(t *testing.T, field, name string, content []byte, contentTy
 	if err != nil {
 		t.Fatal(err)
 	}
-	fw.Write(content)
+	_, _ = fw.Write(content)
 	if err := w.WriteField("content_type_hint", contentType); err != nil {
 		t.Fatal(err)
 	}
-	w.Close()
+	_ = w.Close()
 	return &buf, w.FormDataContentType()
 }
 

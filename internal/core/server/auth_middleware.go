@@ -18,7 +18,14 @@ import (
 // LoginPath is the unauthenticated redirect destination.
 const LoginPath = "/auth/login"
 
+// principalKey is the echo store key; principalCtxKey is the typed
+// variant for the request context, so values never collide with other
+// packages using plain strings.
 const principalKey = "server.principal"
+
+type contextKey string
+
+const principalCtxKey = contextKey("server.principal")
 
 // Principal returns the authenticated identity stored by RequireAuth.
 // Callers must use RequireAuth (or RequirePolicy) before reading it.
@@ -33,7 +40,7 @@ func Principal(ctx echo.Context) *auth.Principal {
 // that receive only the context. It returns nil when the request was
 // not authenticated.
 func PrincipalCtx(ctx context.Context) *auth.Principal {
-	if p, ok := ctx.Value(principalKey).(*auth.Principal); ok {
+	if p, ok := ctx.Value(principalCtxKey).(*auth.Principal); ok {
 		return p
 	}
 	return nil
@@ -63,7 +70,7 @@ func RequireAuth(s *auth.SessionManager, log *slog.Logger) echo.MiddlewareFunc {
 			// The principal also rides on the request context, so helper
 			// functions without an echo.Context (rows, staff views) can
 			// resolve the user's timezone preference.
-			rctx := context.WithValue(ctx.Request().Context(), principalKey, p)
+			rctx := context.WithValue(ctx.Request().Context(), principalCtxKey, p)
 			ctx.SetRequest(ctx.Request().WithContext(rctx))
 			return next(ctx)
 		}
