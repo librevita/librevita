@@ -13,19 +13,19 @@ There is no Makefile. Earthly is the build and development interface.
 
 ```sh
 earthly +generate
-earthly +build-dev
+earthly +build --dev=true
 earthly +build
 earthly +image --IMAGE_TAG=librevita:latest
 earthly +test
 earthly +vet
 earthly +tidy
-earthly +build-cross --GOOS=linux --GOARCH=riscv64
-earthly +build-cross --GOOS=linux --GOARCH=loong64
-earthly +build-cross --GOOS=linux --GOARCH=mips64
+earthly +build --os=linux --arch=riscv64
+earthly +build --os=linux --arch=loong64
+earthly +build --os=linux --arch=mips64
 ```
 
-`+build-dev` writes the fast, unoptimized `bin/librevita-dev` binary. `+build` writes the optimized production binary to
-`bin/librevita`. Cross builds write files such as `bin/librevita-linux-riscv64`.
+`+build` writes the optimized production binary to `bin/librevita`. `--dev=true` writes the fast, unoptimized
+`bin/librevita-dev` binary. Cross builds write files such as `bin/librevita-linux-riscv64`.
 
 SQLC and templ output is not committed. `+generate` writes generated files to the workspace when needed for editor
 support; build, test, and vet targets generate them inside Earthly.

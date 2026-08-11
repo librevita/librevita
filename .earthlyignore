@@ -1,10 +1,24 @@
+# Files that must never reach the build context. Earthly does not honor
+# .gitignore, so without this file every local build output (bin/, data/,
+# generated sources) invalidates every COPY . . layer on the next build.
+# Everything listed here is produced inside Earthly containers.
+
 .git
-.env
-.earthlyignore
-bin
-node_modules
+bin/
+data/
+node_modules/
 *.db
 *.db-shm
 *.db-wal
-static/css/*.css
-static/js/*.js
+*.log
+
+# Generated sources (see Earthfile +generate)
+**/*_templ.go
+**/repository/*.sql.go
+**/repository/db.go
+**/repository/models.go
+
+# Derived artifacts
+db/schema/
+internal/ui/static/css/
+internal/ui/static/js/
