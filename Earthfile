@@ -27,12 +27,15 @@ VERSION 0.8
 
 # --------------------------------------------------------------------------
 # Pinned versions - the single source of truth for toolchain images and
-# code generator versions. Overridable from the CLI:
-# earthly +build --GO_IMAGE=golang:1.27.0-alpine3.24
+# code generator versions. Images are pinned by digest: the BuildKit never
+# resolves the tag on the registry, so builds do not hit Docker Hub (and
+# cannot be rate-limited). To update an image, resolve the new digest and
+# bump it here; overridable from the CLI:
+# earthly +build --GO_IMAGE=golang:1.26.5-alpine3.24
 # --------------------------------------------------------------------------
 
-ARG --global GO_IMAGE=golang:1.26.5-alpine3.24
-ARG --global NODE_IMAGE=node:26.7-alpine3.24
+ARG --global GO_IMAGE=golang:1.26.5-alpine3.24@sha256:0178a641fbb4858c5f1b48e34bdaabe0350a330a1b1149aabd498d0699ff5fb2
+ARG --global NODE_IMAGE=node:26.7-alpine3.24@sha256:aadf416b2cdce311a8811ba3f0608a61b77dbf997500e2eafe781b51f6a0b019
 ARG --global TEMPL_VERSION=v0.3.1020
 ARG --global SQLC_VERSION=v1.31.1
 
