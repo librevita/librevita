@@ -2,7 +2,7 @@ package types
 
 // UITheme is the color scheme of the web interface. It mirrors the
 // CHECK constraint on users.ui_theme (see
-// db/migrations/00009_user_preferences.sql).
+// db/migrations/00002_auth.sql).
 type UITheme string
 
 const (

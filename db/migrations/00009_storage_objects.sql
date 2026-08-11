@@ -9,7 +9,11 @@
 --
 -- The domain column is an open namespace (patient_document, avatar,
 -- ...) so new attachment kinds do not require schema changes; the key
--- layout is owned by the application.
+-- layout is owned by the application. checksum is the canonical
+-- BLAKE2b-256 digest of the blob, computed by the application in every
+-- backend and witnessed in the audit chain at upload time; it has no
+-- DEFAULT, so a write that forgets it fails instead of storing a
+-- placeholder.
 CREATE TABLE storage_objects (
     id TEXT PRIMARY KEY,
     key TEXT NOT NULL UNIQUE,
@@ -19,6 +23,7 @@ CREATE TABLE storage_objects (
     content_type TEXT NOT NULL,
     size INTEGER NOT NULL CHECK (size >= 0),
     etag TEXT NOT NULL,
+    checksum TEXT NOT NULL,
     created_by TEXT NOT NULL REFERENCES users(id),
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 ) STRICT;

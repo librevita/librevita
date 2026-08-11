@@ -51,5 +51,8 @@ internal/ui/static/js/*.js
 **/repository/db.go
 **/repository/models.go
 
+# Consolidated schema generated from db/migrations by cmd/schemagen
+db/schema/*.sql
+
 # Generated templ views
 **/*_templ.go

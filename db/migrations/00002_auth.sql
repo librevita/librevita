@@ -6,28 +6,32 @@
 -- deleted, because the CEL policies reference them by name.
 
 CREATE TABLE roles (
-    id          TEXT PRIMARY KEY,
-    name        TEXT NOT NULL UNIQUE COLLATE NOCASE,
-    system      INTEGER NOT NULL DEFAULT 0 CHECK (system IN (0, 1)),
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE COLLATE nocase,
+    system INTEGER NOT NULL DEFAULT 0 CHECK (system IN (0, 1)),
     is_clinical INTEGER NOT NULL DEFAULT 0 CHECK (is_clinical IN (0, 1)),
-    created_at  TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 ) STRICT;
 
 INSERT INTO roles (id, name, system, is_clinical) VALUES
-    ('00000000-0000-7000-8000-000000000001', 'admin', 1, 0),
-    ('00000000-0000-7000-8000-000000000002', 'physician', 1, 1),
-    ('00000000-0000-7000-8000-000000000003', 'receptionist', 1, 0),
-    ('00000000-0000-7000-8000-000000000004', 'patient', 1, 0);
+('00000000-0000-7000-8000-000000000001', 'admin', 1, 0),
+('00000000-0000-7000-8000-000000000002', 'physician', 1, 1),
+('00000000-0000-7000-8000-000000000003', 'receptionist', 1, 0),
+('00000000-0000-7000-8000-000000000004', 'patient', 1, 0);
 
 CREATE TABLE users (
-    id            TEXT PRIMARY KEY,
-    email         TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    id TEXT PRIMARY KEY,
+    email TEXT NOT NULL UNIQUE COLLATE nocase,
     password_hash TEXT NOT NULL,
-    display_name  TEXT NOT NULL,
-    role_id       TEXT NOT NULL REFERENCES roles(id),
-    active        INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
-    created_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-    updated_at    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+    display_name TEXT NOT NULL,
+    role_id TEXT NOT NULL REFERENCES roles(id),
+    active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+    timezone TEXT NOT NULL DEFAULT '',
+    ui_theme TEXT NOT NULL DEFAULT 'system' CHECK (
+        ui_theme IN ('system', 'light', 'dark')
+    ),
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 ) STRICT;
 
 CREATE INDEX idx_users_role ON users (role_id);
@@ -35,7 +39,7 @@ CREATE INDEX idx_users_role ON users (role_id);
 -- Server-side session revocation index, owned by internal/core/auth.
 CREATE TABLE sessions (
     token_hash TEXT PRIMARY KEY,
-    user_id    TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     expires_at TEXT NOT NULL
 ) STRICT;
 
