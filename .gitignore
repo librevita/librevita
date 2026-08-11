@@ -30,6 +30,7 @@ opencode.json
 
 # LibreVita: binários e dados locais
 bin/
+data/
 *.db
 *.db-shm
 *.db-wal
