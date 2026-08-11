@@ -13,29 +13,30 @@ RETURNING *;
 SELECT p.*, u.email AS created_by_email
 FROM patients p
 LEFT JOIN users u ON u.id = p.created_by
-WHERE p.id = ?
+WHERE p.id = ? AND p.clinic_id = ?
 LIMIT 1;
 
 -- name: GetPatientByID :one
 SELECT *
 FROM patients
-WHERE id = ?
+WHERE id = ? AND clinic_id = ?
 LIMIT 1;
 
 -- name: UpdatePatient :one
 UPDATE patients
-SET display_name = ?,
-birth_date = ?,
-sex = ?,
-document = ?,
-phone = ?,
-email = ?,
-street = ?,
-city = ?,
-state = ?,
-postal_code = ?,
-notes = ?,
-updated_at = (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+SET
+    display_name = ?,
+    birth_date = ?,
+    sex = ?,
+    document = ?,
+    phone = ?,
+    email = ?,
+    street = ?,
+    city = ?,
+    state = ?,
+    postal_code = ?,
+    notes = ?,
+    updated_at = (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 WHERE id = ? AND clinic_id = ?
 RETURNING *;
 
@@ -45,23 +46,39 @@ SET status = ?, updated_at = (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 WHERE id = ? AND clinic_id = ?;
 
 -- name: CountPatients :one
-SELECT COUNT(*)
+SELECT count(*)
 FROM patients
 WHERE clinic_id = ?;
 
 -- name: PatientDocumentExists :one
-SELECT EXISTS(
+SELECT exists(
     SELECT 1
     FROM patients
     WHERE clinic_id = ? AND document = ? AND id <> ?
 );
 
 -- name: ListPatientsPage :many
+-- instr() searches the term literally (no LIKE wildcards), matching
+-- word prefixes: the term is anchored at a word boundary with a space.
 SELECT *
 FROM patients
-WHERE clinic_id = ?
-  AND (@status_empty = '' OR status = @status_filter)
-  AND (@query_empty = '' OR (' ' || display_name || ' ' || COALESCE(document, '') || ' ' || COALESCE(email, '')) LIKE '% ' || @pattern || '%' COLLATE NOCASE)
+WHERE
+    clinic_id = ?
+    AND (@status_empty = '' OR status = @status_filter)
+    AND (
+        @query_empty = ''
+        OR instr(
+            lower(
+                ' '
+                || display_name
+                || ' '
+                || coalesce(document, '')
+                || ' '
+                || coalesce(email, '')
+            ),
+            lower(' ' || @pattern)
+        ) > 0
+    )
 ORDER BY display_name COLLATE NOCASE
 LIMIT @limit OFFSET @offset;
 
@@ -69,5 +86,10 @@ LIMIT @limit OFFSET @offset;
 SELECT COUNT(*)
 FROM patients
 WHERE clinic_id = ?
-  AND (@status_empty = '' OR status = @status_filter)
-  AND (@query_empty = '' OR (' ' || display_name || ' ' || COALESCE(document, '') || ' ' || COALESCE(email, '')) LIKE '% ' || @pattern || '%' COLLATE NOCASE);
+AND (@status_empty = '' OR status = @status_filter)
+AND (@query_empty = '' OR instr(
+lower(' ' || display_name || ' ' || COALESCE(document,
+'') || ' ' || COALESCE(email,
+'')),
+lower(' ' || @pattern)
+) > 0);
