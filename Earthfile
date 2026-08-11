@@ -42,11 +42,20 @@ frontend:
     SAVE ARTIFACT /static-out/js /static-js
     SAVE ARTIFACT /static-out/js AS LOCAL ./internal/ui/static/js
 
+# Consolidated schema for sqlc, derived from the Goose migrations. The
+# migrations are the single source of truth; the schema file is a build
+# artifact, exported for local editor support, and is not versioned.
+schema:
+    FROM +go-source
+    RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build go run ./cmd/schemagen --out /out/schema.sql
+    SAVE ARTIFACT /out/schema.sql AS LOCAL ./db/schema/schema.sql
+
 # Generated files exist only inside Earthly build containers.
 go-generated:
     FROM +go-source-tools
     COPY +frontend/app.css ./internal/ui/static/css/app.css
     COPY +frontend/static-js ./internal/ui/static/js
+    COPY +schema/schema.sql ./db/schema/schema.sql
     RUN templ generate
     RUN sqlc generate
 
