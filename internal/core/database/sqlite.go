@@ -11,7 +11,7 @@ import (
 	"os"
 	"path/filepath"
 
-	_ "modernc.org/sqlite" // driver database/sql registrado como "sqlite" (puro Go)
+	_ "modernc.org/sqlite" // registers the "sqlite" driver (pure Go, no CGO)
 )
 
 // sqliteDriver is the driver name registered by modernc.org/sqlite.

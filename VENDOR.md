@@ -32,15 +32,16 @@ Go module `librevita.org`, built with `CGO_ENABLED=0` into a static binary on a 
 | `github.com/knadh/koanf/providers/posflag` | v1.0.2         | MIT          | pflag provider                                |
 | `github.com/knadh/koanf/parsers/json`      | v1.0.1         | MIT          | JSON parser                                   |
 | `github.com/knadh/koanf/parsers/yaml`      | v1.1.1         | MIT          | YAML parser                                   |
-| `github.com/spf13/pflag`                   | v1.0.6         | BSD-3-Clause | CLI flag parsing                              |
+| `github.com/spf13/pflag`                   | v1.0.10        | BSD-3-Clause | CLI flag parsing                              |
 | `github.com/joho/godotenv`                 | v1.5.1         | MIT          | `.env` support for local config               |
 | `github.com/google/uuid`                   | v1.6.0         | BSD-3-Clause | Session and record identifiers                |
 | `github.com/disintegration/imaging`        | v1.6.2         | MIT          | Image resize and re-encode (avatar pipeline)  |
-| `golang.org/x/term`                        | v0.45.0        | BSD-3-Clause | Terminal input for the setup wizard           |
+| `golang.org/x/term`                        | v0.45.0        | BSD-3-Clause | Terminal width detection for the console logger |
 
 ### Build-time Go tools
 
-Installed in the Earthfile `+tools` target and never linked into the binary; used only to generate committed sources.
+Installed in the Earthfile `+go-templ` and `+go-sqlc` targets and never linked into the binary; used only to generate
+committed sources.
 
 | Package                             | Version   | License | Purpose                                              |
 | ----------------------------------- | --------- | ------- | ---------------------------------------------------- |

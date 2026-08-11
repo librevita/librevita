@@ -37,9 +37,7 @@ data/
 *.log
 *.log.*
 
-# LibreVita: artefatos gerados do frontend (Tailwind/HTMX/Alpine)
-static/css/*.css
-static/js/*.js
+# Dependências npm
 node_modules/
 
 # Generated frontend assets (build-time, see Earthfile +frontend)
