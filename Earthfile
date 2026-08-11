@@ -8,10 +8,11 @@
 #                             +test, +vet, +tidy.
 #   Internal targets (middle) cache-friendly dependency layers:
 #                             +go-deps (modules only), +go-templ/+go-sqlc
-#                             (generators), +node-deps/+node-source/
-#                             +node-build (npm assets), +schema (DDL for
-#                             sqlc), +frontend (exported assets),
-#                             +go-generated (sources plus generated code).
+#                             (generators), +node-deps/+node-check/
+#                             +node-css/+node-bundle (npm assets),
+#                             +schema (DDL for sqlc), +frontend (exported
+#                             assets), +go-generated (sources plus
+#                             generated code).
 #   Functions (bottom)        shared recipes: every Go command runs through
 #                             a function, so the cache mounts are declared
 #                             once each (+GO_BUILD, +GO_CMD, +GO_INSTALL,
@@ -144,28 +145,44 @@ node-deps:
     COPY package.json package-lock.json ./
     RUN --mount=type=cache,target=/root/.npm npm ci
 
-# Frontend sources over the dependency layer.
-node-source:
+# Type-check the TypeScript sources (noEmit, validation only).
+node-check:
     FROM +node-deps
     COPY tsconfig.json ./
+    COPY internal/ui/ts ./internal/ui/ts
+    RUN --mount=type=cache,target=/root/.npm npm run check
+
+# CSS pipeline (Tailwind JIT + autoprefixer + cssnano). Tailwind scans
+# the templates and TS sources for class names, so they are inputs here
+# as well; the domain tree is copied whole to reach the templates.
+node-css:
+    FROM +node-deps
+    COPY postcss.config.ts ./
+    COPY tailwind.config.ts ./
     COPY internal/ui ./internal/ui
+    COPY internal/domain ./internal/domain
+    RUN --mount=type=cache,target=/root/.npm npm run css
+    SAVE ARTIFACT /out/app.css
 
-# Frontend build driven by Node. package-lock.json pins dependencies with
-# integrity hashes, so nothing is hard-coded beyond the package name; npm ci
-# installs exactly what the lock file describes. Only the sources the build
-# touches are copied, so unrelated changes do not invalidate the npm layer.
-node-build:
-    FROM +node-source
-    RUN --mount=type=cache,target=/root/.npm npm run build
-
-# Compiled assets (CSS from Tailwind/PostCSS, bundled TypeScript) plus the
-# static JS files, exported for the embed layer and local editor use.
-frontend:
-    FROM +node-build
+# Bundled TypeScript (esbuild) for the XP browser floor.
+node-bundle:
+    FROM +node-deps
+    COPY tsconfig.json ./
+    COPY internal/ui/ts ./internal/ui/ts
+    COPY internal/ui/build.ts ./internal/ui/build.ts
+    RUN --mount=type=cache,target=/root/.npm npm run bundle
     RUN mkdir -p /static-out/js && cp /out/ui.js /out/theme.js /out/vendor/* /static-out/js/
-    SAVE ARTIFACT /out/app.css AS LOCAL ./internal/ui/static/css/app.css
     SAVE ARTIFACT /static-out/js /static-js
-    SAVE ARTIFACT /static-out/js AS LOCAL ./internal/ui/static/js
+
+# Compiled assets (CSS, bundled JS) plus the type-check dependency,
+# exported for the embed layer and local editor use.
+frontend:
+    FROM +node-check
+    COPY +node-css/app.css /out/app.css
+    COPY +node-bundle/static-js /static-js
+    SAVE ARTIFACT /out/app.css AS LOCAL ./internal/ui/static/css/app.css
+    SAVE ARTIFACT /static-js /static-js
+    SAVE ARTIFACT /static-js AS LOCAL ./internal/ui/static/js
 
 # Consolidated schema for sqlc, derived from the Goose migrations (the
 # single source of truth). The exported file is an artifact for local editor
