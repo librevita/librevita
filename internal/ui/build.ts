@@ -24,7 +24,7 @@ const xpForbidden = /\?\.|\?\?=|\?\?|\bcatch\s*\{/;
 // a binding so the floor can parse the file.
 const xpSupported = { 'optional-catch-binding': false };
 
-function assertXpFloor(file) {
+function assertXpFloor(file: string) {
   const code = readFileSync(file, 'utf8');
   const offenders = code.match(xpForbidden) ?? [];
   if (offenders.length > 0) {
@@ -65,7 +65,7 @@ assertXpFloor(`${out}/theme.js`);
 // IE11-compatible and is copied verbatim.
 await mkdir(`${out}/vendor`, { recursive: true });
 
-async function copyAsset(specifier, dest) {
+async function copyAsset(specifier: string, dest: string) {
   const url = import.meta.resolve(specifier);
   const data = await readFile(new URL(url));
   await writeFile(dest, data);
