@@ -25,7 +25,8 @@ earthly +build --os=linux --arch=mips64
 ```
 
 `+build` writes the optimized production binary to `bin/librevita`. `--dev=true` writes the fast, unoptimized
-`bin/librevita-dev` binary. Cross builds write files such as `bin/librevita-linux-riscv64`.
+`bin/librevita-dev` binary. Cross builds write files such as `bin/librevita-linux-riscv64`. `--name=myapp` renames the
+exported binaries (the `name` global arg, default `librevita`).
 
 SQLC and templ output is not committed. `+generate` writes generated files to the workspace when needed for editor
 support; build, test, and vet targets generate them inside Earthly.
@@ -42,10 +43,11 @@ The UI follows the GOTH stack: Go + templ + HTMX, server-driven and progressive.
   relaxed
 - **Tailwind CSS 3.4.17** compiled at build time with a hex palette override (the v3.4 default `oklch` colors are
   unparseable by XP-era browsers)
-- The frontend build is driven by **Node** (`node:26.7-alpine3.24` in the Earthfile): `package.json` declares the
-  dependencies and scripts, and `package-lock.json` pins them with integrity hashes — nothing is versioned inside the
-  Earthfile. esbuild bundles the TypeScript source to the XP floor (`target=firefox58`, verified by `assertXpFloor`
-  after the build) and the PostCSS pipeline compiles Tailwind from `internal/ui/input.css`; no one writes ES5
+- The frontend build is driven by **Node** (`node:26.7-alpine3.24`, pinned by digest in the Earthfile): `package.json`
+  declares the dependencies and scripts, and `package-lock.json` pins them with integrity hashes — nothing is versioned
+  inside the Earthfile. esbuild bundles the TypeScript source to the XP floor (`target=firefox58`, verified by
+  `assertXpFloor` after the build) and the PostCSS pipeline compiles Tailwind from `internal/ui/input.css`; no one
+  writes ES5
 - **TypeScript** in `internal/ui/ts` with strict checking (`tsc --noEmit`, `lib: ES2017+DOM` aligned to the XP floor, so
   APIs missing from Firefox 52 are compile errors)
 
@@ -75,16 +77,19 @@ Replace `podman` with `docker` when using Docker. Timezone data is embedded by G
 bundle is embedded through `rootcerts`. The image has no shell, package manager, or pre-created data directory. The
 mounted `/data` volume must be writable by UID/GID `65532:65532`.
 
-The Earthfile uses `golang:1.26.5-alpine3.24` and sets `CGO_ENABLED=0` for every Go build. This keeps the binaries
+The Earthfile pins the toolchain images (`golang:1.26.5-alpine3.24`, `node:26.7-alpine3.24`) by digest, so the
+BuildKit resolves them from its local content store and builds never query the registry — no Docker Hub rate limits,
+and the exact images are fixed by the Earthfile. It sets `CGO_ENABLED=0` for every Go build, keeping the binaries
 statically linkable across supported architectures.
 
-The build cache is split into three layers:
+Build caching is layered: each target consumes only the inputs it needs, so a change invalidates the minimal subtree:
 
-- Go module downloads
-- `templ` and `sqlc` installation
-- Project source files
-
-Changing application source does not invalidate the dependency or tool layers.
+- `+go-deps` — Go module downloads, rebuilt only when `go.mod`/`go.sum` change
+- `+go-templ`/`+go-sqlc` — code generators installed from the bare Go toolchain, independent of the application modules
+- `+node-deps`/`+node-check`/`+node-css`/`+node-bundle` — npm install plus the frontend stages: template changes
+  re-run only the Tailwind JIT, TS changes only the type-check and the bundle
+- `+schema` — consolidated DDL for sqlc, built from only the packages on the schemagen import chain
+- `+go-generated` — sources plus generated code (templ, sqlc, compiled assets)
 
 If a rootful Earthly BuildKit daemon already occupies ports `8371` and `8372`, configure the client to reuse it:
 
