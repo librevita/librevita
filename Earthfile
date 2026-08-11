@@ -5,7 +5,7 @@
 #
 #   Public targets (top)      run by humans and CI: +all, +build (with
 #                             --dev/--os/--arch), +image, +generate,
-#                             +test, +test-js, +vet, +tidy.
+#                             +test, +test-js, +vet, +lint, +tidy.
 #   Internal targets (middle) cache-friendly dependency layers:
 #                             +go-deps (modules only), +go-templ/+go-sqlc
 #                             (generators), +node-deps/+node-check/
@@ -38,6 +38,7 @@ ARG --global GO_IMAGE=golang:1.26.5-alpine3.24@sha256:0178a641fbb4858c5f1b48e34b
 ARG --global NODE_IMAGE=node:26.7-alpine3.24@sha256:aadf416b2cdce311a8811ba3f0608a61b77dbf997500e2eafe781b51f6a0b019
 ARG --global TEMPL_VERSION=v0.3.1020
 ARG --global SQLC_VERSION=v1.31.1
+ARG --global GOLANGCI_VERSION=v2.12.2
 
 # Base name of the binaries exported by +build.
 ARG --global name=librevita
@@ -51,6 +52,7 @@ all:
     BUILD +test
     BUILD +test-js
     BUILD +vet
+    BUILD +lint
     BUILD +build
     BUILD +image
 
@@ -112,6 +114,12 @@ vet:
     FROM +go-generated
     DO +GO_VET
 
+# Run golangci-lint against generated sources (config: .golangci.yml).
+lint:
+    FROM +go-generated
+    COPY +go-lint/golangci-lint /go/bin/golangci-lint
+    RUN golangci-lint run
+
 # Synchronize module metadata locally. Runs against generated sources so
 # imports of templ and sqlc output resolve.
 tidy:
@@ -144,10 +152,16 @@ go-templ:
     SAVE ARTIFACT /go/bin/templ
 
 go-sqlc:
-    FROM $GO_IMAGE
+    FROM golang:1.26.5-alpine3.24
     ENV CGO_ENABLED=0
     DO +GO_INSTALL --package=github.com/sqlc-dev/sqlc/cmd/sqlc --version=$SQLC_VERSION
     SAVE ARTIFACT /go/bin/sqlc
+
+go-lint:
+    FROM golang:1.26.5-alpine3.24
+    ENV CGO_ENABLED=0
+    DO +GO_INSTALL --package=github.com/golangci/golangci-lint/v2/cmd/golangci-lint --version=$GOLANGCI_VERSION
+    SAVE ARTIFACT /go/bin/golangci-lint
 
 # npm dependencies. Rebuilt only when package.json or package-lock.json
 # change, so downstream layers reuse the installed tree across edits.

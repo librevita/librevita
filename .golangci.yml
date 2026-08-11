@@ -1,0 +1,33 @@
+# golangci-lint configuration. The standard default set (errcheck,
+# govet, ineffassign, staticcheck, unused) matches the project's
+# baseline; misspell and gofmt add style checks. Generated files are
+# excluded: they are build artifacts produced by templ and sqlc.
+version: "2"
+run:
+  timeout: 5m
+  tests: true
+formatters:
+  enable:
+    - gofmt
+linters:
+  default: standard
+  enable:
+    - misspell
+  settings:
+    errcheck:
+      # Defers of Close/Rollback/Remove are cleanup paths whose error is
+      # not actionable at that point; the standard library idiom.
+      exclude-functions:
+        - (io.Closer).Close
+        - (*database/sql.DB).Close
+        - (*database/sql.Rows).Close
+        - (*database/sql.Tx).Rollback
+        - (*multipart.Writer).Close
+        - (*os.File).Close
+        - os.Remove
+issues:
+  exclude-files:
+    - "**/*_templ.go"
+    - "**/repository/*.sql.go"
+    - "**/repository/db.go"
+    - "**/repository/models.go"
