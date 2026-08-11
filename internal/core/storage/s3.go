@@ -119,7 +119,7 @@ func (s *S3) Get(ctx context.Context, key string) (*Object, error) {
 	}
 	info, err := obj.Stat()
 	if err != nil {
-		obj.Close()
+		_ = obj.Close()
 		return nil, mapErr(key, err)
 	}
 	return &Object{

@@ -33,14 +33,14 @@ func fakeS3(t *testing.T, body string) (*httptest.Server, *S3) {
 		defer func() { t.Log("fakeS3 request:", lastReq) }()
 		switch r.Method {
 		case http.MethodPut:
-			io.Copy(io.Discard, r.Body)
+			_, _ = io.Copy(io.Discard, r.Body)
 			w.Header().Set("ETag", `"faketag"`)
 			w.WriteHeader(http.StatusOK)
 		case http.MethodGet:
 			w.Header().Set("Content-Type", "text/plain")
 			w.Header().Set("ETag", `"faketag"`)
 			w.Header().Set("Last-Modified", "Mon, 10 Aug 2026 17:00:00 GMT")
-			w.Write([]byte(body))
+			_, _ = w.Write([]byte(body))
 		case http.MethodHead:
 			w.Header().Set("Content-Length", "5")
 			w.Header().Set("Content-Type", "text/plain")

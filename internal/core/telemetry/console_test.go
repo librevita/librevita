@@ -50,7 +50,7 @@ func TestConsoleHandlerWritesUTC(t *testing.T) {
 		level:  slog.LevelDebug,
 	}
 	loc := time.FixedZone("BRT", -3*60*60)
-	handler.Handle(context.Background(), slog.NewRecord(
+	_ = handler.Handle(context.Background(), slog.NewRecord(
 		time.Date(2026, 8, 6, 15, 4, 5, 0, loc), slog.LevelInfo, "test message", 0,
 	))
 

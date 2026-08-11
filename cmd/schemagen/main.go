@@ -65,7 +65,7 @@ func main() {
 			continue
 		}
 		seen[name] = true
-		fmt.Fprintf(&b, "-- %s: %s\n%s;\n\n", strings.Title(typ), name, strings.TrimRight(sqlText, " \n\t;"))
+		fmt.Fprintf(&b, "-- %s: %s\n%s;\n\n", titleCase(typ), name, strings.TrimRight(sqlText, " \n\t;"))
 	}
 	if err := rows.Err(); err != nil {
 		fatal("iterate sqlite_master: %v", err)
@@ -86,6 +86,15 @@ func dirOf(path string) string {
 		return "."
 	}
 	return path[:i]
+}
+
+// titleCase capitalizes the first letter of an ASCII word; the schema
+// header only sees fixed words like "table" and "index".
+func titleCase(s string) string {
+	if s == "" {
+		return s
+	}
+	return strings.ToUpper(s[:1]) + s[1:]
 }
 
 func fatal(format string, args ...any) {

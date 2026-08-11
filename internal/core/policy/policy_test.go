@@ -445,9 +445,9 @@ func TestPatientEditResourcePolicy(t *testing.T) {
 	resource := map[string]any{"id": "01990000-0000-7000-8000-000000000099", "created_by": owner.ID, "status": "active"}
 
 	cases := []struct {
-		name     string
+		name      string
 		principal *auth.Principal
-		want     bool
+		want      bool
 	}{
 		{"admin edits anything", admin, true},
 		{"owner physician edits", owner, true},

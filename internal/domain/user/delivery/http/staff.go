@@ -16,8 +16,8 @@ import (
 	"librevita.org/internal/domain/user/delivery/views"
 	"librevita.org/internal/domain/user/repository"
 	"librevita.org/internal/domain/user/usecase"
-	"librevita.org/internal/ui/components"
 	"librevita.org/internal/types"
+	"librevita.org/internal/ui/components"
 )
 
 // StaffPage lists the physician directory with their specialties,
