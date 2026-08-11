@@ -18,6 +18,7 @@ earthly +build
 earthly +image --IMAGE_TAG=librevita:latest
 earthly +test
 earthly +vet
+earthly +lint
 earthly +tidy
 earthly +build --os=linux --arch=riscv64
 earthly +build --os=linux --arch=loong64
