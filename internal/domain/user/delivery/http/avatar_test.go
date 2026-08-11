@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"image"
 	"log/slog"
 	"mime/multipart"
 	"net/http"
@@ -226,5 +227,117 @@ func TestAvatarRejectsNonImage(t *testing.T) {
 	e.ServeHTTP(rec, req)
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("non-image upload status = %d, want 400", rec.Code)
+	}
+}
+
+// pngWithSize builds a minimal valid PNG declaring the given
+// dimensions, for the decompression-bomb test.
+func pngWithSize(t *testing.T, w, h uint32) []byte {
+	t.Helper()
+	sig := []byte{0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a}
+	ihdr := make([]byte, 13)
+	ihdr[0], ihdr[1], ihdr[2], ihdr[3] = byte(w>>24), byte(w>>16), byte(w>>8), byte(w)
+	ihdr[4], ihdr[5], ihdr[6], ihdr[7] = byte(h>>24), byte(h>>16), byte(h>>8), byte(h)
+	ihdr[8], ihdr[9], ihdr[10], ihdr[11], ihdr[12] = 8, 2, 0, 0, 0
+	chunk := func(tag string, data []byte) []byte {
+		b := make([]byte, 8+len(data)+4)
+		b[0], b[1], b[2], b[3] = byte(len(data)>>24), byte(len(data)>>16), byte(len(data)>>8), byte(len(data))
+		copy(b[4:], tag)
+		copy(b[8:], data)
+		crc := crc32IEEE(tag, data)
+		b[len(b)-4] = byte(crc >> 24)
+		b[len(b)-3] = byte(crc >> 16)
+		b[len(b)-2] = byte(crc >> 8)
+		b[len(b)-1] = byte(crc)
+		return b
+	}
+	out := append(sig, chunk("IHDR", ihdr)...)
+	idat := []byte{0x78, 0x9c, 0x63, 0x00, 0x00, 0x00, 0x01, 0x00, 0x01}
+	out = append(out, chunk("IDAT", idat)...)
+	return append(out, chunk("IEND", nil)...)
+}
+
+func crc32IEEE(tag string, data []byte) uint32 {
+	var table [256]uint32
+	for n := 0; n < 256; n++ {
+		c := uint32(n)
+		for k := 0; k < 8; k++ {
+			if c&1 == 1 {
+				c = 0xedb88320 ^ (c >> 1)
+			} else {
+				c >>= 1
+			}
+		}
+		table[n] = c
+	}
+	crc := ^uint32(0)
+	for _, b := range append([]byte(tag), data...) {
+		crc = table[crc&0xff^uint32(b)] ^ (crc >> 8)
+	}
+	return ^crc
+}
+
+// TestAvatarProcessing asserts the upload pipeline: any accepted image
+// is served back as a 256x256 JPEG, not the original bytes.
+func TestAvatarProcessing(t *testing.T) {
+	e, sessions, _, _ := newAvatarEnv(t)
+	token, err := sessions.Create(context.Background(), auth.Principal{
+		ID: testAdminID.String(), Email: "admin@example.org", Name: "Admin", Role: auth.RoleAdmin,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cookie := sessions.Cookie(token)
+
+	buf, ctype := avatarMultipart(t, "avatar", "photo.png", tinyPNG, "image/png")
+	req := httptest.NewRequest(http.MethodPost, "/profile/avatar", buf)
+	req.Header.Set("Content-Type", ctype)
+	req.AddCookie(cookie)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+	if rec.Code != http.StatusFound {
+		t.Fatalf("upload status = %d, want 302", rec.Code)
+	}
+
+	srv := httptest.NewRequest(http.MethodGet, "/profile/avatar", nil)
+	srv.AddCookie(cookie)
+	srec := httptest.NewRecorder()
+	e.ServeHTTP(srec, srv)
+	if ct := srec.Header().Get("Content-Type"); ct != "image/jpeg" {
+		t.Errorf("served content type = %q, want image/jpeg", ct)
+	}
+	img, format, err := image.Decode(bytes.NewReader(srec.Body.Bytes()))
+	if err != nil {
+		t.Fatalf("response is not a decodable image: %v", err)
+	}
+	if format != "jpeg" {
+		t.Errorf("response format = %q, want jpeg", format)
+	}
+	if b := img.Bounds(); b.Dx() != 256 || b.Dy() != 256 {
+		t.Errorf("response size = %dx%d, want 256x256", b.Dx(), b.Dy())
+	}
+}
+
+// TestAvatarRejectsHugeDimensions asserts the decompression-bomb guard:
+// a tiny PNG declaring a huge canvas is refused before any decode.
+func TestAvatarRejectsHugeDimensions(t *testing.T) {
+	e, sessions, _, _ := newAvatarEnv(t)
+	token, err := sessions.Create(context.Background(), auth.Principal{
+		ID: testAdminID.String(), Email: "admin@example.org", Name: "Admin", Role: auth.RoleAdmin,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cookie := sessions.Cookie(token)
+
+	bomb := pngWithSize(t, 30000, 30000)
+	buf, ctype := avatarMultipart(t, "avatar", "bomb.png", bomb, "image/png")
+	req := httptest.NewRequest(http.MethodPost, "/profile/avatar", buf)
+	req.Header.Set("Content-Type", ctype)
+	req.AddCookie(cookie)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("huge image status = %d, want 400", rec.Code)
 	}
 }

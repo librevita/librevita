@@ -35,6 +35,7 @@ Go module `librevita.org`, built with `CGO_ENABLED=0` into a static binary on a 
 | `github.com/spf13/pflag`                   | v1.0.6         | BSD-3-Clause | CLI flag parsing                              |
 | `github.com/joho/godotenv`                 | v1.5.1         | MIT          | `.env` support for local config               |
 | `github.com/google/uuid`                   | v1.6.0         | BSD-3-Clause | Session and record identifiers                |
+| `github.com/disintegration/imaging`        | v1.6.2         | MIT          | Image resize and re-encode (avatar pipeline)  |
 | `golang.org/x/term`                        | v0.45.0        | BSD-3-Clause | Terminal input for the setup wizard           |
 
 ### Build-time Go tools

@@ -6,6 +6,7 @@ require (
 	aidanwoods.dev/go-paseto v1.6.0
 	github.com/a-h/templ v0.3.1020
 	github.com/breml/rootcerts v0.3.7
+	github.com/disintegration/imaging v1.6.2
 	github.com/google/cel-go v0.28.0
 	github.com/google/uuid v1.6.0
 	github.com/joho/godotenv v1.5.1
@@ -62,6 +63,7 @@ require (
 	go.uber.org/multierr v1.11.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
 	golang.org/x/exp v0.0.0-20260718201538-764159d718ef // indirect
+	golang.org/x/image v0.0.0-20191009234506-e7c1f5e7dbb8 // indirect
 	golang.org/x/net v0.57.0 // indirect
 	golang.org/x/sync v0.22.0 // indirect
 	golang.org/x/sys v0.47.0 // indirect
