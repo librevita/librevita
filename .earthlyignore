@@ -12,6 +12,12 @@ node_modules/
 *.db-wal
 *.log
 
+# Local secrets and files never consumed by the build (see M1)
+.env
+*.md
+LICENSE
+.gitignore
+
 # Generated sources (see Earthfile +generate)
 **/*_templ.go
 **/repository/*.sql.go
