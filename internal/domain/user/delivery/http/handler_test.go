@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"log/slog"
+
+	"librevita.org/internal/core/storage"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -58,7 +60,7 @@ func newHandler(t *testing.T, db *sql.DB) (*httphandler.Handler, *auth.SessionMa
 		t.Fatal(err)
 	}
 	patientSvc := patientusecase.NewService(db, log, policies)
-	h := httphandler.NewHandler(svc, patientSvc, csrf, sessions, policies, auditLogger, clinic.NewClockProvider(db))
+	h := httphandler.NewHandler(svc, patientSvc, csrf, sessions, policies, auditLogger, clinic.NewClockProvider(db), mustFileManager(t, db), slog.New(slog.DiscardHandler))
 	return h, sessions, svc
 }
 
@@ -85,4 +87,18 @@ func TestLogoutSurfacesRevocationFailure(t *testing.T) {
 	if err == nil {
 		t.Fatal("Logout must return an error when revocation fails")
 	}
+}
+
+// mustFileManager builds a FileManager over a temp local store.
+func mustFileManager(t *testing.T, db *sql.DB) *storage.FileManager {
+	t.Helper()
+	s, err := storage.NewLocal(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	fm, err := storage.NewFileManager(db, s, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return fm
 }

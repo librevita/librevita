@@ -4,6 +4,7 @@ package http
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	"librevita.org/internal/core/auth"
 	"librevita.org/internal/core/policy"
 	"librevita.org/internal/core/server"
+	"librevita.org/internal/core/storage"
 	"librevita.org/internal/domain/clinic"
 	patientusecase "librevita.org/internal/domain/patient/usecase"
 	"librevita.org/internal/domain/user/delivery/views"
@@ -32,13 +34,17 @@ type Handler struct {
 	policies *policy.PolicyEngine
 	audit    *audit.Logger
 	clocks   *clinic.ClockProvider
+	files    *storage.FileManager
+	log      *slog.Logger
 }
 
 // NewHandler is the Fx provider.
 func NewHandler(svc *usecase.Service, patients *patientusecase.Service,
 	csrf *auth.CSRF, sessions *auth.SessionManager,
-	policies *policy.PolicyEngine, auditLogger *audit.Logger, clocks *clinic.ClockProvider) *Handler {
-	return &Handler{svc: svc, patients: patients, csrf: csrf, sessions: sessions, policies: policies, audit: auditLogger, clocks: clocks}
+	policies *policy.PolicyEngine, auditLogger *audit.Logger, clocks *clinic.ClockProvider,
+	files *storage.FileManager, log *slog.Logger) *Handler {
+	return &Handler{svc: svc, patients: patients, csrf: csrf, sessions: sessions,
+		policies: policies, audit: auditLogger, clocks: clocks, files: files, log: log}
 }
 
 // SetupGate redirects navigation to /setup while the system is not yet
