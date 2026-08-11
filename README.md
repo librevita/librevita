@@ -166,6 +166,7 @@ The main flags are:
 | `--s3-region`                  | `LIBREVITA_STORAGE_S3_REGION`          | S3 region (may be empty outside AWS)                         |
 | `--s3-secure`                  | `LIBREVITA_STORAGE_S3_SECURE`          | Use HTTPS for the S3 endpoint                                |
 | `--s3-path-style`              | `LIBREVITA_STORAGE_S3_PATH_STYLE`      | Use path-style S3 addressing                                 |
+| `--trusted-proxies`            | `LIBREVITA_TRUSTED_PROXIES`            | Comma-separated proxy IPs allowed to set `X-Forwarded-For`   |
 
 `LIBREVITA_DATABASE_*` names are also accepted for database settings.
 
@@ -262,7 +263,9 @@ Echo is created and managed by Fx. Routes:
 - `GET /setup`, `POST /setup` — initial onboarding (admin account + clinic profile)
 - `GET /auth/login`, `POST /auth/login`, `GET /auth/register`, `POST /auth/register`, `POST /auth/logout`
 - `GET /`, `GET /activity/recent` — authenticated dashboard
-- `GET /profile`, `POST /profile` — self-service preferences (UI theme, personal timezone)
+- `GET /profile`, `POST /profile` — self-service preferences (UI theme, personal timezone); `GET /profile/avatar`,
+  `POST /profile/avatar`, `POST /profile/avatar/remove` — profile picture; `GET /users/:id/avatar` — avatar of any
+  user
 - `GET /patients`, `GET /patients/new`, `POST /patients`, `GET /patients/:id`, `GET /patients/:id/edit`, `POST
 /patients/:id`, `POST /patients/:id/archive`, `POST /patients/:id/restore`, `POST /patients/bulk-archive`, `POST
 /patients/check-document`
@@ -365,6 +368,8 @@ rejected, because the policy editor is the only place that could restore it.
 | `staff.approve`  | `principal.role == 'admin'`                                                                             |
 | `patient.view`   | `principal.role in ['admin', 'physician', 'receptionist']`                                              |
 | `patient.edit`   | `principal.role == 'admin' \|\| (principal.role == 'physician' && resource.created_by == principal.id)` |
+| `patient.document.read`  | `principal.role in ['admin', 'physician', 'receptionist']`                                    |
+| `patient.document.write` | `principal.role in ['admin', 'physician']`                                                  |
 
 Abuse controls:
 
