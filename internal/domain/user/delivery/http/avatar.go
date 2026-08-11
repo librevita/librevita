@@ -5,11 +5,15 @@ import (
 	"context"
 	"errors"
 	"html"
+	"image"
+	"image/color"
+	"image/draw"
 	"io"
 	"net/http"
 	"strconv"
 	"strings"
 
+	"github.com/disintegration/imaging"
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 
@@ -33,6 +37,19 @@ const maxAvatarSize = 2 << 20
 var avatarImageTypes = map[string]bool{
 	"image/jpeg": true, "image/png": true, "image/webp": true, "image/gif": true,
 }
+
+// avatarSize is the square side every avatar is processed to (centered
+// crop), small enough for the topbar and profile without heavy payloads.
+const avatarSize = 256
+
+// avatarMaxDimension caps the decoded dimensions before the full decode,
+// so a tiny file declaring a huge canvas (decompression bomb) is
+// rejected without allocating it.
+const avatarMaxDimension = 5000
+
+// avatarJPEGQuality trades size for fidelity; 85 keeps photos small
+// while staying visually lossless for profile pictures.
+const avatarJPEGQuality = 85
 
 // AvatarPage renders the avatar section of the profile.
 // AvatarUpload stores the signed-in user's avatar. The owner is the
@@ -74,16 +91,27 @@ func (h *Handler) AvatarUpload(c echo.Context) error {
 	if !avatarImageTypes[contentType] {
 		return echo.NewHTTPError(http.StatusBadRequest, "the file is not a supported image")
 	}
-	body := io.MultiReader(bytes.NewReader(head[:n]), src)
+
+	// The upload is bounded by the route body limit (2 MiB), so the
+	// payload fits in memory; buffer it to decode twice (config first
+	// for the dimension check, then the full image).
+	payload, err := io.ReadAll(io.MultiReader(bytes.NewReader(head[:n]), src))
+	if err != nil {
+		return err
+	}
+	processed, err := processAvatar(payload)
+	if err != nil {
+		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+	}
 
 	userID := uuid.MustParse(p.ID)
 	meta, err := h.files.Upload(ctx, storage.UploadInput{
 		Domain:       avatarDomain,
 		ResourceID:   userID,
 		OriginalName: sanitizeAvatarName(file.Filename),
-		ContentType:  contentType,
+		ContentType:  "image/jpeg",
 		CreatedBy:    userID,
-	}, body, file.Size)
+	}, bytes.NewReader(processed), int64(len(processed)))
 	if err != nil {
 		return err
 	}
@@ -215,4 +243,40 @@ func sanitizeAvatarName(name string) string {
 
 func itoaAvatar(n int) string {
 	return strconv.Itoa(n)
+}
+
+// processAvatar converts any accepted image into a centered 256x256
+// JPEG: the decoder validates the image and its dimensions, the
+// thumbnail crops from the center, and the JPEG re-encode drops
+// metadata (EXIF) and normalizes every avatar to one format. GIFs are
+// treated as static (first frame).
+func processAvatar(payload []byte) ([]byte, error) {
+	cfg, _, err := image.DecodeConfig(bytes.NewReader(payload))
+	if err != nil {
+		return nil, errors.New("the file is not a decodable image")
+	}
+	if cfg.Width > avatarMaxDimension || cfg.Height > avatarMaxDimension {
+		return nil, errors.New("the image dimensions exceed the limit")
+	}
+
+	src, err := imaging.Decode(bytes.NewReader(payload))
+	if err != nil {
+		return nil, errors.New("the file is not a decodable image")
+	}
+	var img image.Image = imaging.Thumbnail(src, avatarSize, avatarSize, imaging.Lanczos)
+
+	// JPEG has no alpha channel: opaque sources encode as-is, sources
+	// with transparency are composed over white first.
+	if opaque, ok := img.(interface{ Opaque() bool }); !ok || !opaque.Opaque() {
+		bg := image.NewRGBA(image.Rect(0, 0, avatarSize, avatarSize))
+		draw.Draw(bg, bg.Bounds(), image.NewUniform(color.White), image.Point{}, draw.Src)
+		draw.Draw(bg, bg.Bounds(), img, image.Point{}, draw.Over)
+		img = bg
+	}
+
+	var out bytes.Buffer
+	if err := imaging.Encode(&out, img, imaging.JPEG, imaging.JPEGQuality(avatarJPEGQuality)); err != nil {
+		return nil, errors.New("the image could not be processed")
+	}
+	return out.Bytes(), nil
 }
