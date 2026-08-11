@@ -159,6 +159,7 @@ func validateEmail(email string) error {
 
 // ListUsersPage returns one page of accounts matching q (name or email,
 // case-insensitive), newest first, together with the total match count.
+// instr() matches the term literally, so LIKE wildcards have no effect.
 func (s *Service) ListUsersPage(ctx context.Context, q string, limit, offset int) ([]repository.ListUsersRow, int64, error) {
 	rows, err := s.users.ListUsers(ctx, repository.ListUsersParams{
 		Column1: q,

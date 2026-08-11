@@ -4,17 +4,18 @@ INSERT INTO users (id, email, password_hash, display_name, role_id)
 VALUES (?, ?, ?, ?, ?)
 RETURNING *;
 -- name: GetUserByEmail :one
-SELECT u.id, u.email, u.password_hash, u.display_name, u.active,
-       u.timezone, u.ui_theme, u.created_at, u.updated_at, u.role_id,
-       r.name AS role_name, r.is_clinical AS role_is_clinical
+SELECT
+    u.id, u.email, u.password_hash, u.display_name, u.active,
+    u.timezone, u.ui_theme, u.created_at, u.updated_at, u.role_id,
+    r.name AS role_name, r.is_clinical AS role_is_clinical
 FROM users u
 JOIN roles r ON r.id = u.role_id
 WHERE u.email = ? COLLATE NOCASE
 LIMIT 1;
 -- name: GetUserByID :one
 SELECT u.id, u.email, u.password_hash, u.display_name, u.active,
-       u.timezone, u.ui_theme, u.created_at, u.updated_at, u.role_id,
-       r.name AS role_name, r.is_clinical AS role_is_clinical
+u.timezone, u.ui_theme, u.created_at, u.updated_at, u.role_id,
+r.name AS role_name, r.is_clinical AS role_is_clinical
 FROM users u
 JOIN roles r ON r.id = u.role_id
 WHERE u.id = ?
@@ -40,24 +41,26 @@ JOIN roles r ON r.id = u.role_id
 WHERE r.name = ? COLLATE NOCASE AND u.active = 1;
 -- name: ListUsers :many
 SELECT u.id, u.email, u.display_name, u.active, u.created_at,
-       r.name AS role_name
+r.name AS role_name
 FROM users u
 JOIN roles r ON r.id = u.role_id
-WHERE (' ' || u.email || ' ' || u.display_name) LIKE '% ' || CAST(? AS TEXT) || '%'
+WHERE instr(lower(' ' || u.email || ' ' || u.display_name),
+lower(' ' || CAST(? AS TEXT))) > 0
 ORDER BY u.created_at DESC, u.id DESC
 LIMIT ? OFFSET ?;
 -- name: CountUsersMatching :one
 SELECT COUNT(*)
 FROM users u
 JOIN roles r ON r.id = u.role_id
-WHERE (' ' || u.email || ' ' || u.display_name) LIKE '% ' || CAST(? AS TEXT) || '%';
+WHERE instr(lower(' ' || u.email || ' ' || u.display_name),
+lower(' ' || CAST(? AS TEXT))) > 0;
 -- name: UpdateUser :one
 UPDATE users
 SET email = ?,
-    display_name = ?,
-    role_id = ?,
-    active = ?,
-    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+display_name = ?,
+role_id = ?,
+active = ?,
+updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
 WHERE id = ?
 RETURNING *;
 -- name: UpdateUserGuarded :one
@@ -66,12 +69,12 @@ RETURNING *;
 -- the write are atomic.
 UPDATE users
 SET email = ?,
-    display_name = ?,
-    role_id = ?,
-    active = ?,
-    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+display_name = ?,
+role_id = ?,
+active = ?,
+updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
 WHERE users.id = ?
-  AND (CAST(? AS INTEGER) = 0 OR (SELECT COUNT(*) FROM users AS u JOIN roles AS r ON r.id = u.role_id WHERE r.name = 'admin' AND u.active = 1) > 1)
+AND (CAST(? AS INTEGER) = 0 OR (SELECT COUNT(*) FROM users AS u JOIN roles AS r ON r.id = u.role_id WHERE r.name = 'admin' AND u.active = 1) > 1)
 RETURNING *;
 
 -- name: UpdateUserPreferences :one
@@ -79,7 +82,7 @@ RETURNING *;
 -- empty, which means "inherit the clinic timezone".
 UPDATE users
 SET timezone = ?,
-    ui_theme = ?,
-    updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+ui_theme = ?,
+updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
 WHERE id = ?
 RETURNING *;
