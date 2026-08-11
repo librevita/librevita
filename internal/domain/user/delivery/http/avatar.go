@@ -121,8 +121,9 @@ func (h *Handler) AvatarUpload(c echo.Context) error {
 	// cleanup would delete the picture the user just uploaded.
 	h.removeAvatars(ctx, userID, meta.ID)
 
+	// The canonical checksum is witnessed in the append-only chain.
 	h.audit.Record(ctx, server.EventFromRequest(c, types.AuditResultSuccess,
-		"avatar.update", "user:"+p.ID, meta.OriginalName, ""))
+		"avatar.update", "user:"+p.ID, meta.OriginalName, "checksum: "+meta.Checksum))
 	return server.HtmxRedirect(c, "/profile")
 }
 

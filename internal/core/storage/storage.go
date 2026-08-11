@@ -35,6 +35,11 @@ type ObjectInfo struct {
 	Size         int64
 	ContentType  string
 	ETag         string
+	// Checksum is the canonical application-level digest (BLAKE2b-256,
+	// hex) of the whole payload. Backend ETags are not comparable (S3
+	// multipart ETags digest the parts, not the object), so this value
+	// is computed by the application in every backend.
+	Checksum     string
 	LastModified time.Time
 }
 

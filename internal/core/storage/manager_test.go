@@ -75,6 +75,9 @@ func TestFileManagerUploadGetListDelete(t *testing.T) {
 	if meta.OriginalName != "prescription.pdf" || meta.Size != 3 || meta.ETag == "" {
 		t.Errorf("meta = %+v", meta)
 	}
+	if meta.Checksum != blake2b256Hex("pdf") {
+		t.Errorf("checksum = %q, want the canonical digest of the payload", meta.Checksum)
+	}
 	if !strings.HasPrefix(meta.Key, "private/patient_document/") {
 		t.Errorf("key %q must live under the private class and domain namespace", meta.Key)
 	}

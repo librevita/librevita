@@ -12,9 +12,10 @@ INSERT INTO storage_objects (
     content_type,
     size,
     etag,
+    checksum,
     created_by
 )
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING *;
 
 -- name: GetStorageObjectByKey :one

@@ -65,8 +65,10 @@ func (h *Handler) UploadDocument(c echo.Context) error {
 	if err != nil {
 		return err
 	}
+	// The canonical checksum is witnessed in the append-only chain, so
+	// any later modification of the blob is provable.
 	h.audit.Record(ctx, server.EventFromRequest(c, types.AuditResultSuccess,
-		"file.upload", "patient:"+pt.ID.String(), meta.OriginalName, ""))
+		"file.upload", "patient:"+pt.ID.String(), meta.OriginalName, "checksum: "+meta.Checksum))
 	return server.HtmxRedirect(c, "/patients/"+pt.ID.String())
 }
 

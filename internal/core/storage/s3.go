@@ -8,6 +8,7 @@ package storage
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
+	"golang.org/x/crypto/blake2b"
 )
 
 // S3Config selects and authenticates the S3-compatible endpoint.
@@ -86,7 +88,15 @@ func (s *S3) Put(ctx context.Context, key string, data io.Reader, size int64, co
 	if err := ValidKey(key); err != nil {
 		return ObjectInfo{}, err
 	}
-	info, err := s.client.PutObject(ctx, s.bucket, key, data, size,
+	// The application computes the canonical checksum while the payload
+	// streams to the API; the server ETag is kept as-is (S3 multipart
+	// ETags are not the digest of the whole object).
+	checksum, err := blake2b.New256(nil)
+	if err != nil {
+		return ObjectInfo{}, fmt.Errorf("storage/s3: checksum: %w", err)
+	}
+	body := io.TeeReader(data, checksum)
+	info, err := s.client.PutObject(ctx, s.bucket, key, body, size,
 		minio.PutObjectOptions{ContentType: contentType})
 	if err != nil {
 		return ObjectInfo{}, fmt.Errorf("storage/s3: put %q: %w", key, err)
@@ -96,6 +106,7 @@ func (s *S3) Put(ctx context.Context, key string, data io.Reader, size int64, co
 		Size:         info.Size,
 		ContentType:  contentType,
 		ETag:         info.ETag,
+		Checksum:     hex.EncodeToString(checksum.Sum(nil)),
 		LastModified: info.LastModified,
 	}, nil
 }
