@@ -5,7 +5,7 @@
 #
 #   Public targets (top)      run by humans and CI: +all, +build (with
 #                             --dev/--os/--arch), +image, +generate,
-#                             +test, +vet, +tidy.
+#                             +test, +test-js, +vet, +tidy.
 #   Internal targets (middle) cache-friendly dependency layers:
 #                             +go-deps (modules only), +go-templ/+go-sqlc
 #                             (generators), +node-deps/+node-check/
@@ -49,6 +49,7 @@ ARG --global name=librevita
 # Validate code, analysis, and the production image together.
 all:
     BUILD +test
+    BUILD +test-js
     BUILD +vet
     BUILD +build
     BUILD +image
@@ -65,6 +66,8 @@ build:
     LET binname = "$name"
     IF [ "$dev" = "true" ]
         SET binname = "$name-dev"
+    ELSE IF [ "$os" = "windows" ]
+        SET binname = "$name-$os-$arch.exe"
     ELSE IF [ "$os$arch" != "linuxamd64" ]
         SET binname = "$name-$os-$arch"
     END
@@ -93,10 +96,16 @@ generate:
     SAVE ARTIFACT internal/ui AS LOCAL ./internal/ui
     SAVE ARTIFACT pkg AS LOCAL ./pkg
 
-# Run the complete test suite against generated sources.
+# Run the complete Go test suite against generated sources.
 test:
     FROM +go-generated
     DO +GO_TEST
+
+# Run the frontend unit tests (node --test against the TS sources).
+test-js:
+    FROM +node-deps
+    COPY internal/ui/ts ./internal/ui/ts
+    RUN --mount=type=cache,target=/root/.npm npm test
 
 # Run static analysis against generated sources.
 vet:

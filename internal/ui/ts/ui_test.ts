@@ -7,7 +7,6 @@ import { test } from 'node:test';
 import { Event, parseHTML } from 'linkedom';
 import { selectTab } from './tabs.ts';
 import { rowBoxes } from './table-select.ts';
-import { applyThemeClass, readStored } from './theme-pref.ts';
 import * as dropdown from './dropdown.ts';
 
 test('tabs.selectTab toggles panels and active classes', () => {
@@ -42,21 +41,18 @@ test('tableSelect.rowBoxes excludes the select-all box', () => {
   assert.equal(rowBoxes(group).length, 2);
 });
 
-test('themePref.readStored falls back to system', () => {
-  assert.equal(readStored(), 'system');
-});
-
-test('themePref.applyThemeClass sets the dark class', () => {
-  const { document, window } = parseHTML('<html></html>');
+test('theme bootstrap applies the server-provided theme class', async () => {
+  const { document, window } = parseHTML('<html data-ui-theme="dark"></html>');
   const origDocument = globalThis.document;
   const origWindow = globalThis.window;
   (globalThis as Record<string, unknown>).document = document;
   (globalThis as Record<string, unknown>).window = window;
   try {
-    applyThemeClass('dark');
+    // theme.ts is a side-effect script (no exports); it reads the
+    // server-provided attribute and applies the class at import time.
+    // @ts-expect-error side-effect module
+    await import('./theme.ts');
     assert.equal(document.documentElement.classList.contains('dark'), true);
-    applyThemeClass('light');
-    assert.equal(document.documentElement.classList.contains('dark'), false);
   } finally {
     (globalThis as Record<string, unknown>).document = origDocument;
     (globalThis as Record<string, unknown>).window = origWindow;
@@ -77,11 +73,11 @@ test('dropdown opens pinned to the viewport and closes outside', () => {
 
   const toggle = document.querySelector('[data-lv-dropdown-toggle]') as HTMLElement;
   const menu = document.querySelector('[data-lv-dropdown-menu]') as HTMLElement;
-  toggle.dispatchEvent(new Event('click', { bubbles: true }) as Event);
+  toggle.dispatchEvent(new Event('click', { bubbles: true }) as unknown as globalThis.Event);
   assert.equal(menu.classList.contains('hidden'), false);
   assert.equal(menu.style.position, 'fixed');
 
   const outside = document.getElementById('outside') as HTMLElement;
-  outside.dispatchEvent(new Event('click', { bubbles: true }) as Event);
+  outside.dispatchEvent(new Event('click', { bubbles: true }) as unknown as globalThis.Event);
   assert.equal(menu.classList.contains('hidden'), true);
 });

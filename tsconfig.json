@@ -8,8 +8,7 @@
     "allowImportingTsExtensions": true,
     "noEmit": true,
     "skipLibCheck": true,
-    "types": []
+    "types": ["node"]
   },
-  "include": ["internal/ui/ts/**/*.ts"],
-  "exclude": ["internal/ui/build.ts", "internal/ui/ts/ui_test.ts", "internal/ui/ts/**/*.test.ts"]
+  "include": ["internal/ui/**/*.ts", "postcss.config.ts", "tailwind.config.ts"]
 }
