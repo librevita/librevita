@@ -76,6 +76,9 @@ func TestS3PutGetStatDelete(t *testing.T) {
 	if info.Key != "patients/p1/doc.txt" {
 		t.Errorf("Put info = %+v", info)
 	}
+	if info.Checksum != blake2b256Hex("hello") {
+		t.Errorf("checksum = %q, want the canonical digest of hello", info.Checksum)
+	}
 
 	obj, err := s.Get(ctx, "patients/p1/doc.txt")
 	if err != nil {

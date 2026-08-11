@@ -184,6 +184,7 @@ CREATE TABLE storage_objects (
     content_type  TEXT    NOT NULL,
     size          INTEGER NOT NULL CHECK (size >= 0),
     etag          TEXT    NOT NULL,
+    checksum      TEXT    NOT NULL DEFAULT '',
     created_by    TEXT    NOT NULL REFERENCES users(id),
     created_at    TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 ) STRICT;

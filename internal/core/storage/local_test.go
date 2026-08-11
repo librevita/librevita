@@ -3,12 +3,15 @@ package storage
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"errors"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"golang.org/x/crypto/blake2b"
 )
 
 // TestValidKey covers the key layout rules that both backends enforce.
@@ -42,6 +45,10 @@ func TestLocalPutGetStat(t *testing.T) {
 	if info.Key != "patients/p1/doc.pdf" || info.Size != 5 || info.ContentType != "application/pdf" || info.ETag == "" {
 		t.Errorf("Put info = %+v", info)
 	}
+	wantChecksum := blake2b256Hex("hello")
+	if info.Checksum != wantChecksum {
+		t.Errorf("checksum = %q, want %q", info.Checksum, wantChecksum)
+	}
 
 	obj, err := s.Get(ctx, "patients/p1/doc.pdf")
 	if err != nil {
@@ -60,9 +67,15 @@ func TestLocalPutGetStat(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Stat: %v", err)
 	}
-	if st.Size != 5 || st.ContentType != "application/pdf" {
+	if st.Size != 5 || st.ContentType != "application/pdf" || st.Checksum != wantChecksum {
 		t.Errorf("Stat = %+v", st)
 	}
+}
+
+// blake2b256Hex computes the canonical checksum of the payload.
+func blake2b256Hex(payload string) string {
+	sum := blake2b.Sum256([]byte(payload))
+	return hex.EncodeToString(sum[:])
 }
 
 func TestLocalNotFound(t *testing.T) {

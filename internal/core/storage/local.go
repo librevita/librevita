@@ -20,6 +20,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"golang.org/x/crypto/blake2b"
 )
 
 const metaDir = ".meta"
@@ -76,8 +78,13 @@ func (s *Local) Put(ctx context.Context, key string, data io.Reader, size int64,
 	tmpName := tmp.Name()
 	defer os.Remove(tmpName)
 
-	hash := md5.New()
-	written, err := io.Copy(io.MultiWriter(tmp, hash), data)
+	etagHash := md5.New()
+	checksum, err := blake2b.New256(nil)
+	if err != nil {
+		tmp.Close()
+		return ObjectInfo{}, fmt.Errorf("storage: checksum: %w", err)
+	}
+	written, err := io.Copy(io.MultiWriter(tmp, etagHash, checksum), data)
 	if err != nil {
 		tmp.Close()
 		return ObjectInfo{}, fmt.Errorf("storage: write: %w", err)
@@ -97,7 +104,8 @@ func (s *Local) Put(ctx context.Context, key string, data io.Reader, size int64,
 		Key:          key,
 		Size:         written,
 		ContentType:  contentType,
-		ETag:         hex.EncodeToString(hash.Sum(nil)),
+		ETag:         hex.EncodeToString(etagHash.Sum(nil)),
+		Checksum:     hex.EncodeToString(checksum.Sum(nil)),
 		LastModified: time.Now().UTC(),
 	}
 	if err := s.writeMeta(key, info); err != nil {
@@ -168,6 +176,7 @@ func (s *Local) stat(key, p string) (ObjectInfo, error) {
 	if meta, err := s.readMeta(key); err == nil {
 		info.ContentType = meta.ContentType
 		info.ETag = meta.ETag
+		info.Checksum = meta.Checksum
 	}
 	return info, nil
 }

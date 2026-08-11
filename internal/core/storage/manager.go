@@ -37,6 +37,9 @@ type StoredFile struct {
 	ContentType  string
 	Size         int64
 	ETag         string
+	// Checksum is the canonical BLAKE2b-256 digest of the payload,
+	// witnessed in the audit trail at upload time.
+	Checksum     string
 	CreatedBy    uuid.UUID
 	CreatedAt    types.DateTime
 }
@@ -162,6 +165,7 @@ func (m *FileManager) Upload(ctx context.Context, in UploadInput, data io.Reader
 		ContentType:  blob.ContentType,
 		Size:         blob.Size,
 		Etag:         blob.ETag,
+		Checksum:     blob.Checksum,
 		CreatedBy:    in.CreatedBy,
 	})
 	if err != nil {
@@ -292,6 +296,7 @@ func storedFileFromRow(row repository.StorageObject) *StoredFile {
 		ContentType:  row.ContentType,
 		Size:         row.Size,
 		ETag:         row.Etag,
+		Checksum:     row.Checksum,
 		CreatedBy:    row.CreatedBy,
 		CreatedAt:    row.CreatedAt,
 	}
