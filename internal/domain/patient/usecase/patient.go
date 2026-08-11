@@ -121,9 +121,12 @@ func (s *Service) Create(ctx context.Context, clinicID, createdBy string, in Pat
 	return &patient, nil
 }
 
-// GetWithCreator returns a patient with the registrar's email.
-func (s *Service) GetWithCreator(ctx context.Context, id string) (*repository.GetPatientWithCreatorRow, error) {
-	row, err := s.q.GetPatientWithCreator(ctx, uuid.MustParse(id))
+// GetWithCreator returns a patient with the registrar's email, scoped
+// to the clinic.
+func (s *Service) GetWithCreator(ctx context.Context, clinicID, id string) (*repository.GetPatientWithCreatorRow, error) {
+	row, err := s.q.GetPatientWithCreator(ctx, repository.GetPatientWithCreatorParams{
+		ID: uuid.MustParse(id), ClinicID: uuid.MustParse(clinicID),
+	})
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -133,9 +136,11 @@ func (s *Service) GetWithCreator(ctx context.Context, id string) (*repository.Ge
 	return &row, nil
 }
 
-// Get returns a patient by id.
-func (s *Service) Get(ctx context.Context, id string) (*repository.Patient, error) {
-	patient, err := s.q.GetPatientByID(ctx, uuid.MustParse(id))
+// Get returns a patient by id, scoped to the clinic.
+func (s *Service) Get(ctx context.Context, clinicID, id string) (*repository.Patient, error) {
+	patient, err := s.q.GetPatientByID(ctx, repository.GetPatientByIDParams{
+		ID: uuid.MustParse(id), ClinicID: uuid.MustParse(clinicID),
+	})
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -190,7 +195,8 @@ func (s *Service) SetStatus(ctx context.Context, clinicID, id string, status typ
 // by display name, together with the total match count.
 func (s *Service) ListPage(ctx context.Context, clinicID, q, status string, limit, offset int) ([]repository.Patient, int64, error) {
 	// The SQL pattern matches whole-word prefixes: the term must start a
-	// word in the name or a document/email value.
+	// word in the name or a document/email value. instr() matches the
+	// term literally, so LIKE wildcards in the input have no effect.
 	pattern := strings.TrimSpace(q)
 	rows, err := s.q.ListPatientsPage(ctx, repository.ListPatientsPageParams{
 		ClinicID: uuid.MustParse(clinicID), StatusEmpty: status, StatusFilter: status,

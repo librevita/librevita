@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"net/http"
-	"sort"
 	"strconv"
 	"strings"
 
@@ -15,17 +14,14 @@ import (
 	"librevita.org/internal/core/audit"
 	"librevita.org/internal/core/auth"
 	"librevita.org/internal/core/server"
+	"librevita.org/internal/core/storage"
 	"librevita.org/internal/domain/clinic"
 	"librevita.org/internal/domain/patient/delivery/views"
-	"librevita.org/internal/core/storage"
 	"librevita.org/internal/domain/patient/repository"
 	"librevita.org/internal/domain/patient/usecase"
 	"librevita.org/internal/types"
 	"librevita.org/internal/ui/components"
 )
-
-// utcMilliLayout matches the timestamps written by the database.
-const utcMilliLayout = "2006-01-02T15:04:05.000Z"
 
 const (
 	patientListLimit  = 50
@@ -111,7 +107,15 @@ func (h *Handler) Create(c echo.Context) error {
 // Detail renders the patient record with the registrar.
 func (h *Handler) Detail(c echo.Context) error {
 	ctx := c.Request().Context()
-	row, err := h.svc.GetWithCreator(ctx, c.Param("id"))
+	id, err := patientID(c)
+	if err != nil {
+		return err
+	}
+	clinicID, err := h.clinicID(ctx)
+	if err != nil {
+		return err
+	}
+	row, err := h.svc.GetWithCreator(ctx, clinicID, id.String())
 	if err != nil {
 		if errors.Is(err, usecase.ErrNotFound) {
 			return echo.NewHTTPError(http.StatusNotFound)
@@ -177,7 +181,15 @@ func historyText(ev audit.EventRow) string {
 // EditPage renders the edit form with the stored values.
 func (h *Handler) EditPage(c echo.Context) error {
 	ctx := c.Request().Context()
-	row, err := h.svc.GetWithCreator(ctx, c.Param("id"))
+	id, err := patientID(c)
+	if err != nil {
+		return err
+	}
+	clinicID, err := h.clinicID(ctx)
+	if err != nil {
+		return err
+	}
+	row, err := h.svc.GetWithCreator(ctx, clinicID, id.String())
 	if err != nil {
 		if errors.Is(err, usecase.ErrNotFound) {
 			return echo.NewHTTPError(http.StatusNotFound)
@@ -191,25 +203,28 @@ func (h *Handler) EditPage(c echo.Context) error {
 // Update applies the edited values and navigates to the detail page.
 func (h *Handler) Update(c echo.Context) error {
 	ctx := c.Request().Context()
-	id := c.Param("id")
-	input := h.input(c)
-	before, err := h.svc.GetWithCreator(ctx, id)
+	id, err := patientID(c)
 	if err != nil {
 		return err
 	}
+	input := h.input(c)
 	clinicID, err := h.clinicID(ctx)
+	if err != nil {
+		return err
+	}
+	before, err := h.svc.GetWithCreator(ctx, clinicID, id.String())
 	if err != nil {
 		return err
 	}
 	if err := h.authorizePatientEdit(c, uuidStrPtr(before.CreatedBy), before.ID.String(), types.PatientStatus(before.Status)); err != nil {
 		return err
 	}
-	patient, err := h.svc.Update(ctx, clinicID, id, input)
+	patient, err := h.svc.Update(ctx, clinicID, id.String(), input)
 	if err != nil {
 		var v *usecase.ValidationError
 		switch {
 		case errors.As(err, &v):
-			return h.formError(c, id, input, v.Msg)
+			return h.formError(c, id.String(), input, v.Msg)
 		case errors.Is(err, usecase.ErrNotFound):
 			return echo.NewHTTPError(http.StatusNotFound)
 		default:
@@ -300,21 +315,26 @@ func (h *Handler) BulkArchive(c echo.Context) error {
 		ids = ids[:maxBulkArchiveIDs]
 	}
 	archived := 0
-	for _, id := range ids {
-		pt, err := h.svc.Get(ctx, id)
+	for _, raw := range ids {
+		// A malformed id is skipped, never a panic mid-loop.
+		id, err := uuid.Parse(raw)
+		if err != nil {
+			continue
+		}
+		pt, err := h.svc.Get(ctx, clinicID, id.String())
 		if err != nil {
 			continue
 		}
 		if err := h.authorizePatientEdit(c, uuidStrPtr(pt.CreatedBy), pt.ID.String(), types.PatientStatus(pt.Status)); err != nil {
 			continue
 		}
-		if err := h.svc.SetStatus(ctx, clinicID, id, types.PatientStatusInactive); err == nil {
+		if err := h.svc.SetStatus(ctx, clinicID, id.String(), types.PatientStatusInactive); err == nil {
 			archived++
 			h.audit.Record(ctx, server.EventFromRequest(c, types.AuditResultSuccess,
-				"patient.status", "patient:"+id, "", types.PatientStatusInactive.String()))
+				"patient.status", "patient:"+id.String(), "", types.PatientStatusInactive.String()))
 		} else {
 			h.audit.Record(ctx, server.EventFromRequest(c, types.AuditResultFailure,
-				"patient.status", "patient:"+id, "", "bulk archive failed: "+err.Error()))
+				"patient.status", "patient:"+id.String(), "", "bulk archive failed: "+err.Error()))
 		}
 	}
 
@@ -333,25 +353,28 @@ func (h *Handler) BulkArchive(c echo.Context) error {
 
 func (h *Handler) setStatus(c echo.Context, status types.PatientStatus, successMsg string) error {
 	ctx := c.Request().Context()
-	id := c.Param("id")
+	id, err := patientID(c)
+	if err != nil {
+		return err
+	}
 	clinicID, err := h.clinicID(ctx)
 	if err != nil {
 		return err
 	}
-	pt, err := h.svc.Get(ctx, id)
+	pt, err := h.svc.Get(ctx, clinicID, id.String())
 	if err != nil {
 		return err
 	}
 	if err := h.authorizePatientEdit(c, uuidStrPtr(pt.CreatedBy), pt.ID.String(), types.PatientStatus(pt.Status)); err != nil {
 		return err
 	}
-	err = h.svc.SetStatus(ctx, clinicID, id, status)
+	err = h.svc.SetStatus(ctx, clinicID, id.String(), status)
 	if err == nil {
 		h.audit.Record(ctx, server.EventFromRequest(c, types.AuditResultSuccess,
-			"patient.status", "patient:"+id, "", status.String()))
+			"patient.status", "patient:"+id.String(), "", status.String()))
 	} else {
 		h.audit.Record(ctx, server.EventFromRequest(c, types.AuditResultFailure,
-			"patient.status", "patient:"+id, "", "could not set status "+status.String()))
+			"patient.status", "patient:"+id.String(), "", "could not set status "+status.String()))
 	}
 	if server.IsHtmx(c) {
 		if err != nil {
@@ -362,7 +385,7 @@ func (h *Handler) setStatus(c echo.Context, status types.PatientStatus, successM
 		// Re-render the row in place with the new status. The response
 		// must contain only the row: sibling elements would break the
 		// htmx fragment parser for table content.
-		patient, err := h.svc.Get(ctx, id)
+		patient, err := h.svc.Get(ctx, clinicID, id.String())
 		if err != nil {
 			return err
 		}
@@ -413,18 +436,18 @@ func (h *Handler) input(c echo.Context) usecase.PatientInput {
 	}
 }
 
-// nextLimit returns the limit for the Load more button: zero when the
-// page is exhausted or the sort order is not by name.
-func nextLimit(sortParam string, pageLimit int, hasMore bool) int {
-	if sortParam != "" && sortParam != "name" {
-		return 0
+// patientID parses the id path parameter; a value that is not a uuid is
+// a 404, not a panic.
+func patientID(c echo.Context) (uuid.UUID, error) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		return uuid.Nil, echo.NewHTTPError(http.StatusNotFound)
 	}
-	if !hasMore {
-		return 0
-	}
-	return pageLimit + patientListLimit
+	return id, nil
 }
 
+// formError renders the form fragment for htmx submissions and the full
+// page otherwise.
 func (h *Handler) rows(ctx context.Context, patients []repository.Patient) []views.PatientRow {
 	clock, err := h.userClock(ctx)
 	if err != nil {
@@ -501,29 +524,6 @@ func orEmpty(s *string) string {
 	return *s
 }
 
-// sort orders the rows by the sort query parameter:
-// name, -name, birth_date, -birth_date.
-func (h *Handler) sort(patients []repository.Patient, sortParam string) {
-	less := func(i, j int) bool {
-		return patients[i].DisplayName < patients[j].DisplayName
-	}
-	switch sortParam {
-	case "-name":
-		less = func(i, j int) bool {
-			return patients[i].DisplayName > patients[j].DisplayName
-		}
-	case "birth_date":
-		less = func(i, j int) bool {
-			return orEmpty(patients[i].BirthDate) < orEmpty(patients[j].BirthDate)
-		}
-	case "-birth_date":
-		less = func(i, j int) bool {
-			return orEmpty(patients[i].BirthDate) > orEmpty(patients[j].BirthDate)
-		}
-	}
-	sort.SliceStable(patients, less)
-}
-
 // formError renders the form fragment for htmx submissions and the full
 // page otherwise.
 func (h *Handler) formError(c echo.Context, id string, input usecase.PatientInput, msg string) error {
@@ -548,7 +548,13 @@ func (h *Handler) CheckDocument(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-	exists, err := h.svc.DocumentExists(c.Request().Context(), clinicID, document, c.FormValue("id"))
+	excludeID := strings.TrimSpace(c.FormValue("id"))
+	if excludeID != "" {
+		if _, err := uuid.Parse(excludeID); err != nil {
+			return echo.NewHTTPError(http.StatusBadRequest, "invalid patient id")
+		}
+	}
+	exists, err := h.svc.DocumentExists(c.Request().Context(), clinicID, document, excludeID)
 	if err != nil {
 		return err
 	}

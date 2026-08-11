@@ -132,7 +132,11 @@ func (h *Handler) patientOr404(c echo.Context) (*repository.Patient, error) {
 	if err != nil {
 		return nil, echo.NewHTTPError(http.StatusNotFound)
 	}
-	pt, err := h.svc.Get(ctx, id.String())
+	clinicID, err := h.clinicID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	pt, err := h.svc.Get(ctx, clinicID, id.String())
 	if errors.Is(err, usecase.ErrNotFound) {
 		return nil, echo.NewHTTPError(http.StatusNotFound)
 	}

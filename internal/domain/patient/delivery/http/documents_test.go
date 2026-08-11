@@ -53,6 +53,10 @@ func newDocEnv(t *testing.T) (*echo.Echo, *auth.SessionManager, *usecase.Service
 		t.Fatal(err)
 	}
 	csrf := auth.NewCSRF(&config.Config{Env: "development"})
+	if _, err := db.Exec(`INSERT INTO clinics (id, name, tax_id) VALUES
+		('01990000-0000-7000-8000-0000000000d0', 'Test Clinic', '000.000.000-00')`); err != nil {
+		t.Fatalf("seed clinic: %v", err)
+	}
 	if _, err := db.Exec(`INSERT INTO users (id, email, password_hash, display_name, role_id)
 		VALUES ('01990000-0000-7000-8000-00000000000a', 'admin@example.org', 'x', 'Admin',
 		(SELECT id FROM roles WHERE name = 'admin'))`); err != nil {
