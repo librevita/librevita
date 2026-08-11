@@ -1,6 +1,8 @@
 package views
 
 import (
+	"strconv"
+
 	"librevita.org/internal/ui/shared"
 	"librevita.org/internal/core/auth"
 	"librevita.org/internal/domain/patient/repository"
@@ -161,7 +163,7 @@ type HistoryRow struct {
 
 // PatientDetailPage renders the patient record with the registrar and
 // the change history.
-templ PatientDetailPage(token string, p *auth.Principal, pt *repository.GetPatientWithCreatorRow, createdAt, updatedAt, createdBy string, history []HistoryRow, errMsg string) {
+templ PatientDetailPage(token string, p *auth.Principal, pt *repository.GetPatientWithCreatorRow, createdAt, updatedAt, createdBy string, history []HistoryRow, docs []DocumentRow, errMsg string) {
 	@layouts.App("Patient", token, p, "patients") {
 		<div class="mx-auto max-w-4xl p-4 lg:p-6">
 			@components.Card() {
@@ -217,7 +219,56 @@ templ PatientDetailPage(token string, p *auth.Principal, pt *repository.GetPatie
 					</div>
 				}
 			}
+			<section class="mt-4 rounded-lg border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+				<div class="flex items-center justify-between gap-4">
+					<div>
+						<h3 class="text-base font-semibold text-gray-900 dark:text-white">Documents</h3>
+						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Clinical attachments of this patient. Every download is audited.</p>
+					</div>
+					@components.Badge(strconv.Itoa(len(docs)))
+				</div>
+				<ul class="mt-4 divide-y divide-gray-200 dark:divide-gray-700">
+					for _, doc := range docs {
+						<li class="flex items-center gap-4 py-3">
+							<svg class="h-8 w-8 shrink-0 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+								<path stroke-linecap="round" stroke-linejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+							</svg>
+							<div class="min-w-0 flex-1">
+								<p class="truncate text-sm font-medium text-gray-900 dark:text-white">{ doc.OriginalName }</p>
+								<p class="text-xs text-gray-500 dark:text-gray-400">{ formatSize(doc.Size) } · { doc.UploadedAt }</p>
+							</div>
+							@components.ButtonLink("secondary", "/patients/" + pt.ID.String() + "/documents/" + doc.ID, "Download", templ.Attributes{ "download": "" })
+						</li>
+					}
+				</ul>
+				<form method="post" enctype="multipart/form-data" action={ "/patients/" + pt.ID.String() + "/documents" } class="mt-4 flex flex-wrap items-center gap-3 border-t border-gray-200 pt-4 dark:border-gray-700">
+					<input type="hidden" name="_csrf" value={ token }>
+					<input type="file" name="file" class="block w-full max-w-sm text-sm text-gray-700 file:mr-3 file:rounded-lg file:border-0 file:bg-indigo-600 file:px-4 file:py-2 file:text-sm file:font-medium file:text-white hover:file:bg-indigo-700 dark:text-gray-300 dark:file:bg-indigo-500" required>
+					@components.Button("primary", "Upload", templ.Attributes{ "type": "submit" })
+				</form>
+			</section>
 		</div>
+	}
+}
+
+// DocumentRow is one attachment of the patient documents list.
+type DocumentRow struct {
+	ID           string
+	OriginalName string
+	ContentType  string
+	Size         int64
+	UploadedAt   string
+}
+
+// formatSize renders a byte count in a human-readable unit.
+func formatSize(size int64) string {
+	switch {
+	case size >= 1<<20:
+		return strconv.FormatInt(size>>20, 10) + " MB"
+	case size >= 1<<10:
+		return strconv.FormatInt(size>>10, 10) + " KB"
+	default:
+		return strconv.FormatInt(size, 10) + " B"
 	}
 }
 
