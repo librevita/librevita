@@ -47,6 +47,11 @@ var (
 	testResource = uuid.MustParse("01990000-0000-7000-8000-0000000000b0")
 )
 
+// privateKey mirrors the FileManager key layout for private domains.
+func privateKey(domain string, resourceID, id uuid.UUID) string {
+	return "private/" + domain + "/" + resourceID.String() + "/" + id.String()
+}
+
 func uploadInput() UploadInput {
 	return UploadInput{
 		Domain:       "patient_document",
@@ -70,8 +75,8 @@ func TestFileManagerUploadGetListDelete(t *testing.T) {
 	if meta.OriginalName != "prescription.pdf" || meta.Size != 3 || meta.ETag == "" {
 		t.Errorf("meta = %+v", meta)
 	}
-	if !strings.HasPrefix(meta.Key, "patient_document/") {
-		t.Errorf("key %q must live under the domain namespace", meta.Key)
+	if !strings.HasPrefix(meta.Key, "private/patient_document/") {
+		t.Errorf("key %q must live under the private class and domain namespace", meta.Key)
 	}
 
 	got, err := m.Get(ctx, meta.ID)
@@ -122,7 +127,7 @@ func TestFileManagerUploadCompensation(t *testing.T) {
 	// constraint.
 	fixed := uuid.MustParse("01990000-0000-7000-8000-0000000000c1")
 	m.newID = func() (uuid.UUID, error) { return fixed, nil }
-	key := "patient_document/" + testResource.String() + "/" + fixed.String()
+	key := privateKey("patient_document", testResource, fixed)
 	_, err := m.q.CreateStorageObject(ctx, repository.CreateStorageObjectParams{
 		ID:  uuid.MustParse("01990000-0000-7000-8000-0000000000c2"),
 		Key: key, Domain: "patient_document", ResourceID: testResource,
@@ -154,7 +159,7 @@ func TestFileManagerReconcile(t *testing.T) {
 	}
 	// Simulate the crash window: blob present, index row gone. The blob
 	// must be older than the grace period or the reconciler keeps it.
-	orphanKey := "patient_document/" + testResource.String() + "/" + uuid.NewString()
+	orphanKey := privateKey("patient_document", testResource, uuid.Must(uuid.NewV7()))
 	if _, err := store.Put(ctx, orphanKey, strings.NewReader("lost"), 4, "text/plain"); err != nil {
 		t.Fatal(err)
 	}
@@ -201,8 +206,8 @@ func TestFileManagerReconcileGracePeriod(t *testing.T) {
 	m, store := testManager(t)
 	ctx := context.Background()
 
-	freshKey := "patient_document/" + testResource.String() + "/fresh"
-	oldKey := "patient_document/" + testResource.String() + "/old"
+	freshKey := privateKey("patient_document", testResource, uuid.Must(uuid.NewV7()))
+	oldKey := privateKey("patient_document", testResource, uuid.Must(uuid.NewV7()))
 	if _, err := store.Put(ctx, freshKey, strings.NewReader("fresh"), 5, "text/plain"); err != nil {
 		t.Fatal(err)
 	}
@@ -232,7 +237,7 @@ func TestFileManagerReconcileZeroTimestamp(t *testing.T) {
 	m, store := testManager(t)
 	ctx := context.Background()
 
-	key := "patient_document/" + testResource.String() + "/zero"
+	key := privateKey("patient_document", testResource, uuid.Must(uuid.NewV7()))
 	if _, err := store.Put(ctx, key, strings.NewReader("x"), 1, "text/plain"); err != nil {
 		t.Fatal(err)
 	}
@@ -253,5 +258,62 @@ func TestFileManagerReconcileZeroTimestamp(t *testing.T) {
 	}
 	if _, err := store.Stat(ctx, key); err != nil {
 		t.Errorf("zero-timestamp blob lost: %v", err)
+	}
+}
+
+// TestFileManagerAccessClass asserts the class is derived from the
+// domain: avatars are public, clinical attachments private.
+func TestFileManagerAccessClass(t *testing.T) {
+	m, _ := testManager(t)
+	ctx := context.Background()
+
+	avatar, err := m.Upload(ctx, UploadInput{
+		Domain: "avatar", ResourceID: testResource,
+		OriginalName: "photo.png", ContentType: "image/png", CreatedBy: testOwner,
+	}, strings.NewReader("img"), 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(avatar.Key, "public/avatar/") {
+		t.Errorf("avatar key = %q, want public class", avatar.Key)
+	}
+
+	doc, err := m.Upload(ctx, uploadInput(), strings.NewReader("pdf"), 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(doc.Key, "private/patient_document/") {
+		t.Errorf("document key = %q, want private class", doc.Key)
+	}
+}
+
+// TestFileManagerGetForResource enforces belonging: an object id alone
+// must never resolve a file of another resource (IDOR protection).
+func TestFileManagerGetForResource(t *testing.T) {
+	m, _ := testManager(t)
+	ctx := context.Background()
+
+	other := uuid.MustParse("01990000-0000-7000-8000-0000000000c0")
+	meta, err := m.Upload(ctx, uploadInput(), strings.NewReader("pdf"), 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// The owning resource resolves the file.
+	got, err := m.GetForResource(ctx, "patient_document", testResource, meta.ID)
+	if err != nil || got.ID != meta.ID {
+		t.Errorf("GetForResource owner = %v, %v; want the file", got, err)
+	}
+	// A different resource never resolves it.
+	if _, err := m.GetForResource(ctx, "patient_document", other, meta.ID); !IsNotFound(err) {
+		t.Errorf("GetForResource other resource = %v, want ErrNotFound", err)
+	}
+	// A different domain never resolves it either.
+	if _, err := m.GetForResource(ctx, "avatar", testResource, meta.ID); !IsNotFound(err) {
+		t.Errorf("GetForResource other domain = %v, want ErrNotFound", err)
+	}
+	// OpenForResource follows the same belonging rule.
+	if _, _, err := m.OpenForResource(ctx, "patient_document", other, meta.ID); !IsNotFound(err) {
+		t.Errorf("OpenForResource other resource = %v, want ErrNotFound", err)
 	}
 }

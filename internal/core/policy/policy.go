@@ -76,6 +76,13 @@ var DefaultPolicies = map[string]string{
 	// admin edits anything, a physician only the patients they registered
 	// (resource.created_by). Enforced in the patient use cases.
 	"patient.edit": `principal.role == 'admin' || (principal.role == 'physician' && resource.created_by == principal.id)`,
+
+	// Clinical file attachments: reading is open to the clinical roles,
+	// writing is restricted to admins and physicians. Belonging to the
+	// patient is enforced per request (domain + resource), so a bare
+	// file id never resolves an attachment of another patient.
+	"patient.document.read":  `principal.role in ['admin', 'physician', 'receptionist']`,
+	"patient.document.write": `principal.role in ['admin', 'physician']`,
 }
 
 // RequestInfo is the request side of the policy evaluation context.

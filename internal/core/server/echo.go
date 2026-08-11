@@ -56,7 +56,14 @@ func New(csrf *auth.CSRF, cfg *config.Config) *echo.Echo {
 	// Same-origin application; no CORS is configured. Do not add a
 	// permissive CORS middleware for future authenticated endpoints.
 	e.Use(SecurityHeaders)
-	e.Use(middleware.BodyLimit("1M"))
+	e.Use(middleware.BodyLimitWithConfig(middleware.BodyLimitConfig{
+		Limit: "1M",
+		// File uploads have their own per-route limit; the document
+		// routes raise the cap themselves.
+		Skipper: func(c echo.Context) bool {
+			return c.Path() == "/patients/:id/documents"
+		},
+	}))
 	e.Use(CSRFMiddleware(csrf))
 
 	// Read timeouts protect against slow-loris attacks. WriteTimeout stays

@@ -72,11 +72,64 @@ func NewFileManager(db *sql.DB, store Store, log *slog.Logger) (*FileManager, er
 	return &FileManager{store: store, q: repository.New(db), log: log, newID: uuid.NewV7}, nil
 }
 
+// Access classes of stored files. Public files (avatars) are meant for
+// broad authenticated use; private files (clinical attachments) carry
+// patient data and are protected by resource policies and access
+// auditing. The class is derived from the domain, never chosen by the
+// caller, so a sensitive file cannot be stored as public.
+const (
+	ClassPublic  = "public"
+	ClassPrivate = "private"
+)
+
+// publicDomains maps the domains whose files are public-class. Every
+// other domain is private by default: adding a new attachment kind
+// requires an explicit opt-in here.
+var publicDomains = map[string]bool{
+	"avatar": true,
+}
+
 // objectKey derives the blob-store key from the index identity. The id
 // is the object's own UUIDv7, so keys are unique, temporally sortable
-// and never expose the original file name.
+// and never expose the original file name. The access class prefixes
+// the key, separating public and private files physically.
 func (m *FileManager) objectKey(domain string, resourceID, id uuid.UUID) string {
-	return domain + "/" + resourceID.String() + "/" + id.String()
+	class := ClassPrivate
+	if publicDomains[domain] {
+		class = ClassPublic
+	}
+	return class + "/" + domain + "/" + resourceID.String() + "/" + id.String()
+}
+
+// GetForResource resolves an object only when it belongs to the given
+// domain and resource. A bare id is never enough to reach a file, so a
+// caller who knows an attachment id of another patient cannot fetch it
+// (IDOR protection).
+func (m *FileManager) GetForResource(ctx context.Context, domain string, resourceID, id uuid.UUID) (*StoredFile, error) {
+	row, err := m.q.GetStorageObjectByResourceAndID(ctx, repository.GetStorageObjectByResourceAndIDParams{
+		Domain: domain, ResourceID: resourceID, ID: id,
+	})
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("storage: get index by resource: %w", err)
+	}
+	return storedFileFromRow(row), nil
+}
+
+// OpenForResource returns the metadata and blob of an object that
+// belongs to the given resource. The caller must close the Object.
+func (m *FileManager) OpenForResource(ctx context.Context, domain string, resourceID, id uuid.UUID) (*StoredFile, *Object, error) {
+	meta, err := m.GetForResource(ctx, domain, resourceID, id)
+	if err != nil {
+		return nil, nil, err
+	}
+	obj, err := m.store.Get(ctx, meta.Key)
+	if err != nil {
+		return nil, nil, err
+	}
+	return meta, obj, nil
 }
 
 // Upload stores data in the blob store and registers the master-index

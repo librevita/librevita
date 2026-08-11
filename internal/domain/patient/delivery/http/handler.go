@@ -17,6 +17,7 @@ import (
 	"librevita.org/internal/core/server"
 	"librevita.org/internal/domain/clinic"
 	"librevita.org/internal/domain/patient/delivery/views"
+	"librevita.org/internal/core/storage"
 	"librevita.org/internal/domain/patient/repository"
 	"librevita.org/internal/domain/patient/usecase"
 	"librevita.org/internal/types"
@@ -37,12 +38,13 @@ type Handler struct {
 	clocks *clinic.ClockProvider
 	csrf   *auth.CSRF
 	audit  *audit.Logger
+	files  *storage.FileManager
 }
 
 // NewHandler is the Fx provider.
 func NewHandler(svc *usecase.Service, clocks *clinic.ClockProvider,
-	csrf *auth.CSRF, auditLogger *audit.Logger) *Handler {
-	return &Handler{svc: svc, clocks: clocks, csrf: csrf, audit: auditLogger}
+	csrf *auth.CSRF, auditLogger *audit.Logger, files *storage.FileManager) *Handler {
+	return &Handler{svc: svc, clocks: clocks, csrf: csrf, audit: auditLogger, files: files}
 }
 
 // List renders the registry page or, for htmx requests, only the table
@@ -125,10 +127,14 @@ func (h *Handler) Detail(c echo.Context) error {
 	if err != nil {
 		return err
 	}
+	docs, err := h.documentRows(ctx, row.ID)
+	if err != nil {
+		return err
+	}
 	return server.Render(c, http.StatusOK, views.PatientDetailPage(
 		server.CSRFToken(c, h.csrf), server.Principal(c), row,
 		clock.FormatStored(row.CreatedAt), clock.FormatStored(row.UpdatedAt), createdBy,
-		h.historyView(events, clock), ""))
+		h.historyView(events, clock), docs, ""))
 }
 
 // historyView turns audit events into display rows, newest first, with

@@ -39,3 +39,11 @@ WHERE id = ?;
 -- name: DeleteStorageObjectsByResource :exec
 DELETE FROM storage_objects
 WHERE domain = ? AND resource_id = ?;
+
+-- name: GetStorageObjectByResourceAndID :one
+-- Belonging check: resolves an object only when it belongs to the
+-- given domain and resource, so a bare object id is never enough to
+-- reach a file (IDOR protection).
+SELECT * FROM storage_objects
+WHERE domain = ? AND resource_id = ? AND id = ?
+LIMIT 1;

@@ -4,6 +4,7 @@ import (
 	"log/slog"
 
 	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v4/middleware"
 	"go.uber.org/fx"
 
 	"librevita.org/internal/core/audit"
@@ -42,4 +43,20 @@ func registerRoutes(e *echo.Echo, h *httphandler.Handler, gate server.SetupGate,
 	e.POST("/patients/:id/archive", h.Archive, view...)
 	e.POST("/patients/:id/restore", h.Restore, view...)
 	e.POST("/patients/bulk-archive", h.BulkArchive, view...)
+
+	// Clinical attachments. Belonging to the patient is enforced per
+	// request (domain + resource), so a bare file id never resolves an
+	// attachment of another patient (IDOR). The upload route raises the
+	// global 1 MiB body limit to the document cap.
+	read := []echo.MiddlewareFunc{
+		gate(), server.RequireAuth(sessions, log),
+		server.RequirePolicy(policies, auditLogger, log, "patient.document.read"),
+	}
+	write := []echo.MiddlewareFunc{
+		gate(), server.RequireAuth(sessions, log),
+		server.RequirePolicy(policies, auditLogger, log, "patient.document.write"),
+		middleware.BodyLimit("25M"),
+	}
+	e.POST("/patients/:id/documents", h.UploadDocument, write...)
+	e.GET("/patients/:id/documents/:fileID", h.DownloadDocument, read...)
 }
