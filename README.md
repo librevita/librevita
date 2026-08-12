@@ -1,5 +1,7 @@
 # LibreVita
 
+[![CI](https://github.com/librevita/librevita/actions/workflows/ci.yaml/badge.svg)](https://github.com/librevita/librevita/actions/workflows/ci.yaml)
+
 Self-hosted medical clinic management software built in Go. The module path is `librevita.org`.
 
 ## Requirements
