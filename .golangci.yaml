@@ -13,7 +13,15 @@ linters:
   default: standard
   enable:
     - misspell
+    - gosec
+    - bodyclose
+    - sloglint
   settings:
+    gosec:
+      # G104 duplicates errcheck (which already allows the idiomatic
+      # close/rollback defers via exclude-functions).
+      excludes:
+        - G104
     errcheck:
       # Defers of Close/Rollback/Remove are cleanup paths whose error is
       # not actionable at that point; the standard library idiom.
