@@ -1,6 +1,8 @@
 package patient
 
 import (
+	"context"
+	"database/sql"
 	"log/slog"
 
 	"github.com/labstack/echo/v4"
@@ -12,15 +14,33 @@ import (
 	"librevita.org/internal/core/policy"
 	"librevita.org/internal/core/server"
 	httphandler "librevita.org/internal/domain/patient/delivery/http"
+	"librevita.org/internal/domain/patient/identifier"
 	"librevita.org/internal/domain/patient/usecase"
 )
 
-// Module provides the patient registry: service, handlers, and routes.
+// Module provides the patient registry: service, handlers, and routes,
+// plus the identifier subsystem (FHIR-style systems and encrypted
+// patient documents).
 var Module = fx.Module("patient",
 	fx.Provide(usecase.NewService),
+	fx.Provide(identifier.NewRegistry),
+	fx.Provide(identifier.NewSystemsService),
+	fx.Provide(identifier.NewService),
+	fx.Invoke(loadIdentifierSystems),
 	fx.Provide(httphandler.NewHandler),
 	fx.Invoke(registerRoutes),
 )
+
+// loadIdentifierSystems fills the registry at boot. The seeded systems
+// (or whatever an operator configured) are then immediately usable.
+func loadIdentifierSystems(db *sql.DB, reg *identifier.Registry, log *slog.Logger) error {
+	rows, err := identifier.LoadActiveSystems(context.Background(), db)
+	if err != nil {
+		log.Error("identifier: load systems", "error", err)
+		return err
+	}
+	return reg.Reload(rows)
+}
 
 func registerRoutes(e *echo.Echo, h *httphandler.Handler, gate server.SetupGate,
 	sessions *auth.SessionManager, policies *policy.PolicyEngine,
