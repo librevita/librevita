@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"log/slog"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
@@ -233,5 +234,39 @@ func TestSessionManagerKeyBoundary(t *testing.T) {
 	}
 	if !m.secure {
 		t.Fatal("non-development cookies must use Secure")
+	}
+}
+
+// TestSessionCookieAttributes pins the cookie security contract that
+// gosec G124 cannot see: HttpOnly and SameSite are always on, and
+// Secure follows the environment (dev runs without TLS).
+func TestSessionCookieAttributes(t *testing.T) {
+	db := openTestDB(t)
+	log := slog.New(slog.DiscardHandler)
+
+	dev, err := NewSessionManager(db, &config.Config{Env: "development"}, log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prod, err := NewSessionManager(db, &config.Config{
+		Env: "production", PasetoKey: base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{0x42}, 32)),
+	}, log)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for name, m := range map[string]*SessionManager{"development": dev, "production": prod} {
+		for _, c := range []*http.Cookie{m.Cookie("token"), m.ClearCookie()} {
+			if !c.HttpOnly {
+				t.Fatalf("%s: session cookie must be HttpOnly", name)
+			}
+			if c.SameSite != http.SameSiteLaxMode {
+				t.Fatalf("%s: session cookie must be SameSite=Lax", name)
+			}
+			wantSecure := name == "production"
+			if c.Secure != wantSecure {
+				t.Fatalf("%s: Secure = %v, want %v", name, c.Secure, wantSecure)
+			}
+		}
 	}
 }

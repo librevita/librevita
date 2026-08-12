@@ -199,7 +199,7 @@ func TestConcurrentRegistrationCreatesNoAdmins(t *testing.T) {
 		go func(i int) {
 			defer wg.Done()
 			input := validInput()
-			input.Email = "user" + string(rune('a'+i)) + "@example.org"
+			input.Email = "user" + string(rune('a'+i)) + "@example.org" // #nosec G115 -- bounded loop counter
 			_, _, errs[i] = svc.Register(context.Background(), input)
 		}(i)
 	}
@@ -361,7 +361,7 @@ func TestConcurrentOnboardSingleWinner(t *testing.T) {
 		go func(i int) {
 			defer wg.Done()
 			input := validInput()
-			input.Email = "admin" + string(rune('a'+i)) + "@example.org"
+			input.Email = "admin" + string(rune('a'+i)) + "@example.org" // #nosec G115 -- bounded loop counter
 			_, _, errs[i] = svc.Onboard(context.Background(), input, validClinicInput())
 		}(i)
 	}

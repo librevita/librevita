@@ -234,21 +234,23 @@ func TestAvatarRejectsNonImage(t *testing.T) {
 // dimensions, for the decompression-bomb test.
 func pngWithSize(t *testing.T, w, h uint32) []byte {
 	t.Helper()
+	// #nosec G115 -- intentional byte truncation while hand-crafting a
+	// PNG fixture.
 	sig := []byte{0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a}
 	ihdr := make([]byte, 13)
-	ihdr[0], ihdr[1], ihdr[2], ihdr[3] = byte(w>>24), byte(w>>16), byte(w>>8), byte(w)
-	ihdr[4], ihdr[5], ihdr[6], ihdr[7] = byte(h>>24), byte(h>>16), byte(h>>8), byte(h)
+	ihdr[0], ihdr[1], ihdr[2], ihdr[3] = byte(w>>24), byte(w>>16), byte(w>>8), byte(w) // #nosec G115 -- PNG fixture bytes
+	ihdr[4], ihdr[5], ihdr[6], ihdr[7] = byte(h>>24), byte(h>>16), byte(h>>8), byte(h) // #nosec G115 -- PNG fixture bytes
 	ihdr[8], ihdr[9], ihdr[10], ihdr[11], ihdr[12] = 8, 2, 0, 0, 0
 	chunk := func(tag string, data []byte) []byte {
 		b := make([]byte, 8+len(data)+4)
-		b[0], b[1], b[2], b[3] = byte(len(data)>>24), byte(len(data)>>16), byte(len(data)>>8), byte(len(data))
+		b[0], b[1], b[2], b[3] = byte(len(data)>>24), byte(len(data)>>16), byte(len(data)>>8), byte(len(data)) // #nosec G115 -- PNG fixture bytes
 		copy(b[4:], tag)
 		copy(b[8:], data)
 		crc := crc32IEEE(tag, data)
-		b[len(b)-4] = byte(crc >> 24)
-		b[len(b)-3] = byte(crc >> 16)
-		b[len(b)-2] = byte(crc >> 8)
-		b[len(b)-1] = byte(crc)
+		b[len(b)-4] = byte(crc >> 24) // #nosec G115 -- PNG fixture bytes
+		b[len(b)-3] = byte(crc >> 16) // #nosec G115 -- PNG fixture bytes
+		b[len(b)-2] = byte(crc >> 8)  // #nosec G115 -- PNG fixture bytes
+		b[len(b)-1] = byte(crc)       // #nosec G115 -- PNG fixture bytes
 		return b
 	}
 	out := append(sig, chunk("IHDR", ihdr)...)

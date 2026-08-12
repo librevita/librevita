@@ -178,6 +178,8 @@ func (m *SessionManager) Destroy(ctx context.Context, token string) error {
 }
 
 // Cookie builds the session cookie for token.
+// #nosec G124 -- Secure is conditional on the environment (dev runs
+// without TLS); HttpOnly and SameSite are set.
 func (m *SessionManager) Cookie(token string) *http.Cookie {
 	return &http.Cookie{
 		Name:     SessionCookieName,
@@ -191,6 +193,8 @@ func (m *SessionManager) Cookie(token string) *http.Cookie {
 }
 
 // ClearCookie returns the cookie that expires the session cookie.
+// #nosec G124 -- Secure is conditional on the environment (dev runs
+// without TLS); HttpOnly and SameSite are set.
 func (m *SessionManager) ClearCookie() *http.Cookie {
 	return &http.Cookie{
 		Name:     SessionCookieName,

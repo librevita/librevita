@@ -74,7 +74,7 @@ func main() {
 	if err := os.MkdirAll(dirOf(*out), 0o750); err != nil {
 		fatal("create output dir: %v", err)
 	}
-	if err := os.WriteFile(*out, []byte(b.String()), 0o640); err != nil {
+	if err := os.WriteFile(*out, []byte(b.String()), 0o600); err != nil {
 		fatal("write %s: %v", *out, err)
 	}
 	fmt.Printf("schema written to %s\n", *out)

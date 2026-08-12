@@ -39,14 +39,18 @@ func (c *CSRF) NewToken() string {
 	return hex.EncodeToString(buf)
 }
 
-// Cookie returns the CSRF cookie descriptor for token. It is not HttpOnly so
-// that HTMX and fetch can read it for the X-CSRF-Token header.
+// Cookie returns the CSRF cookie descriptor for token. The token is
+// also rendered in a meta tag (and the form hidden fields), so the
+// cookie can stay HttpOnly: the browser sends it back on every request
+// and the server compares it against the submitted header or field.
+// #nosec G124 -- Secure is conditional on the environment (dev runs
+// without TLS); HttpOnly and SameSite are set.
 func (c *CSRF) Cookie(token string) *http.Cookie {
 	return &http.Cookie{
 		Name:     CSRFCookieName,
 		Value:    token,
 		Path:     "/",
-		HttpOnly: false,
+		HttpOnly: true,
 		Secure:   c.secure,
 		SameSite: http.SameSiteLaxMode,
 	}

@@ -115,5 +115,7 @@ func decodeHash(hash string) (memory, time uint32, threads uint8, keyLen uint32,
 		return 0, 0, 0, 0, nil, nil, errInvalidHash
 	}
 
+	// #nosec G115 -- the equality check above pins the params to the
+	// binary's constants, so the narrowing casts cannot overflow.
 	return uint32(params[0]), uint32(params[1]), uint8(params[2]), uint32(len(key)), salt, key, nil
 }
