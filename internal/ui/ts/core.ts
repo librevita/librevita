@@ -2,17 +2,6 @@
 // Core bootstrap shared by the component modules: htmx hardening, the
 // CSRF header, and focus management.
 
-export function readCookie(name: string): string {
-  const parts = document.cookie.split(';');
-  for (let i = 0; i < parts.length; i++) {
-    const entry = parts[i].trim();
-    if (entry.indexOf(name + '=') === 0) {
-      return entry.substring(name.length + 1);
-    }
-  }
-  return '';
-}
-
 // Hardens htmx: fail closed on dynamic evaluation and never accept
 // scripts from swapped fragments.
 export function configureHtmx(): void {
@@ -22,10 +11,13 @@ export function configureHtmx(): void {
 }
 
 // Forwards the double-submit CSRF token on every state-changing request.
+// The token comes from the server-rendered meta tag, never from the
+// cookie (which is HttpOnly).
 export function forwardCsrf(): void {
   document.addEventListener('htmx:configRequest', (evt) => {
     const detail = (evt as CustomEvent<HtmxRequestDetail>).detail;
-    const token = readCookie('lv_csrf');
+    const meta = document.querySelector('meta[name="csrf-token"]');
+    const token = meta?.getAttribute('content') ?? '';
     if (token) {
       detail.headers['X-CSRF-Token'] = token;
     }

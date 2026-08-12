@@ -16,7 +16,12 @@ func newCSRFTestEcho(t *testing.T, csrf *auth.CSRF) *echo.Echo {
 	t.Helper()
 	e := echo.New()
 	e.Use(CSRFMiddleware(csrf))
-	e.GET("/", func(c echo.Context) error { return c.String(http.StatusOK, "ok") })
+	// Like a real page: the GET renders the token, which is what issues
+	// the cookie.
+	e.GET("/", func(c echo.Context) error {
+		_ = CSRFToken(c, csrf)
+		return c.String(http.StatusOK, "ok")
+	})
 	e.POST("/", func(c echo.Context) error { return c.String(http.StatusOK, "ok") })
 	return e
 }
@@ -50,15 +55,20 @@ func cookieValue(cookies []*http.Cookie, name string) string {
 	return ""
 }
 
-func TestCSRFIssuesCookieOnGET(t *testing.T) {
-	e := newCSRFTestEcho(t, testCSRF())
+func TestCSRFGetDoesNotIssueCookie(t *testing.T) {
+	// The cookie is created only when a page renders the token
+	// (CSRFToken), so no page ever sees two different tokens. This
+	// endpoint renders nothing, so no cookie is issued.
+	e := echo.New()
+	e.Use(CSRFMiddleware(testCSRF()))
+	e.GET("/", func(c echo.Context) error { return c.String(http.StatusOK, "ok") })
 
 	rec, cookies := doRequest(e, http.MethodGet, "/", "", nil, "")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("GET status = %d, want 200", rec.Code)
 	}
-	if cookieValue(cookies, auth.CSRFCookieName) == "" {
-		t.Fatal("GET did not set the CSRF cookie")
+	if cookieValue(cookies, auth.CSRFCookieName) != "" {
+		t.Fatal("GET must not set the CSRF cookie on its own")
 	}
 }
 

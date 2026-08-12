@@ -32,7 +32,7 @@ func newProductionSink(cfg config.LoggingConfig) (zapcore.WriteSyncer, *LogSink,
 		if err := ensureLogDir(cfg.Path); err != nil {
 			return nil, nil, err
 		}
-		file, err := os.OpenFile(cfg.Path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
+		file, err := os.OpenFile(cfg.Path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 		if err != nil {
 			return nil, nil, err
 		}

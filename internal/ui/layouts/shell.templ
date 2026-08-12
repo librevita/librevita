@@ -9,7 +9,7 @@ import (
 // the page content, following the flowbite admin dashboard. Interactions
 // are progressive enhancements only; navigation is plain links.
 templ App(title string, token string, principal *auth.Principal, active string) {
-	@Base(title, themeOf(principal)) {
+	@Base(title, themeOf(principal), token) {
 		<div class="flex h-full flex-col">
 			@Topbar(title, token, principal)
 			<div class="flex min-h-0 flex-1">

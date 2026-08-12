@@ -6,14 +6,19 @@ import (
 
 // Base is the bare document shell used by the anonymous pages (login,
 // registration, setup). The UI theme comes from the authenticated
-// shell; anonymous pages always follow the system scheme.
-templ Base(title string, theme types.UITheme) {
+// shell; anonymous pages always follow the system scheme. The CSRF
+// token rides in a meta tag so the JS can forward it on HTMX requests
+// without reading the cookie (which is HttpOnly).
+templ Base(title string, theme types.UITheme, token string) {
 	<!DOCTYPE html>
 	<html lang="en" data-ui-theme={ theme.String() } class={ "h-full" + darkClass(theme) }>
 		<head>
 			<meta charset="utf-8">
 			<meta name="viewport" content="width=device-width, initial-scale=1">
 			<title>{ title } - LibreVita</title>
+			if token != "" {
+				<meta name="csrf-token" content={ token }>
+			}
 			<script src="/static/js/theme.js"></script>
 			<link rel="stylesheet" href="/static/css/app.css">
 			<script src="/static/js/htmx-1.9.12.min.js" defer></script>

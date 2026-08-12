@@ -15,7 +15,9 @@ const (
 
 // CSRFMiddleware protects state-changing requests with the double-submit
 // cookie pattern. Forms must include the token in the _csrf field; HTMX and
-// fetch requests may send it in the X-CSRF-Token header.
+// fetch requests may send it in the X-CSRF-Token header. The cookie is
+// created only by CSRFToken (when a page renders), so every issued token
+// matches the cookie the browser stores.
 func CSRFMiddleware(c *auth.CSRF) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(ctx echo.Context) error {
@@ -26,12 +28,7 @@ func CSRFMiddleware(c *auth.CSRF) echo.MiddlewareFunc {
 
 			switch ctx.Request().Method {
 			case http.MethodGet, http.MethodHead, http.MethodOptions, http.MethodTrace:
-				// Read-only requests never need validation, but the cookie
-				// must exist so that forms can render the token.
-				if cookie == nil {
-					token := c.NewToken()
-					ctx.SetCookie(c.Cookie(token))
-				}
+				// Read-only requests never need validation.
 			default:
 				if cookie == nil {
 					return echo.NewHTTPError(http.StatusForbidden, "CSRF cookie missing")

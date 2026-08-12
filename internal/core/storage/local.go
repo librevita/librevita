@@ -8,6 +8,8 @@ package storage
 
 import (
 	"context"
+	// #nosec G501 -- the ETag MD5 is required for S3 interoperability;
+	// content integrity uses BLAKE2b (ObjectInfo.Checksum).
 	"crypto/md5"
 	"encoding/hex"
 	"encoding/json"
@@ -78,6 +80,7 @@ func (s *Local) Put(ctx context.Context, key string, data io.Reader, size int64,
 	tmpName := tmp.Name()
 	defer os.Remove(tmpName)
 
+	// #nosec G401 -- MD5 for the S3-style ETag only; integrity is BLAKE2b.
 	etagHash := md5.New()
 	checksum, err := blake2b.New256(nil)
 	if err != nil {
@@ -122,6 +125,8 @@ func (s *Local) Get(ctx context.Context, key string) (*Object, error) {
 	if err != nil {
 		return nil, err
 	}
+	// #nosec G304 -- key was validated by ValidKey (path traversal is
+	// rejected before reaching here).
 	f, err := os.Open(p)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, ErrNotFound
@@ -233,7 +238,7 @@ func (s *Local) writeMeta(key string, info ObjectInfo) error {
 		return err
 	}
 	tmp := p + ".tmp"
-	if err := os.WriteFile(tmp, data, 0o640); err != nil {
+	if err := os.WriteFile(tmp, data, 0o600); err != nil {
 		return err
 	}
 	return os.Rename(tmp, p)
