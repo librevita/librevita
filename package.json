@@ -31,5 +31,8 @@
   },
   "browserslist": [
     "Firefox >= 52"
-  ]
+  ],
+  "allowScripts": {
+    "esbuild": true
+  }
 }
