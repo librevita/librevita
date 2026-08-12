@@ -243,7 +243,7 @@ func TestSpecialties(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := svc.SetUserSpecialties(ctx, staff.ID.String(), []string{psy.ID.String(), physio.ID.String()}); err != nil {
+	if err := svc.SetUserSpecialties(context.Background(), testClinic.String(), staff.ID.String(), []string{psy.ID.String(), physio.ID.String()}); err != nil {
 		t.Fatal(err)
 	}
 	assigned, err := svc.UserSpecialties(ctx, staff.ID.String())
@@ -255,7 +255,7 @@ func TestSpecialties(t *testing.T) {
 	}
 
 	// Replacing the set drops the first assignment.
-	if err := svc.SetUserSpecialties(ctx, staff.ID.String(), []string{physio.ID.String()}); err != nil {
+	if err := svc.SetUserSpecialties(context.Background(), testClinic.String(), staff.ID.String(), []string{physio.ID.String()}); err != nil {
 		t.Fatal(err)
 	}
 	assigned, err = svc.UserSpecialties(ctx, staff.ID.String())
@@ -400,7 +400,7 @@ func TestListPhysicians(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := svc.SetUserSpecialties(ctx, phys.ID.String(), []string{psy.ID.String()}); err != nil {
+	if err := svc.SetUserSpecialties(ctx, testClinic.String(), phys.ID.String(), []string{psy.ID.String()}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -526,5 +526,28 @@ func TestUpdatePreferences(t *testing.T) {
 	}
 	if loaded.Timezone != "" || loaded.UiTheme != types.UIThemeSystem {
 		t.Errorf("reset preferences = %q/%q, want empty/system", loaded.Timezone, loaded.UiTheme)
+	}
+}
+
+// TestSetUserSpecialtiesRejectsCrossClinic pins the tenant scope of the
+// specialty assignment: a specialty id from another clinic is rejected
+// instead of cross-linking the account.
+func TestSetUserSpecialtiesRejectsCrossClinic(t *testing.T) {
+	db := openAuthDB(t)
+	svc := newService(t, db)
+
+	staff, err := svc.CreateUser(context.Background(), usecase.CreateUserInput{
+		Name: "Dr. Carla", Email: "carla.cross@example.org", Password: "senha-segura", Role: "physician",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherClinicSpecialty, err := svc.CreateSpecialty(context.Background(), testClinic2.String(), "Terapeuta")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.SetUserSpecialties(context.Background(), testClinic.String(), staff.ID.String(),
+		[]string{otherClinicSpecialty.ID.String()}); !errors.Is(err, usecase.ErrSpecialtyScope) {
+		t.Fatalf("SetUserSpecialties = %v, want ErrSpecialtyScope", err)
 	}
 }

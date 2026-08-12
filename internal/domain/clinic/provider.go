@@ -17,6 +17,13 @@ const clockCacheTTL = time.Minute
 
 // ClockProvider resolves the clinic profile (id, timezone, and the full
 // row) into cached values shared by every request.
+//
+// The tenant model is single-clinic per installation (ADR-0001,
+// docs/adr/0001-single-clinic-tenant.md): the profile is a singleton
+// and clinic_id on clinical tables is future-proofing. This provider
+// is the single resolution point -- a future multi-clinic mode swaps
+// the singleton for the session's active clinic here, without touching
+// the clinical schema.
 type ClockProvider struct {
 	db  *sql.DB
 	mu  sync.Mutex

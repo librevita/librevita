@@ -332,7 +332,11 @@ func (h *Handler) applyStaffChange(ctx context.Context, id string, change usecas
 	}); err != nil {
 		return err
 	}
-	return h.svc.SetUserSpecialties(ctx, id, change.Specialties)
+	clinicID, err := h.clocks.ClinicID(ctx)
+	if err != nil {
+		return err
+	}
+	return h.svc.SetUserSpecialties(ctx, clinicID, id, change.Specialties)
 }
 
 func (h *Handler) staffUpdateError(c echo.Context, id string, change usecase.StaffChange, err error) error {
@@ -417,7 +421,11 @@ func (h *Handler) StaffCreate(c echo.Context) error {
 		return server.Render(c, http.StatusOK, views.StaffCreatePage(
 			server.CSRFToken(c, h.csrf), server.Principal(c), nil, msg))
 	}
-	if err := h.svc.SetUserSpecialties(ctx, user.ID.String(), c.Request().PostForm["specialties"]); err != nil {
+	clinicID, err := h.clocks.ClinicID(ctx)
+	if err != nil {
+		return err
+	}
+	if err := h.svc.SetUserSpecialties(ctx, clinicID, user.ID.String(), c.Request().PostForm["specialties"]); err != nil {
 		return err
 	}
 	h.audit.Record(ctx, server.EventFromRequest(c, types.AuditResultSuccess,

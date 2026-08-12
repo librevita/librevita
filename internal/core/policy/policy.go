@@ -35,7 +35,11 @@ import (
 //	resource   map[string]any  the object being accessed (route policies
 //	                           leave it empty; resource policies, evaluated
 //	                           in the use cases, fill it, e.g. created_by)
-//	context    map[string]any  ambient attributes (time, emergency flag, ...)
+//	context    map[string]any  ambient attributes (time, emergency flag, ...).
+//	                           clinic_id is filled automatically from the
+//	                           clock provider when one is wired (see
+//	                           SetClockProvider), so policies can express
+//	                           per-clinic rules without a schema change.
 //
 // Policy names are permissions. Routes reference them with Require(name) in
 // the server package. Resource-level policies (patient.edit) are enforced
@@ -120,9 +124,29 @@ type PolicyEngine struct {
 	db    *sql.DB
 	log   *slog.Logger
 
+	// clinicID resolves the installation's clinic for the context
+	// variable. The interface keeps this core package free of domain
+	// imports; the fx module wires the real provider at boot.
+	clinicID clinicIDResolver
+
 	// setMu serializes Set so that the in-memory program always matches the
 	// last committed database version, even under concurrent edits.
 	setMu sync.Mutex
+}
+
+// clinicIDResolver is the minimal surface of the clinic profile the
+// policy engine needs to expose context.clinic_id.
+type clinicIDResolver interface {
+	ClinicID(ctx context.Context) (string, error)
+}
+
+// SetClockProvider wires the clinic resolver so every evaluation can
+// expose context.clinic_id. Called at boot; tests may leave it unset,
+// in which case the context variable stays empty.
+func (pe *PolicyEngine) SetClockProvider(clocks clinicIDResolver) {
+	pe.mu.Lock()
+	defer pe.mu.Unlock()
+	pe.clinicID = clocks
 }
 
 // NewPolicyEngine is the Fx provider. It only validates the environment;
@@ -329,7 +353,9 @@ func (pe *PolicyEngine) Allowed(ctx context.Context, name string, p *auth.Princi
 		return false, fmt.Errorf("%w: %q", ErrPolicyNotFound, name)
 	}
 
-	allowed, err := evaluate(prog, p, req, nil, nil)
+	ambient := map[string]any{}
+	pe.fillAmbient(ctx, ambient)
+	allowed, err := evaluate(prog, p, req, nil, ambient)
 	if err != nil {
 		return false, fmt.Errorf("policy: %q evaluation: %w", name, err)
 	}
@@ -353,11 +379,33 @@ func (pe *PolicyEngine) AllowedResource(ctx context.Context, name string, p *aut
 	if ambient == nil {
 		ambient = map[string]any{}
 	}
+	pe.fillAmbient(ctx, ambient)
 	allowed, err := evaluate(prog, p, req, resource, ambient)
 	if err != nil {
 		return false, fmt.Errorf("policy: %q evaluation: %w", name, err)
 	}
 	return allowed, nil
+}
+
+// fillAmbient adds the clinic id to the context variable unless the
+// caller already provided it. The key is always present: without a
+// resolver (or before onboarding) it is the empty string, so
+// expressions comparing it evaluate to false instead of failing with a
+// missing-key error.
+func (pe *PolicyEngine) fillAmbient(ctx context.Context, ambient map[string]any) {
+	if _, present := ambient["clinic_id"]; present {
+		return
+	}
+	pe.mu.RLock()
+	resolver := pe.clinicID
+	pe.mu.RUnlock()
+	ambient["clinic_id"] = ""
+	if resolver == nil {
+		return
+	}
+	if id, err := resolver.ClinicID(ctx); err == nil {
+		ambient["clinic_id"] = id
+	}
 }
 
 // evaluate runs prog against the full activation and requires a boolean
