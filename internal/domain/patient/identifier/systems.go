@@ -61,6 +61,18 @@ func (s *SystemsService) List(ctx context.Context) ([]repository.IdentifierSyste
 	return rows, nil
 }
 
+// SystemByID returns one system, active or inactive.
+func (s *SystemsService) SystemByID(ctx context.Context, id string) (*repository.IdentifierSystem, error) {
+	row, err := s.q.GetIdentifierSystemByID(ctx, uuid.MustParse(id))
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrSystemNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("identifier: get system: %w", err)
+	}
+	return &row, nil
+}
+
 // Create registers a new document system. The URN must be unique and
 // in the application namespace, the pattern must compile, and the
 // check-digit fields must be consistent. The registry is reloaded on

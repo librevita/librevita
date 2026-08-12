@@ -18,15 +18,37 @@ import (
 	"librevita.org/internal/core/audit"
 	"librevita.org/internal/core/auth"
 	"librevita.org/internal/core/config"
+	"librevita.org/internal/core/crypto"
 	"librevita.org/internal/core/database"
 	"librevita.org/internal/core/policy"
 	"librevita.org/internal/core/server"
 	"librevita.org/internal/core/storage"
 	"librevita.org/internal/domain/clinic"
+	"librevita.org/internal/domain/patient/identifier"
 	"librevita.org/internal/domain/patient/usecase"
 )
 
 var testAdminID = uuid.MustParse("01990000-0000-7000-8000-00000000000a")
+
+// newIdentifierServices wires the identifier subsystem against a
+// migrated database: a fixed master key, the registry seeded from the
+// migration rows, and the two services the handlers use.
+func newIdentifierServices(t *testing.T, db *sql.DB, log *slog.Logger) (*identifier.Service, *identifier.SystemsService) {
+	t.Helper()
+	key, err := crypto.NewMasterKey("nAmIvOXVc0vb6M9G7P9q2j2yK1WxP3sJ8q5dR4tU6wA=")
+	if err != nil {
+		t.Fatal(err)
+	}
+	reg := identifier.NewRegistry()
+	rows, err := identifier.LoadActiveSystems(context.Background(), db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := reg.Reload(rows); err != nil {
+		t.Fatal(err)
+	}
+	return identifier.NewService(db, key, reg, log), identifier.NewSystemsService(db, reg, log)
+}
 
 func newDocEnv(t *testing.T) (*echo.Echo, *auth.SessionManager, *usecase.Service, *storage.FileManager) {
 	t.Helper()
@@ -62,7 +84,8 @@ func newDocEnv(t *testing.T) (*echo.Echo, *auth.SessionManager, *usecase.Service
 		(SELECT id FROM roles WHERE name = 'admin'))`); err != nil {
 		t.Fatalf("seed admin: %v", err)
 	}
-	h := NewHandler(svc, clinic.NewClockProvider(db), csrf, auditLogger, files)
+	ids, systems := newIdentifierServices(t, db, log)
+	h := NewHandler(svc, clinic.NewClockProvider(db), csrf, auditLogger, files, ids, systems)
 
 	e := echo.New()
 	e.POST("/patients/:id/documents", h.UploadDocument,
