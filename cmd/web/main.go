@@ -15,6 +15,7 @@ import (
 	"librevita.org/internal/core/audit"
 	"librevita.org/internal/core/auth"
 	"librevita.org/internal/core/config"
+	"librevita.org/internal/core/crypto"
 	"librevita.org/internal/core/database"
 	"librevita.org/internal/core/policy"
 	"librevita.org/internal/core/server"
@@ -33,6 +34,7 @@ func main() {
 	fx.New(
 		config.Module,
 		telemetry.Module,
+		crypto.Module,
 		fx.WithLogger(func(log *slog.Logger) fxevent.Logger {
 			fxLogger := &fxevent.SlogLogger{Logger: log}
 			fxLogger.UseLogLevel(slog.LevelDebug)
