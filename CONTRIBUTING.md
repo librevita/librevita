@@ -14,7 +14,7 @@ fixes, features, documentation, and tests.
 ## First-time setup
 
 ```sh
-earthly +generate   # writes generated sources (templ, sqlc, assets) for editors
+earthly +go-gen-templ +go-gen-sqlc +go-gen-schema   # writes generated sources (templ, sqlc, assets) for editors
 earthly +all        # runs tests, vet, lint, builds the binary and the image
 ```
 
@@ -25,10 +25,10 @@ earthly +all        # runs tests, vet, lint, builds the binary and the image
 ```sh
 earthly +build --dev=true   # fast unoptimized binary (bin/librevita-dev)
 earthly +test               # Go test suite
-earthly +test-js            # frontend unit tests (node --test)
+earthly +node-test          # frontend unit tests (node --test)
 earthly +vet                # go vet
 earthly +lint               # golangci-lint (config: .golangci.yaml)
-earthly +tidy               # sync go.mod/go.sum
+earthly +go-tidy               # sync go.mod/go.sum
 earthly +schema             # regenerate db/schema/schema.sql from migrations
 ```
 
@@ -53,7 +53,7 @@ the pinned versions).
 Migrations are the single source of truth. Edit `db/migrations/`, then:
 
 ```sh
-earthly +generate   # regenerates db/schema/schema.sql and the sqlc repositories
+earthly +go-gen-templ +go-gen-sqlc +go-gen-schema   # regenerates db/schema/schema.sql and the sqlc repositories
 ```
 
 The consolidated schema is derived, not versioned.
