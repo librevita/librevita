@@ -16,8 +16,8 @@ jobs:
       # lives in GHCR: master also pushes it (and the image); PRs only
       # read it. PRs from forks get a read-only token and no access to
       # the private packages, so they run without the remote cache.
-      EARTHLY_PUSH: ${{ github.ref == 'refs/heads/master' && '--push' || '' }}
-      EARTHLY_CACHE_ARGS: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && '' || format('--remote-cache=ghcr.io/{0}/librevita-cache', github.repository) }}
+      PUSH_FLAG: ${{ github.ref == 'refs/heads/master' && '--push' || '' }}
+      CACHE_ARGS: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && '' || format('--remote-cache=ghcr.io/{0}/librevita-cache', github.repository) }}
       IMAGE_TAG: ghcr.io/${{ github.repository }}:latest
     steps:
       - uses: actions/checkout@v7
@@ -45,4 +45,4 @@ jobs:
       # the log is organized per target. The IMAGE_TAG override reaches
       # +image so --push can publish to GHCR on master.
       - name: Earthly +all
-        run: earthly --ci $EARTHLY_PUSH $EARTHLY_CACHE_ARGS +all --IMAGE_TAG=$IMAGE_TAG
+        run: earthly --ci $PUSH_FLAG $CACHE_ARGS +all --IMAGE_TAG=$IMAGE_TAG
