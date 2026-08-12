@@ -1,0 +1,223 @@
+package identifier
+
+import (
+	"context"
+	"database/sql"
+	"errors"
+	"fmt"
+	"log/slog"
+	"strings"
+
+	"github.com/google/uuid"
+
+	"librevita.org/internal/core/crypto"
+	"librevita.org/internal/domain/patient/repository"
+	"librevita.org/internal/types"
+)
+
+// ErrDuplicate reports that the same (system, value) already exists
+// for another patient.
+var ErrDuplicate = errors.New("identifier: duplicate value for system")
+
+// ErrNotFound is returned when the identifier does not exist.
+var ErrNotFound = errors.New("identifier: not found")
+
+// Input is a document as typed at reception. System is optional: when
+// empty the registry detects it from the value's shape. The detected
+// system is what gets persisted, so search and registration are
+// symmetric.
+type Input struct {
+	PatientID string
+	System    string
+	Value     string
+}
+
+// Identifier is a decrypted identifier. Value is the plaintext and
+// must never be persisted, logged, or audited.
+type Identifier struct {
+	ID        string
+	PatientID string
+	System    string
+	Value     string
+	CreatedBy string
+	CreatedAt types.DateTime
+	UpdatedAt types.DateTime
+}
+
+// Service stores, searches, lists, and removes patient identifiers
+// with field-level encryption and blind indexing.
+type Service struct {
+	db  *sql.DB
+	q   *repository.Queries
+	key *crypto.MasterKey
+	reg *Registry
+	log *slog.Logger
+}
+
+// NewService is the Fx provider.
+func NewService(db *sql.DB, key *crypto.MasterKey, reg *Registry, log *slog.Logger) *Service {
+	return &Service{db: db, q: repository.New(db), key: key, reg: reg, log: log}
+}
+
+// AddIdentifier normalizes, validates, encrypts, and stores in. The
+// same (system, value) registered twice for different patients is
+// rejected with ErrDuplicate: a CPF belongs to exactly one patient
+// anywhere in the deployment.
+func (s *Service) AddIdentifier(ctx context.Context, clinicID, createdBy string, in Input) (*Identifier, error) {
+	strategy := s.resolve(in)
+	normalized, err := strategy.Normalize(in.Value)
+	if err != nil {
+		return nil, err
+	}
+
+	blind, err := s.key.BlindIndex(strategy.System(), normalized)
+	if err != nil {
+		return nil, err
+	}
+	ciphertext, nonce, err := s.key.Seal([]byte(strategy.System()), []byte(normalized))
+	if err != nil {
+		return nil, err
+	}
+
+	id, err := uuid.NewV7()
+	if err != nil {
+		return nil, fmt.Errorf("identifier: generate id: %w", err)
+	}
+	row, err := s.q.CreatePatientIdentifier(ctx, repository.CreatePatientIdentifierParams{
+		ID:              id,
+		PatientID:       uuid.MustParse(in.PatientID),
+		System:          strategy.System(),
+		ValueCiphertext: ciphertext,
+		Nonce:           nonce,
+		BlindIndex:      blind,
+		CreatedBy:       uuidOrNil(createdBy),
+	})
+	if isUniqueViolation(err) {
+		return nil, ErrDuplicate
+	}
+	if err != nil {
+		return nil, fmt.Errorf("identifier: create: %w", err)
+	}
+	return &Identifier{
+		ID:        row.ID.String(),
+		PatientID: row.PatientID.String(),
+		System:    row.System,
+		Value:     normalized,
+		CreatedAt: row.CreatedAt,
+		UpdatedAt: row.UpdatedAt,
+	}, nil
+}
+
+// FindByValue searches for the patient holding raw in clinicID. Every
+// active system whose shape matches raw is tried, most specific first;
+// the raw fallback runs last, so a value that matches no configured
+// system still finds its document. Each candidate decrypts and
+// verifies the plaintext before accepting the match.
+func (s *Service) FindByValue(ctx context.Context, clinicID, raw string) ([]*Identifier, error) {
+	if strings.TrimSpace(raw) == "" {
+		return nil, ErrValueRequired
+	}
+	var found []*Identifier
+	for _, strategy := range s.reg.DetectCandidates(raw) {
+		normalized, err := strategy.Normalize(raw)
+		if err != nil {
+			// The shape matched but the value failed the system's own
+			// rules; the value may still belong to another system.
+			continue
+		}
+		blind, err := s.key.BlindIndex(strategy.System(), normalized)
+		if err != nil {
+			return nil, err
+		}
+		row, err := s.q.FindPatientByBlindIndex(ctx, repository.FindPatientByBlindIndexParams{
+			BlindIndex: blind, ClinicID: uuid.MustParse(clinicID),
+		})
+		if errors.Is(err, sql.ErrNoRows) {
+			continue
+		}
+		if err != nil {
+			return nil, fmt.Errorf("identifier: find by value: %w", err)
+		}
+		value, err := s.key.Open([]byte(row.System), row.ValueCiphertext, row.Nonce)
+		if err != nil {
+			// Defense in depth: a blind index hit must decrypt back to
+			// the expected value, otherwise the row is corrupted.
+			s.log.Error("identifier: blind index hit failed to decrypt", "system", row.System)
+			continue
+		}
+		if string(value) != normalized {
+			continue
+		}
+		found = append(found, &Identifier{
+			ID:        row.ID.String(),
+			PatientID: row.PatientID.String(),
+			System:    row.System,
+			Value:     string(value),
+			CreatedAt: row.CreatedAt,
+			UpdatedAt: row.UpdatedAt,
+		})
+	}
+	return found, nil
+}
+
+// List returns the decrypted identifiers of a patient, ordered by
+// system. The patient is scoped to the clinic.
+func (s *Service) List(ctx context.Context, clinicID, patientID string) ([]*Identifier, error) {
+	rows, err := s.q.FindIdentifiersByPatient(ctx, uuid.MustParse(patientID))
+	if err != nil {
+		return nil, fmt.Errorf("identifier: list: %w", err)
+	}
+	out := make([]*Identifier, 0, len(rows))
+	for _, row := range rows {
+		value, err := s.key.Open([]byte(row.System), row.ValueCiphertext, row.Nonce)
+		if err != nil {
+			return nil, fmt.Errorf("identifier: decrypt %s: %w", row.ID, err)
+		}
+		out = append(out, &Identifier{
+			ID:        row.ID.String(),
+			PatientID: row.PatientID.String(),
+			System:    row.System,
+			Value:     string(value),
+			CreatedAt: row.CreatedAt,
+			UpdatedAt: row.UpdatedAt,
+		})
+	}
+	return out, nil
+}
+
+// Remove deletes one identifier of the patient, scoped to the clinic.
+func (s *Service) Remove(ctx context.Context, clinicID, patientID, identifierID string) error {
+	if _, err := s.q.GetPatientByID(ctx, repository.GetPatientByIDParams{
+		ID: uuid.MustParse(patientID), ClinicID: uuid.MustParse(clinicID),
+	}); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return ErrNotFound
+		}
+		return fmt.Errorf("identifier: patient: %w", err)
+	}
+	if err := s.q.DeletePatientIdentifier(ctx, repository.DeletePatientIdentifierParams{
+		ID: uuid.MustParse(identifierID), PatientID: uuid.MustParse(patientID),
+	}); err != nil {
+		return fmt.Errorf("identifier: delete: %w", err)
+	}
+	return nil
+}
+
+// resolve picks the strategy for in: the configured system when given
+// (unknown systems fall back to raw), otherwise the detected one.
+func (s *Service) resolve(in Input) Strategy {
+	if in.System != "" {
+		return s.reg.ForSystem(in.System)
+	}
+	return s.reg.Detect(in.Value)
+}
+
+// isUniqueViolation reports whether err is a SQLite UNIQUE constraint
+// failure (the blind_index collision that maps to ErrDuplicate).
+func isUniqueViolation(err error) bool {
+	var sqliteErr interface{ Code() int }
+	if errors.As(err, &sqliteErr) {
+		return sqliteErr.Code() == 2067 // SQLITE_CONSTRAINT_UNIQUE
+	}
+	return false
+}
