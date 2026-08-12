@@ -271,8 +271,11 @@ Echo is created and managed by Fx. Routes:
   `POST /profile/avatar`, `POST /profile/avatar/remove` — profile picture; `GET /users/:id/avatar` — avatar of any
   user
 - `GET /patients`, `GET /patients/new`, `POST /patients`, `GET /patients/:id`, `GET /patients/:id/edit`, `POST
-/patients/:id`, `POST /patients/:id/archive`, `POST /patients/:id/restore`, `POST /patients/bulk-archive`, `POST
-/patients/check-document`
+  /patients/:id`, `POST /patients/:id/archive`, `POST /patients/:id/restore`, `POST /patients/bulk-archive`, `GET
+  /patients/lookup` — exact identification-document lookup (blind index), `POST /patients/:id/identifiers`,
+  `POST /patients/:id/identifiers/:identifierID/remove` — encrypted identification documents
+- `GET /identifier-systems`, `POST /identifier-systems`, `POST /identifier-systems/:id`,
+  `POST /identifier-systems/:id/active` — administrator catalog of document systems
 - `GET /users`, `GET /users/new`, `POST /users`, `GET /users/:id/edit`, `POST /users/:id`, `POST /users/:id/status` —
   staff account management
 - `GET /specialties`, `POST /specialties`, `POST /specialties/:id/delete` — clinic specialty catalog
@@ -291,7 +294,9 @@ HTTP errors use RFC 7807 `application/problem+json` responses.
 The clinical and administrative features are organized in `internal/domain`:
 
 - **Patients** — full registry CRUD with whole-word search (debounced server-side), status (active/archived), bulk
-  archive, duplicate document checks, and an audit-backed change history on the detail page. Editing is governed by the
+  archive, an audit-backed change history on the detail page, and FHIR-style identification documents (system + value)
+  stored encrypted at field level with a keyed blind index for exact lookup. Duplicates are rejected deployment-wide.
+  Editing is governed by the
   resource-level `patient.edit` policy: physicians edit only the patients they registered, admins edit everything.
 - **Staff & specialties** — the clinic specialty catalog and the physician directory. Receptionists propose profile
   changes (name, email, specialties) that an administrator approves or rejects; the request snapshots the previous

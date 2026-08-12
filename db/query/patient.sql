@@ -3,10 +3,10 @@
 
 -- name: CreatePatient :one
 INSERT INTO patients (
-    id, clinic_id, display_name, birth_date, sex, document,
+    id, clinic_id, display_name, birth_date, sex,
     phone, email, street, city, state, postal_code, notes, created_by
 )
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING *;
 
 -- name: GetPatientWithCreator :one
@@ -28,7 +28,6 @@ SET
     display_name = ?,
     birth_date = ?,
     sex = ?,
-    document = ?,
     phone = ?,
     email = ?,
     street = ?,
@@ -50,13 +49,6 @@ SELECT count(*)
 FROM patients
 WHERE clinic_id = ?;
 
--- name: PatientDocumentExists :one
-SELECT exists(
-    SELECT 1
-    FROM patients
-    WHERE clinic_id = ? AND document = ? AND id <> ?
-);
-
 -- name: ListPatientsPage :many
 -- instr() searches the term literally (no LIKE wildcards), matching
 -- word prefixes: the term is anchored at a word boundary with a space.
@@ -72,8 +64,6 @@ WHERE
                 ' '
                 || display_name
                 || ' '
-                || coalesce(document, '')
-                || ' '
                 || coalesce(email, '')
             ),
             lower(' ' || @pattern)
@@ -88,8 +78,7 @@ FROM patients
 WHERE clinic_id = ?
 AND (@status_empty = '' OR status = @status_filter)
 AND (@query_empty = '' OR instr(
-lower(' ' || display_name || ' ' || COALESCE(document,
-'') || ' ' || COALESCE(email,
+lower(' ' || display_name || ' ' || COALESCE(email,
 '')),
 lower(' ' || @pattern)
 ) > 0);

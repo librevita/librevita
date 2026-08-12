@@ -22,7 +22,6 @@ import (
 
 const (
 	maxPatientNameLen = 120
-	maxDocumentLen    = 20
 	maxPhoneLen       = 20
 	maxEmailLen       = 120
 	maxAddressLen     = 120
@@ -42,7 +41,6 @@ type PatientInput struct {
 	DisplayName string
 	BirthDate   string
 	Sex         types.Sex
-	Document    string
 	Phone       string
 	Email       string
 	Street      string
@@ -50,6 +48,13 @@ type PatientInput struct {
 	State       string
 	PostalCode  string
 	Notes       string
+
+	// IdentifierSystem and IdentifierValue carry the identification
+	// document typed in the patient form. The patient service ignores
+	// them: the HTTP handler registers the document through the
+	// identifier subsystem after the patient row exists.
+	IdentifierSystem string
+	IdentifierValue  string
 }
 
 // Service persists and validates patient records.
@@ -105,7 +110,6 @@ func (s *Service) Create(ctx context.Context, clinicID, createdBy string, in Pat
 		DisplayName: normalized.DisplayName,
 		BirthDate:   strPtr(normalized.BirthDate),
 		Sex:         normalized.Sex.String(),
-		Document:    strPtr(normalized.Document),
 		Phone:       strPtr(normalized.Phone),
 		Email:       strPtr(normalized.Email),
 		Street:      strPtr(normalized.Street),
@@ -160,7 +164,6 @@ func (s *Service) Update(ctx context.Context, clinicID, id string, in PatientInp
 		DisplayName: normalized.DisplayName,
 		BirthDate:   strPtr(normalized.BirthDate),
 		Sex:         normalized.Sex.String(),
-		Document:    strPtr(normalized.Document),
 		Phone:       strPtr(normalized.Phone),
 		Email:       strPtr(normalized.Email),
 		Street:      strPtr(normalized.Street),
@@ -223,26 +226,11 @@ func (s *Service) Count(ctx context.Context, clinicID string) (int64, error) {
 	return count, nil
 }
 
-// DocumentExists reports whether another patient in the clinic already
-// holds the document. excludeID skips the record being edited.
-func (s *Service) DocumentExists(ctx context.Context, clinicID, document, excludeID string) (bool, error) {
-	exists, err := s.q.PatientDocumentExists(ctx, repository.PatientDocumentExistsParams{
-		ClinicID: uuid.MustParse(clinicID),
-		Document: strPtr(document),
-		ID:       uuid.MustParse(excludeID),
-	})
-	if err != nil {
-		return false, fmt.Errorf("usecase: check patient document: %w", err)
-	}
-	return exists, nil
-}
-
 func normalize(in PatientInput) (PatientInput, error) {
 	out := PatientInput{
 		DisplayName: strings.TrimSpace(in.DisplayName),
 		BirthDate:   strings.TrimSpace(in.BirthDate),
 		Sex:         types.Sex(strings.TrimSpace(in.Sex.String())),
-		Document:    strings.TrimSpace(in.Document),
 		Phone:       strings.TrimSpace(in.Phone),
 		Email:       strings.TrimSpace(in.Email),
 		Street:      strings.TrimSpace(in.Street),
@@ -267,9 +255,6 @@ func normalize(in PatientInput) (PatientInput, error) {
 		if _, err := time.Parse("2006-01-02", out.BirthDate); err != nil {
 			return out, &ValidationError{Msg: "enter a valid birth date (YYYY-MM-DD)"}
 		}
-	}
-	if len(out.Document) > maxDocumentLen {
-		return out, &ValidationError{Msg: "document is too long"}
 	}
 	if len(out.Phone) > maxPhoneLen {
 		return out, &ValidationError{Msg: "phone is too long"}

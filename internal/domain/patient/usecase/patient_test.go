@@ -71,7 +71,6 @@ func validInput() usecase.PatientInput {
 		DisplayName: "Maria Oliveira",
 		BirthDate:   "1985-03-14",
 		Sex:         types.SexFemale,
-		Document:    "123.456.789-00",
 		Phone:       "+55 11 99999-0000",
 		Email:       "maria@example.org",
 		City:        "São Paulo",
@@ -95,7 +94,7 @@ func TestCreateAndGet(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.DisplayName != "Maria Oliveira" || orEmpty(got.Document) != "123.456.789-00" {
+	if got.DisplayName != "Maria Oliveira" {
 		t.Fatalf("Get = %+v", got)
 	}
 }
@@ -155,7 +154,6 @@ func TestListAndSearch(t *testing.T) {
 	for _, name := range []string{"Ana Souza", "Bruno Lima", "Carla Dias"} {
 		in := validInput()
 		in.DisplayName = name
-		in.Document = name
 		if _, err := svc.Create(context.Background(), testClinicID.String(), testUserID.String(), in); err != nil {
 			t.Fatal(err)
 		}
