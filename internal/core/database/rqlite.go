@@ -9,7 +9,9 @@ import (
 // openRqlite connects to an rqlite cluster.
 //
 // gorqlite is not a database/sql driver; it communicates with rqlite over HTTP.
-// Goose migrations therefore apply only to the embedded SQLite backend.
+// Goose migrations therefore apply only to the embedded SQLite backend, and
+// consumers that require the *sql.DB handle (audit, auth, policy, storage,
+// the sqlc repositories) reject nil themselves.
 func openRqlite(addr string) (*gorqlite.Connection, error) {
 	conn, err := gorqlite.Open(addr)
 	if err != nil {

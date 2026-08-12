@@ -11,6 +11,12 @@ RETURNING *;
 -- name: DeleteSpecialty :exec
 DELETE FROM specialties
 WHERE id = ? AND clinic_id = ?;
+
+-- name: GetSpecialtyByID :one
+SELECT *
+FROM specialties
+WHERE id = ? AND clinic_id = ?
+LIMIT 1;
 -- name: ClearUserSpecialties :exec
 DELETE FROM user_specialties
 WHERE user_id = ?;

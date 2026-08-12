@@ -48,7 +48,8 @@ func NewStore(cfg *config.Config, log *slog.Logger) (*Store, error) {
 // Driver returns the active backend ("sqlite" or "rqlite").
 func (s *Store) Driver() string { return s.driver }
 
-// SQL returns the embedded SQLite handle. It is nil in rqlite mode.
+// SQL returns the embedded SQLite handle. It is nil in rqlite mode;
+// consumers that require local storage must reject nil themselves.
 func (s *Store) SQL() *sql.DB { return s.db }
 
 // Rqlite returns the rqlite connection. It is nil in SQLite mode.

@@ -466,3 +466,52 @@ func TestPatientEditResourcePolicy(t *testing.T) {
 		})
 	}
 }
+
+// fakeClinicID is a fixed clinic resolver for tests.
+type fakeClinicID struct{ id string }
+
+func (f fakeClinicID) ClinicID(context.Context) (string, error) { return f.id, nil }
+
+// TestContextClinicID verifies that a wired clinic resolver populates
+// context.clinic_id in every evaluation, enabling per-clinic policies
+// without a schema change.
+func TestContextClinicID(t *testing.T) {
+	pe := testPolicyEngine(t)
+	admin := &auth.Principal{ID: "u1", Email: "a@example.org", Name: "A", Role: auth.RoleAdmin}
+	req := RequestInfo{Method: "GET", Path: "/x"}
+
+	if err := pe.Set(context.Background(), "test.clinic", `context.clinic_id == 'clinic-123'`, Actor{ID: "u1", Email: "a@example.org"}); err != nil {
+		t.Fatalf("Set: %v", err)
+	}
+
+	// Without a resolver the context variable is empty and the policy
+	// must deny.
+	allowed, err := pe.Allowed(context.Background(), "test.clinic", admin, req)
+	if err != nil {
+		t.Fatalf("Allowed without resolver: %v", err)
+	}
+	if allowed {
+		t.Fatal("policy must deny without a clinic resolver")
+	}
+
+	// With the resolver wired, the clinic id arrives automatically.
+	pe.SetClockProvider(fakeClinicID{id: "clinic-123"})
+	allowed, err = pe.Allowed(context.Background(), "test.clinic", admin, req)
+	if err != nil {
+		t.Fatalf("Allowed: %v", err)
+	}
+	if !allowed {
+		t.Fatal("policy must allow when the resolver matches")
+	}
+
+	// A caller-provided value wins over the resolver.
+	pe.SetClockProvider(fakeClinicID{id: "other-clinic"})
+	allowed, err = pe.AllowedResource(context.Background(), "test.clinic", admin, req, nil,
+		map[string]any{"clinic_id": "clinic-123"})
+	if err != nil {
+		t.Fatalf("AllowedResource: %v", err)
+	}
+	if !allowed {
+		t.Fatal("explicit clinic_id must not be overwritten by the resolver")
+	}
+}

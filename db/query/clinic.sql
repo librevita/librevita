@@ -21,9 +21,14 @@ RETURNING *;
 SELECT COUNT(*)
 FROM clinics;
 
+-- GetClinic resolves the installation's single clinic (see
+-- internal/domain/clinic/provider.go for the single-clinic decision).
+-- The ORDER BY makes the LIMIT 1 deterministic should a second row
+-- ever appear.
 -- name: GetClinic :one
 SELECT *
 FROM clinics
+ORDER BY created_at
 LIMIT 1;
 
 -- name: UpdateClinicTimezone :exec

@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"strings"
@@ -13,6 +14,10 @@ import (
 
 // Specialty errors.
 var ErrDuplicateSpecialty = errors.New("usecase: specialty already exists")
+
+// ErrSpecialtyScope reports a specialty that does not belong to the
+// request's clinic.
+var ErrSpecialtyScope = errors.New("usecase: specialty does not belong to this clinic")
 
 const maxSpecialtyNameLen = 60
 
@@ -87,8 +92,11 @@ func (s *Service) UserSpecialties(ctx context.Context, userID string) ([]reposit
 }
 
 // SetUserSpecialties replaces the account's specialty set in one
-// transaction.
-func (s *Service) SetUserSpecialties(ctx context.Context, userID string, specialtyIDs []string) error {
+// transaction. Every specialty must belong to the request's clinic:
+// the UI only lists the clinic's catalog, but the write path enforces
+// the scope too, so a specialty id of another clinic is rejected
+// instead of silently cross-linking accounts.
+func (s *Service) SetUserSpecialties(ctx context.Context, clinicID, userID string, specialtyIDs []string) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("usecase: begin specialty tx: %w", err)
@@ -100,6 +108,19 @@ func (s *Service) SetUserSpecialties(ctx context.Context, userID string, special
 			_ = tx.Rollback()
 		}
 	}()
+	for _, id := range specialtyIDs {
+		if id == "" {
+			continue
+		}
+		if _, err := queries.GetSpecialtyByID(ctx, repository.GetSpecialtyByIDParams{
+			ID: uuid.MustParse(id), ClinicID: uuid.MustParse(clinicID),
+		}); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return ErrSpecialtyScope
+			}
+			return fmt.Errorf("usecase: check specialty scope: %w", err)
+		}
+	}
 	if err := queries.ClearUserSpecialties(ctx, uuid.MustParse(userID)); err != nil {
 		return fmt.Errorf("usecase: clear user specialties: %w", err)
 	}
