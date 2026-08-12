@@ -88,6 +88,13 @@ type Config struct {
 	// session tokens. Required outside development; generated at startup
 	// otherwise.
 	PasetoKey string `koanf:"paseto_key"`
+
+	// MasterKey is the base64-encoded 32-byte master key for field-level
+	// encryption and blind indexes of patient identifiers. Required
+	// outside development; an ephemeral key is generated at startup
+	// otherwise (previously encrypted values become undecryptable on
+	// restart).
+	MasterKey string `koanf:"master_key"`
 }
 
 // AuthConfig controls authentication behavior.
@@ -169,6 +176,7 @@ func RegisterFlags(fs *pflag.FlagSet) {
 	intFlag(fs, "log-max-age", defaultLogAgeDays, "rotating log maximum age in days")
 	boolFlag(fs, "log-compress", true, "compress rotated log files")
 	stringFlag(fs, "paseto-key", "", "PASETO v4.local session key (base64, 32 bytes)")
+	stringFlag(fs, "master-key", "", "field-level encryption master key (base64, 32 bytes)")
 	intFlag(fs, "auth-max-concurrent-hashes", defaultMaxConcurrentHashes, "bound on concurrent Argon2id operations")
 	stringFlag(fs, "storage-backend", "local", "file storage backend: local or s3")
 	stringFlag(fs, "storage-dir", "", "local file storage directory (default <data-dir>/files)")
@@ -387,6 +395,8 @@ func mapFlagKey(name string) string {
 		return "logging.compress"
 	case "paseto-key", "paseto_key":
 		return "paseto_key"
+	case "master-key", "master_key":
+		return "master_key"
 	case "auth-max-concurrent-hashes", "auth_max_concurrent_hashes":
 		return "auth.max_concurrent_hashes"
 	case "storage-backend", "storage_backend":
@@ -443,6 +453,8 @@ func mapEnvironmentKey(key string) string {
 		return "logging.compress"
 	case "paseto_key":
 		return "paseto_key"
+	case "master_key":
+		return "master_key"
 	case "auth_max_concurrent_hashes":
 		return "auth.max_concurrent_hashes"
 	case "storage_backend":
