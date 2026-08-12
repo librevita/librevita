@@ -13,37 +13,37 @@ import (
 // PatientFormValues carries the current field values, so the form can
 // redraw with the user's input after a validation error.
 type PatientFormValues struct {
-	DisplayName string
-	BirthDate   string
-	Sex         string
-	Document    string
-	Phone       string
-	Email       string
-	Street      string
-	City        string
-	State       string
-	PostalCode  string
-	Notes       string
+	DisplayName      string
+	BirthDate        string
+	Sex              string
+	Phone            string
+	Email            string
+	Street           string
+	City             string
+	State            string
+	PostalCode       string
+	Notes            string
+	IdentifierSystem string
+	IdentifierValue  string
 }
 
 // PatientFormPage renders the create (id empty) or edit page.
-templ PatientFormPage(token string, p *auth.Principal, id string, values PatientFormValues, errMsg string) {
+templ PatientFormPage(token string, p *auth.Principal, id string, systems []SystemOption, values PatientFormValues, errMsg string) {
 	@layouts.App(patientFormTitle(id), token, p, "patients") {
 		<div class="mx-auto max-w-3xl p-4 lg:p-6">
 			@components.Card() {
 				@components.CardHeader(patientFormTitle(id)) {
 					<a class="inline-flex items-center rounded-lg p-2 text-sm font-medium text-indigo-700 hover:bg-gray-100 dark:text-indigo-400 dark:hover:bg-gray-700" href="/patients">Back to registry</a>
 				}
-				@PatientForm(token, id, values, errMsg)
+				@PatientForm(token, id, systems, values, errMsg)
 			}
 		</div>
 	}
 }
 
 // PatientForm is the form fragment: htmx posts replace it in place so
-// validation errors keep the typed values, and the document field checks
-// duplicates on blur.
-templ PatientForm(token string, id string, values PatientFormValues, errMsg string) {
+// validation errors keep the typed values.
+templ PatientForm(token string, id string, systems []SystemOption, values PatientFormValues, errMsg string) {
 	<form method="post" action={ patientFormAction(id) } hx-post={ patientFormAction(id) } hx-target="this" hx-swap="outerHTML" class="space-y-6">
 		<input type="hidden" name="_csrf" value={ token }>
 		<input type="hidden" name="id" id="patient-id" value={ id }>
@@ -74,20 +74,34 @@ templ PatientForm(token string, id string, values PatientFormValues, errMsg stri
 			</div>
 			<div class="flex flex-wrap gap-4">
 				<div class="flex-1">
-					@components.Field("document", "Document") {
-						@components.Input("document", "", templ.Attributes{ "id": "document", "type": "text", "value": values.Document, "hx-post": "/patients/check-document", "hx-trigger": "blur changed", "hx-include": "#patient-id", "hx-target": "#document-error", "hx-swap": "innerHTML" })
-						<p id="document-error" class="mt-1 text-xs text-red-600 dark:text-red-400"></p>
+					@components.Field("identifier_system", "Identification document type") {
+						@components.Select("identifier_system", "", templ.Attributes{ "id": "identifier_system" }) {
+							@identifierSystemOption("", "Detect automatically", values.IdentifierSystem)
+							for _, s := range systems {
+								@identifierSystemOption(s.System, s.DisplayName, values.IdentifierSystem)
+							}
+						}
 					}
 				</div>
+				<div class="flex-1">
+					@components.Field("identifier_value", "Identification document") {
+						@components.Input("identifier_value", "", templ.Attributes{ "id": "identifier_value", "type": "text", "value": values.IdentifierValue, "placeholder": "CPF, SUS, NIF, passport..." })
+						<p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Stored encrypted; duplicates are rejected across the deployment.</p>
+					}
+				</div>
+			</div>
+			<div class="flex flex-wrap gap-4">
 				<div class="flex-1">
 					@components.Field("phone", "Phone") {
 						@components.Input("phone", "", templ.Attributes{ "id": "phone", "type": "tel", "value": values.Phone })
 					}
 				</div>
+				<div class="flex-1">
+					@components.Field("email", "Email") {
+						@components.Input("email", "", templ.Attributes{ "id": "email", "type": "email", "value": values.Email })
+					}
+				</div>
 			</div>
-			@components.Field("email", "Email") {
-				@components.Input("email", "", templ.Attributes{ "id": "email", "type": "email", "value": values.Email })
-			}
 		</fieldset>
 		<fieldset class="space-y-4">
 			<legend class="text-sm font-semibold text-gray-900 dark:text-white">Address</legend>
@@ -133,6 +147,14 @@ templ sexOption(value string, label string, selected string) {
 	}
 }
 
+templ identifierSystemOption(value string, label string, selected string) {
+	if value == selected {
+		<option value={ value } selected>{ label }</option>
+	} else {
+		<option value={ value }>{ label }</option>
+	}
+}
+
 func patientFormTitle(id string) string {
 	if id == "" {
 		return "New patient"
@@ -163,7 +185,7 @@ type HistoryRow struct {
 
 // PatientDetailPage renders the patient record with the registrar and
 // the change history.
-templ PatientDetailPage(token string, p *auth.Principal, pt *repository.GetPatientWithCreatorRow, createdAt, updatedAt, createdBy string, history []HistoryRow, docs []DocumentRow, errMsg string) {
+templ PatientDetailPage(token string, p *auth.Principal, pt *repository.GetPatientWithCreatorRow, createdAt, updatedAt, createdBy string, history []HistoryRow, docs []DocumentRow, ids []IdentifierRow, systems []SystemOption, errMsg string) {
 	@layouts.App("Patient", token, p, "patients") {
 		<div class="mx-auto max-w-4xl p-4 lg:p-6">
 			@components.Card() {
@@ -187,7 +209,6 @@ templ PatientDetailPage(token string, p *auth.Principal, pt *repository.GetPatie
 				<dl class="mt-6 grid grid-cols-1 gap-4 text-sm sm:grid-cols-2">
 					@detailField("Birth date", orEmpty(pt.BirthDate))
 					@detailField("Sex", pt.Sex)
-					@detailField("Document", orEmpty(pt.Document))
 					@detailField("Phone", orEmpty(pt.Phone))
 					@detailField("Email", orEmpty(pt.Email))
 					@detailField("Address", addressLine(pt))
@@ -219,6 +240,7 @@ templ PatientDetailPage(token string, p *auth.Principal, pt *repository.GetPatie
 					</div>
 				}
 			}
+			@PatientIdentifiersSection(token, pt.ID.String(), ids, systems, "")
 			<section class="mt-4 rounded-lg border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-800">
 				<div class="flex items-center justify-between gap-4">
 					<div>
@@ -304,11 +326,4 @@ func addressLine(pt *repository.GetPatientWithCreatorRow) string {
 		out += part
 	}
 	return out
-}
-
-// PatientDocumentError is the inline duplicate-document message swapped
-// into the #document-error container. The id keeps the target stable
-// across swaps.
-templ PatientDocumentError(message string) {
-	<p id="document-error" class="mt-1 text-xs text-red-600 dark:text-red-400">{ message }</p>
 }
