@@ -12,6 +12,7 @@ import * as tabs from './tabs.ts';
 import * as dropdown from './dropdown.ts';
 import * as modal from './modal.ts';
 import * as tableSelect from './table-select.ts';
+import * as reveal from './reveal.ts';
 
 configureHtmx();
 forwardCsrf();
@@ -22,6 +23,7 @@ tabs.init();
 tableSelect.init();
 modal.init();
 dropdown.init();
+reveal.init();
 
 document.addEventListener('htmx:afterSwap', (evt) => {
   const detail = (evt as CustomEvent<HtmxAfterSwapDetail>).detail;
@@ -35,6 +37,7 @@ document.addEventListener('htmx:afterSwap', (evt) => {
   tableSelect.refresh(root);
   modal.refresh(root);
   dropdown.refresh(root);
+  reveal.refresh(root);
   // Only page navigations (boosted swaps target the body) move the focus
   // to the main content; fragment swaps (search, pager, row updates) must
   // leave the focus where the user is typing or clicking.

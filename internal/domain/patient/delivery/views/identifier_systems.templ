@@ -1,0 +1,245 @@
+package views
+
+import (
+	"librevita.org/internal/core/auth"
+	"librevita.org/internal/ui/components"
+	"librevita.org/internal/ui/layouts"
+)
+
+// SystemRow is one document system of the administrator catalog.
+type SystemRow struct {
+	ID           string
+	System       string
+	DisplayName  string
+	Pattern      string
+	Transform    string
+	Check        string
+	Active       bool
+}
+
+// SystemFormValues carries the form fields across validation errors.
+type SystemFormValues struct {
+	System             string
+	DisplayName        string
+	Pattern            string
+	Transform          string
+	CheckAlgorithm     string
+	CheckBaseLen       string
+	CheckDVCount       string
+	CheckStartWeight   string
+}
+
+// IdentifierSystemsPage is the administrator catalog of document
+// systems. There is no delete: patient_identifiers references
+// identifier_systems by URN, so deactivating a system (the "Inactive"
+// toggle) keeps its documents readable and removable while removing it
+// from detection and registration.
+templ IdentifierSystemsPage(token string, p *auth.Principal, rows []SystemRow, errMsg string) {
+	@layouts.App("Identifier systems", token, p, "identifier-systems") {
+		<div class="w-full">
+			<div class="border-b border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
+				<nav class="mb-4" aria-label="Breadcrumb">
+					<ol class="inline-flex items-center space-x-1 text-sm font-medium md:space-x-2">
+						<li class="inline-flex items-center">
+							<a href="/" class="inline-flex items-center text-gray-700 hover:text-indigo-600 dark:text-gray-300 dark:hover:text-white">
+								<svg class="mr-2.5 h-5 w-5" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true"><path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z"></path></svg>
+								Home
+							</a>
+						</li>
+						<li>
+							<div class="flex items-center">
+								<svg class="h-6 w-6 text-gray-400" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"></path></svg>
+								<span class="ml-1 text-gray-400 md:ml-2 dark:text-gray-500" aria-current="page">Identifier systems</span>
+							</div>
+						</li>
+					</ol>
+				</nav>
+				<h1 class="mb-4 text-xl font-semibold text-gray-900 sm:text-2xl dark:text-white">Identifier systems</h1>
+				<div class="flex flex-wrap items-center justify-between gap-3">
+					<p class="max-w-xl text-sm text-gray-500 dark:text-gray-400">Document kinds patients can present (CPF, SUS, NIF, passport, ...), each with its shape, normalization, and check digit. Add the systems of your jurisdiction; deactivate instead of deleting, since patient records reference them.</p>
+					<button type="button" data-lv-modal-open="add-system-modal" class="inline-flex items-center rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600">
+						<svg class="mr-2 h-5 w-5 -ml-1" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true"><path fill-rule="evenodd" d="M10 5a1 1 0 011 1v3h3a1 1 0 110 2h-3v3a1 1 0 11-2 0v-3H6a1 1 0 110-2h3V6a1 1 0 011-1z" clip-rule="evenodd"></path></svg>
+						Add system
+					</button>
+				</div>
+			</div>
+			<div class="flex flex-col">
+				<div id="identifier-systems-list">
+					@IdentifierSystemsTable(token, rows, errMsg)
+				</div>
+			</div>
+		</div>
+		@components.Modal("add-system-modal", "Add identifier system", "max-w-lg") {
+			@SystemForm(token, "", SystemFormValues{}, "")
+		}
+	}
+}
+
+// IdentifierSystemsTable is the systems fragment: the table is the
+// whole page content, so a non-boosted htmx navigation swaps it.
+templ IdentifierSystemsTable(token string, rows []SystemRow, errMsg string) {
+	if errMsg != "" {
+		<div class="mb-4">@components.Alert(errMsg, false)</div>
+	}
+	if len(rows) == 0 {
+		<div class="overflow-hidden rounded-lg bg-white p-6 text-center shadow-sm dark:bg-gray-800">
+			<p class="text-sm text-gray-500 dark:text-gray-400">No identifier systems yet. Add the document kinds your clinic works with.</p>
+		</div>
+	} else {
+		<div class="overflow-hidden shadow-sm">
+			<div class="overflow-x-auto">
+				<table class="min-w-full divide-y divide-gray-200 dark:divide-gray-600">
+					<thead class="bg-gray-100 dark:bg-gray-700">
+						<tr>
+							@components.Th("Display name", "p-4")
+							@components.Th("System", "p-4")
+							@components.Th("Pattern", "p-4")
+							@components.Th("Transform", "p-4")
+							@components.Th("Check", "p-4")
+							@components.Th("Status", "p-4")
+							<th scope="col" class="p-4 text-right text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">Actions</th>
+						</tr>
+					</thead>
+					<tbody class="divide-y divide-gray-200 bg-white dark:divide-gray-700 dark:bg-gray-800">
+						for _, row := range rows {
+							<tr class="hover:bg-gray-100 dark:hover:bg-gray-700">@SystemRowCells(token, row)</tr>
+						}
+					</tbody>
+				</table>
+			</div>
+		</div>
+	}
+}
+
+// SystemRowOnly is the deactivate/activate response: a bare row, swapped
+// in place.
+templ SystemRowOnly(token string, row SystemRow) {
+	<tr>@SystemRowCells(token, row)</tr>
+}
+
+// SystemRowCells renders one row of the systems table.
+templ SystemRowCells(token string, row SystemRow) {
+	<td class="p-4 text-base font-medium text-gray-900 dark:text-white">{ row.DisplayName }</td>
+	<td class="p-4 font-mono text-xs text-gray-500 dark:text-gray-400">{ row.System }</td>
+	<td class="p-4 font-mono text-xs text-gray-500 dark:text-gray-400">{ row.Pattern }</td>
+	<td class="p-4 text-sm text-gray-500 dark:text-gray-400">{ row.Transform }</td>
+	<td class="p-4 text-sm text-gray-500 dark:text-gray-400">{ orDash(row.Check) }</td>
+	<td class="p-4">
+		<div class="flex items-center">
+			if row.Active {
+				<span class="mr-2 h-2.5 w-2.5 rounded-full bg-green-400 dark:bg-green-500"></span>
+				<span class="text-base text-gray-900 dark:text-white">Active</span>
+			} else {
+				<span class="mr-2 h-2.5 w-2.5 rounded-full bg-red-500"></span>
+				<span class="text-base text-gray-900 dark:text-white">Inactive</span>
+			}
+		</div>
+	</td>
+	<td class="p-4 text-right">
+		<form method="post" action={ "/identifier-systems/" + row.ID + "/active" } hx-post={ "/identifier-systems/" + row.ID + "/active" } hx-target="closest tr" hx-swap="outerHTML" class="inline">
+			<input type="hidden" name="_csrf" value={ token }>
+			if row.Active {
+				@components.Button("secondary", "Deactivate", templ.Attributes{ "type": "submit" })
+			} else {
+				@components.Button("primary", "Activate", templ.Attributes{ "type": "submit" })
+			}
+		</form>
+	</td>
+}
+
+// SystemForm is the modal form fragment: htmx posts replace it in
+// place, so validation errors keep the typed values inside the dialog.
+// Editing reuses the create form with the URN fixed: the URN is the
+// identity of stored identifiers and cannot be renamed.
+templ SystemForm(token string, id string, values SystemFormValues, errMsg string) {
+	<form method="post" action={ systemFormAction(id) } hx-post={ systemFormAction(id) } hx-target="this" hx-swap="outerHTML" class="space-y-4">
+		<input type="hidden" name="_csrf" value={ token }>
+		if errMsg != "" {
+			<div class="mb-4">@components.Alert(errMsg, false)</div>
+		}
+		if id != "" {
+			@components.Field("system", "System URN") {
+				<input type="hidden" name="system" value={ values.System }>
+				<input type="text" class="input cursor-not-allowed" value={ values.System } disabled>
+			}
+		} else {
+			@components.Field("system", "System URN") {
+				@components.Input("system", "", templ.Attributes{ "type": "text", "value": values.System, "placeholder": "urn:librevita:id:py:cedula", "required": true, "autofocus": true })
+			}
+		}
+		@components.Field("display_name", "Display name") {
+			@components.Input("display_name", "", templ.Attributes{ "type": "text", "value": values.DisplayName, "placeholder": "e.g. Cédula de Identidad (Paraguay)", "required": true })
+		}
+		@components.Field("pattern", "Pattern") {
+			@components.Input("pattern", "", templ.Attributes{ "type": "text", "value": values.Pattern, "placeholder": "anchored regex, e.g. [0-9]{8}", "required": true, "class": "input font-mono" })
+			<p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Applied to the transformed value, anchored: the whole input must match.</p>
+		}
+		@components.Field("transform", "Transform") {
+			@components.Select("transform", "", templ.Attributes{ "id": "transform" }) {
+				@systemOption("none", "Keep as typed (trim, collapse spaces)", values.Transform)
+				@systemOption("digits", "Digits only", values.Transform)
+				@systemOption("upper", "Uppercase", values.Transform)
+				@systemOption("lower", "Lowercase", values.Transform)
+			}
+		}
+		@components.Field("check_algorithm", "Check digit") {
+			@components.Select("check_algorithm", "", templ.Attributes{ "id": "check_algorithm", "hx-get": "/identifier-systems/check-fields", "hx-trigger": "change", "hx-include": "[name='check_algorithm']", "hx-target": "#system-check-fields", "hx-swap": "innerHTML" }) {
+				@systemOption("none", "None", values.CheckAlgorithm)
+				@systemOption("mod11_desc", "Modulo 11, descending weights (CPF/NIF)", values.CheckAlgorithm)
+				@systemOption("mod11_cyclic", "Modulo 11, cyclic weights 2-9 (SUS)", values.CheckAlgorithm)
+			}
+			<div id="system-check-fields">
+				@CheckFieldsPartial(values)
+			</div>
+		}
+		<div class="mt-6 flex items-center gap-3 border-t border-gray-200 pt-4 dark:border-gray-700">
+			@components.Button("primary", systemFormSubmit(id), templ.Attributes{ "type": "submit" })
+			@components.Button("secondary", "Cancel", templ.Attributes{ "type": "button", "data-lv-modal-close": true })
+		</div>
+	</form>
+}
+
+// CheckFieldsPartial renders the check-digit parameters, empty when no
+// algorithm is selected. htmx swaps it whenever the algorithm changes.
+templ CheckFieldsPartial(values SystemFormValues) {
+	if values.CheckAlgorithm != "" && values.CheckAlgorithm != "none" {
+		<div class="mt-3 grid grid-cols-3 gap-3">
+			@components.Field("check_base_len", "Base length") {
+				@components.Input("check_base_len", "", templ.Attributes{ "type": "number", "value": values.CheckBaseLen, "min": "1", "required": true })
+			}
+			@components.Field("check_dv_count", "Check digits") {
+				@components.Input("check_dv_count", "", templ.Attributes{ "type": "number", "value": orDef(values.CheckDVCount, "1"), "min": "1", "max": "2", "required": true })
+			}
+			if values.CheckAlgorithm == "mod11_desc" {
+				@components.Field("check_start_weight", "Start weight") {
+					@components.Input("check_start_weight", "", templ.Attributes{ "type": "number", "value": orDef(values.CheckStartWeight, "10"), "min": "2", "required": true })
+				}
+			}
+		</div>
+	} else {
+		<input type="hidden" name="check_base_len" value="0">
+		<input type="hidden" name="check_dv_count" value="1">
+		<input type="hidden" name="check_start_weight" value="10">
+	}
+}
+
+func orDef(s string, def string) string {
+	if s == "" {
+		return def
+	}
+	return s
+}
+
+func systemFormAction(id string) string {
+	if id == "" {
+		return "/identifier-systems"
+	}
+	return "/identifier-systems/" + id
+}
+
+func systemFormSubmit(id string) string {
+	if id == "" {
+		return "Add system"
+	}
+	return "Save changes"
+}

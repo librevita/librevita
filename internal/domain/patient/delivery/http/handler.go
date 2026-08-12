@@ -17,6 +17,7 @@ import (
 	"librevita.org/internal/core/storage"
 	"librevita.org/internal/domain/clinic"
 	"librevita.org/internal/domain/patient/delivery/views"
+	"librevita.org/internal/domain/patient/identifier"
 	"librevita.org/internal/domain/patient/repository"
 	"librevita.org/internal/domain/patient/usecase"
 	"librevita.org/internal/types"
@@ -30,17 +31,21 @@ const (
 
 // Handler renders the patient pages and processes submissions.
 type Handler struct {
-	svc    *usecase.Service
-	clocks *clinic.ClockProvider
-	csrf   *auth.CSRF
-	audit  *audit.Logger
-	files  *storage.FileManager
+	svc     *usecase.Service
+	clocks  *clinic.ClockProvider
+	csrf    *auth.CSRF
+	audit   *audit.Logger
+	files   *storage.FileManager
+	ids     *identifier.Service
+	systems *identifier.SystemsService
 }
 
 // NewHandler is the Fx provider.
 func NewHandler(svc *usecase.Service, clocks *clinic.ClockProvider,
-	csrf *auth.CSRF, auditLogger *audit.Logger, files *storage.FileManager) *Handler {
-	return &Handler{svc: svc, clocks: clocks, csrf: csrf, audit: auditLogger, files: files}
+	csrf *auth.CSRF, auditLogger *audit.Logger, files *storage.FileManager,
+	ids *identifier.Service, systems *identifier.SystemsService) *Handler {
+	return &Handler{svc: svc, clocks: clocks, csrf: csrf, audit: auditLogger,
+		files: files, ids: ids, systems: systems}
 }
 
 // List renders the registry page or, for htmx requests, only the table
@@ -80,10 +85,15 @@ func (h *Handler) List(c echo.Context) error {
 // NewPage renders the create form.
 func (h *Handler) NewPage(c echo.Context) error {
 	return server.Render(c, http.StatusOK, views.PatientFormPage(
-		server.CSRFToken(c, h.csrf), server.Principal(c), "", views.PatientFormValues{}, ""))
+		server.CSRFToken(c, h.csrf), server.Principal(c), "",
+		h.systemOptions(c.Request().Context()), views.PatientFormValues{}, ""))
 }
 
 // Create validates and inserts a patient, then navigates to its detail.
+// An identification document typed in the form is validated and
+// registered together with the patient: it is normalized first (so an
+// invalid value fails before any write), checked for duplicates in the
+// clinic, then encrypted into patient_identifiers after the row exists.
 func (h *Handler) Create(c echo.Context) error {
 	ctx := c.Request().Context()
 	clinicID, err := h.clinicID(ctx)
@@ -91,6 +101,13 @@ func (h *Handler) Create(c echo.Context) error {
 		return err
 	}
 	input := h.input(c)
+	if err := h.prepareIdentifier(ctx, clinicID, &input); err != nil {
+		var v *usecase.ValidationError
+		if errors.As(err, &v) {
+			return h.formError(c, "", input, v.Msg)
+		}
+		return err
+	}
 	patient, err := h.svc.Create(ctx, clinicID, server.ActorID(c), input)
 	if err != nil {
 		var v *usecase.ValidationError
@@ -98,6 +115,11 @@ func (h *Handler) Create(c echo.Context) error {
 			return h.formError(c, "", input, v.Msg)
 		}
 		return err
+	}
+	if err := h.createIdentifier(ctx, clinicID, patient.ID.String(), server.ActorID(c), input); err != nil {
+		// The document was registered between the pre-check and the
+		// insert (rare race); the patient exists without it.
+		return h.formError(c, "", input, err.Error())
 	}
 	h.audit.Record(ctx, server.EventFromRequest(c, types.AuditResultSuccess,
 		"patient.create", "patient:"+patient.ID.String(), patient.DisplayName, ""))
@@ -135,10 +157,14 @@ func (h *Handler) Detail(c echo.Context) error {
 	if err != nil {
 		return err
 	}
+	ids, err := h.ids.List(ctx, clinicID, row.ID.String())
+	if err != nil {
+		return err
+	}
 	return server.Render(c, http.StatusOK, views.PatientDetailPage(
 		server.CSRFToken(c, h.csrf), server.Principal(c), row,
 		clock.FormatStored(row.CreatedAt), clock.FormatStored(row.UpdatedAt), createdBy,
-		h.historyView(events, clock), docs, ""))
+		h.historyView(events, clock), docs, h.identifierRows(ctx, ids), h.systemOptions(ctx), ""))
 }
 
 // historyView turns audit events into display rows, newest first, with
@@ -197,10 +223,13 @@ func (h *Handler) EditPage(c echo.Context) error {
 		return err
 	}
 	return server.Render(c, http.StatusOK, views.PatientFormPage(
-		server.CSRFToken(c, h.csrf), server.Principal(c), row.ID.String(), values(patientInput(row)), ""))
+		server.CSRFToken(c, h.csrf), server.Principal(c), row.ID.String(),
+		h.systemOptions(ctx), values(patientInput(row)), ""))
 }
 
 // Update applies the edited values and navigates to the detail page.
+// An identification document typed in the form is registered as a new
+// identifier of the patient (the detail page manages the full list).
 func (h *Handler) Update(c echo.Context) error {
 	ctx := c.Request().Context()
 	id, err := patientID(c)
@@ -219,6 +248,13 @@ func (h *Handler) Update(c echo.Context) error {
 	if err := h.authorizePatientEdit(c, uuidStrPtr(before.CreatedBy), before.ID.String(), types.PatientStatus(before.Status)); err != nil {
 		return err
 	}
+	if err := h.prepareIdentifier(ctx, clinicID, &input); err != nil {
+		var v *usecase.ValidationError
+		if errors.As(err, &v) {
+			return h.formError(c, id.String(), input, v.Msg)
+		}
+		return err
+	}
 	patient, err := h.svc.Update(ctx, clinicID, id.String(), input)
 	if err != nil {
 		var v *usecase.ValidationError
@@ -231,9 +267,50 @@ func (h *Handler) Update(c echo.Context) error {
 			return err
 		}
 	}
+	if err := h.createIdentifier(ctx, clinicID, patient.ID.String(), server.ActorID(c), input); err != nil {
+		return h.formError(c, id.String(), input, err.Error())
+	}
 	h.audit.Record(ctx, server.EventFromRequest(c, types.AuditResultSuccess,
 		"patient.update", "patient:"+patient.ID.String(), patient.DisplayName, patientChanges(before, input)))
 	return server.HtmxRedirect(c, "/patients/"+patient.ID.String())
+}
+
+// prepareIdentifier validates the identification document typed in the
+// patient form (empty value skips it). The normalized value is checked
+// against the clinic's blind index so duplicates fail before any write.
+// The identifier fields are only carried in the form; they never enter
+// the legacy patient columns.
+func (h *Handler) prepareIdentifier(ctx context.Context, clinicID string, input *usecase.PatientInput) error {
+	value := strings.TrimSpace(input.IdentifierValue)
+	if value == "" {
+		return nil
+	}
+	if _, err := h.ids.ValidateValue(input.IdentifierSystem, value); err != nil {
+		return &usecase.ValidationError{Msg: err.Error()}
+	}
+	owner, err := h.ids.FindByValue(ctx, clinicID, value)
+	if err != nil {
+		return err
+	}
+	if len(owner) > 0 {
+		return &usecase.ValidationError{Msg: "This document is already registered"}
+	}
+	return nil
+}
+
+// createIdentifier registers the identification document of the form
+// on the patient, if one was typed.
+func (h *Handler) createIdentifier(ctx context.Context, clinicID, patientID, actorID string, input usecase.PatientInput) error {
+	value := strings.TrimSpace(input.IdentifierValue)
+	if value == "" {
+		return nil
+	}
+	if _, err := h.ids.AddIdentifier(ctx, clinicID, actorID, identifier.Input{
+		PatientID: patientID, System: input.IdentifierSystem, Value: value,
+	}); err != nil {
+		return err
+	}
+	return nil
 }
 
 // patientChanges renders the changed fields as "name: old -> new"
@@ -248,7 +325,6 @@ func patientChanges(before *repository.GetPatientWithCreatorRow, input usecase.P
 		{"display name", before.DisplayName, input.DisplayName},
 		{"birth date", orEmpty(before.BirthDate), input.BirthDate},
 		{"sex", before.Sex, input.Sex.String()},
-		{"document", orEmpty(before.Document), input.Document},
 		{"phone", orEmpty(before.Phone), input.Phone},
 		{"email", orEmpty(before.Email), input.Email},
 		{"street", orEmpty(before.Street), input.Street},
@@ -389,12 +465,10 @@ func (h *Handler) setStatus(c echo.Context, status types.PatientStatus, successM
 		if err != nil {
 			return err
 		}
-		clock, err := h.userClock(ctx)
-		if err != nil {
-			return err
-		}
-		return server.Render(c, http.StatusOK, views.PatientRowOnly(
-			[]views.PatientRow{h.rowOf(patient, clock)}))
+		// The refreshed row carries the documents column too, so the
+		// mask survives the archive/restore swap.
+		refreshed := h.rows(ctx, []repository.Patient{*patient})
+		return server.Render(c, http.StatusOK, views.PatientRowOnly(refreshed))
 	}
 	if err != nil {
 		var v *usecase.ValidationError
@@ -422,17 +496,18 @@ func (h *Handler) userClock(ctx context.Context) (*clinic.Clock, error) {
 
 func (h *Handler) input(c echo.Context) usecase.PatientInput {
 	return usecase.PatientInput{
-		DisplayName: c.FormValue("display_name"),
-		BirthDate:   c.FormValue("birth_date"),
-		Sex:         types.Sex(c.FormValue("sex")),
-		Document:    c.FormValue("document"),
-		Phone:       c.FormValue("phone"),
-		Email:       c.FormValue("email"),
-		Street:      c.FormValue("street"),
-		City:        c.FormValue("city"),
-		State:       c.FormValue("state"),
-		PostalCode:  c.FormValue("postal_code"),
-		Notes:       c.FormValue("notes"),
+		DisplayName:      c.FormValue("display_name"),
+		BirthDate:        c.FormValue("birth_date"),
+		Sex:              types.Sex(c.FormValue("sex")),
+		Phone:            c.FormValue("phone"),
+		Email:            c.FormValue("email"),
+		Street:           c.FormValue("street"),
+		City:             c.FormValue("city"),
+		State:            c.FormValue("state"),
+		PostalCode:       c.FormValue("postal_code"),
+		Notes:            c.FormValue("notes"),
+		IdentifierSystem: strings.TrimSpace(c.FormValue("identifier_system")),
+		IdentifierValue:  c.FormValue("identifier_value"),
 	}
 }
 
@@ -453,9 +528,29 @@ func (h *Handler) rows(ctx context.Context, patients []repository.Patient) []vie
 	if err != nil {
 		clock = clinic.NewClock(clinic.DefaultTimezone)
 	}
+	// The documents column comes from the encrypted identifiers: every
+	// patient of the page is decrypted in one query, then masked for
+	// display. A failed lookup degrades to the dash, never to an error
+	// page.
+	docs := map[string][]string{}
+	ids := make([]string, 0, len(patients))
+	for _, pt := range patients {
+		ids = append(ids, pt.ID.String())
+	}
+	if all, err := h.ids.ListByPatients(ctx, ids); err == nil {
+		docs = all
+	}
 	out := make([]views.PatientRow, 0, len(patients))
 	for _, pt := range patients {
-		out = append(out, h.rowOf(&pt, clock))
+		row := h.rowOf(&pt, clock)
+		if values, ok := docs[pt.ID.String()]; ok {
+			masked := make([]string, 0, len(values))
+			for _, v := range values {
+				masked = append(masked, views.MaskValue(v))
+			}
+			row.Document = strings.Join(masked, ", ")
+		}
+		out = append(out, row)
 	}
 	return out
 }
@@ -466,7 +561,7 @@ func (h *Handler) rowOf(pt *repository.Patient, clock *clinic.Clock) views.Patie
 		DisplayName: pt.DisplayName,
 		BirthDate:   orEmpty(pt.BirthDate),
 		Sex:         pt.Sex,
-		Document:    orEmpty(pt.Document),
+		Document:    "",
 		Phone:       orEmpty(pt.Phone),
 		Email:       orEmpty(pt.Email),
 		City:        orEmpty(pt.City),
@@ -477,17 +572,18 @@ func (h *Handler) rowOf(pt *repository.Patient, clock *clinic.Clock) views.Patie
 
 func values(in usecase.PatientInput) views.PatientFormValues {
 	return views.PatientFormValues{
-		DisplayName: in.DisplayName,
-		BirthDate:   in.BirthDate,
-		Sex:         in.Sex.String(),
-		Document:    in.Document,
-		Phone:       in.Phone,
-		Email:       in.Email,
-		Street:      in.Street,
-		City:        in.City,
-		State:       in.State,
-		PostalCode:  in.PostalCode,
-		Notes:       in.Notes,
+		DisplayName:      in.DisplayName,
+		BirthDate:        in.BirthDate,
+		Sex:              in.Sex.String(),
+		Phone:            in.Phone,
+		Email:            in.Email,
+		Street:           in.Street,
+		City:             in.City,
+		State:            in.State,
+		PostalCode:       in.PostalCode,
+		Notes:            in.Notes,
+		IdentifierSystem: in.IdentifierSystem,
+		IdentifierValue:  in.IdentifierValue,
 	}
 }
 
@@ -496,7 +592,6 @@ func patientInput(pt *repository.GetPatientWithCreatorRow) usecase.PatientInput 
 		DisplayName: pt.DisplayName,
 		BirthDate:   orEmpty(pt.BirthDate),
 		Sex:         types.Sex(pt.Sex),
-		Document:    orEmpty(pt.Document),
 		Phone:       orEmpty(pt.Phone),
 		Email:       orEmpty(pt.Email),
 		Street:      orEmpty(pt.Street),
@@ -527,41 +622,14 @@ func orEmpty(s *string) string {
 // formError renders the form fragment for htmx submissions and the full
 // page otherwise.
 func (h *Handler) formError(c echo.Context, id string, input usecase.PatientInput, msg string) error {
+	ctx := c.Request().Context()
 	if server.IsHtmx(c) {
 		// htmx only swaps 2xx/3xx responses, so the inline error must
 		// arrive with 200.
-		return server.Render(c, http.StatusOK, views.PatientForm("", id, values(input), msg))
+		return server.Render(c, http.StatusOK, views.PatientForm("", id, h.systemOptions(ctx), values(input), msg))
 	}
 	return server.Render(c, http.StatusBadRequest, views.PatientFormPage(
-		server.CSRFToken(c, h.csrf), server.Principal(c), id, values(input), msg))
-}
-
-// CheckDocument answers the inline duplicate check of the patient form.
-// The response is an empty element or the inline error, swapped into the
-// #document-error container.
-func (h *Handler) CheckDocument(c echo.Context) error {
-	document := strings.TrimSpace(c.FormValue("document"))
-	if document == "" {
-		return server.Render(c, http.StatusOK, views.PatientDocumentError(""))
-	}
-	clinicID, err := h.clinicID(c.Request().Context())
-	if err != nil {
-		return err
-	}
-	excludeID := strings.TrimSpace(c.FormValue("id"))
-	if excludeID != "" {
-		if _, err := uuid.Parse(excludeID); err != nil {
-			return echo.NewHTTPError(http.StatusBadRequest, "invalid patient id")
-		}
-	}
-	exists, err := h.svc.DocumentExists(c.Request().Context(), clinicID, document, excludeID)
-	if err != nil {
-		return err
-	}
-	if exists {
-		return server.Render(c, http.StatusOK, views.PatientDocumentError("This document is already registered"))
-	}
-	return server.Render(c, http.StatusOK, views.PatientDocumentError(""))
+		server.CSRFToken(c, h.csrf), server.Principal(c), id, h.systemOptions(ctx), values(input), msg))
 }
 
 // authorizePatientEdit enforces the fine-grained patient.edit policy

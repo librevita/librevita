@@ -1,0 +1,151 @@
+package views
+
+import (
+	"strconv"
+
+	"librevita.org/internal/ui/components"
+)
+
+// IdentifierRow is one decrypted identifier of a patient, decorated for
+// display. Value is the plaintext, masked for display by default; the
+// reveal button swaps it in place (anti shoulder-surfing, not access
+// control -- everyone rendering this page has patient.view).
+type IdentifierRow struct {
+	ID         string
+	System     string
+	SystemName string
+	Value      string
+	Masked     string
+}
+
+// SystemOption is one selectable document system.
+type SystemOption struct {
+	System      string
+	DisplayName string
+}
+
+// LookupHit is one patient matched by the exact document lookup.
+type LookupHit struct {
+	PatientID   string
+	DisplayName string
+	SystemName  string
+}
+
+// IdentifierLookupForm is the exact-document search in the registry
+// toolbar. The result lands in the #identifier-lookup-result container:
+// one hit redirects to the patient, several hits render a link list,
+// and no hit renders the empty state.
+templ IdentifierLookupForm() {
+	<form class="relative" hx-get="/patients/lookup" hx-target="#identifier-lookup-result" hx-swap="innerHTML">
+		<label class="sr-only" for="identifier-lookup">Exact document lookup</label>
+		<svg class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400 dark:text-gray-500" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd"></path></svg>
+		<input class="input pl-9 md:w-72" type="search" name="value" placeholder="Exact document (CPF, SUS, NIF...)" minlength="4" required>
+		<button type="submit" class="btn-secondary absolute right-1 top-1/2 -translate-y-1/2 !px-2.5 !py-1.5">Find</button>
+	</form>
+}
+
+// IdentifierLookupEmpty is the no-result state of the exact lookup.
+templ IdentifierLookupEmpty(message string) {
+	<div class="mt-4 rounded-lg border border-gray-200 bg-white p-4 text-sm text-gray-500 shadow-sm dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400">
+		{ message }
+	</div>
+}
+
+// IdentifierLookupHits lists the patients holding the searched
+// document. The plaintext is never echoed back: the user just typed it.
+templ IdentifierLookupHits(hits []LookupHit) {
+	<div class="mt-4 rounded-lg border border-gray-200 bg-white p-4 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+		<p class="text-sm font-medium text-gray-900 dark:text-white">This document belongs to { strconv.Itoa(len(hits)) } patient(s):</p>
+		<ul class="mt-2 divide-y divide-gray-200 dark:divide-gray-700">
+			for _, hit := range hits {
+				<li class="py-2">
+					<a class="flex items-center justify-between gap-4 text-sm hover:text-indigo-600 dark:hover:text-indigo-400" href={ "/patients/" + hit.PatientID }>
+						<span class="font-medium text-gray-900 dark:text-white">{ hit.DisplayName }</span>
+						<span class="text-xs text-gray-500 dark:text-gray-400">{ hit.SystemName }</span>
+					</a>
+				</li>
+			}
+		</ul>
+	</div>
+}
+
+// PatientIdentifiersSection is the identification documents block of
+// the patient detail page. The section id is the htmx swap target of
+// the remove actions, so the whole block re-renders after a change.
+templ PatientIdentifiersSection(token string, patientID string, rows []IdentifierRow, systems []SystemOption, errMsg string) {
+	<section id="patient-identifiers" class="mt-4 rounded-lg border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+		<div class="flex items-center justify-between gap-4">
+			<div>
+				<h3 class="text-base font-semibold text-gray-900 dark:text-white">Identification documents</h3>
+				<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Documents stored encrypted. Values are masked in this view; click Show to verify them.</p>
+			</div>
+			@components.Badge(strconv.Itoa(len(rows)))
+		</div>
+		<ul class="mt-4 divide-y divide-gray-200 dark:divide-gray-700">
+			for _, row := range rows {
+				<li class="flex items-center gap-4 py-3">
+					<div class="min-w-0 flex-1">
+						<p class="text-sm font-medium text-gray-900 dark:text-white">{ row.SystemName }</p>
+						<p class="font-mono text-xs text-gray-500 dark:text-gray-400">{ row.System }</p>
+					</div>
+					<span id={ "ident-value-" + row.ID } data-lv-masked={ row.Masked } class="font-mono text-sm text-gray-700 dark:text-gray-300">{ row.Masked }</span>
+					<button type="button" data-lv-reveal={ "ident-value-" + row.ID } data-lv-plain={ row.Value } data-lv-masked={ row.Masked } class="btn-secondary !px-2.5 !py-1 text-xs" aria-pressed="false">Show</button>
+					<form method="post" action={ "/patients/" + patientID + "/identifiers/" + row.ID + "/remove" } hx-post={ "/patients/" + patientID + "/identifiers/" + row.ID + "/remove" } hx-confirm="Remove this document?" hx-target="#patient-identifiers" hx-swap="outerHTML" class="inline">
+						<input type="hidden" name="_csrf" value={ token }>
+						@components.Button("danger", "Remove", templ.Attributes{ "type": "submit" })
+					</form>
+				</li>
+			}
+		</ul>
+		@IdentifierForm(token, patientID, systems, IdentifierFormValues{}, errMsg)
+	</section>
+}
+
+// IdentifierFormValues carries the typed values across a validation
+// error.
+type IdentifierFormValues struct {
+	System string
+	Value  string
+}
+
+// IdentifierForm adds one document to the patient. htmx posts replace
+// the form in place, so validation errors keep the typed values; the
+// success path is a redirect to the detail page.
+templ IdentifierForm(token string, patientID string, systems []SystemOption, values IdentifierFormValues, errMsg string) {
+	<form method="post" action={ "/patients/" + patientID + "/identifiers" } hx-post={ "/patients/" + patientID + "/identifiers" } hx-target="this" hx-swap="outerHTML" id="identifier-form" class="mt-4 flex flex-wrap items-end gap-3 border-t border-gray-200 pt-4 dark:border-gray-700">
+		<input type="hidden" name="_csrf" value={ token }>
+		@components.Field("system", "Document type") {
+			@components.Select("system", "mt-0", templ.Attributes{ "id": "system" }) {
+				@systemOption("", "Detect automatically", values.System)
+				for _, s := range systems {
+					@systemOption(s.System, s.DisplayName, values.System)
+				}
+			}
+		}
+		@components.Field("value", "Value") {
+			@components.Input("value", "mt-0", templ.Attributes{ "id": "value", "type": "text", "value": values.Value, "required": true, "autofocus": true })
+		}
+		@components.Button("primary", "Add document", templ.Attributes{ "type": "submit" })
+		if errMsg != "" {
+			<div class="w-full">@components.Alert(errMsg, false)</div>
+		}
+	</form>
+}
+
+templ systemOption(value string, label string, selected string) {
+	if value == selected {
+		<option value={ value } selected>{ label }</option>
+	} else {
+		<option value={ value }>{ label }</option>
+	}
+}
+
+// MaskValue masks a document value for on-screen display: the first
+// three and the last two characters stay visible. Short values are
+// hidden entirely. Masking is screen privacy, not access control.
+func MaskValue(value string) string {
+	if len(value) <= 5 {
+		return "••••"
+	}
+	return value[:3] + "••••" + value[len(value)-2:]
+}

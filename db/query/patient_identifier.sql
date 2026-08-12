@@ -25,7 +25,7 @@ FROM patient_identifiers
 WHERE patient_id = ?
 ORDER BY system, created_at;
 
--- name: DeletePatientIdentifier :exec
+-- name: DeletePatientIdentifier :execresult
 DELETE FROM patient_identifiers
 WHERE id = ? AND patient_id = ?;
 
