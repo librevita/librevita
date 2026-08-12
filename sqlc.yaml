@@ -8,7 +8,10 @@ sql:
   - name: "patient"
     engine: "sqlite"
     schema: "db/schema/"
-    queries: "db/query/patient.sql"
+    queries:
+      - "db/query/patient.sql"
+      - "db/query/patient_identifier.sql"
+      - "db/query/patient_identifier_system.sql"
     gen:
       go:
         package: "repository"
@@ -32,7 +35,6 @@ sql:
               package: "uuid"
               type: "UUID"
             column: "patients.created_by"
-
           - go_type:
               import: "librevita.org/internal/types"
               package: "types"
@@ -43,6 +45,51 @@ sql:
               package: "types"
               type: "DateTime"
             column: "patients.updated_at"
+          - go_type:
+              import: "github.com/google/uuid"
+              package: "uuid"
+              type: "UUID"
+            column: "patient_identifiers.id"
+          - go_type:
+              import: "github.com/google/uuid"
+              package: "uuid"
+              type: "UUID"
+            column: "patient_identifiers.patient_id"
+          - go_type:
+              import: "github.com/google/uuid"
+              package: "uuid"
+              type: "UUID"
+            column: "patient_identifiers.created_by"
+          - go_type:
+              import: "librevita.org/internal/types"
+              package: "types"
+              type: "DateTime"
+            column: "patient_identifiers.created_at"
+          - go_type:
+              import: "librevita.org/internal/types"
+              package: "types"
+              type: "DateTime"
+            column: "patient_identifiers.updated_at"
+          - go_type:
+              import: "github.com/google/uuid"
+              package: "uuid"
+              type: "UUID"
+            column: "identifier_systems.id"
+          - go_type:
+              import: "github.com/google/uuid"
+              package: "uuid"
+              type: "UUID"
+            column: "identifier_systems.created_by"
+          - go_type:
+              import: "librevita.org/internal/types"
+              package: "types"
+              type: "DateTime"
+            column: "identifier_systems.created_at"
+          - go_type:
+              import: "librevita.org/internal/types"
+              package: "types"
+              type: "DateTime"
+            column: "identifier_systems.updated_at"
   - name: "appointment"
     engine: "sqlite"
     schema: "db/schema/"
@@ -150,7 +197,6 @@ sql:
             column: "roles.system"
           - go_type: "bool"
             column: "roles.is_clinical"
-
           - go_type:
               import: "librevita.org/internal/types"
               package: "types"
@@ -191,7 +237,6 @@ sql:
               package: "types"
               type: "DateTime"
             column: "staff_change_requests.decided_at"
-
           - go_type:
               import: "librevita.org/internal/types"
               package: "types"
@@ -214,7 +259,6 @@ sql:
               package: "uuid"
               type: "UUID"
             column: "audit_log.actor_id"
-
           - go_type:
               import: "librevita.org/internal/types"
               package: "types"
@@ -237,7 +281,6 @@ sql:
               package: "uuid"
               type: "UUID"
             column: "clinics.id"
-
           - go_type:
               import: "librevita.org/internal/types"
               package: "types"
@@ -265,7 +308,6 @@ sql:
               package: "uuid"
               type: "UUID"
             column: "policies.id"
-
           - go_type:
               import: "librevita.org/internal/types"
               package: "types"
@@ -313,7 +355,6 @@ sql:
               package: "types"
               type: "DateTime"
             column: "storage_objects.created_at"
-
   - name: "session"
     engine: "sqlite"
     schema: "db/schema/"
@@ -330,7 +371,6 @@ sql:
               package: "uuid"
               type: "UUID"
             column: "sessions.user_id"
-
           - go_type:
               import: "librevita.org/internal/types"
               package: "types"
@@ -341,7 +381,6 @@ sql:
               package: "types"
               type: "DateTime"
             column: "sessions.expires_at"
-
           - go_type:
               import: "librevita.org/internal/types"
               package: "types"
