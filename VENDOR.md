@@ -40,14 +40,15 @@ Go module `librevita.org`, built with `CGO_ENABLED=0` into a static binary on a 
 
 ### Build-time Go tools
 
-Installed in the Earthfile `+go-templ`, `+go-sqlc`, and `+go-lint` targets and never linked into the binary; used only
-to generate committed sources or to analyze the code.
+Installed in the Earthfile `+go-tool-templ`, `+go-tool-sqlc`, `+go-tool-lint`, and `+go-tool-vuln` targets and never
+linked into the binary; used only to generate committed sources or to analyze the code.
 
 | Package                                              | Version   | License | Purpose                                             |
 | ---------------------------------------------------- | --------- | ------- | --------------------------------------------------- |
 | `github.com/a-h/templ/cmd/templ`                     | v0.3.1020 | MIT     | Code generation for SSR templates (`templ generate`) |
 | `github.com/sqlc-dev/sqlc/cmd/sqlc`                  | v1.31.1   | MIT     | SQL query code generation (`sqlc generate`)          |
 | `github.com/golangci/golangci-lint/v2/cmd/golangci-lint` | v2.12.2 | GPL-3.0 | Static analysis (`golangci-lint run`, config `.golangci.yml`) |
+| `golang.org/x/vuln/cmd/govulncheck`                  | v1.1.4    | BSD-3-Clause | Known-vulnerability scan of modules and the binary |
 
 ## Frontend
 
