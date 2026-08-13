@@ -13,6 +13,7 @@ import * as dropdown from './dropdown.ts';
 import * as modal from './modal.ts';
 import * as tableSelect from './table-select.ts';
 import * as reveal from './reveal.ts';
+import * as datepicker from './datepicker.ts';
 
 configureHtmx();
 forwardCsrf();
@@ -24,6 +25,7 @@ tableSelect.init();
 modal.init();
 dropdown.init();
 reveal.init();
+datepicker.init();
 
 document.addEventListener('htmx:afterSwap', (evt) => {
   const detail = (evt as CustomEvent<HtmxAfterSwapDetail>).detail;
@@ -38,6 +40,7 @@ document.addEventListener('htmx:afterSwap', (evt) => {
   modal.refresh(root);
   dropdown.refresh(root);
   reveal.refresh(root);
+  datepicker.refresh(root);
   // Only page navigations (boosted swaps target the body) move the focus
   // to the main content; fragment swaps (search, pager, row updates) must
   // leave the focus where the user is typing or clicking.

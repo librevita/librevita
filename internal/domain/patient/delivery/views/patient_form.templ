@@ -58,7 +58,7 @@ templ PatientForm(token string, id string, systems []SystemOption, values Patien
 			<div class="flex flex-wrap gap-4">
 				<div class="flex-1">
 					@components.Field("birth_date", "Birth date") {
-						@components.Input("birth_date", "", templ.Attributes{ "id": "birth_date", "type": "date", "value": values.BirthDate })
+						@components.Datepicker("birth_date", "", templ.Attributes{ "id": "birth_date", "value": values.BirthDate })
 					}
 				</div>
 				<div class="flex-1">
