@@ -83,7 +83,7 @@ func (s *Service) AddIdentifier(ctx context.Context, clinicID, createdBy string,
 	if err != nil {
 		return nil, fmt.Errorf("identifier: generate id: %w", err)
 	}
-	row, err := s.q.CreatePatientIdentifier(ctx, repository.CreatePatientIdentifierParams{
+	if err := s.q.CreatePatientIdentifier(ctx, repository.CreatePatientIdentifierParams{
 		ID:              id,
 		PatientID:       uuid.MustParse(in.PatientID),
 		System:          strategy.System(),
@@ -91,20 +91,17 @@ func (s *Service) AddIdentifier(ctx context.Context, clinicID, createdBy string,
 		Nonce:           nonce,
 		BlindIndex:      blind,
 		CreatedBy:       uuidOrNil(createdBy),
-	})
-	if isUniqueViolation(err) {
-		return nil, ErrDuplicate
-	}
-	if err != nil {
+	}); err != nil {
+		if isUniqueViolation(err) {
+			return nil, ErrDuplicate
+		}
 		return nil, fmt.Errorf("identifier: create: %w", err)
 	}
 	return &Identifier{
-		ID:        row.ID.String(),
-		PatientID: row.PatientID.String(),
-		System:    row.System,
+		ID:        id.String(),
+		PatientID: in.PatientID,
+		System:    strategy.System(),
 		Value:     normalized,
-		CreatedAt: row.CreatedAt,
-		UpdatedAt: row.UpdatedAt,
 	}, nil
 }
 
@@ -287,12 +284,23 @@ func (s *Service) ValidateValue(system, raw string) (string, error) {
 	return strategy.System(), nil
 }
 
-// isUniqueViolation reports whether err is a SQLite UNIQUE constraint
-// failure (the blind_index collision that maps to ErrDuplicate).
+// isUniqueViolation reports whether err is a UNIQUE constraint
+// failure (the blind_index collision that maps to ErrDuplicate). It
+// recognizes the backends the application can run on:
+//
+//   - the SQLite driver (modernc) returns an error with Code() 2067
+//     (SQLITE_CONSTRAINT_UNIQUE);
+//   - the dqlite driver reports the extended code 2067 on the write
+//     path and a plain "UNIQUE constraint failed" message otherwise;
+//   - the rqlite driver normalizes to the same Code() interface.
 func isUniqueViolation(err error) bool {
-	var sqliteErr interface{ Code() int }
-	if errors.As(err, &sqliteErr) {
-		return sqliteErr.Code() == 2067 // SQLITE_CONSTRAINT_UNIQUE
+	if err == nil {
+		return false
 	}
-	return false
+	type coded interface{ Code() int }
+	var withCode coded
+	if errors.As(err, &withCode) {
+		return withCode.Code() == 2067
+	}
+	return strings.Contains(err.Error(), "UNIQUE constraint failed")
 }

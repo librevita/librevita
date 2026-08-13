@@ -120,7 +120,7 @@ data_dir: ./data
 database:
   driver: sqlite
   path: ./librevita.db
-  rqlite_addr: http://localhost:4001
+  dqlite_addrs: node1:9001,node2:9001,node3:9001
 logging:
   mode: console
   path: ./librevita.log

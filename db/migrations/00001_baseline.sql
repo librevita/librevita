@@ -1,11 +1,15 @@
 -- +goose Up
 -- +goose NO TRANSACTION
--- Initial baseline. No business tables here; persist WAL mode in the
--- database file. All tables are created STRICT (SQLite strict typing):
--- columns accept only their declared affinity, so a wrong type is a
--- hard error instead of silent coercion.
-PRAGMA journal_mode = WAL;
+-- Initial baseline. No business tables here; all tables are created
+-- STRICT (SQLite strict typing): columns accept only their declared
+-- affinity, so a wrong type is a hard error instead of silent
+-- coercion.
+--
+-- WAL journal mode is deliberately NOT persisted here: the SQLite
+-- backend sets it per connection in openSQLite, and distributed
+-- backends that replicate the WAL (dqlite, rqlite) require WAL mode at
+-- all times and reject the PRAGMA. Keeping the migrations
+-- backend-agnostic lets the same suite run against every backend.
 
 -- +goose Down
 -- +goose NO TRANSACTION
-PRAGMA journal_mode = DELETE;
