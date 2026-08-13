@@ -13,8 +13,8 @@ import (
 // through the server-rendered meta tag, so the cookie never needs to be
 // readable.
 func TestCSRFCookieAttributes(t *testing.T) {
-	dev := NewCSRF(&config.Config{Env: "development"})
-	prod := NewCSRF(&config.Config{Env: "production"})
+	dev := NewCSRF(&config.Config{Mode: "development"})
+	prod := NewCSRF(&config.Config{Mode: "production"})
 
 	for name, c := range map[string]*CSRF{"development": dev, "production": prod} {
 		cookie := c.Cookie("token")

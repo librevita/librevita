@@ -161,20 +161,20 @@ func TestNewFromConfigKeyPolicy(t *testing.T) {
 
 	// Outside development the key is required.
 	for _, env := range []string{"production", "staging"} {
-		cfg := &config.Config{Env: env}
+		cfg := &config.Config{Mode: env}
 		if _, err := NewFromConfig(cfg, log); err == nil {
 			t.Fatalf("NewFromConfig(%s) without key = nil error, want error", env)
 		}
 	}
 
 	// A configured key always works.
-	cfg := &config.Config{Env: "production", MasterKey: testKey}
+	cfg := &config.Config{Mode: "production", MasterKey: testKey}
 	if _, err := NewFromConfig(cfg, log); err != nil {
 		t.Fatalf("NewFromConfig with key: %v", err)
 	}
 
 	// Development falls back to an ephemeral key.
-	dev := &config.Config{Env: "development"}
+	dev := &config.Config{Mode: "development"}
 	key, err := NewFromConfig(dev, log)
 	if err != nil {
 		t.Fatalf("NewFromConfig(development): %v", err)

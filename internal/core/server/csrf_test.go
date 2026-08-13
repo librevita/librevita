@@ -43,7 +43,7 @@ func doRequest(e *echo.Echo, method, path string, body string, cookies []*http.C
 }
 
 func testCSRF() *auth.CSRF {
-	return auth.NewCSRF(&config.Config{Env: "test"})
+	return auth.NewCSRF(&config.Config{Mode: "test"})
 }
 
 func cookieValue(cookies []*http.Cookie, name string) string {

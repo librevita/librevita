@@ -11,11 +11,11 @@ import (
 )
 
 func TestLoadPrecedence(t *testing.T) {
-	t.Setenv("LIBREVITA_ENV", "production")
+	t.Setenv("LIBREVITA_MODE", "production")
 	t.Setenv("LIBREVITA_DB_PATH", "env.db")
 
 	configFile := filepath.Join(t.TempDir(), "config.yaml")
-	configYAML := []byte("env: development\nhttp_addr: ':9000'\ndatabase:\n  driver: sqlite\n  path: file.db\n  dqlite_addrs: node1:9001,node2:9001\n  dqlite_database: lv\n")
+	configYAML := []byte("mode: development\nhttp_addr: ':9000'\ndatabase:\n  driver: sqlite\n  path: file.db\n  dqlite_addrs: node1:9001,node2:9001\n  dqlite_database: lv\n")
 	if err := os.WriteFile(configFile, configYAML, 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -34,8 +34,8 @@ func TestLoadPrecedence(t *testing.T) {
 	if cfg.ConfigFile != configFile {
 		t.Errorf("ConfigFile = %q, want %q", cfg.ConfigFile, configFile)
 	}
-	if cfg.Env != "production" {
-		t.Errorf("Env = %q, want production", cfg.Env)
+	if cfg.Mode != "production" {
+		t.Errorf("Mode = %q, want production", cfg.Mode)
 	}
 	if cfg.HTTPAddr != ":9100" {
 		t.Errorf("HTTPAddr = %q, want :9100", cfg.HTTPAddr)

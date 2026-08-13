@@ -50,7 +50,7 @@ func newAvatarEnv(t *testing.T) (*echo.Echo, *auth.SessionManager, *storage.File
 	t.Helper()
 	db := openAvatarDB(t)
 	log := slog.New(slog.DiscardHandler)
-	sessions, err := auth.NewSessionManager(db, &config.Config{Env: "development"}, log)
+	sessions, err := auth.NewSessionManager(db, &config.Config{Mode: "development"}, log)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,7 +70,7 @@ func newAvatarEnv(t *testing.T) (*echo.Echo, *auth.SessionManager, *storage.File
 		t.Fatalf("seed admin: %v", err)
 	}
 	files := mustFileManager(t, db)
-	csrf := auth.NewCSRF(&config.Config{Env: "development"})
+	csrf := auth.NewCSRF(&config.Config{Mode: "development"})
 	h := NewHandler(svc, nil, csrf, sessions, policies, auditLogger, clinic.NewClockProvider(db), files, log)
 
 	e := echo.New()

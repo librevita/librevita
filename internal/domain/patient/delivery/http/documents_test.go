@@ -55,7 +55,7 @@ func newDocEnv(t *testing.T) (*echo.Echo, *auth.SessionManager, *usecase.Service
 	t.Helper()
 	db := openDocDB(t)
 	log := slog.New(slog.DiscardHandler)
-	sessions, err := auth.NewSessionManager(db, &config.Config{Env: "development"}, log)
+	sessions, err := auth.NewSessionManager(db, &config.Config{Mode: "development"}, log)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +75,7 @@ func newDocEnv(t *testing.T) (*echo.Echo, *auth.SessionManager, *usecase.Service
 	if err != nil {
 		t.Fatal(err)
 	}
-	csrf := auth.NewCSRF(&config.Config{Env: "development"})
+	csrf := auth.NewCSRF(&config.Config{Mode: "development"})
 	if err := testutil.Clinic(context.Background(), db, "01990000-0000-7000-8000-0000000000d0", "Test Clinic", "000.000.000-00"); err != nil {
 		t.Fatalf("seed clinic: %v", err)
 	}

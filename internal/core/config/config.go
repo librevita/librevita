@@ -39,7 +39,7 @@ const (
 
 	keyConfigFile = "config_file"
 
-	defaultEnv            = "development"
+	defaultMode           = "development"
 	defaultHTTPAddr       = ":8080"
 	defaultDataDir        = "./data"
 	defaultDqliteDatabase = "librevita"
@@ -56,8 +56,10 @@ type Config struct {
 	// ConfigFile is the file that was loaded, if any.
 	ConfigFile string `koanf:"config_file"`
 
-	// Env is the runtime environment, such as "development" or "production".
-	Env string `koanf:"env"`
+	// Mode is the runtime mode: "development" or "production". Every
+	// value other than "development" is treated as a persistent
+	// deployment (secrets required, Secure cookies).
+	Mode string `koanf:"mode"`
 
 	// HTTPAddr is the Echo bind address, for example ":8080".
 	HTTPAddr string `koanf:"http_addr"`
@@ -166,7 +168,7 @@ type S3Config struct {
 // than once.
 func RegisterFlags(fs *pflag.FlagSet) {
 	stringFlag(fs, "config", "", "configuration file (.yaml, .yml, or .json)")
-	stringFlag(fs, "env", defaultEnv, "runtime environment")
+	stringFlag(fs, "mode", defaultMode, "runtime mode: development or production")
 	stringFlag(fs, "http-addr", defaultHTTPAddr, "HTTP bind address")
 	stringFlag(fs, "trusted-proxies", "", "comma-separated proxy IPs allowed to set X-Forwarded-For")
 	stringFlag(fs, "data-dir", defaultDataDir, "base directory for database and logs")
@@ -196,7 +198,7 @@ func RegisterFlags(fs *pflag.FlagSet) {
 
 // IsProduction reports whether the application runs in production.
 func (c *Config) IsProduction() bool {
-	return strings.EqualFold(c.Env, "production")
+	return strings.EqualFold(c.Mode, "production")
 }
 
 // IsDevelopment reports whether the application runs in the explicit
@@ -205,7 +207,7 @@ func (c *Config) IsProduction() bool {
 // Secure flag, so a deployment labeled "staging" or "prod" never falls
 // back to ephemeral keys or insecure cookies.
 func (c *Config) IsDevelopment() bool {
-	return strings.EqualFold(c.Env, "development")
+	return strings.EqualFold(c.Mode, "development")
 }
 
 // New is the Fx configuration provider.
@@ -287,9 +289,9 @@ func loadFlags(k *koanf.Koanf, fs *pflag.FlagSet) error {
 }
 
 func (c *Config) normalize() {
-	c.Env = strings.TrimSpace(c.Env)
-	if c.Env == "" {
-		c.Env = defaultEnv
+	c.Mode = strings.TrimSpace(c.Mode)
+	if c.Mode == "" {
+		c.Mode = defaultMode
 	}
 
 	c.HTTPAddr = strings.TrimSpace(c.HTTPAddr)
@@ -385,8 +387,8 @@ func mapFlagKey(name string) string {
 	switch strings.ToLower(name) {
 	case "config", "config-file", "config_file":
 		return keyConfigFile
-	case "env":
-		return "env"
+	case "mode":
+		return "mode"
 	case "http-addr", "http_addr":
 		return "http_addr"
 	case "data-dir", "data_dir":
@@ -445,8 +447,8 @@ func mapEnvironmentKey(key string) string {
 	switch key {
 	case "config", "config_file":
 		return keyConfigFile
-	case "env":
-		return "env"
+	case "mode":
+		return "mode"
 	case "http_addr":
 		return "http_addr"
 	case "data_dir":
