@@ -29,7 +29,7 @@ func registerLifecycle(lc fx.Lifecycle, e *echo.Echo, cfg *config.Config, log *s
 			go func() {
 				log.Info("HTTP server listening", "addr", net.JoinHostPort(cfg.HTTPBind, strconv.Itoa(cfg.HTTPPort)))
 				httpAddr := net.JoinHostPort(cfg.HTTPBind, strconv.Itoa(cfg.HTTPPort))
-			if err := e.Start(httpAddr); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				if err := e.Start(httpAddr); err != nil && !errors.Is(err, http.ErrServerClosed) {
 					log.Error("HTTP server failed", "error", err)
 					_ = shutdown.Shutdown()
 				}

@@ -256,7 +256,7 @@ func TestSessionCookieAttributes(t *testing.T) {
 		t.Fatal(err)
 	}
 	prod, err := NewSessionManager(db, &config.Config{
-Mode: "production", PasetoKey: base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{0x42}, 32)),
+		Mode: "production", PasetoKey: base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{0x42}, 32)),
 	}, log)
 	if err != nil {
 		t.Fatal(err)
