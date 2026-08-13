@@ -8,6 +8,7 @@ import { Event, parseHTML } from 'linkedom';
 import { selectTab } from './tabs.ts';
 import { rowBoxes } from './table-select.ts';
 import * as dropdown from './dropdown.ts';
+import { parseISO, formatISO, daysInMonth, isSameDay, addMonths, monthLabel, buildGrid } from './datepicker.ts';
 
 test('tabs.selectTab toggles panels and active classes', () => {
   const { document } = parseHTML(
@@ -80,4 +81,60 @@ test('dropdown opens pinned to the viewport and closes outside', () => {
   const outside = document.getElementById('outside') as HTMLElement;
   outside.dispatchEvent(new Event('click', { bubbles: true }) as unknown as globalThis.Event);
   assert.equal(menu.classList.contains('hidden'), true);
+});
+
+test('datepicker.parseISO accepts ISO dates and rejects everything else', () => {
+  assert.deepEqual(parseISO('2025-12-25'), new Date(2025, 11, 25));
+  assert.deepEqual(parseISO('2024-02-29'), new Date(2024, 1, 29));
+  assert.equal(parseISO(''), null);
+  assert.equal(parseISO('2025-02-30'), null);
+  assert.equal(parseISO('2025-13-01'), null);
+  assert.equal(parseISO('2025-0-01'), null);
+  assert.equal(parseISO('12/25/2025'), null);
+  assert.equal(parseISO('2025-12-25T10:00:00'), null);
+});
+
+test('datepicker.formatISO pads to the ISO layout', () => {
+  assert.equal(formatISO(new Date(2025, 0, 5)), '2025-01-05');
+  assert.equal(formatISO(new Date(2025, 11, 25)), '2025-12-25');
+  assert.equal(formatISO(parseISO('2025-01-05') as Date), '2025-01-05');
+});
+
+test('datepicker.daysInMonth handles leap years', () => {
+  assert.equal(daysInMonth(2025, 0), 31);
+  assert.equal(daysInMonth(2025, 1), 28);
+  assert.equal(daysInMonth(2024, 1), 29);
+  assert.equal(daysInMonth(2025, 11), 31);
+});
+
+test('datepicker.isSameDay compares calendar days', () => {
+  assert.equal(isSameDay(new Date(2025, 11, 25, 23, 59), new Date(2025, 11, 25, 0, 0)), true);
+  assert.equal(isSameDay(new Date(2025, 11, 25), new Date(2025, 11, 26)), false);
+  assert.equal(isSameDay(new Date(2025, 11, 25), new Date(2024, 11, 25)), false);
+});
+
+test('datepicker.addMonths clamps day-of-month', () => {
+  assert.deepEqual(addMonths(new Date(2025, 0, 15), 1), new Date(2025, 1, 15));
+  assert.deepEqual(addMonths(new Date(2025, 11, 25), 1), new Date(2026, 0, 25));
+  assert.deepEqual(addMonths(new Date(2025, 0, 15), -1), new Date(2024, 11, 15));
+  assert.deepEqual(addMonths(new Date(2025, 0, 31), 1), new Date(2025, 1, 28));
+  assert.deepEqual(addMonths(new Date(2024, 0, 31), 1), new Date(2024, 1, 29));
+});
+
+test('datepicker.monthLabel renders the header text', () => {
+  assert.equal(monthLabel(2025, 0), 'January 2025');
+  assert.equal(monthLabel(2025, 11), 'December 2025');
+});
+
+test('datepicker.buildGrid returns 42 cells starting on the Sunday before the first', () => {
+  // December 2025 starts on a Monday.
+  const grid = buildGrid(2025, 11);
+  assert.equal(grid.length, 42);
+  assert.deepEqual(grid[0], new Date(2025, 10, 30));
+  assert.deepEqual(grid[1], new Date(2025, 11, 1));
+  assert.deepEqual(grid[31], new Date(2025, 11, 31));
+  assert.deepEqual(grid[41], new Date(2026, 0, 10));
+  // A month starting on a Sunday (March 2026) starts the grid itself.
+  const march = buildGrid(2026, 2);
+  assert.deepEqual(march[0], new Date(2026, 2, 1));
 });
