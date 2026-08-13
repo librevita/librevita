@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/knadh/koanf/providers/posflag"
+	"github.com/knadh/koanf/v2"
 	"github.com/spf13/pflag"
 )
 
@@ -84,5 +86,41 @@ func TestValidateDqliteAddrs(t *testing.T) {
 				t.Fatalf("validate(%q) = %v, want nil", tc.addrs, err)
 			}
 		})
+	}
+}
+
+func TestStorageFlagsMapToNestedKeys(t *testing.T) {
+	flags := pflag.NewFlagSet("storage-test", pflag.ContinueOnError)
+	RegisterFlags(flags)
+	if err := flags.Parse([]string{
+		"--storage-backend", "s3",
+		"--storage-local-dir", "/tmp/files",
+		"--storage-s3-endpoint", "minio:9000",
+		"--storage-s3-bucket", "lv",
+		"--storage-s3-access-key", "ak",
+		"--storage-s3-secret-key", "sk",
+		"--storage-s3-region", "us-east-1",
+		"--storage-s3-secure=false",
+		"--storage-s3-path-style=false",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	k := koanf.New(".")
+	if err := k.Load(posflag.ProviderWithFlag(flags, ".", k, func(f *pflag.Flag) (string, any) {
+		return mapFlagKey(f.Name), posflag.FlagVal(flags, f)
+	}), nil); err != nil {
+		t.Fatal(err)
+	}
+	var cfg Config
+	if err := k.Unmarshal("", &cfg); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Storage.Backend != "s3" || cfg.Storage.Local.Dir != "/tmp/files" {
+		t.Errorf("local: backend=%q dir=%q", cfg.Storage.Backend, cfg.Storage.Local.Dir)
+	}
+	if cfg.Storage.S3.Endpoint != "minio:9000" || cfg.Storage.S3.Bucket != "lv" ||
+		cfg.Storage.S3.AccessKey != "ak" || cfg.Storage.S3.SecretKey != "sk" ||
+		cfg.Storage.S3.Region != "us-east-1" || cfg.Storage.S3.Secure || cfg.Storage.S3.PathStyle {
+		t.Errorf("s3 = %+v", cfg.Storage.S3)
 	}
 }

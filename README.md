@@ -163,14 +163,14 @@ The main flags are:
 | `--paseto-key`                 | `LIBREVITA_PASETO_KEY`                 | Session key (base64, 32 bytes; required outside development) |
 | `--auth-max-concurrent-hashes` | `LIBREVITA_AUTH_MAX_CONCURRENT_HASHES` | Bound on concurrent Argon2id operations                      |
 | `--storage-backend`            | `LIBREVITA_STORAGE_BACKEND`            | File storage backend: `local` or `s3`                        |
-| `--storage-dir`                | `LIBREVITA_STORAGE_LOCAL_DIR`          | Local file storage directory (default `<data-dir>/files`)    |
-| `--s3-endpoint`                | `LIBREVITA_STORAGE_S3_ENDPOINT`        | S3-compatible API endpoint                                   |
-| `--s3-bucket`                  | `LIBREVITA_STORAGE_S3_BUCKET`          | S3 bucket for stored files                                   |
-| `--s3-access-key`              | `LIBREVITA_STORAGE_S3_ACCESS_KEY`      | S3 access key                                                |
-| `--s3-secret-key`              | `LIBREVITA_STORAGE_S3_SECRET_KEY`      | S3 secret key                                                |
-| `--s3-region`                  | `LIBREVITA_STORAGE_S3_REGION`          | S3 region (may be empty outside AWS)                         |
-| `--s3-secure`                  | `LIBREVITA_STORAGE_S3_SECURE`          | Use HTTPS for the S3 endpoint                                |
-| `--s3-path-style`              | `LIBREVITA_STORAGE_S3_PATH_STYLE`      | Use path-style S3 addressing                                 |
+| `--storage-local-dir`          | `LIBREVITA_STORAGE_LOCAL_DIR`          | Local file storage directory (default `<data-dir>/files`)    |
+| `--storage-s3-endpoint`        | `LIBREVITA_STORAGE_S3_ENDPOINT`        | S3-compatible API endpoint                                   |
+| `--storage-s3-bucket`          | `LIBREVITA_STORAGE_S3_BUCKET`          | S3 bucket for stored files                                   |
+| `--storage-s3-access-key`      | `LIBREVITA_STORAGE_S3_ACCESS_KEY`      | S3 access key                                                |
+| `--storage-s3-secret-key`      | `LIBREVITA_STORAGE_S3_SECRET_KEY`      | S3 secret key                                                |
+| `--storage-s3-region`          | `LIBREVITA_STORAGE_S3_REGION`          | S3 region (may be empty outside AWS)                         |
+| `--storage-s3-secure`          | `LIBREVITA_STORAGE_S3_SECURE`          | Use HTTPS for the S3 endpoint                                |
+| `--storage-s3-path-style`      | `LIBREVITA_STORAGE_S3_PATH_STYLE`      | Use path-style S3 addressing                                 |
 | `--trusted-proxies`            | `LIBREVITA_TRUSTED_PROXIES`            | Comma-separated proxy IPs allowed to set `X-Forwarded-For`   |
 
 `LIBREVITA_DATABASE_*` names are also accepted for database settings.
