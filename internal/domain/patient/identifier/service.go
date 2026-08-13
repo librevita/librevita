@@ -3,6 +3,7 @@ package identifier
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -190,51 +191,31 @@ func (s *Service) List(ctx context.Context, clinicID, patientID string) ([]*Iden
 	return out, nil
 }
 
-// listByPatientsSQL fetches the encrypted identifiers of a page of
-// patients in one round trip. It lives here, not in sqlc: SQLite with
-// database/sql has no slice parameters (the /*SLICE:*/ annotation is
-// not expanded for this backend, verified against sqlc v1.31.1), and
-// the placeholder list is built per call.
-const listByPatientsSQL = `SELECT patient_id, system, value_ciphertext, nonce
-FROM patient_identifiers
-WHERE patient_id IN (%s)
-ORDER BY patient_id, system`
-
 // ListByPatients returns the decrypted values of a page of patients,
-// keyed by patient id, in a single query. Used by the registry list to
-// render the documents column (masked) without per-row round trips.
-// The patient ids come from the already clinic-scoped page query.
+// keyed by patient id, in a single query (see
+// ListIdentifiersByPatients). Used by the registry list to render the
+// documents column (masked) without per-row round trips. The patient
+// ids come from the already clinic-scoped page query.
 func (s *Service) ListByPatients(ctx context.Context, patientIDs []string) (map[string][]string, error) {
 	out := make(map[string][]string, len(patientIDs))
 	if len(patientIDs) == 0 {
 		return out, nil
 	}
-	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(patientIDs)), ",")
-	args := make([]any, len(patientIDs))
-	for i, id := range patientIDs {
-		args[i] = id
-	}
-	rows, err := s.db.QueryContext(ctx, fmt.Sprintf(listByPatientsSQL, placeholders), args...)
+	idsJSON, err := json.Marshal(patientIDs)
 	if err != nil {
 		return nil, fmt.Errorf("identifier: list by patients: %w", err)
 	}
-	defer rows.Close()
-	for rows.Next() {
-		var patientID string
-		var system string
-		var ciphertext []byte
-		var nonce []byte
-		if err := rows.Scan(&patientID, &system, &ciphertext, &nonce); err != nil {
-			return nil, fmt.Errorf("identifier: list by patients: %w", err)
-		}
-		value, err := s.key.Open([]byte(system), ciphertext, nonce)
-		if err != nil {
-			return nil, fmt.Errorf("identifier: decrypt %s: %w", patientID, err)
-		}
-		out[patientID] = append(out[patientID], string(value))
-	}
-	if err := rows.Err(); err != nil {
+	rows, err := s.q.ListIdentifiersByPatients(ctx, string(idsJSON))
+	if err != nil {
 		return nil, fmt.Errorf("identifier: list by patients: %w", err)
+	}
+	for _, row := range rows {
+		value, err := s.key.Open([]byte(row.System), row.ValueCiphertext, row.Nonce)
+		if err != nil {
+			return nil, fmt.Errorf("identifier: decrypt %s: %w", row.PatientID, err)
+		}
+		patient := row.PatientID.String()
+		out[patient] = append(out[patient], string(value))
 	}
 	return out, nil
 }
