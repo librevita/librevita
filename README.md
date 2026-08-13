@@ -349,10 +349,16 @@ HTTP errors use RFC 7807 `application/problem+json` responses.
 The clinical and administrative features are organized in `internal/domain`:
 
 - **Patients** — full registry CRUD with whole-word search (debounced server-side), status (active/archived), bulk
-  archive, an audit-backed change history on the detail page, and FHIR-style identification documents (system + value)
-  stored encrypted at field level with a keyed blind index for exact lookup. Duplicates are rejected deployment-wide.
-  Editing is governed by the
+  archive, an audit-backed change history on the detail page, clinical attachments (uploads are checksummed into the
+  audit chain, downloads are audited), and FHIR-style identification documents (system + value) stored encrypted at
+  field level with a keyed blind index for exact lookup; duplicates are rejected deployment-wide. The document
+  systems themselves are administered at runtime (pattern, transform, check digit), so a deployment registers its
+  jurisdictions' documents without a code change. Editing is governed by the
   resource-level `patient.edit` policy: physicians edit only the patients they registered, admins edit everything.
+- **Clinic** — the installation profile (name, tax id, contact, timezone), created once by onboarding and resolved
+  per request through the clock provider. The tenant model is single-clinic per installation (ADR-0001,
+  `docs/adr/0001-single-clinic-tenant.md`): `clinic_id` on clinical tables is future-proofing, with the scope
+  convention enforced by a test guard over the sqlc queries.
 - **Staff & specialties** — the clinic specialty catalog and the physician directory. Receptionists propose profile
   changes (name, email, specialties) that an administrator approves or rejects; the request snapshots the previous
   profile so the diff stays readable, and the whole flow (list, history, filters, pagination) is audited.
