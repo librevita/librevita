@@ -42,3 +42,14 @@ SET
     updated_at = (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 WHERE id = ?
 RETURNING *;
+
+-- name: ListIdentifiersByPatients :many
+-- Identifiers of a page of patients (the registry list), decrypted and
+-- masked by the application. The patient ids arrive as one JSON array
+-- parameter: sqlc has no slice parameters for SQLite (verified against
+-- v1.31.1, the latest), and json_each (SQLite 3.38+) is the portable
+-- single-parameter IN.
+SELECT patient_id, system, value_ciphertext, nonce
+FROM patient_identifiers
+WHERE patient_id IN (SELECT value FROM json_each(?))
+ORDER BY patient_id, system;
