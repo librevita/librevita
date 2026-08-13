@@ -1,6 +1,9 @@
 # LibreVita
 
-[![CI](https://github.com/librevita/librevita/actions/workflows/ci.yaml/badge.svg)](https://github.com/librevita/librevita/actions/workflows/ci.yaml)
+[![CI](https://img.shields.io/github/actions/workflow/status/librevita/librevita/ci.yaml?style=flat-square&logo=github)](https://github.com/librevita/librevita/actions/workflows/ci.yaml)
+[![Go version](https://img.shields.io/github/go-mod/go-version/librevita/librevita?style=flat-square)](https://go.dev/dl/)
+[![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue?style=flat-square)](LICENSE)
+[![Repo size](https://img.shields.io/github/repo-size/librevita/librevita?style=flat-square)]()
 
 Self-hosted medical clinic management software built in Go. The module path is `librevita.org`.
 
