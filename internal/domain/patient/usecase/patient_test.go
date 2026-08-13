@@ -10,6 +10,7 @@ import (
 
 	"librevita.org/internal/core/auth"
 	"librevita.org/internal/core/policy"
+	"librevita.org/internal/testutil"
 
 	_ "modernc.org/sqlite"
 
@@ -257,8 +258,7 @@ func TestCreateRecordsRegistrar(t *testing.T) {
 	db := openDB(t)
 	svc := newService(t, db)
 
-	if _, err := db.Exec(`INSERT INTO users (id, email, password_hash, display_name, role_id)
-		VALUES (?, 'ana@example.org', 'x', 'Ana Souza', '00000000-0000-7000-8000-000000000001')`, testUserID.String()); err != nil {
+	if err := testutil.User(context.Background(), db, testUserID.String(), "ana@example.org", "admin", "x"); err != nil {
 		t.Fatal(err)
 	}
 	pt, err := svc.Create(context.Background(), testClinicID.String(), testUserID.String(), validInput())

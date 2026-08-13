@@ -26,6 +26,7 @@ import (
 	"librevita.org/internal/domain/clinic"
 	"librevita.org/internal/domain/patient/identifier"
 	"librevita.org/internal/domain/patient/usecase"
+	"librevita.org/internal/testutil"
 )
 
 var testAdminID = uuid.MustParse("01990000-0000-7000-8000-00000000000a")
@@ -75,13 +76,10 @@ func newDocEnv(t *testing.T) (*echo.Echo, *auth.SessionManager, *usecase.Service
 		t.Fatal(err)
 	}
 	csrf := auth.NewCSRF(&config.Config{Env: "development"})
-	if _, err := db.Exec(`INSERT INTO clinics (id, name, tax_id) VALUES
-		('01990000-0000-7000-8000-0000000000d0', 'Test Clinic', '000.000.000-00')`); err != nil {
+	if err := testutil.Clinic(context.Background(), db, "01990000-0000-7000-8000-0000000000d0", "Test Clinic", "000.000.000-00"); err != nil {
 		t.Fatalf("seed clinic: %v", err)
 	}
-	if _, err := db.Exec(`INSERT INTO users (id, email, password_hash, display_name, role_id)
-		VALUES ('01990000-0000-7000-8000-00000000000a', 'admin@example.org', 'x', 'Admin',
-		(SELECT id FROM roles WHERE name = 'admin'))`); err != nil {
+	if err := testutil.User(context.Background(), db, "01990000-0000-7000-8000-00000000000a", "admin@example.org", "admin", "x"); err != nil {
 		t.Fatalf("seed admin: %v", err)
 	}
 	ids, systems := newIdentifierServices(t, db, log)

@@ -16,6 +16,8 @@ import (
 	"librevita.org/internal/core/auth/repository"
 	"librevita.org/internal/core/config"
 	"librevita.org/internal/core/database"
+	userrepo "librevita.org/internal/domain/user/repository"
+	"librevita.org/internal/testutil"
 )
 
 const testUserID = "01990000-0000-7000-8000-000000000001"
@@ -42,8 +44,7 @@ func seedUser(t *testing.T, db *sql.DB, id string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.Exec(`INSERT INTO users (id, email, password_hash, display_name, role_id) VALUES (?, ?, ?, ?, ?)`,
-		id, "user@example.org", hash, "Test User", "00000000-0000-7000-8000-000000000001"); err != nil {
+	if err := testutil.User(context.Background(), db, id, "user@example.org", "admin", hash); err != nil {
 		t.Fatalf("seed user: %v", err)
 	}
 }
@@ -116,7 +117,13 @@ func TestSessionExpiry(t *testing.T) {
 func TestSessionRejectsDeactivatedUser(t *testing.T) {
 	db := openTestDB(t)
 	seedUser(t, db, testUserID)
-	if _, err := db.Exec(`UPDATE users SET active = 0 WHERE email = 'user@example.org'`); err != nil {
+	u, err := userrepo.New(db).GetUserByEmail(context.Background(), "user@example.org")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := userrepo.New(db).UpdateUser(context.Background(), userrepo.UpdateUserParams{
+		ID: u.ID, Email: u.Email, DisplayName: u.DisplayName, RoleID: u.RoleID, Active: false,
+	}); err != nil {
 		t.Fatal(err)
 	}
 	m := newManager(t, db, time.Hour)

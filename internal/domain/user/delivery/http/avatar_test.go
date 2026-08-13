@@ -26,6 +26,7 @@ import (
 	"librevita.org/internal/core/storage"
 	"librevita.org/internal/domain/clinic"
 	"librevita.org/internal/domain/user/usecase"
+	"librevita.org/internal/testutil"
 )
 
 // testAdminID is the seeded admin used by the avatar fixtures.
@@ -65,9 +66,7 @@ func newAvatarEnv(t *testing.T) (*echo.Echo, *auth.SessionManager, *storage.File
 		t.Fatal(err)
 	}
 	svc := usecase.NewService(db, sessions, auditLogger, log)
-	if _, err := db.Exec(`INSERT INTO users (id, email, password_hash, display_name, role_id)
-		VALUES ('01990000-0000-7000-8000-00000000000a', 'admin@example.org', 'x', 'Admin',
-		(SELECT id FROM roles WHERE name = 'admin'))`); err != nil {
+	if err := testutil.User(context.Background(), db, "01990000-0000-7000-8000-00000000000a", "admin@example.org", "admin", "x"); err != nil {
 		t.Fatalf("seed admin: %v", err)
 	}
 	files := mustFileManager(t, db)
