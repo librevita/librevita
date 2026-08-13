@@ -108,8 +108,10 @@ itself.
 
 Configuration is loaded by Koanf with this precedence, from lowest to highest:
 
-1. Built-in defaults 2. `config.yaml`, `config.yml`, `config.json`, or the file passed with `--config` 3. `.env` and
-   `LIBREVITA_*` environment variables 4. Command-line flags
+1. Built-in defaults
+2. `config.yaml`, `config.yml`, `config.json`, or the file passed with `--config`
+3. `.env` and `LIBREVITA_*` environment variables
+4. Command-line flags
 
 Example `config.yaml`:
 
