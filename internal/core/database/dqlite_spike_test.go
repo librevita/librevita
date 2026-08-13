@@ -10,9 +10,14 @@ import (
 
 	"github.com/google/uuid"
 
+	clinicrepo "librevita.org/internal/domain/clinic/repository"
 	"librevita.org/internal/core/crypto"
+	patientrepo "librevita.org/internal/domain/patient/repository"
 	"librevita.org/internal/domain/patient/identifier"
+	userrepo "librevita.org/internal/domain/user/repository"
 )
+
+func strPtrT(s string) *string { return &s }
 
 // TestDqliteSpike connects to the local dqlite cluster (see
 // /tmp/opencode/dqlite-node) through the pure-Go driver and exercises
@@ -35,13 +40,15 @@ func TestDqliteSpike(t *testing.T) {
 		}
 	}
 
-	// A real transaction: BEGIN/COMMIT through the wire protocol.
+	// A real transaction: BEGIN/COMMIT through the wire protocol, using
+	// the typed sqlc repository methods.
 	tx, err := db.BeginTx(context.Background(), nil)
 	if err != nil {
 		t.Fatalf("begin: %v", err)
 	}
-	if _, err := tx.Exec(`INSERT INTO clinics (id, name, tax_id) VALUES (?, ?, ?)`,
-		"00000000-0000-0000-0000-0000000000d1", "Dqlite", "1"); err != nil {
+	if _, err := clinicrepo.New(tx).CreateClinic(context.Background(), clinicrepo.CreateClinicParams{
+		ID: uuid.MustParse("00000000-0000-0000-0000-0000000000d1"), Name: "Dqlite", TaxID: strPtrT("1"), Country: "BR", Timezone: "UTC",
+	}); err != nil {
 		t.Fatalf("tx insert: %v", err)
 	}
 	if err := tx.Commit(); err != nil {
@@ -52,8 +59,9 @@ func TestDqliteSpike(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := tx.Exec(`INSERT INTO clinics (id, name, tax_id) VALUES (?, ?, ?)`,
-		"00000000-0000-0000-0000-0000000000d2", "Rolled", "2"); err != nil {
+	if _, err := clinicrepo.New(tx).CreateClinic(context.Background(), clinicrepo.CreateClinicParams{
+		ID: uuid.MustParse("00000000-0000-0000-0000-0000000000d2"), Name: "Rolled", TaxID: strPtrT("2"), Country: "BR", Timezone: "UTC",
+	}); err != nil {
 		t.Fatal(err)
 	}
 	if err := tx.Rollback(); err != nil {
@@ -70,13 +78,20 @@ func TestDqliteSpike(t *testing.T) {
 	// FLE round trip: encrypted identifier + blind index + duplicate.
 	clinicID := "00000000-0000-0000-0000-0000000000d1"
 	adminID := "00000000-0000-0000-0000-0000000000d5"
-	if _, err := db.Exec(`INSERT INTO users (id, email, password_hash, display_name, role_id)
-		VALUES (?, 'admin@dqlite.test', 'x', 'Admin', (SELECT id FROM roles WHERE name = 'admin'))`, adminID); err != nil {
+	adminRole, err := userrepo.New(db).GetRoleByName(context.Background(), "admin")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := userrepo.New(db).CreateUser(context.Background(), userrepo.CreateUserParams{
+		ID: uuid.MustParse(adminID), Email: "admin@dqlite.test", PasswordHash: "x", DisplayName: "Admin", RoleID: adminRole.ID,
+	}); err != nil {
 		t.Fatal(err)
 	}
 	patientID := uuid.MustParse("00000000-0000-0000-0000-0000000000d3")
-	if _, err := db.Exec(`INSERT INTO patients (id, clinic_id, display_name) VALUES (?, ?, 'P')`,
-		patientID.String(), clinicID); err != nil {
+	if _, err := patientrepo.New(db).CreatePatient(context.Background(), patientrepo.CreatePatientParams{
+		ID: patientID, ClinicID: uuid.MustParse(clinicID), DisplayName: "P", Sex: "unknown",
+		CreatedBy: uuid.MustParse(adminID),
+	}); err != nil {
 		t.Fatal(err)
 	}
 	key, err := crypto.NewMasterKey("nAmIvOXVc0vb6M9G7P9q2j2yK1WxP3sJ8q5dR4tU6wA=")
@@ -102,8 +117,10 @@ func TestDqliteSpike(t *testing.T) {
 		t.Fatalf("find by value: %v %+v", err, found)
 	}
 	other := uuid.MustParse("00000000-0000-0000-0000-0000000000d4")
-	if _, err := db.Exec(`INSERT INTO patients (id, clinic_id, display_name) VALUES (?, ?, 'O')`,
-		other.String(), clinicID); err != nil {
+	if _, err := patientrepo.New(db).CreatePatient(context.Background(), patientrepo.CreatePatientParams{
+		ID: other, ClinicID: uuid.MustParse(clinicID), DisplayName: "O", Sex: "unknown",
+		CreatedBy: uuid.MustParse(adminID),
+	}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := svc.AddIdentifier(context.Background(), clinicID, adminID, identifier.Input{
