@@ -114,14 +114,20 @@ Configuration is loaded by Koanf with this precedence, from lowest to highest:
 Example `config.yaml`:
 
 ```yaml
-env: production
+mode: production
+trusted_proxies: 10.0.0.0/8 # proxies allowed to set X-Forwarded-For
 http_bind: "0.0.0.0"
 http_port: 8080
 data_dir: ./data
 database:
-  driver: sqlite
+  driver: sqlite # sqlite or dqlite
   path: ./librevita.db
-  dqlite_addrs: node1:9001,node2:9001,node3:9001
+  dqlite_addrs: node1:9001,node2:9001,node3:9001 # required for driver: dqlite
+  dqlite_database: librevita
+auth:
+  max_concurrent_hashes: 4
+paseto_key: ... # base64, 32 bytes; required outside development
+master_key: ... # base64, 32 bytes; required outside development
 logging:
   mode: console
   path: ./librevita.log
@@ -143,39 +149,40 @@ storage:
     path_style: true # path-style addressing for S3-compatible APIs
 ```
 
-The main flags are:
+All configuration flags are:
 
-| Flag                           | Environment variable                   | Purpose                                                      |
-| ------------------------------ | -------------------------------------- | ------------------------------------------------------------ |
-| `--config`                     | `LIBREVITA_CONFIG_FILE`                | Configuration file path                                      |
-| `--mode`                       | `LIBREVITA_MODE`                       | Runtime mode: `development` or `production`                  |
-| `--http-bind`                  | `LIBREVITA_HTTP_BIND`                  | HTTP bind address (`0.0.0.0`, `127.0.0.1`, ...)              |
-| `--http-port`                  | `LIBREVITA_HTTP_PORT`                  | HTTP listen port (default `8080`)                            |
-| `--data-dir`                   | `LIBREVITA_DATA_DIR`                   | Base directory for default database and logs                 |
-| `--db-driver`                  | `LIBREVITA_DB_DRIVER`                  | `sqlite` or `dqlite`                                         |
-| `--db-path`                    | `LIBREVITA_DB_PATH`                    | SQLite file path                                             |
-| `--dqlite-addrs`               | `LIBREVITA_DQLITE_ADDRS`               | Comma-separated dqlite node addresses (wire protocol)        |
-| `--dqlite-database`            | `LIBREVITA_DQLITE_DATABASE`            | dqlite database name (default `librevita`)                   |
-| `--log-mode`                   | `LIBREVITA_LOG_MODE`                   | `console`, `file`, or `rotating`                             |
-| `--log-path`                   | `LIBREVITA_LOG_PATH`                   | File destination                                             |
-| `--log-max-size`               | `LIBREVITA_LOG_MAX_SIZE_MB`            | Rotating file size in MB                                     |
-| `--log-max-backups`            | `LIBREVITA_LOG_MAX_BACKUPS`            | Number of rotated files                                      |
-| `--log-max-age`                | `LIBREVITA_LOG_MAX_AGE_DAYS`           | Maximum rotated file age                                     |
-| `--log-compress`               | `LIBREVITA_LOG_COMPRESS`               | Compress rotated files                                       |
-| `--paseto-key`                 | `LIBREVITA_PASETO_KEY`                 | Session key (base64, 32 bytes; required outside development) |
-| `--auth-max-concurrent-hashes` | `LIBREVITA_AUTH_MAX_CONCURRENT_HASHES` | Bound on concurrent Argon2id operations                      |
-| `--storage-backend`            | `LIBREVITA_STORAGE_BACKEND`            | File storage backend: `local` or `s3`                        |
-| `--storage-local-dir`          | `LIBREVITA_STORAGE_LOCAL_DIR`          | Local file storage directory (default `<data-dir>/files`)    |
-| `--storage-s3-endpoint`        | `LIBREVITA_STORAGE_S3_ENDPOINT`        | S3-compatible API endpoint                                   |
-| `--storage-s3-bucket`          | `LIBREVITA_STORAGE_S3_BUCKET`          | S3 bucket for stored files                                   |
-| `--storage-s3-access-key`      | `LIBREVITA_STORAGE_S3_ACCESS_KEY`      | S3 access key                                                |
-| `--storage-s3-secret-key`      | `LIBREVITA_STORAGE_S3_SECRET_KEY`      | S3 secret key                                                |
-| `--storage-s3-region`          | `LIBREVITA_STORAGE_S3_REGION`          | S3 region (may be empty outside AWS)                         |
-| `--storage-s3-secure`          | `LIBREVITA_STORAGE_S3_SECURE`          | Use HTTPS for the S3 endpoint                                |
-| `--storage-s3-path-style`      | `LIBREVITA_STORAGE_S3_PATH_STYLE`      | Use path-style S3 addressing                                 |
-| `--trusted-proxies`            | `LIBREVITA_TRUSTED_PROXIES`            | Comma-separated proxy IPs allowed to set `X-Forwarded-For`   |
+| Flag                           | Environment variable                   | Purpose                                                               |
+| ------------------------------ | -------------------------------------- | --------------------------------------------------------------------- |
+| `--config`                     | `LIBREVITA_CONFIG_FILE`                | Configuration file path                                               |
+| `--mode`                       | `LIBREVITA_MODE`                       | Runtime mode: `development` or `production`                           |
+| `--http-bind`                  | `LIBREVITA_HTTP_BIND`                  | HTTP bind address (`0.0.0.0`, `127.0.0.1`, ...)                       |
+| `--http-port`                  | `LIBREVITA_HTTP_PORT`                  | HTTP listen port (default `8080`)                                     |
+| `--trusted-proxies`            | `LIBREVITA_TRUSTED_PROXIES`            | Comma-separated proxy IPs allowed to set `X-Forwarded-For`            |
+| `--data-dir`                   | `LIBREVITA_DATA_DIR`                   | Base directory for default database and logs                          |
+| `--db-driver`                  | `LIBREVITA_DATABASE_DRIVER`            | `sqlite` or `dqlite`                                                  |
+| `--db-path`                    | `LIBREVITA_DATABASE_PATH`              | SQLite file path                                                      |
+| `--dqlite-addrs`               | `LIBREVITA_DATABASE_DQLITE_ADDRS`      | Comma-separated dqlite node addresses (wire protocol)                 |
+| `--dqlite-database`            | `LIBREVITA_DATABASE_DQLITE_DATABASE`   | dqlite database name (default `librevita`)                            |
+| `--log-mode`                   | `LIBREVITA_LOGGING_MODE`               | `console`, `file`, or `rotating`                                      |
+| `--log-path`                   | `LIBREVITA_LOGGING_PATH`               | File destination                                                      |
+| `--log-max-size`               | `LIBREVITA_LOGGING_MAX_SIZE_MB`        | Rotating file size in MB                                              |
+| `--log-max-backups`            | `LIBREVITA_LOGGING_MAX_BACKUPS`        | Number of rotated files                                               |
+| `--log-max-age`                | `LIBREVITA_LOGGING_MAX_AGE_DAYS`       | Maximum rotated file age                                              |
+| `--log-compress`               | `LIBREVITA_LOGGING_COMPRESS`           | Compress rotated files                                                |
+| `--paseto-key`                 | `LIBREVITA_PASETO_KEY`                 | Session key (base64, 32 bytes; required outside development)          |
+| `--master-key`                 | `LIBREVITA_MASTER_KEY`                 | Field-encryption key (base64, 32 bytes; required outside development) |
+| `--auth-max-concurrent-hashes` | `LIBREVITA_AUTH_MAX_CONCURRENT_HASHES` | Bound on concurrent Argon2id operations                               |
+| `--storage-backend`            | `LIBREVITA_STORAGE_BACKEND`            | File storage backend: `local` or `s3`                                 |
+| `--storage-local-dir`          | `LIBREVITA_STORAGE_LOCAL_DIR`          | Local file storage directory (default `<data-dir>/files`)             |
+| `--storage-s3-endpoint`        | `LIBREVITA_STORAGE_S3_ENDPOINT`        | S3-compatible API endpoint                                            |
+| `--storage-s3-bucket`          | `LIBREVITA_STORAGE_S3_BUCKET`          | S3 bucket for stored files                                            |
+| `--storage-s3-access-key`      | `LIBREVITA_STORAGE_S3_ACCESS_KEY`      | S3 access key                                                         |
+| `--storage-s3-secret-key`      | `LIBREVITA_STORAGE_S3_SECRET_KEY`      | S3 secret key                                                         |
+| `--storage-s3-region`          | `LIBREVITA_STORAGE_S3_REGION`          | S3 region (may be empty outside AWS)                                  |
+| `--storage-s3-secure`          | `LIBREVITA_STORAGE_S3_SECURE`          | Use HTTPS for the S3 endpoint                                         |
+| `--storage-s3-path-style`      | `LIBREVITA_STORAGE_S3_PATH_STYLE`      | Use path-style S3 addressing                                          |
 
-`LIBREVITA_DATABASE_*` names are also accepted for database settings.
+Environment variables are the config keys with `_` separators. The short aliases `LIBREVITA_DB_*` (for `LIBREVITA_DATABASE_*`) and `LIBREVITA_LOG_*` (for `LIBREVITA_LOGGING_*`) are also accepted.
 
 ## File Storage
 
