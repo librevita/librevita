@@ -24,7 +24,7 @@ import (
 // Supported persistence drivers.
 const (
 	DriverSQLite = "sqlite" // Embedded SQLite for the monolith and edge deployments.
-	DriverRqlite = "rqlite" // rqlite cluster for distributed deployments.
+	DriverDqlite = "dqlite" // dqlite cluster for distributed deployments.
 )
 
 // Supported production log destinations.
@@ -39,14 +39,14 @@ const (
 
 	keyConfigFile = "config_file"
 
-	defaultEnv        = "development"
-	defaultHTTPAddr   = ":8080"
-	defaultDataDir    = "./data"
-	defaultRqliteAddr = "http://localhost:4001"
-	defaultLogMode    = LogModeConsole
-	defaultLogSizeMB  = 100
-	defaultLogBackups = 3
-	defaultLogAgeDays = 28
+	defaultEnv            = "development"
+	defaultHTTPAddr       = ":8080"
+	defaultDataDir        = "./data"
+	defaultDqliteDatabase = "librevita"
+	defaultLogMode        = LogModeConsole
+	defaultLogSizeMB      = 100
+	defaultLogBackups     = 3
+	defaultLogAgeDays     = 28
 
 	defaultMaxConcurrentHashes = 4
 )
@@ -105,14 +105,18 @@ type AuthConfig struct {
 
 // DatabaseConfig defines the active persistence backend.
 type DatabaseConfig struct {
-	// Driver is DriverSQLite or DriverRqlite.
+	// Driver is DriverSQLite or DriverDqlite.
 	Driver string `koanf:"driver"`
 
 	// Path is the SQLite database path.
 	Path string `koanf:"path"`
 
-	// RqliteAddr is the rqlite node URL.
-	RqliteAddr string `koanf:"rqlite_addr"`
+	// DqliteAddrs is the comma-separated list of dqlite node addresses
+	// (the wire protocol), e.g. "node1:9001,node2:9001,node3:9001".
+	DqliteAddrs string `koanf:"dqlite_addrs"`
+
+	// DqliteDatabase is the database name on the dqlite cluster.
+	DqliteDatabase string `koanf:"dqlite_database"`
 }
 
 // LoggingConfig controls production logging.
@@ -166,9 +170,10 @@ func RegisterFlags(fs *pflag.FlagSet) {
 	stringFlag(fs, "http-addr", defaultHTTPAddr, "HTTP bind address")
 	stringFlag(fs, "trusted-proxies", "", "comma-separated proxy IPs allowed to set X-Forwarded-For")
 	stringFlag(fs, "data-dir", defaultDataDir, "base directory for database and logs")
-	stringFlag(fs, "db-driver", DriverSQLite, "database backend: sqlite or rqlite")
+	stringFlag(fs, "db-driver", DriverSQLite, "database backend: sqlite or dqlite")
 	stringFlag(fs, "db-path", "", "SQLite database path")
-	stringFlag(fs, "rqlite-addr", defaultRqliteAddr, "rqlite node URL")
+	stringFlag(fs, "dqlite-addrs", "", "comma-separated dqlite node addresses (wire protocol)")
+	stringFlag(fs, "dqlite-database", defaultDqliteDatabase, "dqlite database name")
 	stringFlag(fs, "log-mode", defaultLogMode, "production log mode: console, file, or rotating")
 	stringFlag(fs, "log-path", "", "log file path")
 	intFlag(fs, "log-max-size", defaultLogSizeMB, "rotating log maximum size in MB")
@@ -304,8 +309,8 @@ func (c *Config) normalize() {
 	if strings.TrimSpace(c.Database.Path) == "" {
 		c.Database.Path = filepath.Join(c.DataDir, "librevita.db")
 	}
-	if strings.TrimSpace(c.Database.RqliteAddr) == "" {
-		c.Database.RqliteAddr = defaultRqliteAddr
+	if strings.TrimSpace(c.Database.DqliteDatabase) == "" {
+		c.Database.DqliteDatabase = defaultDqliteDatabase
 	}
 
 	c.Logging.Mode = strings.ToLower(strings.TrimSpace(c.Logging.Mode))
@@ -332,10 +337,13 @@ func (c *Config) normalize() {
 
 func (c *Config) validate() error {
 	switch c.Database.Driver {
-	case DriverSQLite, DriverRqlite:
+	case DriverSQLite, DriverDqlite:
 	default:
 		return fmt.Errorf("config: invalid database.driver %q (use %q or %q)",
-			c.Database.Driver, DriverSQLite, DriverRqlite)
+			c.Database.Driver, DriverSQLite, DriverDqlite)
+	}
+	if c.Database.Driver == DriverDqlite && strings.TrimSpace(c.Database.DqliteAddrs) == "" {
+		return fmt.Errorf("config: database.dqlite_addrs is required for the dqlite driver")
 	}
 
 	switch c.Logging.Mode {
@@ -379,8 +387,10 @@ func mapFlagKey(name string) string {
 		return "database.driver"
 	case "db-path", "db_path":
 		return "database.path"
-	case "rqlite-addr", "rqlite_addr":
-		return "database.rqlite_addr"
+	case "dqlite-addrs", "dqlite_addrs":
+		return "database.dqlite_addrs"
+	case "dqlite-database", "dqlite_database":
+		return "database.dqlite_database"
 	case "log-mode", "log_mode":
 		return "logging.mode"
 	case "log-path", "log_path":
@@ -437,8 +447,10 @@ func mapEnvironmentKey(key string) string {
 		return "database.driver"
 	case "db_path", "database_path":
 		return "database.path"
-	case "rqlite_addr", "database_rqlite_addr":
-		return "database.rqlite_addr"
+	case "dqlite_addrs", "database_dqlite_addrs":
+		return "database.dqlite_addrs"
+	case "dqlite_database", "database_dqlite_database":
+		return "database.dqlite_database"
 	case "log_mode", "logging_mode":
 		return "logging.mode"
 	case "log_path", "logging_path":

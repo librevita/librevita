@@ -38,11 +38,13 @@ Consequences:
 - The blind index of `patient_identifiers` is unique
   deployment-wide: a document belongs to exactly one patient
   anywhere, by product decision.
-- The rqlite driver is kept as a configurable backend (rqlite embeds
-  SQLite, so the schema is compatible); note that consumers requiring
-  the embedded `*sql.DB` handle (audit, auth, policy, storage, the
-  sqlc repositories) reject nil themselves, so wiring work remains
-  before rqlite is usable end to end.
+- The dqlite backend works end to end through the pure-Go wire
+  protocol driver (github.com/canonical/go-dqlite/v3): real
+  transactions (BEGIN/COMMIT replicated through Raft), prepared
+  statements, strong consistency, and the embedded goose migrations
+  run unchanged. The cluster itself is operated as a separate server
+  process (a dqlite node binary built with CGO, outside the
+  CGO-disabled application build).
 
 ## Scope guard
 

@@ -15,15 +15,16 @@ var Module = fx.Module("database",
 	fx.Invoke(registerLifecycle),
 )
 
-// sqlDB exposes the embedded SQLite handle. It is nil in rqlite mode;
-// consumers that require local storage must reject nil themselves.
+// sqlDB exposes the database handle: the embedded SQLite backend or
+// the dqlite wire protocol driver, both database/sql, so every
+// consumer works unchanged.
 func sqlDB(store *Store) *sql.DB { return store.SQL() }
 
 func registerLifecycle(lc fx.Lifecycle, store *Store, log *slog.Logger) {
 	lc.Append(fx.Hook{
 		OnStart: func(ctx context.Context) error {
-			// Apply embedded migrations only for the SQLite backend.
-			// rqlite manages schema changes through the cluster.
+			// Apply the embedded migrations on boot for both backends:
+			// dqlite embeds SQLite, so the schema is the same.
 			if db := store.SQL(); db != nil {
 				log.Info("applying embedded Goose migrations")
 				if err := Migrate(ctx, db, log); err != nil {
