@@ -40,7 +40,7 @@ func testLogger() *slog.Logger { return slog.New(slog.DiscardHandler) }
 
 func TestRequireAuthRedirectsAnonymous(t *testing.T) {
 	db := openTestDB(t)
-	sessions, err := auth.NewSessionManager(db, &config.Config{Env: "development"}, testLogger())
+	sessions, err := auth.NewSessionManager(db, &config.Config{Mode: "development"}, testLogger())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -58,7 +58,7 @@ func TestRequireAuthRedirectsAnonymous(t *testing.T) {
 
 func TestRequireAuthAcceptsValidSession(t *testing.T) {
 	db := openTestDB(t)
-	sessions, err := auth.NewSessionManager(db, &config.Config{Env: "development"}, testLogger())
+	sessions, err := auth.NewSessionManager(db, &config.Config{Mode: "development"}, testLogger())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -206,7 +206,7 @@ func newTestAudit(t *testing.T) *audit.Logger {
 
 func TestNotFoundRedirectsAnonymous(t *testing.T) {
 	db := openTestDB(t)
-	sessions, err := auth.NewSessionManager(db, &config.Config{Env: "development"}, testLogger())
+	sessions, err := auth.NewSessionManager(db, &config.Config{Mode: "development"}, testLogger())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -226,7 +226,7 @@ func TestNotFoundRedirectsAnonymous(t *testing.T) {
 
 func TestNotFoundAuthenticated(t *testing.T) {
 	db := openTestDB(t)
-	sessions, err := auth.NewSessionManager(db, &config.Config{Env: "development"}, testLogger())
+	sessions, err := auth.NewSessionManager(db, &config.Config{Mode: "development"}, testLogger())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -255,7 +255,7 @@ func TestNotFoundAuthenticated(t *testing.T) {
 
 func TestNotFoundPublicPaths(t *testing.T) {
 	db := openTestDB(t)
-	sessions, err := auth.NewSessionManager(db, &config.Config{Env: "development"}, testLogger())
+	sessions, err := auth.NewSessionManager(db, &config.Config{Mode: "development"}, testLogger())
 	if err != nil {
 		t.Fatal(err)
 	}

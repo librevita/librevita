@@ -43,7 +43,7 @@ func newService(t *testing.T, db *sql.DB) *usecase.Service {
 func newServiceWithSessions(t *testing.T, db *sql.DB) (*usecase.Service, *auth.SessionManager) {
 	t.Helper()
 	log := slog.New(slog.DiscardHandler)
-	sessions, err := auth.NewSessionManager(db, &config.Config{Env: "development"}, log)
+	sessions, err := auth.NewSessionManager(db, &config.Config{Mode: "development"}, log)
 	if err != nil {
 		t.Fatal(err)
 	}

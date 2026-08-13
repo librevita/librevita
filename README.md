@@ -73,7 +73,7 @@ earthly +image --IMAGE_TAG=librevita:latest
 podman run --rm \
   -p 8080:8080 \
   -v librevita-data:/data \
-  -e LIBREVITA_ENV=production \
+  -e LIBREVITA_MODE=production \
   librevita:latest
 ```
 
@@ -147,13 +147,13 @@ The main flags are:
 | Flag                           | Environment variable                   | Purpose                                                      |
 | ------------------------------ | -------------------------------------- | ------------------------------------------------------------ |
 | `--config`                     | `LIBREVITA_CONFIG_FILE`                | Configuration file path                                      |
-| `--env`                        | `LIBREVITA_ENV`                        | Runtime environment                                          |
+| `--mode`                       | `LIBREVITA_MODE`                       | Runtime mode: `development` or `production`                  |
 | `--http-addr`                  | `LIBREVITA_HTTP_ADDR`                  | HTTP bind address                                            |
 | `--data-dir`                   | `LIBREVITA_DATA_DIR`                   | Base directory for default database and logs                 |
-| `--db-driver`                  | `LIBREVITA_DB_DRIVER`                  | `sqlite` or `dqlite`                                        |
+| `--db-driver`                  | `LIBREVITA_DB_DRIVER`                  | `sqlite` or `dqlite`                                         |
 | `--db-path`                    | `LIBREVITA_DB_PATH`                    | SQLite file path                                             |
-| `--dqlite-addrs`               | `LIBREVITA_DQLITE_ADDRS`               | Comma-separated dqlite node addresses (wire protocol)         |
-| `--dqlite-database`            | `LIBREVITA_DQLITE_DATABASE`            | dqlite database name (default `librevita`)                    |
+| `--dqlite-addrs`               | `LIBREVITA_DQLITE_ADDRS`               | Comma-separated dqlite node addresses (wire protocol)        |
+| `--dqlite-database`            | `LIBREVITA_DQLITE_DATABASE`            | dqlite database name (default `librevita`)                   |
 | `--log-mode`                   | `LIBREVITA_LOG_MODE`                   | `console`, `file`, or `rotating`                             |
 | `--log-path`                   | `LIBREVITA_LOG_PATH`                   | File destination                                             |
 | `--log-max-size`               | `LIBREVITA_LOG_MAX_SIZE_MB`            | Rotating file size in MB                                     |
@@ -207,12 +207,12 @@ Production output is always JSON. The selected mode controls the destination:
 Example production commands:
 
 ```sh
-LIBREVITA_ENV=production \
+LIBREVITA_MODE=production \
 LIBREVITA_LOG_MODE=file \
 LIBREVITA_LOG_PATH=./librevita.log \
 ./bin/librevita
 
-LIBREVITA_ENV=production \
+LIBREVITA_MODE=production \
 LIBREVITA_LOG_MODE=rotating \
 LIBREVITA_LOG_PATH=./librevita.log \
 LIBREVITA_LOG_MAX_SIZE_MB=100 \
@@ -275,8 +275,8 @@ Echo is created and managed by Fx. Routes:
   `POST /profile/avatar`, `POST /profile/avatar/remove` — profile picture; `GET /users/:id/avatar` — avatar of any
   user
 - `GET /patients`, `GET /patients/new`, `POST /patients`, `GET /patients/:id`, `GET /patients/:id/edit`, `POST
-  /patients/:id`, `POST /patients/:id/archive`, `POST /patients/:id/restore`, `POST /patients/bulk-archive`, `GET
-  /patients/lookup` — exact identification-document lookup (blind index), `POST /patients/:id/identifiers`,
+/patients/:id`, `POST /patients/:id/archive`, `POST /patients/:id/restore`, `POST /patients/bulk-archive`, `GET
+/patients/lookup` — exact identification-document lookup (blind index), `POST /patients/:id/identifiers`,
   `POST /patients/:id/identifiers/:identifierID/remove` — encrypted identification documents
 - `GET /identifier-systems`, `POST /identifier-systems`, `POST /identifier-systems/:id`,
   `POST /identifier-systems/:id/active` — administrator catalog of document systems
