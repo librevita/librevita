@@ -57,3 +57,32 @@ func TestLoadPrecedence(t *testing.T) {
 		t.Error("Logging.Compress = false, want true by default")
 	}
 }
+
+func TestValidateDqliteAddrs(t *testing.T) {
+	cases := []struct {
+		name    string
+		addrs   string
+		wantErr bool
+	}{
+		{"valid", "node1:9001, node2:9001", false},
+		{"single", "node1:9001", false},
+		{"missing", "", true},
+		{"only separators", ",, ,", true},
+		{"whitespace", "   ", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := &Config{
+				Database: DatabaseConfig{Driver: DriverDqlite, DqliteAddrs: tc.addrs, DqliteDatabase: "lv"},
+				Logging:  LoggingConfig{Mode: LogModeConsole},
+			}
+			err := cfg.validate()
+			if tc.wantErr && err == nil {
+				t.Fatalf("validate(%q) = nil, want error", tc.addrs)
+			}
+			if !tc.wantErr && err != nil {
+				t.Fatalf("validate(%q) = %v, want nil", tc.addrs, err)
+			}
+		})
+	}
+}

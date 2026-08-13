@@ -342,8 +342,16 @@ func (c *Config) validate() error {
 		return fmt.Errorf("config: invalid database.driver %q (use %q or %q)",
 			c.Database.Driver, DriverSQLite, DriverDqlite)
 	}
-	if c.Database.Driver == DriverDqlite && strings.TrimSpace(c.Database.DqliteAddrs) == "" {
-		return fmt.Errorf("config: database.dqlite_addrs is required for the dqlite driver")
+	if c.Database.Driver == DriverDqlite {
+		addresses := 0
+		for _, addr := range strings.Split(c.Database.DqliteAddrs, ",") {
+			if strings.TrimSpace(addr) != "" {
+				addresses++
+			}
+		}
+		if addresses == 0 {
+			return fmt.Errorf("config: database.dqlite_addrs requires at least one node address (e.g. \"node1:9001,node2:9001,node3:9001\")")
+		}
 	}
 
 	switch c.Logging.Mode {
