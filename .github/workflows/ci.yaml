@@ -38,11 +38,17 @@ jobs:
           echo "$EARTHLY_SHA256  earthly-linux-amd64" | sha256sum -c -
           sudo install -m 0755 earthly-linux-amd64 /usr/local/bin/earthly
           earthly bootstrap
-      # --ci = --no-output --use-inline-cache --save-inline-cache --strict.
-      # +all runs the whole gate (Go tests, frontend tests, vet, lint,
-      # binary, image); the Earthfile schedules the independent targets
-      # in parallel on the same daemon, so the layers are built once and
-      # the log is organized per target. The IMAGE_TAG override reaches
-      # +image so --push can publish to GHCR on master.
+      # Not --ci: it enables --save-inline-cache, and Earthly will not
+      # export inline and explicit caches in the same run, so the remote
+      # cache was pushed without any layers (1s export, nothing reusable
+      # on the next run). The flags --ci expands to are spelled out here
+      # without --save-inline-cache: --no-output --strict, plus the
+      # explicit cache via $CACHE_ARGS (read-only on PRs, read-write on
+      # master through $PUSH_FLAG). +all runs the whole gate (Go tests,
+      # frontend tests, vet, lint, binary, image); the Earthfile
+      # schedules the independent targets in parallel on the same daemon,
+      # so the layers are built once and the log is organized per target.
+      # The IMAGE_TAG override reaches +image so --push can publish to
+      # GHCR on master.
       - name: Earthly +all
-        run: earthly --ci $PUSH_FLAG $CACHE_ARGS +all --IMAGE_TAG=$IMAGE_TAG
+        run: earthly --no-output --strict $PUSH_FLAG $CACHE_ARGS +all --IMAGE_TAG=$IMAGE_TAG
