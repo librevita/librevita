@@ -276,29 +276,71 @@ Generated repository code and the consolidated schema are not source artifacts. 
 
 Echo is created and managed by Fx. Routes:
 
-- `GET /healthz` — liveness probe, returns `{"status":"ok"}`
-- `GET /setup`, `POST /setup` — initial onboarding (admin account + clinic profile)
-- `GET /auth/login`, `POST /auth/login`, `GET /auth/register`, `POST /auth/register`, `POST /auth/logout`
-- `GET /`, `GET /activity/recent` — authenticated dashboard
-- `GET /profile`, `POST /profile` — self-service preferences (UI theme, personal timezone); `GET /profile/avatar`,
-  `POST /profile/avatar`, `POST /profile/avatar/remove` — profile picture; `GET /users/:id/avatar` — avatar of any
-  user
-- `GET /patients`, `GET /patients/new`, `POST /patients`, `GET /patients/:id`, `GET /patients/:id/edit`, `POST
-/patients/:id`, `POST /patients/:id/archive`, `POST /patients/:id/restore`, `POST /patients/bulk-archive`, `GET
-/patients/lookup` — exact identification-document lookup (blind index), `POST /patients/:id/identifiers`,
-  `POST /patients/:id/identifiers/:identifierID/remove` — encrypted identification documents
-- `GET /identifier-systems`, `POST /identifier-systems`, `POST /identifier-systems/:id`,
-  `POST /identifier-systems/:id/active` — administrator catalog of document systems
-- `GET /users`, `GET /users/new`, `POST /users`, `GET /users/:id/edit`, `POST /users/:id`, `POST /users/:id/status` —
-  staff account management
-- `GET /specialties`, `POST /specialties`, `POST /specialties/:id/delete` — clinic specialty catalog
-- `GET /roles`, `POST /roles`, `POST /roles/:id/rename`, `POST /roles/:id/clinical`, `POST /roles/:id/delete` — dynamic
-  role management
-- `GET /policies`, `POST /policies`, `POST /policies/reset` — policy editor
-- `GET /staff`, `GET /staff/new`, `POST /staff`, `GET /staff/:id/edit`, `POST /staff/:id`, `POST /staff/:id/request`,
-  `GET /staff/my-requests`, `GET /staff/requests`, `POST /staff/requests/:id/approve`, `POST /staff/requests/:id/reject`
-  — physician directory and the change-approval workflow
-- `GET /audit/integrity` — verifies the append-only audit hash chain
+| Method | Route                                            | Purpose                                                          |
+| ------ | ------------------------------------------------ | ---------------------------------------------------------------- |
+| GET    | `/healthz`                                       | Liveness probe                                                   |
+| GET    | `/setup`                                         | Onboarding page                                                  |
+| POST   | `/setup`                                         | Onboarding: admin account + clinic profile (rate-limited)        |
+| GET    | `/auth/login`                                    | Login page                                                       |
+| POST   | `/auth/login`                                    | Authenticate (rate-limited)                                      |
+| GET    | `/auth/register`                                 | Registration page                                                |
+| POST   | `/auth/register`                                 | Create account (rate-limited, `users.register`)                  |
+| POST   | `/auth/logout`                                   | End session                                                      |
+| GET    | `/`                                              | Dashboard                                                        |
+| GET    | `/activity/recent`                               | Recent activity (dashboard panel)                                |
+| GET    | `/profile`                                       | Preferences page (UI theme, personal timezone)                   |
+| POST   | `/profile`                                       | Save preferences                                                 |
+| GET    | `/profile/avatar`                                | Profile picture                                                  |
+| POST   | `/profile/avatar`                                | Upload profile picture (2 MiB limit)                             |
+| POST   | `/profile/avatar/remove`                         | Remove profile picture                                           |
+| GET    | `/users/:id/avatar`                              | Avatar of any user                                               |
+| GET    | `/patients/lookup`                               | Exact identification-document lookup (blind index, rate-limited) |
+| GET    | `/patients`                                      | Patient registry (search, filter, pager)                         |
+| GET    | `/patients/new`                                  | Registration form                                                |
+| POST   | `/patients`                                      | Register a patient (optionally with an identification document)  |
+| GET    | `/patients/:id`                                  | Patient detail (documents, identifiers, history)                 |
+| GET    | `/patients/:id/edit`                             | Edit form                                                        |
+| POST   | `/patients/:id`                                  | Save edits (optionally adds an identification document)          |
+| POST   | `/patients/:id/archive`                          | Archive a patient                                                |
+| POST   | `/patients/:id/restore`                          | Restore an archived patient                                      |
+| POST   | `/patients/bulk-archive`                         | Archive selected patients (up to 50)                             |
+| POST   | `/patients/:id/identifiers`                      | Add an encrypted identification document                         |
+| POST   | `/patients/:id/identifiers/:identifierID/remove` | Remove an identification document                                |
+| GET    | `/identifier-systems`                            | Administrator catalog of document systems                        |
+| POST   | `/identifier-systems`                            | Create a document system                                         |
+| POST   | `/identifier-systems/:id`                        | Update a document system (URN immutable)                         |
+| POST   | `/identifier-systems/:id/active`                 | Activate/deactivate a document system                            |
+| GET    | `/identifier-systems/check-fields`               | Conditional check-digit fields of the system form                |
+| POST   | `/patients/:id/documents`                        | Upload a clinical attachment (25 MiB limit)                      |
+| GET    | `/patients/:id/documents/:fileID`                | Download a clinical attachment (audited)                         |
+| GET    | `/users`                                         | Staff account list                                               |
+| GET    | `/users/new`                                     | Account creation form                                            |
+| POST   | `/users`                                         | Create an account                                                |
+| GET    | `/users/:id/edit`                                | Account edit form                                                |
+| POST   | `/users/:id`                                     | Update an account (role, name, email, status)                    |
+| POST   | `/users/:id/status`                              | Activate/deactivate an account                                   |
+| GET    | `/specialties`                                   | Clinic specialty catalog                                         |
+| POST   | `/specialties`                                   | Create a specialty                                               |
+| POST   | `/specialties/:id/delete`                        | Delete a specialty                                               |
+| GET    | `/roles`                                         | Role catalog                                                     |
+| POST   | `/roles`                                         | Create a role                                                    |
+| POST   | `/roles/:id/rename`                              | Rename a role                                                    |
+| POST   | `/roles/:id/clinical`                            | Toggle the clinical flag of a role                               |
+| POST   | `/roles/:id/delete`                              | Delete a role                                                    |
+| GET    | `/policies`                                      | Access policy editor                                             |
+| POST   | `/policies`                                      | Save a policy expression                                         |
+| POST   | `/policies/reset`                                | Restore the default policies                                     |
+| GET    | `/staff`                                         | Physician directory                                              |
+| GET    | `/staff/new`                                     | Physician creation form                                          |
+| POST   | `/staff`                                         | Create a physician                                               |
+| GET    | `/staff/:id/edit`                                | Physician edit form                                              |
+| POST   | `/staff/:id`                                     | Admin direct edit of a physician                                 |
+| POST   | `/staff/:id/request`                             | Receptionist proposes a physician change                         |
+| GET    | `/staff/my-requests`                             | The user's own change requests                                   |
+| GET    | `/staff/requests`                                | Pending change requests (admin)                                  |
+| POST   | `/staff/requests/:id/approve`                    | Approve a change request                                         |
+| POST   | `/staff/requests/:id/reject`                     | Reject a change request with a note                              |
+| GET    | `/audit/integrity`                               | Verify the append-only audit hash chain                          |
 
 HTTP errors use RFC 7807 `application/problem+json` responses.
 
