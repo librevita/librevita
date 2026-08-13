@@ -15,14 +15,14 @@ func TestLoadPrecedence(t *testing.T) {
 	t.Setenv("LIBREVITA_DB_PATH", "env.db")
 
 	configFile := filepath.Join(t.TempDir(), "config.yaml")
-	configYAML := []byte("mode: development\nhttp_addr: ':9000'\ndatabase:\n  driver: sqlite\n  path: file.db\n  dqlite_addrs: node1:9001,node2:9001\n  dqlite_database: lv\n")
+	configYAML := []byte("mode: development\nhttp_bind: '127.0.0.1'\nhttp_port: 9000\ndatabase:\n  driver: sqlite\n  path: file.db\n  dqlite_addrs: node1:9001,node2:9001\n  dqlite_database: lv\n")
 	if err := os.WriteFile(configFile, configYAML, 0o600); err != nil {
 		t.Fatal(err)
 	}
 
 	flags := pflag.NewFlagSet("config-test", pflag.ContinueOnError)
 	RegisterFlags(flags)
-	if err := flags.Parse([]string{"--config", configFile, "--http-addr", ":9100"}); err != nil {
+	if err := flags.Parse([]string{"--config", configFile, "--http-bind", "0.0.0.0", "--http-port", "9100"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -37,8 +37,11 @@ func TestLoadPrecedence(t *testing.T) {
 	if cfg.Mode != "production" {
 		t.Errorf("Mode = %q, want production", cfg.Mode)
 	}
-	if cfg.HTTPAddr != ":9100" {
-		t.Errorf("HTTPAddr = %q, want :9100", cfg.HTTPAddr)
+	if cfg.HTTPBind != "0.0.0.0" {
+		t.Errorf("HTTPBind = %q, want 0.0.0.0", cfg.HTTPBind)
+	}
+	if cfg.HTTPPort != 9100 {
+		t.Errorf("HTTPPort = %d, want 9100", cfg.HTTPPort)
 	}
 	if cfg.Database.Path != "env.db" {
 		t.Errorf("Database.Path = %q, want env.db", cfg.Database.Path)
@@ -122,5 +125,21 @@ func TestStorageFlagsMapToNestedKeys(t *testing.T) {
 		cfg.Storage.S3.AccessKey != "ak" || cfg.Storage.S3.SecretKey != "sk" ||
 		cfg.Storage.S3.Region != "us-east-1" || cfg.Storage.S3.Secure || cfg.Storage.S3.PathStyle {
 		t.Errorf("s3 = %+v", cfg.Storage.S3)
+	}
+}
+
+func TestValidateHTTPPort(t *testing.T) {
+	cfg := &Config{Database: DatabaseConfig{Driver: DriverSQLite}, Logging: LoggingConfig{Mode: LogModeConsole}}
+	cfg.normalize()
+	if cfg.HTTPPort != defaultHTTPPort {
+		t.Errorf("HTTPPort = %d, want default %d", cfg.HTTPPort, defaultHTTPPort)
+	}
+	cfg.HTTPPort = 70000
+	if err := cfg.validate(); err == nil {
+		t.Fatal("validate(70000) = nil, want error")
+	}
+	cfg.HTTPPort = 443
+	if err := cfg.validate(); err != nil {
+		t.Fatalf("validate(443) = %v, want nil", err)
 	}
 }

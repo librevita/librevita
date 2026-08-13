@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"net"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/labstack/echo/v4"
@@ -25,8 +27,9 @@ func registerLifecycle(lc fx.Lifecycle, e *echo.Echo, cfg *config.Config, log *s
 	lc.Append(fx.Hook{
 		OnStart: func(context.Context) error {
 			go func() {
-				log.Info("HTTP server listening", "addr", cfg.HTTPAddr)
-				if err := e.Start(cfg.HTTPAddr); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				log.Info("HTTP server listening", "addr", net.JoinHostPort(cfg.HTTPBind, strconv.Itoa(cfg.HTTPPort)))
+				httpAddr := net.JoinHostPort(cfg.HTTPBind, strconv.Itoa(cfg.HTTPPort))
+			if err := e.Start(httpAddr); err != nil && !errors.Is(err, http.ErrServerClosed) {
 					log.Error("HTTP server failed", "error", err)
 					_ = shutdown.Shutdown()
 				}
