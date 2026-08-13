@@ -40,7 +40,8 @@ const (
 	keyConfigFile = "config_file"
 
 	defaultMode           = "development"
-	defaultHTTPAddr       = ":8080"
+	defaultHTTPBind       = "0.0.0.0"
+	defaultHTTPPort       = 8080
 	defaultDataDir        = "./data"
 	defaultDqliteDatabase = "librevita"
 	defaultLogMode        = LogModeConsole
@@ -61,8 +62,12 @@ type Config struct {
 	// deployment (secrets required, Secure cookies).
 	Mode string `koanf:"mode"`
 
-	// HTTPAddr is the Echo bind address, for example ":8080".
-	HTTPAddr string `koanf:"http_addr"`
+	// HTTPBind is the address the HTTP server binds to, e.g. "0.0.0.0"
+	// (all interfaces) or "127.0.0.1" (loopback only).
+	HTTPBind string `koanf:"http_bind"`
+
+	// HTTPPort is the TCP port the HTTP server listens on.
+	HTTPPort int `koanf:"http_port"`
 
 	// TrustedProxies is a comma-separated list of proxy addresses whose
 	// X-Forwarded-For header is trusted for rate limiting and audit IPs.
@@ -169,7 +174,8 @@ type S3Config struct {
 func RegisterFlags(fs *pflag.FlagSet) {
 	stringFlag(fs, "config", "", "configuration file (.yaml, .yml, or .json)")
 	stringFlag(fs, "mode", defaultMode, "runtime mode: development or production")
-	stringFlag(fs, "http-addr", defaultHTTPAddr, "HTTP bind address")
+	stringFlag(fs, "http-bind", defaultHTTPBind, "HTTP bind address (0.0.0.0, 127.0.0.1, ...)")
+	intFlag(fs, "http-port", defaultHTTPPort, "HTTP listen port")
 	stringFlag(fs, "trusted-proxies", "", "comma-separated proxy IPs allowed to set X-Forwarded-For")
 	stringFlag(fs, "data-dir", defaultDataDir, "base directory for database and logs")
 	stringFlag(fs, "db-driver", DriverSQLite, "database backend: sqlite or dqlite")
@@ -294,9 +300,12 @@ func (c *Config) normalize() {
 		c.Mode = defaultMode
 	}
 
-	c.HTTPAddr = strings.TrimSpace(c.HTTPAddr)
-	if c.HTTPAddr == "" {
-		c.HTTPAddr = defaultHTTPAddr
+	c.HTTPBind = strings.TrimSpace(c.HTTPBind)
+	if c.HTTPBind == "" {
+		c.HTTPBind = defaultHTTPBind
+	}
+	if c.HTTPPort <= 0 {
+		c.HTTPPort = defaultHTTPPort
 	}
 
 	c.DataDir = strings.TrimSpace(c.DataDir)
@@ -356,6 +365,10 @@ func (c *Config) validate() error {
 		}
 	}
 
+	if c.HTTPPort > 65535 {
+		return fmt.Errorf("config: invalid http_port %d (max 65535)", c.HTTPPort)
+	}
+
 	switch c.Logging.Mode {
 	case LogModeConsole, LogModeFile, LogModeRotating:
 		return nil
@@ -389,8 +402,10 @@ func mapFlagKey(name string) string {
 		return keyConfigFile
 	case "mode":
 		return "mode"
-	case "http-addr", "http_addr":
-		return "http_addr"
+	case "http-bind", "http_bind":
+		return "http_bind"
+	case "http-port", "http_port":
+		return "http_port"
 	case "data-dir", "data_dir":
 		return "data_dir"
 	case "db-driver", "db_driver":
@@ -449,8 +464,10 @@ func mapEnvironmentKey(key string) string {
 		return keyConfigFile
 	case "mode":
 		return "mode"
-	case "http_addr":
-		return "http_addr"
+	case "http_bind", "http_addr":
+		return "http_bind"
+	case "http_port":
+		return "http_port"
 	case "data_dir":
 		return "data_dir"
 	case "db_driver", "database_driver":

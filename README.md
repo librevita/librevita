@@ -115,7 +115,8 @@ Example `config.yaml`:
 
 ```yaml
 env: production
-http_addr: ":8080"
+http_bind: "0.0.0.0"
+http_port: 8080
 data_dir: ./data
 database:
   driver: sqlite
@@ -148,7 +149,8 @@ The main flags are:
 | ------------------------------ | -------------------------------------- | ------------------------------------------------------------ |
 | `--config`                     | `LIBREVITA_CONFIG_FILE`                | Configuration file path                                      |
 | `--mode`                       | `LIBREVITA_MODE`                       | Runtime mode: `development` or `production`                  |
-| `--http-addr`                  | `LIBREVITA_HTTP_ADDR`                  | HTTP bind address                                            |
+| `--http-bind`                  | `LIBREVITA_HTTP_BIND`                  | HTTP bind address (`0.0.0.0`, `127.0.0.1`, ...)              |
+| `--http-port`                  | `LIBREVITA_HTTP_PORT`                  | HTTP listen port (default `8080`)                            |
 | `--data-dir`                   | `LIBREVITA_DATA_DIR`                   | Base directory for default database and logs                 |
 | `--db-driver`                  | `LIBREVITA_DB_DRIVER`                  | `sqlite` or `dqlite`                                         |
 | `--db-path`                    | `LIBREVITA_DB_PATH`                    | SQLite file path                                             |
