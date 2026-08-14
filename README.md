@@ -12,7 +12,7 @@ Self-hosted medical clinic management software built in Go. The module path is `
 - [Task](https://taskfile.dev/install) 3.x — the build and development interface
 - Go (the `go.mod` floor; `go` auto-downloads the pinned `GO_VERSION` toolchain
   from the Taskfile when needed)
-- Node 26.7 (see `.nvmrc`) for the frontend pipeline
+- Node 24 LTS (see `.nvmrc`) for the frontend pipeline
 - Podman or Docker for the image task only (`task image`); nothing else needs
   containers
 
@@ -53,7 +53,7 @@ The UI follows the GOTH stack: Go + templ + HTMX, server-driven and progressive.
   `unsafe-eval`/`unsafe-inline`) is never relaxed
 - **Tailwind CSS 3.4.17** compiled at build time with a hex palette override (the v3.4 default `oklch` colors are
   unparseable by XP-era browsers)
-- The frontend build is driven by **Node** (26.7, see `.nvmrc`; the same version
+- The frontend build is driven by **Node** (24 LTS, see `.nvmrc`; the same version
   is pinned in the Taskfile): `package.json`
   declares the dependencies and scripts, and `package-lock.json` pins them with integrity hashes — nothing is versioned
   inside the Taskfile. esbuild bundles the TypeScript source to the XP floor (`target=firefox58`, verified by
@@ -96,7 +96,7 @@ bundle is embedded through `rootcerts`. The image has no shell, package manager,
 mounted `/data` volume must be writable by UID/GID `65532:65532`.
 
 The Taskfile pins the toolchains: every Go command runs on `GO_VERSION` (`GOTOOLCHAIN=go1.26.6`, auto-downloaded
-when the local Go is older) and the frontend on Node 26.7. It sets `CGO_ENABLED=0` for every Go build, keeping the
+when the local Go is older) and the frontend on Node 24 LTS. It sets `CGO_ENABLED=0` for every Go build, keeping the
 binaries statically linkable across supported architectures.
 
 Build caching is incremental: the Go build cache, the npm cache and the Taskfile gates mean a change re-runs only the

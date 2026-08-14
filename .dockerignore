@@ -1,0 +1,10 @@
+# The Dockerfile only needs the compiled binary; exclude everything
+# else from the build context (the checkout is ~200MB with node_modules).
+.git
+node_modules/
+.tools/
+.task/
+data/
+bin/librevita-*
+*.db
+*.log

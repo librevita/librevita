@@ -9,7 +9,7 @@ fixes, features, documentation, and tests.
   interface
 - Go — the version pinned in the Taskfile (`GO_VERSION`) is downloaded
   automatically by `go` when the local one is older
-- Node 26.7 (see `.nvmrc`) for the frontend pipeline
+- Node 24 (LTS, see `.nvmrc`) for the frontend pipeline
 - Podman or Docker, only if you build the OCI image (`task image`)
 
 ## First-time setup
