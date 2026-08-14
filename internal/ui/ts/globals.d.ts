@@ -1,17 +1,19 @@
-// Ambient declarations for the globals the frontend uses. The global
-// `htmx` object and its config come from the htmx-types package; the
-// interfaces below are the event payloads this application consumes.
-/// <reference types="htmx-types" />
+// Ambient declarations for the globals the frontend uses. The runtime
+// is htmx 2.x: the package ships its own types (dist/htmx.esm.d.ts,
+// typed as the module default export); the global `htmx` used by
+// core.ts is declared from them below. The interfaces at the end are
+// the event payloads this application consumes.
 
-// The HTMX runtime is bundled into the application bundle (main.ts
-// imports these modules); the UMD wrapper resolves through the
-// CommonJS branch under esbuild and never assigns the global, so the
-// api object is published explicitly by htmx-runtime.ts.
-declare module 'htmx.org/dist/htmx.min.js' {
-  const htmx: unknown;
+// The CommonJS wrapper bundled by build.ts: esbuild resolves the
+// module.exports the same way it did the htmx 1.x UMD, and
+// htmx-runtime.ts publishes the global explicitly.
+declare module 'htmx.org/dist/htmx.cjs.js' {
+  const htmx: typeof import('htmx.org/dist/htmx.esm.js').default;
   export default htmx;
 }
-declare module 'htmx.org/dist/ext/sse.js';
+declare module 'htmx-ext-sse/dist/sse.js';
+
+declare const htmx: typeof import('htmx.org/dist/htmx.esm.js').default;
 
 declare interface HtmxRequestDetail {
   headers: Record<string, string>;

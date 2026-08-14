@@ -57,31 +57,41 @@ Build chain: `package.json`/`package-lock.json` (Node) → `npm run assets` (`ts
 bundle — carrying the HTMX runtime, its SSE extension, the theme bootstrap and the application code — are written into
 the Go embed tree under content-addressed names (`app-<hash>.css`, `app-<hash>.js`).
 
-| Package                 | Version | License | Purpose                                 |
-| ----------------------- | ------- | ------- | --------------------------------------- |
-| `htmx.org`              | 1.9.12  | 0BSD    | Hypermedia runtime (`dist/htmx.min.js`) |
-| `htmx.org` (ext/sse.js) | 1.9.12  | 0BSD    | SSE extension (`dist/ext/sse.js`)       |
+| Package        | Version | License | Purpose                                 |
+| -------------- | ------- | ------- | --------------------------------------- |
+| `htmx.org`     | 2.0.10  | 0BSD    | Hypermedia runtime (`dist/htmx.cjs.js`) |
+| `htmx-ext-sse` | 2.2.4   | 0BSD    | SSE extension (`dist/sse.js`)           |
 
 `htmx.org` is the only third-party runtime JavaScript. It is not copied: `internal/ui/build.ts` bundles its
-`dist/htmx.min.js` and `dist/ext/sse.js` into the single application script (`app-<hash>.js`) along with the
-first-party TypeScript (the theme bootstrap and the ui manifest). The stylesheet (`app-<hash>.css`) is the PostCSS
-pipeline over `internal/ui/input.css`. Everything under `internal/ui/static` is generated at build time, content
-addressed, and served with Subresource Integrity hashes (see `internal/ui/assets.go`).
+`dist/htmx.cjs.js` (the generated CommonJS wrapper — the 2.x dists are plain source without exports) and the canonical
+`htmx-ext-sse@2.2.4` extension into the single application script (`app-<hash>.js`) along with the first-party
+TypeScript (the theme bootstrap and the ui manifest). `htmx-runtime.ts` publishes the api object as the global `htmx`
+before the extension loads; the SSE extension is an IIFE calling `htmx.defineExtension('sse', ...)`. The stylesheet
+(`app-<hash>.css`) is the PostCSS pipeline over `internal/ui/input.css`. Everything under `internal/ui/static` is
+generated at build time, content addressed, and served with Subresource Integrity hashes (see `internal/ui/assets.go`).
+
+The SSE extension is configured (bundled and registered) for the upcoming agenda live updates. Elements opt in with
+`hx-ext="sse"` plus `sse-connect="/endpoint"` (EventSource URL) and `sse-swap="<event-name>"` on the receiving element;
+the server sends named events whose data is swapped into the element. Note the 2.x syntax — the legacy `hx-sse`/`hx-ws`
+attributes were removed from the core.
+
+HTMX 4.x was evaluated and rejected: its core and SSE extension require `fetch`/`ReadableStream`/`AbortController` and
+`crypto.randomUUID` (Firefox 57+/95+), which break the XP floor. As long as the floor stands, the 2.x line is the
+terminal version for this application.
 
 ### Build-time devDependencies
 
-| Package                       | Version | License    | Purpose                                                       |
-| ----------------------------- | ------- | ---------- | ------------------------------------------------------------- |
-| `typescript`                  | 5.9.3   | Apache-2.0 | Type checking (`tsc --noEmit`)                                |
-| `esbuild`                     | 0.28.1  | MIT        | Bundler for the TS modules (XP floor target)                  |
-| `tailwindcss`                 | 3.4.17  | MIT        | CSS framework; compiled into `app-<hash>.css` at build        |
-| `postcss`                     | 8.5.26  | MIT        | CSS pipeline core (run in-process by `build.ts`)              |
-| `postcss-sort-media-queries`  | 6.7.1   | MIT        | Mobile-first ordering of `@media` blocks                      |
-| `postcss-combine-media-query` | 2.1.0   | MIT        | Merges identical adjacent `@media` blocks                     |
-| `autoprefixer`                | 10.5.4  | MIT        | Vendor prefixes (driven by `browserslist`)                    |
-| `cssnano`                     | 8.0.4   | MIT        | Minification in production builds                             |
-| `htmx-types`                  | 1.0.1   | ISC        | Type declarations for htmx (`@types/htmx.org` does not exist) |
-| `linkedom`                    | 0.18.13 | ISC        | DOM implementation for the `node:test` unit tests             |
+| Package                       | Version | License    | Purpose                                                |
+| ----------------------------- | ------- | ---------- | ------------------------------------------------------ |
+| `typescript`                  | 5.9.3   | Apache-2.0 | Type checking (`tsc --noEmit`)                         |
+| `esbuild`                     | 0.28.1  | MIT        | Bundler for the TS modules (XP floor target)           |
+| `tailwindcss`                 | 3.4.17  | MIT        | CSS framework; compiled into `app-<hash>.css` at build |
+| `postcss`                     | 8.5.26  | MIT        | CSS pipeline core (run in-process by `build.ts`)       |
+| `postcss-sort-media-queries`  | 6.7.1   | MIT        | Mobile-first ordering of `@media` blocks               |
+| `postcss-combine-media-query` | 2.1.0   | MIT        | Merges identical adjacent `@media` blocks              |
+| `autoprefixer`                | 10.5.4  | MIT        | Vendor prefixes (driven by `browserslist`)             |
+| `cssnano`                     | 8.0.4   | MIT        | Minification in production builds                      |
+| `linkedom`                    | 0.18.13 | ISC        | DOM implementation for the `node:test` unit tests      |
 
 The bundles are compiled with `target=firefox58` and the output is verified after the build by `assertXpFloor`: no
 `?.`/`??` and no optional catch binding (`catch {}`, a syntax error on Firefox 52 and Goanna) may reach the output.

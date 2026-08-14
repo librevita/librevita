@@ -9,9 +9,11 @@
 import './compat.ts';
 // The HTMX runtime and its SSE extension are bundled here, so the
 // whole client is a single file. htmx-runtime.ts must load before the
-// extension (import order is preserved).
+// extension (import order is preserved). The extension is configured
+// for live updates: elements opt in with hx-ext="sse" plus
+// sse-connect/sse-swap (see VENDOR.md).
 import './htmx-runtime.ts';
-import 'htmx.org/dist/ext/sse.js';
+import 'htmx-ext-sse/dist/sse.js';
 import './theme.ts';
 
 import { configureHtmx, forwardCsrf, focusAppMain } from './core.ts';
