@@ -8,13 +8,14 @@
 
 import './compat.ts';
 // The HTMX runtime and its SSE extension are bundled here, so the
-// whole client is a single file. htmx-runtime.ts must load before the
-// extension (import order is preserved).
+// whole client is a single deferred file. htmx-runtime.ts must load
+// before the extension (import order is preserved). The theme
+// bootstrap is NOT here: it is rendered inline in the head by
+// base.templ (build.ts bundles theme.ts separately for that).
 import './htmx-runtime.ts';
 import 'htmx.org/dist/ext/sse.js';
-import './theme.ts';
 
-import { configureHtmx, forwardCsrf, focusAppMain } from './core.ts';
+import { configureHtmx, forwardCsrf, focusAppMain, reportHtmxErrors } from './core.ts';
 import * as sidebar from './sidebar.ts';
 import * as userMenu from './user-menu.ts';
 import * as tabs from './tabs.ts';
@@ -26,6 +27,10 @@ import * as datepicker from './datepicker.tsx';
 
 configureHtmx();
 forwardCsrf();
+// Debug diagnostics for the old engines; only in dev-mode bundles.
+if (__LV_DEV__) {
+  reportHtmxErrors();
+}
 
 sidebar.init();
 userMenu.init();

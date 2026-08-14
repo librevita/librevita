@@ -7,13 +7,16 @@ import (
 	"github.com/labstack/echo/v4"
 
 	"librevita.org/internal/core/config"
+	"librevita.org/internal/ui"
 )
 
 // Content-Security-Policy without unsafe-eval or unsafe-inline. The stack
 // (HTMX with allowEval=false, first-party ES5 widgets) fits this policy;
 // the assets are self-hosted and content-addressed, so 'self' covers
-// everything and no CDN is involved.
-const contentSecurityPolicy = "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+// everything and no CDN is involved. The only inline script is the theme
+// bootstrap, allowed through its content hash (ui.ThemeScriptHash) — a
+// static script needs no per-request nonce.
+const contentSecurityPolicy = "default-src 'self'; script-src 'self' '" + ui.ThemeScriptHash + "'; style-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
 
 // crossOriginResourcePolicy keeps other origins from embedding or
 // reading the application assets.
