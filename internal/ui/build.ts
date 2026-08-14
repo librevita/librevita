@@ -19,6 +19,13 @@ const out = process.env.OUT ?? '/out';
 // the floor.
 const xpForbidden = /\?\.|\?\?=|\?\?|\bcatch\s*\{/;
 
+// Regex features esbuild cannot lower: lookbehind (?<= ?<!), named
+// groups (?<name>) and unicode property escapes (\p{...} \P{...}) are
+// valid ES2017+ syntax, so the parse-level checks never see them and
+// the firefox58 target passes them through verbatim. Firefox 52 /
+// Goanna reject all three at runtime, so grep the artifacts directly.
+const xpHardRegex = /\(\?<|\\p\{|\\P\{/;
+
 // The firefox58 matrix still allows optional catch binding (catch {}),
 // which is a syntax error on Firefox 52 / Goanna. Force esbuild to keep
 // a binding so the floor can parse the file.
@@ -33,6 +40,13 @@ function assertXpFloor(file: string) {
         `(${offenders.length} matches of ?./??): lower it or drop the dependency`,
     );
   }
+  const regexOffenders = code.match(xpHardRegex) ?? [];
+  if (regexOffenders.length > 0) {
+    throw new Error(
+      `${file} contains regex syntax the XP floor cannot parse ` +
+        `(${regexOffenders.length} matches of lookbehind/named groups/unicode property escapes)`,
+    );
+  }
 }
 
 await esbuild.build({
@@ -44,6 +58,12 @@ await esbuild.build({
   target: 'firefox58',
   minify: true,
   supported: xpSupported,
+  // TSX compiles to calls of the local factory h() (jsx.ts). Explicit
+  // here (esbuild would read jsxFactory from tsconfig, but only when it
+  // discovers it via cwd) and never 'preserve': raw JSX in the output
+  // would be invalid JavaScript that assertXpFloor cannot detect.
+  jsx: 'transform',
+  jsxFactory: 'h',
 });
 assertXpFloor(`${out}/ui.js`);
 
@@ -58,6 +78,8 @@ await esbuild.build({
   target: 'firefox58',
   minify: true,
   supported: xpSupported,
+  jsx: 'transform',
+  jsxFactory: 'h',
 });
 assertXpFloor(`${out}/theme.js`);
 

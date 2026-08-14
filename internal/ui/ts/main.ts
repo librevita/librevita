@@ -13,7 +13,7 @@ import * as dropdown from './dropdown.ts';
 import * as modal from './modal.ts';
 import * as tableSelect from './table-select.ts';
 import * as reveal from './reveal.ts';
-import * as datepicker from './datepicker.ts';
+import * as datepicker from './datepicker.tsx';
 
 configureHtmx();
 forwardCsrf();
