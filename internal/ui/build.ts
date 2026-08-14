@@ -1,14 +1,15 @@
 // LibreVita frontend build, driven by Node.
 // Manifest: package.json + package-lock.json (no version pinning in
-// Earthly). Produces /out/app.css, /out/ui.js, /out/theme.js, and
-// /out/vendor/*.
+// the Taskfile). Produces internal/ui/static/js/ui.js, theme.js and
+// vendor/*, which the Go binary embeds via //go:embed.
 
 import * as esbuild from 'esbuild';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { readFileSync } from 'node:fs';
 
-// Output root; Earthly provides /out, local runs may override with OUT.
-const out = process.env.OUT ?? '/out';
+// Output root; defaults to the embed tree, overridable with OUT.
+const out = process.env.OUT ?? 'internal/ui/static/js';
+await mkdir(out, { recursive: true });
 
 // Browser floor: Firefox 52 ESR / Goanna. esbuild's firefox52 feature matrix
 // rejects for-of and destructuring (its feature matrix is conservative,

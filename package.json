@@ -5,7 +5,7 @@
   "description": "Frontend build for the LibreVita web application",
   "scripts": {
     "check": "tsc --noEmit -p tsconfig.json",
-    "css": "postcss internal/ui/input.css -o /out/app.css --env production",
+    "css": "postcss internal/ui/input.css -o internal/ui/static/css/app.css --env production",
     "bundle": "node internal/ui/build.ts",
     "build": "npm run check && npm run css && npm run bundle",
     "typecheck": "npm run check",

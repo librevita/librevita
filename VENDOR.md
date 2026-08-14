@@ -40,7 +40,7 @@ Go module `librevita.org`, built with `CGO_ENABLED=0` into a static binary on a 
 
 ### Build-time Go tools
 
-Installed in the Earthfile `+go-tool-templ`, `+go-tool-sqlc`, `+go-tool-lint`, and `+go-tool-vuln` targets and never
+Installed by the Taskfile `tools` task and never
 linked into the binary; used only to generate committed sources or to analyze the code.
 
 | Package                                                  | Version   | License      | Purpose                                                       |
@@ -52,8 +52,8 @@ linked into the binary; used only to generate committed sources or to analyze th
 
 ## Frontend
 
-Build chain: `package.json`/`package-lock.json` (Node) → `npm run build` (`tsc --noEmit`, PostCSS, esbuild) inside the
-Earthfile `+frontend` target (`node:26.7-alpine3.24`), with the artifacts copied back into the Go embed tree.
+Build chain: `package.json`/`package-lock.json` (Node) → `npm run build` (`tsc --noEmit`, PostCSS, esbuild) via the
+Taskfile `frontend` task (Node 26.7, see `.nvmrc`), with the artifacts copied into the Go embed tree.
 
 | Package                 | Version | License | Purpose                                 |
 | ----------------------- | ------- | ------- | --------------------------------------- |

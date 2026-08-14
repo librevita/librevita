@@ -28,7 +28,7 @@ go.work.sum
 # Editor/tool-specific configuration
 opencode.json
 
-# LibreVita: binários e dados locais
+# LibreVita: local binaries and data
 bin/
 data/
 *.db
@@ -37,12 +37,19 @@ data/
 *.log
 *.log.*
 
-# Dependências npm
+# Pinned Go tools (task tools)
+.tools/
+
+# Task internal cache (sources/generates checksums)
+.task/
+
+# npm dependencies
 node_modules/
 
-# Generated frontend assets (build-time, see Earthfile +frontend)
+# Generated frontend assets (build-time, see Taskfile frontend)
 internal/ui/static/css/*.css
 internal/ui/static/js/*.js
+internal/ui/static/js/vendor/
 
 # Generated sqlc repositories
 **/repository/*.sql.go
