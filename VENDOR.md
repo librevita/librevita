@@ -53,7 +53,7 @@ linked into the binary; used only to generate committed sources or to analyze th
 ## Frontend
 
 Build chain: `package.json`/`package-lock.json` (Node) → `npm run assets` (`tsc --noEmit` + PostCSS + esbuild via
-`internal/ui/build.ts`) through the Taskfile `frontend` task (Node 26.7, see `.nvmrc`). The compiled CSS and a single JS
+`internal/ui/build.ts`) through the Taskfile `frontend` task (Node 24 (LTS), see `.nvmrc`). The compiled CSS and a single JS
 bundle — carrying the HTMX runtime, its SSE extension and the application code — are written into
 the Go embed tree under content-addressed names (`app-<hash>.css`, `app-<hash>.js`); the bundle loads with `defer`.
 The theme bootstrap is bundled separately and rendered inline in the head (ui.ThemeScript): the strict CSP allows

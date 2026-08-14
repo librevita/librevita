@@ -20,6 +20,13 @@ jobs:
           # Same version as the Taskfile's GO_VERSION var.
           go-version: 1.26.6
           cache: true
+      # The Go tasks depend on the frontend build (embedded assets), so
+      # npm must run on the pinned Node like the node job — the runner's
+      # system Node is not a supported version.
+      - uses: actions/setup-node@v4
+        with:
+          # Same version as .nvmrc.
+          node-version: 24.19.0
       # Task runs the same tasks as local development; the version is
       # installed through the Go toolchain so setup-go's cache covers it.
       - name: Install Task
@@ -34,22 +41,25 @@ jobs:
           key: go-tools-${{ hashFiles('taskfile.yaml') }}
       - name: Regenerate sources
         run: task gen
+      # Go-only gate: the npm consumers (node-test, node-audit) run on
+      # the node job with the pinned Node 24 (LTS); the frontend build that
+      # the Go tasks depend on works with any modern Node on the runner.
       - name: Gate
-        run: task test vet lint audit build
+        run: task go-test go-vet go-lint go-vuln-source go-vuln-binary build
       - uses: actions/upload-artifact@v4
         with:
           name: binary
           path: bin/librevita
           if-no-files-found: error
   node:
-    name: Node (check, css, bundle, test, audit)
+    name: Node (check, assets, test, audit)
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
         with:
           # Same version as .nvmrc.
-          node-version: 26.7
+          node-version: 24.19.0
           cache: npm
       - run: npm ci
       - run: npm run check
