@@ -9,34 +9,37 @@ Self-hosted medical clinic management software built in Go. The module path is `
 
 ## Requirements
 
-- Earthly 0.8 or newer
-- Podman or Docker for the Earthly BuildKit daemon
+- [Task](https://taskfile.dev/install) 3.x — the build and development interface
+- Go (the `go.mod` floor; `go` auto-downloads the pinned `GO_VERSION` toolchain
+  from the Taskfile when needed)
+- Node 26.7 (see `.nvmrc`) for the frontend pipeline
+- Podman or Docker for the image task only (`task image`); nothing else needs
+  containers
 
-There is no Makefile. Earthly is the build and development interface.
-
-## Earthly Targets
+## Task Targets
 
 ```sh
-earthly +go-gen-templ +go-gen-sqlc +go-gen-schema
-earthly +build --dev=true
-earthly +build
-earthly +image --IMAGE_TAG=librevita:latest
-earthly +go-test
-earthly +go-vet
-earthly +go-lint
-earthly +go-vuln-source
-earthly +go-tidy
-earthly +build --os=linux --arch=riscv64
-earthly +build --os=linux --arch=loong64
-earthly +build --os=linux --arch=mips64
+task gen                    # regenerate schema, templ views and sqlc repositories
+task dev                    # fast unoptimized binary (bin/librevita-dev)
+task build                  # optimized production binary (bin/librevita)
+task image                  # OCI image (podman by default, task image -- IMG=docker)
+task test                   # Go test suite + frontend unit tests
+task vet                    # go vet
+task lint                   # golangci-lint
+task audit                  # govulncheck (source + binary) and npm audit
+task tidy                   # sync go.mod/go.sum
+task cross -- os=linux arch=riscv64
+task cross -- os=linux arch=loong64
+task cross -- os=linux arch=mips64
 ```
 
-`+build` writes the optimized production binary to `bin/librevita`. `--dev=true` writes the fast, unoptimized
-`bin/librevita-dev` binary. Cross builds write files such as `bin/librevita-linux-riscv64`. `--name=myapp` renames the
-exported binaries (the `name` global arg, default `librevita`).
+`task build` writes the optimized production binary to `bin/librevita`; `task dev` writes the fast, unoptimized
+`bin/librevita-dev`. Cross builds write files such as `bin/librevita-linux-riscv64`. Every Go command runs on the
+pinned `GO_VERSION` toolchain (Taskfile `vars`) with `CGO_ENABLED=0`, so the binaries are static.
 
-SQLC and templ output is not committed. The generation stages (`+go-gen-templ`, `+go-gen-sqlc`, `+go-gen-schema`)
-export their outputs to the workspace for editor support; build, test, and vet targets generate them inside Earthly.
+SQLC and templ output is not committed. The generation task (`task gen`) writes them to the workspace for editor
+support; build, test, and vet tasks generate them as dependencies. Incremental behaviour comes from the Go build
+cache, the npm cache and the Taskfile `sources`/`generates` gates: a task only re-runs when its inputs changed.
 
 ## Frontend
 
@@ -50,9 +53,10 @@ The UI follows the GOTH stack: Go + templ + HTMX, server-driven and progressive.
   relaxed
 - **Tailwind CSS 3.4.17** compiled at build time with a hex palette override (the v3.4 default `oklch` colors are
   unparseable by XP-era browsers)
-- The frontend build is driven by **Node** (`node:26.7-alpine3.24`, pinned by digest in the Earthfile): `package.json`
+- The frontend build is driven by **Node** (26.7, see `.nvmrc`; the same version
+  is pinned in the Taskfile): `package.json`
   declares the dependencies and scripts, and `package-lock.json` pins them with integrity hashes — nothing is versioned
-  inside the Earthfile. esbuild bundles the TypeScript source to the XP floor (`target=firefox58`, verified by
+  inside the Taskfile. esbuild bundles the TypeScript source to the XP floor (`target=firefox58`, verified by
   `assertXpFloor` after the build) and the PostCSS pipeline compiles Tailwind from `internal/ui/input.css`; no one
   writes ES5
 - **TypeScript** in `internal/ui/ts` with strict checking (`tsc --noEmit`, `lib: ES2017+DOM` aligned to the XP floor, so
@@ -66,13 +70,14 @@ responses; the application is same-origin and no CORS is configured.
 
 ## Container Image
 
-`+image` builds the production binary and packages it in a `scratch` OCI image. The image runs as non-root UID/GID
+`task image` packages the production binary in a `scratch` OCI image. The image runs as non-root UID/GID
 `65532:65532` and sets `LIBREVITA_DATA_DIR=/data/librevita`. Go creates that directory and its files at startup.
 
-Docker and Podman use the same commands:
+Podman and Docker use the same commands:
 
 ```sh
-earthly +image --IMAGE_TAG=librevita:latest
+task image                       # podman by default
+task image -- IMG=docker         # or docker
 podman run --rm \
   -p 8080:8080 \
   -v librevita-data:/data \
@@ -84,28 +89,18 @@ Replace `podman` with `docker` when using Docker. Timezone data is embedded by G
 bundle is embedded through `rootcerts`. The image has no shell, package manager, or pre-created data directory. The
 mounted `/data` volume must be writable by UID/GID `65532:65532`.
 
-The Earthfile pins the toolchain images (`golang:1.26.5-alpine3.24`, `node:26.7-alpine3.24`) by digest, so the
-BuildKit resolves them from its local content store and builds never query the registry — no Docker Hub rate limits,
-and the exact images are fixed by the Earthfile. It sets `CGO_ENABLED=0` for every Go build, keeping the binaries
-statically linkable across supported architectures.
+The Taskfile pins the toolchains: every Go command runs on `GO_VERSION` (`GOTOOLCHAIN=go1.26.6`, auto-downloaded
+when the local Go is older) and the frontend on Node 26.7. It sets `CGO_ENABLED=0` for every Go build, keeping the
+binaries statically linkable across supported architectures.
 
-Build caching is layered: each target consumes only the inputs it needs, so a change invalidates the minimal subtree:
+Build caching is incremental: the Go build cache, the npm cache and the Taskfile gates mean a change re-runs only the
+affected tasks:
 
-- `+go-deps` — Go module downloads, rebuilt only when `go.mod`/`go.sum` change
-- `+go-tool-templ`/`+go-tool-sqlc` — code generators installed from the bare Go toolchain, independent of the application modules
-- `+node-deps`/`+node-check`/`+node-css`/`+node-bundle` — npm install plus the frontend stages: template changes
-  re-run only the Tailwind JIT, TS changes only the type-check and the bundle
-- `+go-gen-schema` — consolidated DDL for sqlc, built from only the packages on the schemagen import chain
-- `+go-generated` — sources plus generated code (templ, sqlc, compiled assets)
-
-If a rootful Earthly BuildKit daemon already occupies ports `8371` and `8372`, configure the client to reuse it:
-
-```sh
-earthly config global.buildkit_host 'tcp://localhost.:8372'
-```
-
-The trailing dot prevents Earthly from treating the existing TLS endpoint as a local daemon that it should manage
-itself.
+- `task gen` — schema (from the migrations), templ views and sqlc repositories, regenerated only when their inputs change
+- `task frontend` — npm `ci`, type-check, Tailwind CSS and the esbuild bundle, each gated on its own inputs
+- `task tools` — the pinned generators and analyzers (templ, sqlc, golangci-lint, govulncheck) installed into
+  `.tools/bin` from the bare Go toolchain, independent of the application modules
+- `task build`/`task test`/`task vet`/`task lint`/`task audit` — the Go gate, on the pinned toolchain
 
 ## Configuration
 

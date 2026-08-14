@@ -1,0 +1,363 @@
+# ==========================================================================
+# LibreVita — build pipeline (Task). Local and CI run the same tasks; no
+# containers and no daemon, so builds run on the host toolchains and the
+# incremental behaviour comes from the Go build cache, the npm cache and
+# the sources/generates gates below.
+#
+# Version pins live in `vars` (single source of truth); the CI workflow
+# reads this same file. To bump a toolchain, edit the version here.
+# ==========================================================================
+version: '3'
+env:
+  # CGO is disabled for every Go build: the binaries are static and the
+  # production image runs on scratch. (Taskfile env only applies when
+  # the variable is absent from the OS environment; PATH and GOBIN are
+  # therefore set inline on the commands that need them, which always
+  # wins.)
+  CGO_ENABLED: '0'
+  # Every go command runs on the pinned GO_VERSION toolchain - the
+  # container-free equivalent of the pinned toolchain images. When the
+  # local Go is older, `go` downloads exactly this version; CI installs
+  # it via setup-go, so nothing is downloaded there. Without the pin,
+  # binaries built by an older Go would embed its (possibly vulnerable)
+  # standard library and the binary scan would fail.
+  GOTOOLCHAIN: 'go{{.GO_VERSION}}'
+vars:
+  NAME: librevita
+  GO_VERSION: 1.26.6
+  NODE_VERSION: 26.7
+  TEMPL_VERSION: v0.3.1020
+  SQLC_VERSION: v1.31.1
+  GOLANGCI_VERSION: v2.12.2
+  GOVULN_VERSION: v1.1.4
+tasks:
+  # ------------------------------------------------------------------------
+  # Tools and generated sources
+  # ------------------------------------------------------------------------
+
+  # Build-time tools (generators and analyzers), pinned by version and
+  # installed from the bare toolchain: `go install pkg@version` resolves
+  # the tool's own module graph, so neither the application go.mod nor
+  # the other tools ever interfere. They are compiled with the pinned
+  # GO_VERSION toolchain: a tool built by an older Go (e.g. govulncheck
+  # on a machine whose Go predates the go.mod floor) cannot load the
+  # application packages and the gate fails.
+  tools:
+    desc: Install the pinned Go tools into .tools/bin
+    cmds:
+      - 'GOBIN={{.ROOT_DIR}}/.tools/bin go install github.com/a-h/templ/cmd/templ@{{.TEMPL_VERSION}}'
+      - 'GOBIN={{.ROOT_DIR}}/.tools/bin go install github.com/sqlc-dev/sqlc/cmd/sqlc@{{.SQLC_VERSION}}'
+      - 'GOBIN={{.ROOT_DIR}}/.tools/bin go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@{{.GOLANGCI_VERSION}}'
+      - 'GOBIN={{.ROOT_DIR}}/.tools/bin go install golang.org/x/vuln/cmd/govulncheck@{{.GOVULN_VERSION}}'
+    sources:
+      - taskfile.yaml
+    generates:
+      - .tools/bin/templ
+      - .tools/bin/sqlc
+      - .tools/bin/golangci-lint
+      - .tools/bin/govulncheck
+  # Consolidated schema for sqlc, derived from the Goose migrations (the
+  # single source of truth). Only the packages on the schemagen import
+  # chain are watched, so changes elsewhere do not regenerate the schema.
+  gen-schema:
+    desc: Regenerate db/schema/schema.sql from the migrations
+    cmds:
+      - go run ./cmd/schemagen --out {{.ROOT_DIR}}/db/schema/schema.sql
+    sources:
+      - cmd/schemagen/**/*.go
+      - internal/core/database/**/*.go
+      - internal/core/config/**/*.go
+      - db/embed.go
+      - db/migrations/**/*.sql
+    generates:
+      - db/schema/schema.sql
+  # Generated templ views, exported to the workspace for editor support.
+  gen-templ:
+    desc: Generate the templ views
+    deps:
+      - tools
+    cmds:
+      - 'PATH={{.ROOT_DIR}}/.tools/bin:$PATH templ generate'
+    sources:
+      - '**/*.templ'
+    generates:
+      - '**/*_templ.go'
+  # Generated sqlc repositories, from the consolidated schema and the
+  # queries; anything else never re-runs this stage.
+  gen-sqlc:
+    desc: Generate the sqlc repositories
+    deps:
+      - tools
+      - gen-schema
+    cmds:
+      - 'PATH={{.ROOT_DIR}}/.tools/bin:$PATH sqlc generate'
+    sources:
+      - sqlc.yaml
+      - db/query/**/*.sql
+      - db/schema/schema.sql
+    generates:
+      - '**/repository/*.sql.go'
+      - '**/repository/db.go'
+      - '**/repository/models.go'
+  gen:
+    desc: Regenerate schema, templ views and sqlc repositories
+    deps:
+      - gen-schema
+      - gen-templ
+      - gen-sqlc
+  # ------------------------------------------------------------------------
+  # Frontend (Node)
+  # ------------------------------------------------------------------------
+
+  # npm dependencies. Rebuilt only when package.json or package-lock.json
+  # change.
+  node-deps:
+    desc: Install the pinned npm dependencies
+    cmds:
+      - npm ci
+    sources:
+      - package.json
+      - package-lock.json
+    generates:
+      - node_modules/.package-lock.json
+  # Type-check the TypeScript sources (noEmit, validation only). Always
+  # runs: tsc has no output to gate on and is fast.
+  node-check:
+    desc: Type-check the TypeScript sources
+    deps:
+      - node-deps
+    cmds:
+      - npm run check
+  # CSS pipeline (Tailwind JIT + autoprefixer + cssnano). Tailwind scans
+  # the templates and the TS sources for class names, so they are inputs
+  # here as well.
+  node-css:
+    desc: Compile the Tailwind CSS pipeline
+    deps:
+      - node-deps
+    cmds:
+      - npm run css
+    sources:
+      - postcss.config.ts
+      - tailwind.config.ts
+      - internal/ui/input.css
+      - 'internal/**/*.templ'
+      - 'internal/ui/ts/**/*.{ts,tsx}'
+    generates:
+      - internal/ui/static/css/app.css
+  # Bundled TypeScript (esbuild) for the XP browser floor.
+  node-bundle:
+    desc: Bundle the TypeScript for the XP browser floor
+    deps:
+      - node-deps
+    cmds:
+      - npm run bundle
+    sources:
+      - tsconfig.json
+      - internal/ui/build.ts
+      - 'internal/ui/ts/**/*.{ts,tsx}'
+    generates:
+      - internal/ui/static/js/ui.js
+      - internal/ui/static/js/theme.js
+      - 'internal/ui/static/js/vendor/*.js'
+  # Compiled assets (CSS, bundled JS) plus the type-check dependency,
+  # exported into internal/ui/static for the embed layer and the editor.
+  frontend:
+    desc: Compile the CSS and JS assets into internal/ui/static
+    deps:
+      - node-check
+      - node-css
+      - node-bundle
+  # ------------------------------------------------------------------------
+  # Go consumers
+  # ------------------------------------------------------------------------
+  go-test:
+    desc: Run the Go test suite
+    deps:
+      - gen
+      - frontend
+    cmds:
+      - go test ./...
+  go-vet:
+    desc: Run go vet
+    deps:
+      - gen
+      - frontend
+    cmds:
+      - go vet ./...
+  go-lint:
+    desc: 'Run golangci-lint (config: .golangci.yaml)'
+    deps:
+      - tools
+      - gen
+      - frontend
+    cmds:
+      - 'PATH={{.ROOT_DIR}}/.tools/bin:$PATH golangci-lint run'
+  # Scan the module for known vulnerabilities (Go Vulnerability Database,
+  # source analysis: reports only symbols the code actually calls).
+  go-vuln-source:
+    desc: Scan the module for known vulnerabilities (source analysis)
+    deps:
+      - tools
+      - gen
+      - frontend
+    cmds:
+      - 'PATH={{.ROOT_DIR}}/.tools/bin:$PATH govulncheck ./...'
+  # Scan the application binary for known vulnerabilities. The scanned
+  # artifact is compiled here with placeholder assets: govulncheck
+  # analyzes the Go code, not the embedded files, so the whole frontend
+  # pipeline is skipped (the scanned binary is never run). The build is
+  # unsymbolized: with -s -w the call graph is unavailable and
+  # govulncheck reports every vulnerability in the module graph -
+  # including GO-2026-5932, the deprecated-by-design x/crypto/openpgp
+  # that the code never calls, which would keep the gate red forever.
+  # With symbols, the symbol-level filter applies and only reachable
+  # code is reported.
+  go-vuln-binary:
+    desc: Scan the application binary for known vulnerabilities
+    deps:
+      - tools
+      - gen
+    cmds:
+      - mkdir -p internal/ui/static/css internal/ui/static/js
+      - touch internal/ui/static/css/app.css internal/ui/static/js/placeholder.js
+      - go build -o bin/{{.NAME}}-scan ./cmd/web
+      - 'PATH={{.ROOT_DIR}}/.tools/bin:$PATH govulncheck -mode=binary bin/{{.NAME}}-scan'
+    sources:
+      - 'cmd/**/*.go'
+      - 'internal/**/*.go'
+      - 'pkg/**/*.go'
+      - go.mod
+      - go.sum
+    generates:
+      - bin/{{.NAME}}-scan
+  node-test:
+    desc: Run the frontend unit tests
+    deps:
+      - node-deps
+    cmds:
+      - npm test
+  node-audit:
+    desc: npm audit (known vulnerabilities in the frontend dependencies)
+    deps:
+      - node-deps
+    cmds:
+      - npm audit --audit-level=high
+  # ------------------------------------------------------------------------
+  # Public targets
+  # ------------------------------------------------------------------------
+
+  # Run the complete test suite: Go tests and the frontend unit tests.
+  test:
+    desc: Run the complete test suite
+    deps:
+      - go-test
+      - node-test
+  vet:
+    desc: Run static analysis
+    deps:
+      - go-vet
+  lint:
+    desc: Run golangci-lint against generated sources
+    deps:
+      - go-lint
+  # Security audits: the Go module scan (govulncheck), the binary scan
+  # and the npm audit.
+  audit:
+    desc: Security audits (Go source, Go binary, npm)
+    deps:
+      - go-vuln-source
+      - go-vuln-binary
+      - node-audit
+  # Build the application binary: stripped production build writing
+  # bin/NAME.
+  build:
+    desc: Build the optimized production binary (bin/{{.NAME}})
+    deps:
+      - gen
+      - frontend
+    cmds:
+      - go build -trimpath -ldflags="-s -w -buildid=" -o bin/{{.NAME}} ./cmd/web
+    sources:
+      - 'cmd/**/*.go'
+      - 'internal/**/*.go'
+      - 'internal/**/*.templ'
+      - 'pkg/**/*.go'
+      - 'db/**'
+      - go.mod
+      - go.sum
+      - sqlc.yaml
+    generates:
+      - bin/{{.NAME}}
+  # Fast, unoptimized binary for the development loop: bin/NAME-dev.
+  dev:
+    desc: Build the fast unoptimized binary (bin/{{.NAME}}-dev)
+    deps:
+      - gen
+      - frontend
+    cmds:
+      - go build -o bin/{{.NAME}}-dev ./cmd/web
+    sources:
+      - 'cmd/**/*.go'
+      - 'internal/**/*.go'
+      - 'internal/**/*.templ'
+      - 'pkg/**/*.go'
+      - 'db/**'
+      - go.mod
+      - go.sum
+      - sqlc.yaml
+    generates:
+      - bin/{{.NAME}}-dev
+  # Cross-compile the production binary, e.g. `task cross -- os=linux
+  # arch=riscv64`.
+  cross:
+    desc: Cross-compile the production binary
+    deps:
+      - gen
+      - frontend
+    cmds:
+      - 'GOOS={{.os}} GOARCH={{.arch}} go build -trimpath -ldflags="-s -w -buildid=" -o bin/{{.NAME}}-{{.os}}-{{.arch}} ./cmd/web'
+    vars:
+      os: linux
+      arch: amd64
+  # Synchronize module metadata. Runs against generated sources so
+  # imports of templ and sqlc output resolve.
+  tidy:
+    desc: Sync go.mod/go.sum
+    deps:
+      - gen
+      - frontend
+    cmds:
+      - go mod tidy
+    generates:
+      - go.mod
+      - go.sum
+  # Minimal non-root production image; needs podman or docker
+  # (`task image -- IMG=docker`).
+  image:
+    desc: Build the OCI image
+    deps:
+      - build
+    cmds:
+      - '{{.IMG}} build -t {{.IMAGE_TAG}} -f Dockerfile .'
+    vars:
+      IMAGE_TAG: librevita:latest
+      IMG: podman
+  # Running bare `task` (no arguments) runs the full validation gate,
+  # the same as `task all`.
+  default:
+    desc: 'Default task: the full validation gate'
+    deps:
+      - all
+
+  # Validate code, analysis, and the production image together; the CI
+  # runs the same gate (split across jobs).
+  all:
+    desc: 'Full validation gate: tests, vet, lint, audits, binary and image'
+    deps:
+      - test
+      - vet
+      - lint
+      - audit
+      - build
+      - image

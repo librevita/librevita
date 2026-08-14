@@ -3,52 +3,82 @@ on:
   push:
     branches: [master]
   pull_request:
+permissions:
+  contents: read
+env:
+  FORCE_COLOR: 1
 jobs:
-  build:
-    runs-on: ubuntu-latest
+  go:
+    name: Go (gen, test, vet, lint, audit, build)
+    runs-on: ubuntu-24.04
+    env:
+      CGO_ENABLED: '0'
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v5
+        with:
+          # Same version as the Taskfile's GO_VERSION var.
+          go-version: 1.26.6
+          cache: true
+      # Task runs the same tasks as local development; the version is
+      # installed through the Go toolchain so setup-go's cache covers it.
+      - name: Install Task
+        run: go install github.com/go-task/task/v3/cmd/task@v3.52.0
+      # The pinned tools (templ, sqlc, golangci-lint, govulncheck) live
+      # in .tools/bin; the key changes whenever the Taskfile's version
+      # pins change. PRs from forks read the base branch's cache only.
+      - name: Cache pinned Go tools
+        uses: actions/cache@v4
+        with:
+          path: .tools/bin
+          key: go-tools-${{ hashFiles('taskfile.yaml') }}
+      - name: Regenerate sources
+        run: task gen
+      - name: Gate
+        run: task test vet lint audit build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: binary
+          path: bin/librevita
+          if-no-files-found: error
+  node:
+    name: Node (check, css, bundle, test, audit)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v4
+        with:
+          # Same version as .nvmrc.
+          node-version: 26.7
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+      - run: npm run css
+      - run: npm run bundle
+      - run: npm test
+      - run: npm audit --audit-level=high
+  image:
+    name: OCI image
+    needs: go
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
       packages: write
-    env:
-      FORCE_COLOR: 1
-      # Runners are ephemeral, so without a shared cache every run
-      # re-downloads modules and rebuilds from scratch. The layer cache
-      # lives in GHCR: master also pushes it (and the image); PRs only
-      # read it. PRs from forks get a read-only token and no access to
-      # the private packages, so they run without the remote cache.
-      PUSH_FLAG: ${{ github.ref == 'refs/heads/master' && '--push' || '' }}
-      CACHE_ARGS: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && '' || format('--remote-cache=ghcr.io/{0}/librevita-cache', github.repository) }}
-      IMAGE_TAG: ghcr.io/${{ github.repository }}:latest
     steps:
       - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v4
+        with:
+          name: binary
+          path: bin/
+      # The image is built on every run to validate the Dockerfile; it
+      # is pushed to GHCR only on master. Fork PRs never log in.
+      - name: Build image
+        run: docker build -t librevita:ci -f Dockerfile .
       - name: Login to GHCR
-        if: ${{ !(github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) }}
+        if: github.ref == 'refs/heads/master'
         run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-      - name: Install Earthly
-        # Pin the same version as the Earthfile's VERSION, with the
-        # release sha256 verified (trust-on-first-use, like the toolchain
-        # digests in the Earthfile). The runner has Docker, so the CLI
-        # starts its own BuildKit daemon as a container; earthly bootstrap
-        # finishes the CLI configuration.
-        env:
-          EARTHLY_SHA256: 3ef3163c81bdd10e28ab31cd96e35c1856d97478c8ce7f20954b8bea7a598404
+      - name: Push image
+        if: github.ref == 'refs/heads/master'
         run: |
-          cd /tmp
-          wget -q https://github.com/earthly/earthly/releases/download/v0.8.16/earthly-linux-amd64
-          echo "$EARTHLY_SHA256  earthly-linux-amd64" | sha256sum -c -
-          sudo install -m 0755 earthly-linux-amd64 /usr/local/bin/earthly
-          earthly bootstrap
-      # Not --ci: it enables --save-inline-cache, and Earthly will not
-      # export inline and explicit caches in the same run, so the remote
-      # cache was pushed without any layers (1s export, nothing reusable
-      # on the next run). The flags --ci expands to are spelled out here
-      # without --save-inline-cache: --no-output --strict, plus the
-      # explicit cache via $CACHE_ARGS (read-only on PRs, read-write on
-      # master through $PUSH_FLAG). +all runs the whole gate (Go tests,
-      # frontend tests, vet, lint, binary, image); the Earthfile
-      # schedules the independent targets in parallel on the same daemon,
-      # so the layers are built once and the log is organized per target.
-      # The IMAGE_TAG override reaches +image so --push can publish to
-      # GHCR on master.
-      - name: Earthly +all
-        run: earthly --no-output --strict $PUSH_FLAG $CACHE_ARGS +all --IMAGE_TAG=$IMAGE_TAG
+          docker tag librevita:ci ghcr.io/${{ github.repository }}:latest
+          docker push ghcr.io/${{ github.repository }}:latest
