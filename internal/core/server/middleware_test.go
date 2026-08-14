@@ -274,6 +274,47 @@ func TestNotFoundPublicPaths(t *testing.T) {
 // TestBodyLimitRaisesAvatarUploadCap pins the effective upload ceiling:
 // the global 1M body limit skips the avatar and document routes, so
 // their own per-route limits (2M avatar, 25M documents) are reachable.
+func TestSecurityHeadersAreStrict(t *testing.T) {
+	e := New(auth.NewCSRF(&config.Config{Mode: "development"}), &config.Config{Mode: "development"})
+	e.GET("/x", func(c echo.Context) error { return c.NoContent(http.StatusOK) })
+
+	req := httptest.NewRequest(http.MethodGet, "/x", nil)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	const wantCSP = "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+	if got := rec.Header().Get("Content-Security-Policy"); got != wantCSP {
+		t.Fatalf("CSP = %q, want %q", got, wantCSP)
+	}
+	for _, h := range []string{
+		"X-Content-Type-Options",
+		"Referrer-Policy",
+		"X-Frame-Options",
+		"Cross-Origin-Resource-Policy",
+		"Permissions-Policy",
+	} {
+		if rec.Header().Get(h) == "" {
+			t.Fatalf("missing security header %s", h)
+		}
+	}
+	if got := rec.Header().Get("Strict-Transport-Security"); got != "" {
+		t.Fatalf("HSTS present with hsts_max_age=0: %q", got)
+	}
+}
+
+func TestSecurityHeadersHSTSIsConfigurable(t *testing.T) {
+	e := New(auth.NewCSRF(&config.Config{Mode: "development"}), &config.Config{Mode: "development", HSTSMaxAge: 31536000})
+	e.GET("/x", func(c echo.Context) error { return c.NoContent(http.StatusOK) })
+
+	req := httptest.NewRequest(http.MethodGet, "/x", nil)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	if got := rec.Header().Get("Strict-Transport-Security"); got != "max-age=31536000" {
+		t.Fatalf("HSTS = %q, want max-age=31536000", got)
+	}
+}
+
 func TestBodyLimitRaisesAvatarUploadCap(t *testing.T) {
 	csrf := auth.NewCSRF(&config.Config{Mode: "development"})
 	e := New(csrf, &config.Config{Mode: "development"})

@@ -2,13 +2,18 @@ package layouts
 
 import (
 	"librevita.org/internal/types"
+	"librevita.org/internal/ui"
 )
 
 // Base is the bare document shell used by the anonymous pages (login,
 // registration, setup). The UI theme comes from the authenticated
 // shell; anonymous pages always follow the system scheme. The CSRF
 // token rides in a meta tag so the JS can forward it on HTMX requests
-// without reading the cookie (which is HttpOnly).
+// without reading the cookie (which is HttpOnly). The compiled assets
+// have content-addressed names (see ui.AppCSS/ui.AppJS) — the single
+// bundle carries the HTMX runtime, its SSE extension, the theme
+// bootstrap and the application code — so everything under /static can
+// be cached immutably.
 templ Base(title string, theme types.UITheme, token string) {
 	<!DOCTYPE html>
 	<html lang="en" data-ui-theme={ theme.String() } class={ "h-full" + darkClass(theme) }>
@@ -19,11 +24,8 @@ templ Base(title string, theme types.UITheme, token string) {
 			if token != "" {
 				<meta name="csrf-token" content={ token }>
 			}
-			<script src="/static/js/theme.js"></script>
-			<link rel="stylesheet" href="/static/css/app.css">
-			<script src="/static/js/htmx-1.9.12.min.js" defer></script>
-			<script src="/static/js/htmx-sse-1.9.12.js" defer></script>
-			<script src="/static/js/ui.js" defer></script>
+			<link rel="stylesheet" href={ ui.AppCSS } integrity={ ui.AppCSSIntegrity }>
+			<script src={ ui.AppJS } integrity={ ui.AppJSIntegrity }></script>
 		</head>
 		<body hx-boost="true" class="h-full bg-gray-50 dark:bg-gray-900">
 			{ children... }

@@ -47,10 +47,10 @@ The UI follows the GOTH stack: Go + templ + HTMX, server-driven and progressive.
 (`internal/ui`, served under `/static`) — there is no CDN, npm, or Node at runtime:
 
 - **HTMX 1.9.12** for hypermedia interactions (`allowEval=false`, `allowScriptTags=false`), with the SSE extension for
-  agenda live updates
+  agenda live updates — both bundled into the single application script
 - **First-party TypeScript** modules (bundled by esbuild) for the ephemeral client state (menus, tabs, theme); clinical
-  state always lives on the server. The strict Content-Security-Policy (`script-src 'self'`, no `unsafe-eval`) is never
-  relaxed
+  state always lives on the server. The strict Content-Security-Policy (`script-src 'self'`, no
+  `unsafe-eval`/`unsafe-inline`) is never relaxed
 - **Tailwind CSS 3.4.17** compiled at build time with a hex palette override (the v3.4 default `oklch` colors are
   unparseable by XP-era browsers)
 - The frontend build is driven by **Node** (26.7, see `.nvmrc`; the same version
@@ -58,15 +58,20 @@ The UI follows the GOTH stack: Go + templ + HTMX, server-driven and progressive.
   declares the dependencies and scripts, and `package-lock.json` pins them with integrity hashes — nothing is versioned
   inside the Taskfile. esbuild bundles the TypeScript source to the XP floor (`target=firefox58`, verified by
   `assertXpFloor` after the build) and the PostCSS pipeline compiles Tailwind from `internal/ui/input.css`; no one
-  writes ES5
+  writes ES5. The output is a single stylesheet and a single script with content-addressed names
+  (`app-<hash>.css`, `app-<hash>.js`) carrying the HTMX runtime, its SSE extension, the theme bootstrap and the
+  application code; the templates render them with Subresource Integrity hashes, so the assets can be cached
+  immutably
 - **TypeScript** in `internal/ui/ts` with strict checking (`tsc --noEmit`, `lib: ES2017+DOM` aligned to the XP floor, so
   APIs missing from Firefox 52 are compile errors)
 
-The runtime assets (HTMX and its SSE extension) come from npm packages pinned in `package-lock.json` and are documented
-in `VENDOR.md`. The compatibility floor is Windows XP-era browsers (Pale Moon 28.8, Basilisk 55, K-Meleon 74G/76,
-Firefox 52 ESR); newer engines are covered automatically. The server applies a strict CSP, `X-Content-Type-Options:
-nosniff`, `Referrer-Policy: no-referrer`, `X-Frame-Options: DENY`, and `Cache-Control: no-store` on all non-static
-responses; the application is same-origin and no CORS is configured.
+The runtime assets (HTMX and its SSE extension) come from npm packages pinned in `package-lock.json`, bundled into the
+single application script, and are documented in `VENDOR.md`. The compatibility floor is Windows XP-era browsers (Pale
+Moon 28.8, Basilisk 55, K-Meleon 74G/76, Firefox 52 ESR); newer engines are covered automatically. The server applies a
+strict CSP, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `X-Frame-Options: DENY`,
+`Cross-Origin-Resource-Policy: same-origin`, `Permissions-Policy` (camera/microphone/geolocation denied), and
+`Cache-Control: no-store` on all non-static responses; `Strict-Transport-Security` is opt-in via `--hsts-max-age` for
+HTTPS deployments. The application is same-origin and no CORS is configured.
 
 ## Container Image
 
@@ -151,36 +156,37 @@ storage:
 
 All configuration flags are:
 
-| Flag                           | Environment variable                   | Purpose                                                               |
-| ------------------------------ | -------------------------------------- | --------------------------------------------------------------------- |
-| `--config`                     | `LIBREVITA_CONFIG_FILE`                | Configuration file path                                               |
-| `--mode`                       | `LIBREVITA_MODE`                       | Runtime mode: `development` or `production`                           |
-| `--http-bind`                  | `LIBREVITA_HTTP_BIND`                  | HTTP bind address (`0.0.0.0`, `127.0.0.1`, ...)                       |
-| `--http-port`                  | `LIBREVITA_HTTP_PORT`                  | HTTP listen port (default `8080`)                                     |
-| `--trusted-proxies`            | `LIBREVITA_TRUSTED_PROXIES`            | Comma-separated proxy IPs allowed to set `X-Forwarded-For`            |
-| `--data-dir`                   | `LIBREVITA_DATA_DIR`                   | Base directory for default database and logs                          |
-| `--db-driver`                  | `LIBREVITA_DATABASE_DRIVER`            | `sqlite` or `dqlite`                                                  |
-| `--db-path`                    | `LIBREVITA_DATABASE_PATH`              | SQLite file path                                                      |
-| `--dqlite-addrs`               | `LIBREVITA_DATABASE_DQLITE_ADDRS`      | Comma-separated dqlite node addresses (wire protocol)                 |
-| `--dqlite-database`            | `LIBREVITA_DATABASE_DQLITE_DATABASE`   | dqlite database name (default `librevita`)                            |
-| `--log-mode`                   | `LIBREVITA_LOGGING_MODE`               | `console`, `file`, or `rotating`                                      |
-| `--log-path`                   | `LIBREVITA_LOGGING_PATH`               | File destination                                                      |
-| `--log-max-size`               | `LIBREVITA_LOGGING_MAX_SIZE_MB`        | Rotating file size in MB                                              |
-| `--log-max-backups`            | `LIBREVITA_LOGGING_MAX_BACKUPS`        | Number of rotated files                                               |
-| `--log-max-age`                | `LIBREVITA_LOGGING_MAX_AGE_DAYS`       | Maximum rotated file age                                              |
-| `--log-compress`               | `LIBREVITA_LOGGING_COMPRESS`           | Compress rotated files                                                |
-| `--paseto-key`                 | `LIBREVITA_PASETO_KEY`                 | Session key (base64, 32 bytes; required outside development)          |
-| `--master-key`                 | `LIBREVITA_MASTER_KEY`                 | Field-encryption key (base64, 32 bytes; required outside development) |
-| `--auth-max-concurrent-hashes` | `LIBREVITA_AUTH_MAX_CONCURRENT_HASHES` | Bound on concurrent Argon2id operations                               |
-| `--storage-backend`            | `LIBREVITA_STORAGE_BACKEND`            | File storage backend: `local` or `s3`                                 |
-| `--storage-local-dir`          | `LIBREVITA_STORAGE_LOCAL_DIR`          | Local file storage directory (default `<data-dir>/files`)             |
-| `--storage-s3-endpoint`        | `LIBREVITA_STORAGE_S3_ENDPOINT`        | S3-compatible API endpoint                                            |
-| `--storage-s3-bucket`          | `LIBREVITA_STORAGE_S3_BUCKET`          | S3 bucket for stored files                                            |
-| `--storage-s3-access-key`      | `LIBREVITA_STORAGE_S3_ACCESS_KEY`      | S3 access key                                                         |
-| `--storage-s3-secret-key`      | `LIBREVITA_STORAGE_S3_SECRET_KEY`      | S3 secret key                                                         |
-| `--storage-s3-region`          | `LIBREVITA_STORAGE_S3_REGION`          | S3 region (may be empty outside AWS)                                  |
-| `--storage-s3-secure`          | `LIBREVITA_STORAGE_S3_SECURE`          | Use HTTPS for the S3 endpoint                                         |
-| `--storage-s3-path-style`      | `LIBREVITA_STORAGE_S3_PATH_STYLE`      | Use path-style S3 addressing                                          |
+| Flag                           | Environment variable                   | Purpose                                                                 |
+| ------------------------------ | -------------------------------------- | ----------------------------------------------------------------------- |
+| `--config`                     | `LIBREVITA_CONFIG_FILE`                | Configuration file path                                                 |
+| `--mode`                       | `LIBREVITA_MODE`                       | Runtime mode: `development` or `production`                             |
+| `--http-bind`                  | `LIBREVITA_HTTP_BIND`                  | HTTP bind address (`0.0.0.0`, `127.0.0.1`, ...)                         |
+| `--http-port`                  | `LIBREVITA_HTTP_PORT`                  | HTTP listen port (default `8080`)                                       |
+| `--trusted-proxies`            | `LIBREVITA_TRUSTED_PROXIES`            | Comma-separated proxy IPs allowed to set `X-Forwarded-For`              |
+| `--hsts-max-age`               | `LIBREVITA_HSTS_MAX_AGE`               | `Strict-Transport-Security` max-age in seconds (0 disables; HTTPS only) |
+| `--data-dir`                   | `LIBREVITA_DATA_DIR`                   | Base directory for default database and logs                            |
+| `--db-driver`                  | `LIBREVITA_DATABASE_DRIVER`            | `sqlite` or `dqlite`                                                    |
+| `--db-path`                    | `LIBREVITA_DATABASE_PATH`              | SQLite file path                                                        |
+| `--dqlite-addrs`               | `LIBREVITA_DATABASE_DQLITE_ADDRS`      | Comma-separated dqlite node addresses (wire protocol)                   |
+| `--dqlite-database`            | `LIBREVITA_DATABASE_DQLITE_DATABASE`   | dqlite database name (default `librevita`)                              |
+| `--log-mode`                   | `LIBREVITA_LOGGING_MODE`               | `console`, `file`, or `rotating`                                        |
+| `--log-path`                   | `LIBREVITA_LOGGING_PATH`               | File destination                                                        |
+| `--log-max-size`               | `LIBREVITA_LOGGING_MAX_SIZE_MB`        | Rotating file size in MB                                                |
+| `--log-max-backups`            | `LIBREVITA_LOGGING_MAX_BACKUPS`        | Number of rotated files                                                 |
+| `--log-max-age`                | `LIBREVITA_LOGGING_MAX_AGE_DAYS`       | Maximum rotated file age                                                |
+| `--log-compress`               | `LIBREVITA_LOGGING_COMPRESS`           | Compress rotated files                                                  |
+| `--paseto-key`                 | `LIBREVITA_PASETO_KEY`                 | Session key (base64, 32 bytes; required outside development)            |
+| `--master-key`                 | `LIBREVITA_MASTER_KEY`                 | Field-encryption key (base64, 32 bytes; required outside development)   |
+| `--auth-max-concurrent-hashes` | `LIBREVITA_AUTH_MAX_CONCURRENT_HASHES` | Bound on concurrent Argon2id operations                                 |
+| `--storage-backend`            | `LIBREVITA_STORAGE_BACKEND`            | File storage backend: `local` or `s3`                                   |
+| `--storage-local-dir`          | `LIBREVITA_STORAGE_LOCAL_DIR`          | Local file storage directory (default `<data-dir>/files`)               |
+| `--storage-s3-endpoint`        | `LIBREVITA_STORAGE_S3_ENDPOINT`        | S3-compatible API endpoint                                              |
+| `--storage-s3-bucket`          | `LIBREVITA_STORAGE_S3_BUCKET`          | S3 bucket for stored files                                              |
+| `--storage-s3-access-key`      | `LIBREVITA_STORAGE_S3_ACCESS_KEY`      | S3 access key                                                           |
+| `--storage-s3-secret-key`      | `LIBREVITA_STORAGE_S3_SECRET_KEY`      | S3 secret key                                                           |
+| `--storage-s3-region`          | `LIBREVITA_STORAGE_S3_REGION`          | S3 region (may be empty outside AWS)                                    |
+| `--storage-s3-secure`          | `LIBREVITA_STORAGE_S3_SECURE`          | Use HTTPS for the S3 endpoint                                           |
+| `--storage-s3-path-style`      | `LIBREVITA_STORAGE_S3_PATH_STYLE`      | Use path-style S3 addressing                                            |
 
 Environment variables are the config keys with `_` separators. The short aliases `LIBREVITA_DB_*` (for `LIBREVITA_DATABASE_*`) and `LIBREVITA_LOG_*` (for `LIBREVITA_LOGGING_*`) are also accepted.
 
@@ -458,9 +464,9 @@ and reports the first broken entry. Rows are self-contained snapshots (Event Sou
 agent, and resource name are denormalized onto every event. Recording is best-effort and never breaks the audited
 operation; the per-resource history powers the patient detail page.
 
-**Threat model of the chain:** the trail is *tamper-evidence*, not tamper-proof. The signature is unkeyed BLAKE2b over
+**Threat model of the chain:** the trail is _tamper-evidence_, not tamper-proof. The signature is unkeyed BLAKE2b over
 the previous signature and the row payload, so anyone with write access to the database (or the underlying files) can
-recompute the whole chain — the guarantee is that such an alteration is *detectable* by running `GET /audit/integrity`,
+recompute the whole chain — the guarantee is that such an alteration is _detectable_ by running `GET /audit/integrity`,
 not that it is impossible. Detection depends on someone actually verifying; deployments that need stronger guarantees
 should schedule periodic chain verification (a cron hitting the endpoint, or a replica) and eventually anchor the chain
 head in an external append-only store (e.g. a public transparency log or a second cluster).

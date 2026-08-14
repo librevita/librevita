@@ -76,6 +76,12 @@ type Config struct {
 	// used directly.
 	TrustedProxies string `koanf:"trusted_proxies"`
 
+	// HSTSMaxAge enables the Strict-Transport-Security header with this
+	// max-age in seconds when > 0. Only meaningful over HTTPS; keep it 0
+	// (the default) on plain-HTTP deployments, where the header would
+	// make the site unreachable for the whole window.
+	HSTSMaxAge int `koanf:"hsts_max_age"`
+
 	// DataDir is the base directory for default database and log files.
 	DataDir string `koanf:"data_dir"`
 
@@ -178,6 +184,7 @@ func RegisterFlags(fs *pflag.FlagSet) {
 	stringFlag(fs, "http-bind", defaultHTTPBind, "HTTP bind address (0.0.0.0, 127.0.0.1, ...)")
 	intFlag(fs, "http-port", defaultHTTPPort, "HTTP listen port")
 	stringFlag(fs, "trusted-proxies", "", "comma-separated proxy IPs allowed to set X-Forwarded-For")
+	intFlag(fs, "hsts-max-age", 0, "Strict-Transport-Security max-age in seconds (0 disables; HTTPS deployments only)")
 	stringFlag(fs, "data-dir", defaultDataDir, "base directory for database and logs")
 	stringFlag(fs, "db-driver", DriverSQLite, "database backend: sqlite or dqlite")
 	stringFlag(fs, "db-path", "", "SQLite database path")

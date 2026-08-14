@@ -128,47 +128,37 @@ tasks:
       - node-deps
     cmds:
       - npm run check
-  # CSS pipeline (Tailwind JIT + autoprefixer + cssnano). Tailwind scans
-  # the templates and the TS sources for class names, so they are inputs
-  # here as well.
-  node-css:
-    desc: Compile the Tailwind CSS pipeline
+  # Compiled assets: the CSS pipeline (Tailwind JIT + autoprefixer +
+  # cssnano) and the single JS bundle (HTMX runtime + SSE extension +
+  # theme bootstrap + ui manifest, esbuild for the XP browser floor),
+  # all written with content-addressed names (app-<hash>.css,
+  # app-<hash>.js) plus internal/ui/assets.go with their paths. Tailwind
+  # scans the templates and the TS sources for class names, so they are
+  # inputs here as well.
+  node-assets:
+    desc: Compile the CSS and JS assets into internal/ui/static
     deps:
       - node-deps
     cmds:
-      - npm run css
+      - npm run assets
     sources:
-      - postcss.config.ts
       - tailwind.config.ts
       - internal/ui/input.css
       - 'internal/**/*.templ'
       - 'internal/ui/ts/**/*.{ts,tsx}'
-    generates:
-      - internal/ui/static/css/app.css
-  # Bundled TypeScript (esbuild) for the XP browser floor.
-  node-bundle:
-    desc: Bundle the TypeScript for the XP browser floor
-    deps:
-      - node-deps
-    cmds:
-      - npm run bundle
-    sources:
       - tsconfig.json
       - internal/ui/build.ts
-      - 'internal/ui/ts/**/*.{ts,tsx}'
     generates:
-      - internal/ui/static/js/ui.js
-      - internal/ui/static/js/theme.js
-      - internal/ui/static/js/htmx-1.9.12.min.js
-      - internal/ui/static/js/htmx-sse-1.9.12.js
+      - internal/ui/assets.go
+      - 'internal/ui/static/css/app-*.css'
+      - 'internal/ui/static/js/app-*.js'
   # Compiled assets (CSS, bundled JS) plus the type-check dependency,
   # exported into internal/ui/static for the embed layer and the editor.
   frontend:
     desc: Compile the CSS and JS assets into internal/ui/static
     deps:
       - node-check
-      - node-css
-      - node-bundle
+      - node-assets
   # ------------------------------------------------------------------------
   # Go consumers
   # ------------------------------------------------------------------------

@@ -15,7 +15,6 @@
   "include": [
     "internal/ui/**/*.ts",
     "internal/ui/**/*.tsx",
-    "postcss.config.ts",
     "tailwind.config.ts"
   ]
 }

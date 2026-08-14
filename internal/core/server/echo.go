@@ -55,7 +55,7 @@ func New(csrf *auth.CSRF, cfg *config.Config) *echo.Echo {
 	e.Use(middleware.Recover())
 	// Same-origin application; no CORS is configured. Do not add a
 	// permissive CORS middleware for future authenticated endpoints.
-	e.Use(SecurityHeaders)
+	e.Use(SecurityHeaders(cfg))
 	e.Use(middleware.BodyLimitWithConfig(middleware.BodyLimitConfig{
 		Limit: "1M",
 		// File uploads have their own per-route limit; the document and
