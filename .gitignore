@@ -49,7 +49,6 @@ node_modules/
 # Generated frontend assets (build-time, see Taskfile frontend)
 internal/ui/static/css/*.css
 internal/ui/static/js/*.js
-internal/ui/static/js/vendor/
 
 # Generated sqlc repositories
 **/repository/*.sql.go

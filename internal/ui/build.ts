@@ -1,7 +1,8 @@
 // LibreVita frontend build, driven by Node.
 // Manifest: package.json + package-lock.json (no version pinning in
 // the Taskfile). Produces internal/ui/static/js/ui.js, theme.js and
-// vendor/*, which the Go binary embeds via //go:embed.
+// the versioned HTMX runtime files, which the Go binary embeds via
+// //go:embed.
 
 import * as esbuild from 'esbuild';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
@@ -85,9 +86,9 @@ await esbuild.build({
 assertXpFloor(`${out}/theme.js`);
 
 // Runtime assets from the pinned npm packages. HTMX 1.9 is
-// IE11-compatible and is copied verbatim.
-await mkdir(`${out}/vendor`, { recursive: true });
-
+// IE11-compatible and is copied verbatim. They land flat in the js
+// output directory: base.templ and module.go reference the versioned
+// names directly under /static/js/.
 async function copyAsset(specifier: string, dest: string) {
   const url = import.meta.resolve(specifier);
   const data = await readFile(new URL(url));
@@ -95,7 +96,7 @@ async function copyAsset(specifier: string, dest: string) {
   assertXpFloor(dest);
 }
 
-await copyAsset('htmx.org/dist/htmx.min.js', `${out}/vendor/htmx-1.9.12.min.js`);
-await copyAsset('htmx.org/dist/ext/sse.js', `${out}/vendor/htmx-sse-1.9.12.js`);
+await copyAsset('htmx.org/dist/htmx.min.js', `${out}/htmx-1.9.12.min.js`);
+await copyAsset('htmx.org/dist/ext/sse.js', `${out}/htmx-sse-1.9.12.js`);
 
 await esbuild.stop();
