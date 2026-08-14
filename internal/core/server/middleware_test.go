@@ -20,6 +20,7 @@ import (
 	"librevita.org/internal/core/policy"
 	"librevita.org/internal/testutil"
 	"librevita.org/internal/types"
+	"librevita.org/internal/ui"
 )
 
 func openTestDB(t *testing.T) *sql.DB {
@@ -282,7 +283,7 @@ func TestSecurityHeadersAreStrict(t *testing.T) {
 	rec := httptest.NewRecorder()
 	e.ServeHTTP(rec, req)
 
-	const wantCSP = "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+	wantCSP := "default-src 'self'; script-src 'self' '" + ui.ThemeScriptHash + "'; style-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
 	if got := rec.Header().Get("Content-Security-Policy"); got != wantCSP {
 		t.Fatalf("CSP = %q, want %q", got, wantCSP)
 	}

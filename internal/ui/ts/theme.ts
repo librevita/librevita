@@ -1,5 +1,8 @@
-// Theme bootstrap, loaded as a blocking head script so the dark class is
-// applied before first paint (CSP forbids inline scripts).
+// Theme bootstrap, bundled separately by build.ts and rendered inline
+// in the head, blocking, so the dark class is applied before first
+// paint. The strict CSP allows exactly this script through its content
+// hash (`script-src ... 'sha256-...'`, see ui.ThemeScriptHash); no
+// unsafe-inline and no per-request nonce is needed for a static script.
 //
 // The preference comes from the server: the authenticated shell renders
 // data-ui-theme (system|light|dark) on <html>, per user. Anonymous pages

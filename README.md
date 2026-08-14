@@ -60,9 +60,10 @@ The UI follows the GOTH stack: Go + templ + HTMX, server-driven and progressive.
   inside the Taskfile. esbuild bundles the TypeScript source to the XP floor (`target=firefox58`, verified by
   `assertXpFloor` after the build) and the PostCSS pipeline compiles Tailwind from `internal/ui/input.css`; no one
   writes ES5. The output is a single stylesheet and a single script with content-addressed names
-  (`app-<hash>.css`, `app-<hash>.js`) carrying the HTMX runtime, its SSE extension, the theme bootstrap and the
-  application code; the templates render them with Subresource Integrity hashes, so the assets can be cached
-  immutably
+  (`app-<hash>.css`, `app-<hash>.js`) carrying the HTMX runtime, its SSE extension and the application code,
+  loaded with `defer`; the templates render them with Subresource Integrity hashes, so the assets can be cached
+  immutably. The theme bootstrap is a small inline head script (allowed by its CSP content hash), so the dark
+  class exists before first paint while the bundle loads deferred
 - **TypeScript** in `internal/ui/ts` with strict checking (`tsc --noEmit`, `lib: ES2017+DOM` aligned to the XP floor, so
   APIs missing from Firefox 52 are compile errors)
 

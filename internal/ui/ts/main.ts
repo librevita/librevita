@@ -8,13 +8,14 @@
 
 import './compat.ts';
 // The HTMX runtime and its SSE extension are bundled here, so the
-// whole client is a single file. htmx-runtime.ts must load before the
-// extension (import order is preserved). The extension is configured
-// for live updates: elements opt in with hx-ext="sse" plus
-// sse-connect/sse-swap (see VENDOR.md).
+// whole client is a single deferred file. htmx-runtime.ts must load
+// before the extension (import order is preserved). The extension is
+// configured for live updates: elements opt in with hx-ext="sse" plus
+// sse-connect/sse-swap (see VENDOR.md). The theme bootstrap is NOT
+// here: it is rendered inline in the head by base.templ (build.ts
+// bundles theme.ts separately for that).
 import './htmx-runtime.ts';
 import 'htmx-ext-sse/dist/sse.js';
-import './theme.ts';
 
 import { configureHtmx, forwardCsrf, focusAppMain } from './core.ts';
 import * as sidebar from './sidebar.ts';

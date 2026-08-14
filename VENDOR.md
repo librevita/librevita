@@ -54,8 +54,11 @@ linked into the binary; used only to generate committed sources or to analyze th
 
 Build chain: `package.json`/`package-lock.json` (Node) → `npm run assets` (`tsc --noEmit` + PostCSS + esbuild via
 `internal/ui/build.ts`) through the Taskfile `frontend` task (Node 26.7, see `.nvmrc`). The compiled CSS and a single JS
-bundle — carrying the HTMX runtime, its SSE extension, the theme bootstrap and the application code — are written into
-the Go embed tree under content-addressed names (`app-<hash>.css`, `app-<hash>.js`).
+bundle — carrying the HTMX runtime, its SSE extension and the application code — are written into
+the Go embed tree under content-addressed names (`app-<hash>.css`, `app-<hash>.js`); the bundle loads with `defer`.
+The theme bootstrap is bundled separately and rendered inline in the head (ui.ThemeScript): the strict CSP allows
+exactly that static script through its content hash (ui.ThemeScriptHash in `script-src`), so no `unsafe-inline` and
+no per-request nonce is needed.
 
 | Package        | Version | License | Purpose                                 |
 | -------------- | ------- | ------- | --------------------------------------- |
@@ -65,7 +68,7 @@ the Go embed tree under content-addressed names (`app-<hash>.css`, `app-<hash>.j
 `htmx.org` is the only third-party runtime JavaScript. It is not copied: `internal/ui/build.ts` bundles its
 `dist/htmx.cjs.js` (the generated CommonJS wrapper — the 2.x dists are plain source without exports) and the canonical
 `htmx-ext-sse@2.2.4` extension into the single application script (`app-<hash>.js`) along with the first-party
-TypeScript (the theme bootstrap and the ui manifest). `htmx-runtime.ts` publishes the api object as the global `htmx`
+TypeScript (the ui manifest). `htmx-runtime.ts` publishes the api object as the global `htmx`
 before the extension loads; the SSE extension is an IIFE calling `htmx.defineExtension('sse', ...)`. The stylesheet
 (`app-<hash>.css`) is the PostCSS pipeline over `internal/ui/input.css`. Everything under `internal/ui/static` is
 generated at build time, content addressed, and served with Subresource Integrity hashes (see `internal/ui/assets.go`).
@@ -105,7 +108,7 @@ PostCSS pipeline (in order): `tailwindcss`,
 output is minified and has a single `@media (min-width: …)` block per Tailwind breakpoint.
 
 Dark mode uses Tailwind's class strategy (`darkMode: 'class'`). The `dark` class is toggled on the `<html>` element by
-the theme bootstrap inside the application bundle (system follow) and by the theme-pref module on the profile page
+the inline theme bootstrap in the head (system follow) and by the theme-pref module on the profile page
 (light, system, or dark). The compiled dark
 variant is `:is(.dark *)`, which only matches descendants of the element carrying the `dark` class, so surface
 backgrounds live on `<body>` and below — never on the `<html>` element itself.
