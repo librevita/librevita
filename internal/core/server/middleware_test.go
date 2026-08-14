@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -267,5 +268,31 @@ func TestNotFoundPublicPaths(t *testing.T) {
 	e.ServeHTTP(rec, req)
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("unknown /setup path = %d, want 404 (public path)", rec.Code)
+	}
+}
+
+// TestBodyLimitRaisesAvatarUploadCap pins the effective upload ceiling:
+// the global 1M body limit skips the avatar and document routes, so
+// their own per-route limits (2M avatar, 25M documents) are reachable.
+func TestBodyLimitRaisesAvatarUploadCap(t *testing.T) {
+	csrf := auth.NewCSRF(&config.Config{Mode: "development"})
+	e := New(csrf, &config.Config{Mode: "development"})
+	e.POST("/profile/avatar", func(c echo.Context) error { return c.NoContent(http.StatusOK) })
+	e.POST("/profile", func(c echo.Context) error { return c.NoContent(http.StatusOK) })
+
+	big := strings.Repeat("x", 1<<20+1024)
+
+	req := httptest.NewRequest(http.MethodPost, "/profile/avatar", strings.NewReader(big))
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+	if rec.Code == http.StatusRequestEntityTooLarge {
+		t.Fatal("avatar upload was capped by the global 1M body limit")
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/profile", strings.NewReader(big))
+	rec = httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+	if rec.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("plain route status = %d, want 413 from the global limit", rec.Code)
 	}
 }

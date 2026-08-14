@@ -8,7 +8,8 @@ import { Event, parseHTML } from 'linkedom';
 import { selectTab } from './tabs.ts';
 import { rowBoxes } from './table-select.ts';
 import * as dropdown from './dropdown.ts';
-import { parseISO, formatISO, daysInMonth, isSameDay, addMonths, monthLabel, buildGrid } from './datepicker.ts';
+import * as modal from './modal.ts';
+import { parseISO, formatISO, daysInMonth, isSameDay, addMonths, addDays, monthLabel, buildGrid } from './datepicker.ts';
 
 test('tabs.selectTab toggles panels and active classes', () => {
   const { document } = parseHTML(
@@ -121,6 +122,12 @@ test('datepicker.addMonths clamps day-of-month', () => {
   assert.deepEqual(addMonths(new Date(2024, 0, 31), 1), new Date(2024, 1, 29));
 });
 
+test('datepicker.addDays shifts across month boundaries', () => {
+  assert.deepEqual(addDays(new Date(2025, 11, 31), 1), new Date(2026, 0, 1));
+  assert.deepEqual(addDays(new Date(2026, 0, 1), -1), new Date(2025, 11, 31));
+  assert.deepEqual(addDays(new Date(2025, 11, 25), 7), new Date(2026, 0, 1));
+});
+
 test('datepicker.monthLabel renders the header text', () => {
   assert.equal(monthLabel(2025, 0), 'January 2025');
   assert.equal(monthLabel(2025, 11), 'December 2025');
@@ -137,4 +144,34 @@ test('datepicker.buildGrid returns 42 cells starting on the Sunday before the fi
   // A month starting on a Sunday (March 2026) starts the grid itself.
   const march = buildGrid(2026, 2);
   assert.deepEqual(march[0], new Date(2026, 2, 1));
+});
+
+test('modal opens, locks scroll and closes on Escape', () => {
+  const { document } = parseHTML(
+    '<body>' +
+      '<button id="trigger" data-lv-modal-open="dlg">open</button>' +
+      '<div id="dlg" data-lv-modal class="hidden">' +
+      '<button id="first">a</button>' +
+      '<button id="last">b</button>' +
+      '</div>' +
+      '</body>',
+  );
+  (globalThis as unknown as { document: Document }).document = document;
+  (globalThis as unknown as { window: unknown }).window = { innerWidth: 1024, innerHeight: 768 };
+  modal.init();
+
+  const modalEl = document.getElementById('dlg') as HTMLElement;
+  const trigger = document.getElementById('trigger') as HTMLElement;
+
+  trigger.dispatchEvent(new Event('click', { bubbles: true }) as unknown as globalThis.Event);
+  assert.equal(modalEl.classList.contains('hidden'), false);
+  assert.equal(modalEl.getAttribute('aria-modal'), 'true');
+  assert.equal(document.body.style.overflow, 'hidden');
+
+  const esc = new Event('keydown', { bubbles: true }) as unknown as globalThis.Event;
+  (esc as unknown as { key: string }).key = 'Escape';
+  document.dispatchEvent(esc);
+  assert.equal(modalEl.classList.contains('hidden'), true);
+  assert.equal(modalEl.getAttribute('aria-modal'), null);
+  assert.equal(document.body.style.overflow, '');
 });

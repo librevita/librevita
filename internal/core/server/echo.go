@@ -58,10 +58,10 @@ func New(csrf *auth.CSRF, cfg *config.Config) *echo.Echo {
 	e.Use(SecurityHeaders)
 	e.Use(middleware.BodyLimitWithConfig(middleware.BodyLimitConfig{
 		Limit: "1M",
-		// File uploads have their own per-route limit; the document
-		// routes raise the cap themselves.
+		// File uploads have their own per-route limit; the document and
+		// avatar routes raise the cap themselves.
 		Skipper: func(c echo.Context) bool {
-			return c.Path() == "/patients/:id/documents"
+			return c.Path() == "/patients/:id/documents" || c.Path() == "/profile/avatar"
 		},
 	}))
 	e.Use(CSRFMiddleware(csrf))

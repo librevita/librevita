@@ -7,6 +7,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -367,6 +368,23 @@ func (c *Config) validate() error {
 
 	if c.HTTPPort > 65535 {
 		return fmt.Errorf("config: invalid http_port %d (max 65535)", c.HTTPPort)
+	}
+
+	// A typo here would silently degrade to trusting the remote address
+	// (or worse, trusting the client), so the list is validated at boot.
+	if strings.TrimSpace(c.TrustedProxies) != "" {
+		for _, p := range strings.Split(c.TrustedProxies, ",") {
+			p = strings.TrimSpace(p)
+			if p == "" {
+				continue
+			}
+			if _, _, err := net.ParseCIDR(p); err == nil {
+				continue
+			}
+			if net.ParseIP(p) == nil {
+				return fmt.Errorf("config: invalid trusted_proxies entry %q (use CIDR or IP, comma-separated)", p)
+			}
+		}
 	}
 
 	switch c.Logging.Mode {

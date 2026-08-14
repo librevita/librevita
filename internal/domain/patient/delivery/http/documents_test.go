@@ -8,6 +8,8 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -52,6 +54,14 @@ func newIdentifierServices(t *testing.T, db *sql.DB, log *slog.Logger) (*identif
 }
 
 func newDocEnv(t *testing.T) (*echo.Echo, *auth.SessionManager, *usecase.Service, *storage.FileManager) {
+	e, sessions, svc, files, _ := newDocEnvFull(t, t.TempDir())
+	return e, sessions, svc, files
+}
+
+// newDocEnvFull is newDocEnv with the blob directory and the database
+// exposed, so the tests can tamper with stored objects and inspect the
+// audit trail.
+func newDocEnvFull(t *testing.T, dir string) (*echo.Echo, *auth.SessionManager, *usecase.Service, *storage.FileManager, *sql.DB) {
 	t.Helper()
 	db := openDocDB(t)
 	log := slog.New(slog.DiscardHandler)
@@ -71,7 +81,11 @@ func newDocEnv(t *testing.T) (*echo.Echo, *auth.SessionManager, *usecase.Service
 		t.Fatal(err)
 	}
 	svc := usecase.NewService(db, log, policies)
-	files, err := storage.NewFileManager(db, mustLocalStore(t), log)
+	store, err := storage.NewLocal(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	files, err := storage.NewFileManager(db, store, log)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,7 +106,7 @@ func newDocEnv(t *testing.T) (*echo.Echo, *auth.SessionManager, *usecase.Service
 	e.GET("/patients/:id/documents/:fileID", h.DownloadDocument,
 		server.RequireAuth(sessions, log),
 		server.RequirePolicy(policies, auditLogger, log, "patient.document.read"))
-	return e, sessions, svc, files
+	return e, sessions, svc, files, db
 }
 
 func openDocDB(t *testing.T) *sql.DB {
@@ -212,6 +226,67 @@ func TestDocumentsUploadDownloadIDOR(t *testing.T) {
 	e.ServeHTTP(mrec, miss)
 	if mrec.Code != http.StatusNotFound {
 		t.Errorf("unknown file status = %d, want 404", mrec.Code)
+	}
+}
+
+// TestDocumentsDownloadDetectsTampering uploads a file, corrupts the
+// blob on disk and checks that the download still streams but the
+// divergence is registered in the append-only audit trail.
+func TestDocumentsDownloadDetectsTampering(t *testing.T) {
+	dir := t.TempDir()
+	e, sessions, svc, files, db := newDocEnvFull(t, dir)
+	cookie := adminSession(t, sessions)
+	clinicID := "01990000-0000-7000-8000-0000000000d0"
+	patientID := newPatient(t, svc, clinicID)
+
+	var buf bytes.Buffer
+	w := multipart.NewWriter(&buf)
+	fw, err := w.CreateFormFile("file", "laudo.pdf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = fw.Write([]byte("pdf-data"))
+	_ = w.Close()
+	req := httptest.NewRequest(http.MethodPost, "/patients/"+patientID.String()+"/documents", &buf)
+	req.Header.Set("Content-Type", w.FormDataContentType())
+	req.AddCookie(cookie)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+	if rec.Code != http.StatusFound {
+		t.Fatalf("upload status = %d, want 302", rec.Code)
+	}
+
+	meta, err := files.List(context.Background(), "patient_document", patientID)
+	if err != nil || len(meta) != 1 {
+		t.Fatalf("index after upload = %v, %v; want 1 file", meta, err)
+	}
+
+	// Tamper with the blob on disk, behind the application's back.
+	blobPath := filepath.Join(dir, filepath.FromSlash(meta[0].Key))
+	if err := os.WriteFile(blobPath, []byte("tampered!"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	dl := httptest.NewRequest(http.MethodGet,
+		"/patients/"+patientID.String()+"/documents/"+meta[0].ID.String(), nil)
+	dl.AddCookie(cookie)
+	drec := httptest.NewRecorder()
+	e.ServeHTTP(drec, dl)
+	if drec.Code != http.StatusOK {
+		t.Fatalf("download status = %d, want 200", drec.Code)
+	}
+	if got := drec.Body.String(); got != "tampered!" {
+		t.Errorf("download body = %q, want the tampered payload", got)
+	}
+
+	var detail string
+	err = db.QueryRowContext(context.Background(),
+		`SELECT detail FROM audit_log WHERE action = 'file.read' AND result = 'failure' ORDER BY id DESC LIMIT 1`).Scan(&detail)
+	if err != nil {
+		t.Fatalf("query audit trail: %v", err)
+	}
+	if !strings.Contains(detail, "checksum mismatch") {
+		t.Errorf("audit detail = %q, want checksum mismatch", detail)
 	}
 }
 

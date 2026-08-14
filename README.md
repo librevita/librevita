@@ -463,4 +463,11 @@ and reports the first broken entry. Rows are self-contained snapshots (Event Sou
 agent, and resource name are denormalized onto every event. Recording is best-effort and never breaks the audited
 operation; the per-resource history powers the patient detail page.
 
+**Threat model of the chain:** the trail is *tamper-evidence*, not tamper-proof. The signature is unkeyed BLAKE2b over
+the previous signature and the row payload, so anyone with write access to the database (or the underlying files) can
+recompute the whole chain — the guarantee is that such an alteration is *detectable* by running `GET /audit/integrity`,
+not that it is impossible. Detection depends on someone actually verifying; deployments that need stronger guarantees
+should schedule periodic chain verification (a cron hitting the endpoint, or a replica) and eventually anchor the chain
+head in an external append-only store (e.g. a public transparency log or a second cluster).
+
 Sessions require a database/sql backend; the dqlite driver qualifies, so session revocation works on both backends.

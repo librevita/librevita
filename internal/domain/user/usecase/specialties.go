@@ -91,12 +91,31 @@ func (s *Service) UserSpecialties(ctx context.Context, userID string) ([]reposit
 	return rows, nil
 }
 
+// validateSpecialtyIDs rejects ids that are not UUIDs, so malformed
+// input fails with a validation error instead of panicking later in
+// uuid.MustParse (SetUserSpecialties, and the stored staff change JSON
+// on approval).
+func validateSpecialtyIDs(ids []string) error {
+	for _, id := range ids {
+		if id == "" {
+			continue
+		}
+		if _, err := uuid.Parse(id); err != nil {
+			return &ValidationError{Msg: "invalid specialty id"}
+		}
+	}
+	return nil
+}
+
 // SetUserSpecialties replaces the account's specialty set in one
 // transaction. Every specialty must belong to the request's clinic:
 // the UI only lists the clinic's catalog, but the write path enforces
 // the scope too, so a specialty id of another clinic is rejected
 // instead of silently cross-linking accounts.
 func (s *Service) SetUserSpecialties(ctx context.Context, clinicID, userID string, specialtyIDs []string) error {
+	if err := validateSpecialtyIDs(specialtyIDs); err != nil {
+		return err
+	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("usecase: begin specialty tx: %w", err)

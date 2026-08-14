@@ -109,9 +109,14 @@ func (s *SystemsService) Create(ctx context.Context, createdBy string, in System
 
 // Update replaces the definition of an existing system. The URN itself
 // is immutable: it is the FHIR system of stored identifiers, so
-// renaming it would orphan them.
+// renaming it would orphan them. The active flag is preserved: editing
+// a deactivated system must not silently reactivate it.
 func (s *SystemsService) Update(ctx context.Context, id string, in SystemInput) (*repository.IdentifierSystem, error) {
 	cfg, err := validateInput(in)
+	if err != nil {
+		return nil, err
+	}
+	existing, err := s.SystemByID(ctx, id)
 	if err != nil {
 		return nil, err
 	}
@@ -123,7 +128,7 @@ func (s *SystemsService) Update(ctx context.Context, id string, in SystemInput) 
 		CheckBaseLen:     int64(cfg.CheckBaseLen),
 		CheckDvCount:     int64(cfg.CheckDVCount),
 		CheckStartWeight: int64(cfg.CheckStartWeight),
-		Active:           1,
+		Active:           existing.Active,
 		ID:               uuid.MustParse(id),
 	})
 	if errors.Is(err, sql.ErrNoRows) {

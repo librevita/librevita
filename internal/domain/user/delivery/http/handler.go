@@ -440,11 +440,13 @@ func (h *Handler) AdminPolicyReset(c echo.Context) error {
 		actor = policy.Actor{ID: p.ID, Email: p.Email}
 	}
 	err := h.policies.Set(c.Request().Context(), name, expression, actor)
-	h.audit.Record(c.Request().Context(), server.EventFromRequest(c, types.AuditResultSuccess,
-		"policy.update", "policy:"+name, name, "reset to default"))
 	if err != nil {
+		h.audit.Record(c.Request().Context(), server.EventFromRequest(c, types.AuditResultFailure,
+			"policy.update", "policy:"+name, name, "reset to default: "+err.Error()))
 		return err
 	}
+	h.audit.Record(c.Request().Context(), server.EventFromRequest(c, types.AuditResultSuccess,
+		"policy.update", "policy:"+name, name, "reset to default"))
 	if server.IsHtmx(c) {
 		return h.policyCardFragment(c, name, "")
 	}

@@ -128,6 +128,38 @@ func TestStorageFlagsMapToNestedKeys(t *testing.T) {
 	}
 }
 
+func TestValidateTrustedProxies(t *testing.T) {
+	cases := []struct {
+		name    string
+		proxies string
+		wantErr bool
+	}{
+		{"empty", "", false},
+		{"cidr", "10.0.0.0/8", false},
+		{"ip", "192.168.1.5", false},
+		{"mixed", "10.0.0.0/8, 192.168.1.5", false},
+		{"trailing comma", "10.0.0.0/8,", false},
+		{"typo", "10.0.0.0/33", true},
+		{"not an address", "proxy.example.org", true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := &Config{
+				Database:       DatabaseConfig{Driver: DriverSQLite},
+				Logging:        LoggingConfig{Mode: LogModeConsole},
+				TrustedProxies: tc.proxies,
+			}
+			err := cfg.validate()
+			if tc.wantErr && err == nil {
+				t.Fatalf("validate(%q) = nil, want error", tc.proxies)
+			}
+			if !tc.wantErr && err != nil {
+				t.Fatalf("validate(%q) = %v, want nil", tc.proxies, err)
+			}
+		})
+	}
+}
+
 func TestValidateHTTPPort(t *testing.T) {
 	cfg := &Config{Database: DatabaseConfig{Driver: DriverSQLite}, Logging: LoggingConfig{Mode: LogModeConsole}}
 	cfg.normalize()
