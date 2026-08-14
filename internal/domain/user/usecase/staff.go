@@ -56,6 +56,9 @@ func (s *Service) CreateStaffChangeRequest(ctx context.Context, userID, requeste
 	if err := validateEmail(change.Email); err != nil {
 		return nil, err
 	}
+	if err := validateSpecialtyIDs(change.Specialties); err != nil {
+		return nil, err
+	}
 
 	// Reject proposals that would collide with another account's email.
 	current, err := s.users.GetUserByID(ctx, uuid.MustParse(userID))
@@ -167,6 +170,11 @@ func (s *Service) ApproveStaffChangeRequest(ctx context.Context, id, decidedBy s
 	var change StaffChange
 	if err := json.Unmarshal([]byte(req.Changes), &change); err != nil {
 		return fmt.Errorf("usecase: decode staff change: %w", err)
+	}
+	// Defense in depth: requests created before the create-time
+	// validation may still carry malformed ids.
+	if err := validateSpecialtyIDs(change.Specialties); err != nil {
+		return err
 	}
 
 	user, err := queries.GetUserByID(ctx, req.UserID)

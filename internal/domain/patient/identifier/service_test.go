@@ -305,3 +305,32 @@ func TestAdministratorRegistersNewSystem(t *testing.T) {
 		t.Fatalf("system after deactivation = %s, want raw", got.System)
 	}
 }
+
+// TestUpdateSystemPreservesActiveState pins that editing a deactivated
+// system does not silently reactivate it.
+func TestUpdateSystemPreservesActiveState(t *testing.T) {
+	db := openTestDB(t)
+	_, systems, _ := newTestServices(t, db)
+	ctx := context.Background()
+
+	created, err := systems.Create(ctx, testUserID.String(), SystemInput{
+		System: "urn:librevita:id:py:cedula", DisplayName: "Cedula", Pattern: `^\d{6,8}-\d$`,
+		Transform: TransformNone, CheckAlgorithm: CheckNone, CheckDVCount: 1, CheckStartWeight: 2,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := systems.SetActive(ctx, created.ID.String(), false); err != nil {
+		t.Fatal(err)
+	}
+	updated, err := systems.Update(ctx, created.ID.String(), SystemInput{
+		System: "urn:librevita:id:py:cedula", DisplayName: "Cedula de Identidad", Pattern: `^\d{6,8}-\d$`,
+		Transform: TransformNone, CheckAlgorithm: CheckNone, CheckDVCount: 1, CheckStartWeight: 2,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.Active != 0 {
+		t.Errorf("updated system active = %d, want 0 (editing a deactivated system must not reactivate it)", updated.Active)
+	}
+}

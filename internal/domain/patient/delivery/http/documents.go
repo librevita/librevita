@@ -2,13 +2,16 @@ package http
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
+	"io"
 	"net/http"
 	"path/filepath"
 	"strings"
 
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
+	"golang.org/x/crypto/blake2b"
 
 	"librevita.org/internal/core/server"
 	"librevita.org/internal/core/storage"
@@ -94,11 +97,26 @@ func (h *Handler) DownloadDocument(c echo.Context) error {
 		return err
 	}
 	defer obj.Data.Close()
+	// The blob must match the checksum witnessed at upload time. The
+	// hash is computed while streaming (no buffering); on mismatch the
+	// divergence is registered in the append-only trail, so tampering
+	// that bypasses the application never stays silent.
+	hasher, err := blake2b.New256(nil)
+	if err != nil {
+		return err
+	}
 	h.audit.Record(ctx, server.EventFromRequest(c, types.AuditResultSuccess,
 		"file.read", "patient:"+pt.ID.String(), meta.OriginalName, ""))
 	c.Response().Header().Set("Content-Disposition",
 		"attachment; filename=\""+strings.ReplaceAll(meta.OriginalName, `"`, "")+"\"")
-	return c.Stream(http.StatusOK, meta.ContentType, obj.Data)
+	if err := c.Stream(http.StatusOK, meta.ContentType, io.TeeReader(obj.Data, hasher)); err != nil {
+		return err
+	}
+	if hex.EncodeToString(hasher.Sum(nil)) != meta.Checksum {
+		h.audit.Record(ctx, server.EventFromRequest(c, types.AuditResultFailure,
+			"file.read", "patient:"+pt.ID.String(), meta.OriginalName, "checksum mismatch"))
+	}
+	return nil
 }
 
 // documentRows lists the patient's attachments, newest first, with the

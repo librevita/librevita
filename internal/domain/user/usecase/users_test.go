@@ -416,6 +416,58 @@ func TestListPhysicians(t *testing.T) {
 	}
 }
 
+// TestMalformedSpecialtyIDsFailValidation pins that malformed specialty
+// ids are rejected with a validation error instead of panicking in
+// uuid.MustParse (regression for the poisoned staff change request).
+func TestMalformedSpecialtyIDsFailValidation(t *testing.T) {
+	db := openAuthDB(t)
+	svc := newService(t, db)
+	ctx := context.Background()
+
+	phys, err := svc.CreateUser(ctx, usecase.CreateUserInput{
+		Name: "Dr. Lima", Email: "dr.lima@example.org", Password: "senha-segura", Role: "physician",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	receptionist, err := svc.CreateUser(ctx, usecase.CreateUserInput{
+		Name: "Nurse", Email: "nurse@example.org", Password: "senha-segura", Role: "receptionist",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Direct assignment rejects the malformed id.
+	if err := svc.SetUserSpecialties(ctx, testClinic.String(), phys.ID.String(), []string{"not-a-uuid"}); err == nil {
+		t.Error("SetUserSpecialties must reject a malformed specialty id")
+	}
+	// The proposal path rejects it at request time, so the stored JSON
+	// never carries malformed ids.
+	if _, err := svc.CreateStaffChangeRequest(ctx, phys.ID.String(), receptionist.ID.String(), usecase.StaffChange{
+		Name: "Dr. Lima", Email: "dr.lima@example.org", Specialties: []string{"not-a-uuid"},
+	}); err == nil {
+		t.Error("CreateStaffChangeRequest must reject a malformed specialty id")
+	}
+
+	// Defense in depth: a request poisoned before the validation was
+	// added must fail on approve instead of panicking.
+	id, err := uuid.NewV7()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(
+		`INSERT INTO staff_change_requests (id, user_id, requested_by, status, changes)
+		 VALUES (?, ?, ?, 'pending', ?)`,
+		id.String(), phys.ID.String(), receptionist.ID.String(),
+		`{"name":"Dr. Lima","email":"dr.lima@example.org","specialties":["not-a-uuid"]}`,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.ApproveStaffChangeRequest(ctx, id.String(), testAdminID.String()); err == nil {
+		t.Error("ApproveStaffChangeRequest must reject a poisoned specialty id")
+	}
+}
+
 func TestRolesCRUD(t *testing.T) {
 	db := openAuthDB(t)
 	svc := newService(t, db)

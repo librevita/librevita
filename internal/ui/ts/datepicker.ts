@@ -37,6 +37,9 @@ const WEEKDAYS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
 
 // View state per container: the year/month the calendar currently shows.
 const viewByRoot = new WeakMap<HTMLElement, { year: number; month: number }>();
+// The day highlighted by keyboard navigation, when different from the
+// selection.
+const focusedByRoot = new WeakMap<HTMLElement, Date>();
 
 export function init(): void {
   document.addEventListener('click', (evt) => {
@@ -87,7 +90,58 @@ export function init(): void {
   document.addEventListener('keydown', (evt) => {
     if (evt.key === 'Escape') {
       closeAll();
+      return;
     }
+    const active = document.activeElement;
+    if (!(active instanceof HTMLInputElement) || !active.matches(INPUT_SELECTOR)) {
+      return;
+    }
+    const root = active.closest(ROOT_SELECTOR) as HTMLElement | null;
+    if (!root) {
+      return;
+    }
+    const panel = panelFor(root);
+    if (panel.classList.contains('hidden')) {
+      return;
+    }
+    const view = viewByRoot.get(root);
+    if (!view) {
+      return;
+    }
+    let focused = focusedByRoot.get(root);
+    if (!focused) {
+      focused = parseISO(active.value) ?? new Date(view.year, view.month, 1);
+    }
+    let next: Date | null = null;
+    switch (evt.key) {
+      case 'ArrowLeft':
+        next = addDays(focused, -1);
+        break;
+      case 'ArrowRight':
+        next = addDays(focused, 1);
+        break;
+      case 'ArrowUp':
+        next = addDays(focused, -7);
+        break;
+      case 'ArrowDown':
+        next = addDays(focused, 7);
+        break;
+      case 'Home':
+        next = new Date(focused.getFullYear(), focused.getMonth(), 1);
+        break;
+      case 'End':
+        next = new Date(focused.getFullYear(), focused.getMonth() + 1, 0);
+        break;
+      case 'Enter':
+        select(root, panel, focused);
+        return;
+      default:
+        return;
+    }
+    evt.preventDefault();
+    viewByRoot.set(root, { year: next.getFullYear(), month: next.getMonth() });
+    focusedByRoot.set(root, next);
+    paint(root, panel);
   });
 }
 
@@ -146,6 +200,11 @@ export function addMonths(date: Date, delta: number): Date {
   return new Date(targetYear, targetMonth, day);
 }
 
+// addDays returns a new Date shifted by delta days.
+export function addDays(date: Date, delta: number): Date {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate() + delta);
+}
+
 // monthLabel renders "Month YYYY" for the header.
 export function monthLabel(year: number, month: number): string {
   return MONTHS[month] + ' ' + String(year);
@@ -179,6 +238,8 @@ function panelFor(root: HTMLElement): HTMLElement {
 function buildPanel(): HTMLElement {
   const panel = document.createElement('div');
   panel.setAttribute('data-lv-datepicker-panel', '');
+  panel.setAttribute('role', 'dialog');
+  panel.setAttribute('aria-label', 'Date picker');
   panel.className =
     'absolute z-10 mt-2 hidden w-72 rounded-lg border border-gray-200 bg-white p-3 ' +
     'shadow-lg dark:border-gray-700 dark:bg-gray-800';
@@ -246,6 +307,7 @@ function open(root: HTMLElement, panel: HTMLElement): void {
   const selected = input ? parseISO(input.value) : null;
   const view = selected ?? new Date();
   viewByRoot.set(root, { year: view.getFullYear(), month: view.getMonth() });
+  focusedByRoot.set(root, selected ?? new Date());
   paint(root, panel);
   panel.classList.remove('hidden');
 }
@@ -276,6 +338,7 @@ function select(root: HTMLElement, panel: HTMLElement, date: Date): void {
   }
   input.value = formatISO(date);
   viewByRoot.set(root, { year: date.getFullYear(), month: date.getMonth() });
+  focusedByRoot.set(root, date);
   paint(root, panel);
   input.dispatchEvent(new Event('change', { bubbles: true }));
 }
@@ -306,6 +369,7 @@ function paint(root: HTMLElement, panel: HTMLElement): void {
   const today = new Date();
   const min = parseISO(input.dataset.lvMinDate ?? '');
   const max = parseISO(input.dataset.lvMaxDate ?? '');
+  const focused = focusedByRoot.get(root);
 
   const label = panel.querySelector('[data-lv-datepicker-label]');
   if (label) {
@@ -322,9 +386,11 @@ function paint(root: HTMLElement, panel: HTMLElement): void {
     cell.setAttribute('data-lv-datepicker-day', '');
     cell.dataset.date = formatISO(day);
     cell.textContent = String(day.getDate());
+    cell.setAttribute('aria-label', formatISO(day));
     const outOfMonth = day.getMonth() !== view.month;
     const isToday = isSameDay(day, today);
     const isSelected = !!selected && isSameDay(day, selected);
+    const isFocused = !!focused && isSameDay(day, focused);
     const disabled = (min && day < min) || (max && day > max);
     let cls = 'rounded-lg p-1 text-sm leading-5 ';
     if (disabled) {
@@ -340,7 +406,13 @@ function paint(root: HTMLElement, panel: HTMLElement): void {
     } else {
       cls += 'text-gray-900 hover:bg-gray-100 dark:text-white dark:hover:bg-gray-700';
     }
+    if (isFocused) {
+      cls += ' ring-2 ring-indigo-500 ring-inset';
+    }
     cell.className = cls;
+    if (isSelected) {
+      cell.setAttribute('aria-selected', 'true');
+    }
     if (disabled) {
       cell.disabled = true;
     }
