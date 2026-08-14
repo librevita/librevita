@@ -1,9 +1,18 @@
-// Frontend entry: registers every component module (this import list IS
-// the manifest) and wires the core bootstrap. Each module exposes
-// init() (idempotent, delegated listeners) and refresh(root) (resync
-// after htmx swaps where needed).
+// Frontend entry: the theme bootstrap runs first (it must apply the
+// dark class before first paint), then every component module (this
+// import list IS the manifest) is registered and the core bootstrap
+// wired. Each module exposes init() (idempotent, delegated listeners)
+// and refresh(root) (resync after htmx swaps where needed). This file
+// is the single application bundle (build.ts): it is loaded blocking
+// in the head, after the htmx runtime.
 
 import './compat.ts';
+// The HTMX runtime and its SSE extension are bundled here, so the
+// whole client is a single file. htmx-runtime.ts must load before the
+// extension (import order is preserved).
+import './htmx-runtime.ts';
+import 'htmx.org/dist/ext/sse.js';
+import './theme.ts';
 
 import { configureHtmx, forwardCsrf, focusAppMain } from './core.ts';
 import * as sidebar from './sidebar.ts';

@@ -1,29 +1,50 @@
 package server
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/labstack/echo/v4"
+
+	"librevita.org/internal/core/config"
 )
 
 // Content-Security-Policy without unsafe-eval or unsafe-inline. The stack
-// (HTMX with allowEval=false, first-party ES5 widgets) fits this policy; the
-// static handler overrides Cache-Control for cacheable assets.
+// (HTMX with allowEval=false, first-party ES5 widgets) fits this policy;
+// the assets are self-hosted and content-addressed, so 'self' covers
+// everything and no CDN is involved.
 const contentSecurityPolicy = "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+
+// crossOriginResourcePolicy keeps other origins from embedding or
+// reading the application assets.
+const crossOriginResourcePolicy = "same-origin"
+
+// permissionsPolicy denies the sensitive device APIs the application
+// never uses. Older browsers (the XP floor) ignore the header.
+const permissionsPolicy = "camera=(), microphone=(), geolocation=()"
 
 // SecurityHeaders applies the security response headers. Pages carrying
 // patient data must never be cached; /static responses overwrite the
-// Cache-Control header afterwards.
-func SecurityHeaders(next echo.HandlerFunc) echo.HandlerFunc {
-	return func(ctx echo.Context) error {
-		res := ctx.Response()
-		res.Header().Set("Content-Security-Policy", contentSecurityPolicy)
-		res.Header().Set("X-Content-Type-Options", "nosniff")
-		res.Header().Set("Referrer-Policy", "no-referrer")
-		res.Header().Set("X-Frame-Options", "DENY")
-		if !strings.HasPrefix(ctx.Request().URL.Path, "/static/") {
-			res.Header().Set("Cache-Control", "no-store")
+// Cache-Control header afterwards. HSTS is opt-in through the config:
+// over plain HTTP the header would brick the site for the whole
+// max-age window.
+func SecurityHeaders(cfg *config.Config) echo.MiddlewareFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(ctx echo.Context) error {
+			res := ctx.Response()
+			res.Header().Set("Content-Security-Policy", contentSecurityPolicy)
+			res.Header().Set("X-Content-Type-Options", "nosniff")
+			res.Header().Set("Referrer-Policy", "no-referrer")
+			res.Header().Set("X-Frame-Options", "DENY")
+			res.Header().Set("Cross-Origin-Resource-Policy", crossOriginResourcePolicy)
+			res.Header().Set("Permissions-Policy", permissionsPolicy)
+			if cfg.HSTSMaxAge > 0 {
+				res.Header().Set("Strict-Transport-Security", fmt.Sprintf("max-age=%d", cfg.HSTSMaxAge))
+			}
+			if !strings.HasPrefix(ctx.Request().URL.Path, "/static/") {
+				res.Header().Set("Cache-Control", "no-store")
+			}
+			return next(ctx)
 		}
-		return next(ctx)
 	}
 }

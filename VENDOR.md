@@ -52,18 +52,21 @@ linked into the binary; used only to generate committed sources or to analyze th
 
 ## Frontend
 
-Build chain: `package.json`/`package-lock.json` (Node) → `npm run build` (`tsc --noEmit`, PostCSS, esbuild) via the
-Taskfile `frontend` task (Node 26.7, see `.nvmrc`), with the artifacts copied into the Go embed tree.
+Build chain: `package.json`/`package-lock.json` (Node) → `npm run assets` (`tsc --noEmit` + PostCSS + esbuild via
+`internal/ui/build.ts`) through the Taskfile `frontend` task (Node 26.7, see `.nvmrc`). The compiled CSS and a single JS
+bundle — carrying the HTMX runtime, its SSE extension, the theme bootstrap and the application code — are written into
+the Go embed tree under content-addressed names (`app-<hash>.css`, `app-<hash>.js`).
 
 | Package                 | Version | License | Purpose                                 |
 | ----------------------- | ------- | ------- | --------------------------------------- |
 | `htmx.org`              | 1.9.12  | 0BSD    | Hypermedia runtime (`dist/htmx.min.js`) |
 | `htmx.org` (ext/sse.js) | 1.9.12  | 0BSD    | SSE extension (`dist/ext/sse.js`)       |
 
-`htmx.org` is the only runtime JavaScript: `js/vendor/htmx-1.9.12.min.js` and `js/vendor/htmx-sse-1.9.12.js`, copied
-verbatim from `node_modules/htmx.org@1.9.12` by `internal/ui/build.ts`. Everything else under `internal/ui/static` is
-first-party: `theme.js` and `ui.js` are esbuild bundles of `internal/ui/ts/*.ts`, and `app.css` is the PostCSS pipeline
-over `internal/ui/input.css` (see below) — none of it is vendored.
+`htmx.org` is the only third-party runtime JavaScript. It is not copied: `internal/ui/build.ts` bundles its
+`dist/htmx.min.js` and `dist/ext/sse.js` into the single application script (`app-<hash>.js`) along with the
+first-party TypeScript (the theme bootstrap and the ui manifest). The stylesheet (`app-<hash>.css`) is the PostCSS
+pipeline over `internal/ui/input.css`. Everything under `internal/ui/static` is generated at build time, content
+addressed, and served with Subresource Integrity hashes (see `internal/ui/assets.go`).
 
 ### Build-time devDependencies
 
@@ -71,10 +74,8 @@ over `internal/ui/input.css` (see below) — none of it is vendored.
 | ----------------------------- | ------- | ---------- | ------------------------------------------------------------- |
 | `typescript`                  | 5.9.3   | Apache-2.0 | Type checking (`tsc --noEmit`)                                |
 | `esbuild`                     | 0.28.1  | MIT        | Bundler for the TS modules (XP floor target)                  |
-| `tailwindcss`                 | 3.4.17  | MIT        | CSS framework; compiled into `app.css` at build               |
-| `postcss`                     | 8.5.26  | MIT        | CSS pipeline core                                             |
-| `postcss-cli`                 | 11.0.1  | MIT        | PostCSS runner for `npm run css`                              |
-| `postcss-import`              | 16.1.1  | MIT        | Inlines `@import` statements                                  |
+| `tailwindcss`                 | 3.4.17  | MIT        | CSS framework; compiled into `app-<hash>.css` at build        |
+| `postcss`                     | 8.5.26  | MIT        | CSS pipeline core (run in-process by `build.ts`)              |
 | `postcss-sort-media-queries`  | 6.7.1   | MIT        | Mobile-first ordering of `@media` blocks                      |
 | `postcss-combine-media-query` | 2.1.0   | MIT        | Merges identical adjacent `@media` blocks                     |
 | `autoprefixer`                | 10.5.4  | MIT        | Vendor prefixes (driven by `browserslist`)                    |
@@ -88,20 +89,22 @@ esbuild is forced to lower optional catch binding (`supported: { 'optional-catch
 firefox58 feature matrix would otherwise allow it. The build fails on any modern-only syntax, which is the automated
 half of the XP floor.
 
-PostCSS pipeline (in order): `postcss-import` (stylesheet can be split into modules), `tailwindcss`,
+PostCSS pipeline (in order): `tailwindcss`,
 `postcss-sort-media-queries` (mobile-first order), `postcss-combine-media-query` (one merged block per breakpoint),
-`autoprefixer` (driven by the `browserslist` `Firefox >= 52` entry) and `cssnano` in production builds. The compiled
+`autoprefixer` (driven by the `browserslist` `Firefox >= 52` entry) and `cssnano` (minification). The compiled
 output is minified and has a single `@media (min-width: …)` block per Tailwind breakpoint.
 
 Dark mode uses Tailwind's class strategy (`darkMode: 'class'`). The `dark` class is toggled on the `<html>` element by
-`theme.js` (system follow) and by the theme-pref module on the profile page (light, system, or dark). The compiled dark
+the theme bootstrap inside the application bundle (system follow) and by the theme-pref module on the profile page
+(light, system, or dark). The compiled dark
 variant is `:is(.dark *)`, which only matches descendants of the element carrying the `dark` class, so surface
 backgrounds live on `<body>` and below — never on the `<html>` element itself.
 
 The strict Content-Security-Policy (`script-src 'self'`, no `unsafe-eval`/`unsafe-inline`) is enforced at runtime;
 interaction is progressive enhancement on top of server-rendered templ markup, so pages work even with scripting off.
 
-Unit tests run with `node:test` + linkedom (`npm test`).
+Unit tests run with `node:test` + linkedom (`npm test`); the test-loader transpiles the `.ts`/`.tsx` sources with the
+same esbuild options as the bundle.
 
 ## Design references
 

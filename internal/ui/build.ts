@@ -1,16 +1,25 @@
 // LibreVita frontend build, driven by Node.
 // Manifest: package.json + package-lock.json (no version pinning in
-// the Taskfile). Produces internal/ui/static/js/ui.js, theme.js and
-// the versioned HTMX runtime files, which the Go binary embeds via
-// //go:embed.
+// the Taskfile). Produces the content-addressed assets in
+// internal/ui/static (app-<hash>.css, app-<hash>.js and the versioned
+// HTMX runtime) plus internal/ui/assets.go with their paths, which the
+// templates render and the Go binary embeds via //go:embed.
 
 import * as esbuild from 'esbuild';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { mkdir, readFile, readdir, unlink, writeFile } from 'node:fs/promises';
 import { readFileSync } from 'node:fs';
+import postcss from 'postcss';
+import tailwindcss from 'tailwindcss';
+import postcssSortMediaQueries from 'postcss-sort-media-queries';
+import postcssCombineMediaQuery from 'postcss-combine-media-query';
+import autoprefixer from 'autoprefixer';
+import cssnano from 'cssnano';
 
-// Output root; defaults to the embed tree, overridable with OUT.
-const out = process.env.OUT ?? 'internal/ui/static/js';
-await mkdir(out, { recursive: true });
+const cssOut = 'internal/ui/static/css';
+const jsOut = 'internal/ui/static/js';
+await mkdir(cssOut, { recursive: true });
+await mkdir(jsOut, { recursive: true });
 
 // Browser floor: Firefox 52 ESR / Goanna. esbuild's firefox52 feature matrix
 // rejects for-of and destructuring (its feature matrix is conservative,
@@ -51,52 +60,120 @@ function assertXpFloor(file: string) {
   }
 }
 
-await esbuild.build({
-  entryPoints: ['internal/ui/ts/main.ts'],
-  outfile: `${out}/ui.js`,
-  bundle: true,
-  platform: 'browser',
-  format: 'iife',
-  target: 'firefox58',
-  minify: true,
-  supported: xpSupported,
-  // TSX compiles to calls of the local factory h() (jsx.ts). Explicit
-  // here (esbuild would read jsxFactory from tsconfig, but only when it
-  // discovers it via cwd) and never 'preserve': raw JSX in the output
-  // would be invalid JavaScript that assertXpFloor cannot detect.
-  jsx: 'transform',
-  jsxFactory: 'h',
-});
-assertXpFloor(`${out}/ui.js`);
-
-// Theme bootstrap for the head: blocking so the dark class exists before
-// first paint. Kept separate from ui.js (which is deferred).
-await esbuild.build({
-  entryPoints: ['internal/ui/ts/theme.ts'],
-  outfile: `${out}/theme.js`,
-  bundle: true,
-  platform: 'browser',
-  format: 'iife',
-  target: 'firefox58',
-  minify: true,
-  supported: xpSupported,
-  jsx: 'transform',
-  jsxFactory: 'h',
-});
-assertXpFloor(`${out}/theme.js`);
-
-// Runtime assets from the pinned npm packages. HTMX 1.9 is
-// IE11-compatible and is copied verbatim. They land flat in the js
-// output directory: base.templ and module.go reference the versioned
-// names directly under /static/js/.
-async function copyAsset(specifier: string, dest: string) {
-  const url = import.meta.resolve(specifier);
-  const data = await readFile(new URL(url));
-  await writeFile(dest, data);
-  assertXpFloor(dest);
+// The CSS pipeline mirrors the old postcss.config.ts, which the bundle
+// step used to run separately: Tailwind as a plugin, autoprefixer for
+// the XP floor, and cssnano minification (the production flag was
+// hardcoded in the npm script).
+async function buildCss(): Promise<{ name: string; hash: string; integrity: string }> {
+  const input = await readFile('internal/ui/input.css', 'utf8');
+  const result = await postcss([
+    tailwindcss(),
+    postcssSortMediaQueries(),
+    postcssCombineMediaQuery(),
+    autoprefixer(),
+    cssnano(),
+  ]).process(input, { from: 'internal/ui/input.css' });
+  return writeHashed(cssOut, 'app', '.css', result.css);
 }
 
-await copyAsset('htmx.org/dist/htmx.min.js', `${out}/htmx-1.9.12.min.js`);
-await copyAsset('htmx.org/dist/ext/sse.js', `${out}/htmx-sse-1.9.12.js`);
+// The single application bundle: the theme bootstrap (which must run
+// before first paint) and the ui manifest (main.ts) in one file, loaded
+// blocking in the head after the htmx runtime.
+async function buildJs(): Promise<{ name: string; hash: string; integrity: string }> {
+  const result = await esbuild.build({
+    entryPoints: ['internal/ui/ts/main.ts'],
+    bundle: true,
+    platform: 'browser',
+    format: 'iife',
+    target: 'firefox58',
+    minify: true,
+    supported: xpSupported,
+    write: false,
+    // TSX compiles to calls of the local factory h() (jsx.ts). Explicit
+    // here (esbuild would read jsxFactory from tsconfig, but only when it
+    // discovers it via cwd) and never 'preserve': raw JSX in the output
+    // would be invalid JavaScript that assertXpFloor cannot detect.
+    jsx: 'transform',
+    jsxFactory: 'h',
+  });
+  const output = result.outputFiles[0];
+  const asset = await writeHashed(jsOut, 'app', '.js', output.text);
+  assertXpFloor(`${jsOut}/${asset.name}`);
+  return asset;
+}
+
+// Content-addressed names: the hash is the fingerprint of the content,
+// so a change in the sources produces a new file and the old one is
+// cleaned up; unchanged content keeps the same name and the assets can
+// be cached immutably. The integrity value is the full sha256-base64 of
+// the content, served as the SRI hash on the script/link tags. The
+// legacy stable names (app.css, ui.js, theme.js and the copied HTMX
+// files) are removed so they never linger in the embed.
+const LEGACY_STABLE = new Map<string, string[]>([
+  [cssOut, ['app.css']],
+  [jsOut, ['ui.js', 'theme.js', 'htmx-1.9.12.min.js', 'htmx-sse-1.9.12.js']],
+]);
+
+// Hashed names produced by earlier bundle names (ui-<hash>.js), so a
+// rename never leaves stale embedded files behind.
+const LEGACY_HASHED = new Map<string, RegExp>([
+  [jsOut, /^ui-[0-9a-f]{10}\.js$/],
+]);
+
+async function writeHashed(
+  dir: string,
+  prefix: string,
+  ext: string,
+  content: string,
+): Promise<{ name: string; hash: string; integrity: string }> {
+  const hash = createHash('sha256').update(content).digest('hex').slice(0, 10);
+  for (const entry of await readdir(dir)) {
+    if (
+      (entry.startsWith(prefix + '-') && entry.endsWith(ext)) ||
+      (LEGACY_HASHED.get(dir)?.test(entry) ?? false)
+    ) {
+      await unlink(`${dir}/${entry}`);
+    }
+  }
+  const stable = LEGACY_STABLE.get(dir) ?? [];
+  for (const entry of stable) {
+    try {
+      await unlink(`${dir}/${entry}`);
+    } catch {
+      // Already gone.
+    }
+  }
+  const name = `${prefix}-${hash}${ext}`;
+  await writeFile(`${dir}/${name}`, content);
+  const integrity = 'sha256-' + createHash('sha256').update(content).digest('base64');
+  return { name, hash, integrity };
+}
+
+// Runtime assets from the pinned npm packages: the HTMX runtime and
+// its SSE extension are imported by main.ts (htmx-runtime.ts) and end
+// up inside the single app-<hash>.js bundle.
+
+const [css, js] = await Promise.all([buildCss(), buildJs()]);
+
+// The paths and SRI hashes the templates render. Generated (not
+// versioned): the Go build picks it up after the frontend runs.
+const assetsGo = [
+  '// Code generated by internal/ui/build.ts; DO NOT EDIT.',
+  '',
+  'package ui',
+  '',
+  '// Content-addressed paths of the compiled frontend and their SRI',
+  '// hashes: the hash changes when the content changes, so these files',
+  '// can be cached immutably and the templates render them with the',
+  '// integrity attribute (Subresource Integrity).',
+  'const (',
+  `\tAppCSS = "/static/css/${css.name}"`,
+  `\tAppCSSIntegrity = "${css.integrity}"`,
+  `\tAppJS = "/static/js/${js.name}"`,
+  `\tAppJSIntegrity = "${js.integrity}"`,
+  ')',
+  '',
+].join('\n');
+await writeFile('internal/ui/assets.go', assetsGo);
 
 await esbuild.stop();

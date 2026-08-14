@@ -3,7 +3,6 @@ package ui
 import (
 	"io/fs"
 	"net/http"
-	"strings"
 
 	"github.com/labstack/echo/v4"
 	"go.uber.org/fx"
@@ -14,12 +13,6 @@ var Module = fx.Module("ui",
 	fx.Invoke(registerStatic),
 )
 
-// vendorFiles are cacheable forever because their names embed the version.
-var vendorFiles = map[string]bool{
-	"js/htmx-1.9.12.min.js": true,
-	"js/htmx-sse-1.9.12.js": true,
-}
-
 func registerStatic(e *echo.Echo) {
 	sub, err := fs.Sub(static, "static")
 	if err != nil {
@@ -27,16 +20,14 @@ func registerStatic(e *echo.Echo) {
 	}
 	handler := http.FileServerFS(sub)
 
-	// StripPrefix rewrites r.URL.Path so that the FileServer resolves the
-	// file inside the embedded subtree.
+	// Every file under /static has a content-addressed name (app-<hash>.css,
+	// app-<hash>.js — the single bundle carries the HTMX runtime and its
+	// SSE extension), so all of them can be cached immutably: a new
+	// release always references new names. StripPrefix rewrites
+	// r.URL.Path so that the FileServer resolves the file inside the
+	// embedded subtree.
 	e.GET("/static/*", echo.WrapHandler(http.StripPrefix("/static/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		path := strings.TrimPrefix(r.URL.Path, "/")
-		if vendorFiles[path] {
-			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
-		} else {
-			// Generated CSS and the application script change with releases.
-			w.Header().Set("Cache-Control", "no-cache")
-		}
+		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
 		handler.ServeHTTP(w, r)
 	}))))
 }
