@@ -159,7 +159,8 @@ tasks:
     generates:
       - internal/ui/static/js/ui.js
       - internal/ui/static/js/theme.js
-      - 'internal/ui/static/js/vendor/*.js'
+      - internal/ui/static/js/htmx-1.9.12.min.js
+      - internal/ui/static/js/htmx-sse-1.9.12.js
   # Compiled assets (CSS, bundled JS) plus the type-check dependency,
   # exported into internal/ui/static for the embed layer and the editor.
   frontend:
@@ -282,6 +283,7 @@ tasks:
       - 'cmd/**/*.go'
       - 'internal/**/*.go'
       - 'internal/**/*.templ'
+      - 'internal/ui/static/**'
       - 'pkg/**/*.go'
       - 'db/**'
       - go.mod
@@ -301,6 +303,7 @@ tasks:
       - 'cmd/**/*.go'
       - 'internal/**/*.go'
       - 'internal/**/*.templ'
+      - 'internal/ui/static/**'
       - 'pkg/**/*.go'
       - 'db/**'
       - go.mod
