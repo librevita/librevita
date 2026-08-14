@@ -9,7 +9,7 @@
     "bundle": "node internal/ui/build.ts",
     "build": "npm run check && npm run css && npm run bundle",
     "typecheck": "npm run check",
-    "test": "node --test internal/ui/ts/ui_test.ts"
+    "test": "node --import ./internal/ui/test-loader.ts --test internal/ui/ts/ui_test.ts"
   },
   "devDependencies": {
     "@types/node": "^26.2.0",

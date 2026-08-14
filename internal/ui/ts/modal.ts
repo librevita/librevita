@@ -83,6 +83,13 @@ function openModal(modal: HTMLElement): void {
   modal.setAttribute('aria-hidden', 'false');
   modal.setAttribute('role', 'dialog');
   modal.setAttribute('aria-modal', 'true');
+  // The name comes from the static aria-labelledby (template title); the
+  // description is optional content: mark an element inside the dialog
+  // with [data-lv-modal-description] to have it announced.
+  const desc = modal.querySelector('[data-lv-modal-description]') as HTMLElement | null;
+  if (desc && desc.id) {
+    modal.setAttribute('aria-describedby', desc.id);
+  }
   // Scroll lock: the page behind the dimmed backdrop must not move.
   document.body.style.overflow = 'hidden';
   const boxes = focusable(modal);
@@ -95,6 +102,7 @@ function closeModal(modal: HTMLElement): void {
   modal.setAttribute('aria-hidden', 'true');
   modal.removeAttribute('role');
   modal.removeAttribute('aria-modal');
+  modal.removeAttribute('aria-describedby');
   if (document.querySelectorAll('[data-lv-modal]:not(.hidden)').length === 0) {
     document.body.style.overflow = '';
   }

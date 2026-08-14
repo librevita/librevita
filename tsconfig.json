@@ -8,7 +8,14 @@
     "allowImportingTsExtensions": true,
     "noEmit": true,
     "skipLibCheck": true,
-    "types": ["node"]
+    "types": ["node"],
+    "jsx": "react",
+    "jsxFactory": "h"
   },
-  "include": ["internal/ui/**/*.ts", "postcss.config.ts", "tailwind.config.ts"]
+  "include": [
+    "internal/ui/**/*.ts",
+    "internal/ui/**/*.tsx",
+    "postcss.config.ts",
+    "tailwind.config.ts"
+  ]
 }
