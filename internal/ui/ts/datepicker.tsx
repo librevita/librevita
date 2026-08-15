@@ -26,11 +26,11 @@ const NEXT_ATTR = 'data-lv-datepicker-next';
 const WEEKDAYS = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
 
 const CHEVRON_LEFT =
-  '<svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" ' +
-  'aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M15 19l-7-7 7-7"/></svg>';
+  '<svg class="h-4 w-4" fill="currentColor" viewBox="0 -960 960 960" aria-hidden="true">' +
+  '<path d="M560-240 320-480l240-240 56 56-184 184 184 184-56 56Z"/></svg>';
 const CHEVRON_RIGHT =
-  '<svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" ' +
-  'aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>';
+  '<svg class="h-4 w-4" fill="currentColor" viewBox="0 -960 960 960" aria-hidden="true">' +
+  '<path d="M504-480 320-664l56-56 240 240-240 240-56-56 184-184Z"/></svg>';
 
 // View state per container: the year/month the calendar currently shows.
 const viewByRoot = new WeakMap<HTMLElement, { year: number; month: number }>();
