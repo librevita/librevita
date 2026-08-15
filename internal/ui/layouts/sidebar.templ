@@ -11,6 +11,7 @@ import (
 // The drawer and the desktop sidebar render the same navMenu, so the
 // menu is identical at every size.
 templ Sidebar(principal *auth.Principal, active string) {
+	<div data-lv-backdrop class="fixed inset-0 z-30 hidden bg-gray-900/50 md:hidden" aria-hidden="true"></div>
 	<aside data-lv-drawer class="fixed bottom-0 left-0 top-16 z-40 hidden w-64 flex-col overflow-y-auto border-r border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800 md:hidden">
 		@navMenu(principal, active)
 	</aside>
