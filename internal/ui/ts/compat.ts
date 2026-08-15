@@ -1,6 +1,8 @@
-// Compatibility layer for the XP floor (Firefox 52 ESR / Goanna).
-// Every polyfill is feature-detected and removable when the floor moves
-// on. Do not add core-js: keep this file small and auditable.
+// Compatibility layer for the XP floor (Firefox 52 ESR / Goanna) and
+// the PowerPC-era engines (TenFourFox/AquaFox, Firefox 45-based) that
+// still browse the app. Every polyfill is feature-detected and
+// removable when the floor moves on. Do not add core-js: keep this
+// file small and auditable.
 //
 // The ambient declarations below are required because the TS lib (ES2017)
 // does not know these APIs; the polyfill and its declaration must always
@@ -55,6 +57,29 @@ if (typeof Array.prototype.flatMap !== 'function') {
     thisArg?: unknown,
   ): R[] {
     return this.map(mapper, thisArg).flat();
+  };
+}
+
+// htmx 1.9 calls document.evaluate with just the expression and the
+// context node; old Gecko (TenFourFox/AquaFox, Firefox 45-era)
+// requires all five arguments. Default to an ordered node iterator,
+// which is what the caller expects (iterateNext).
+if (typeof document !== 'undefined' && typeof document.evaluate === 'function') {
+  const evaluate = document.evaluate.bind(document);
+  document.evaluate = function (
+    expression: string,
+    contextNode: Node,
+    resolver: XPathNSResolver | null,
+    type?: number,
+    result?: XPathResult | null,
+  ): XPathResult {
+    return evaluate(
+      expression,
+      contextNode,
+      resolver === undefined ? null : resolver,
+      type === undefined ? XPathResult.ORDERED_NODE_ITERATOR_TYPE : type,
+      result === undefined ? null : result,
+    );
   };
 }
 
