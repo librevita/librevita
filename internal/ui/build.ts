@@ -112,6 +112,16 @@ const legacyFallbacks: Plugin = {
           (_m, r: string, g: string, b: string, a: string) =>
             `rgba(${parseInt(r, 16)}, ${parseInt(g, 16)}, ${parseInt(b, 16)}, ${(parseInt(a, 16) / 255).toFixed(3)})`,
         );
+      } else if (/#[0-9a-f]{4}\b/i.test(value)) {
+        // The shorthand #RGBA (Tailwind's transparent outlines and
+        // ring colors minify to it) is Firefox 49+, so the XP floor
+        // drops the whole declaration; expand it to rgba() with the
+        // standard digit doubling.
+        decl.value = value.replace(
+          /#([0-9a-f])([0-9a-f])([0-9a-f])([0-9a-f])\b/gi,
+          (_m, r: string, g: string, b: string, a: string) =>
+            `rgba(${parseInt(r + r, 16)}, ${parseInt(g + g, 16)}, ${parseInt(b + b, 16)}, ${(parseInt(a + a, 16) / 255).toFixed(3)})`,
+        );
       } else if (decl.prop === 'inset' && /^[^ ]+$/.test(value.trim())) {
         const v = value.trim();
         for (const prop of ['top', 'right', 'bottom', 'left']) {
