@@ -60,7 +60,7 @@ templ UsersListPage(token string, p *auth.Principal, q string, page int, total i
 					</ol>
 				</nav>
 				<h1 class="mb-4 text-xl font-semibold text-gray-900 sm:text-2xl dark:text-white">All users</h1>
-				<div class="flex flex-wrap items-center justify-between gap-3">
+				<div class="flex flex-wrap items-center justify-between space-x-3">
 					<div class="relative">
 						<svg class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400 dark:text-gray-500" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd"></path></svg>
 						@components.Input("q", "pl-9 md:w-64 xl:w-96", templ.Attributes{ "id": "user-search", "type": "search", "value": q, "placeholder": "Search for users", "hx-get": "/users", "hx-trigger": "input changed delay:300ms", "hx-target": "#user-list", "hx-swap": "innerHTML" })
@@ -125,7 +125,7 @@ templ UserRowOnly(rows []UserListRow) {
 // change re-renders only the affected row.
 templ UserRowCells(u UserListRow) {
 	<td class="p-4">
-		<div class="flex items-center gap-3">
+		<div class="flex items-center space-x-3">
 			@components.Avatar(shared.Initials(u.Name), "h-10 w-10 text-sm bg-indigo-100 text-indigo-700 dark:bg-indigo-900 dark:text-indigo-300")
 			<div>
 				<p class="text-base font-semibold text-gray-900 dark:text-white">{ u.Name }</p>
@@ -236,12 +236,12 @@ templ UserForm(token string, id string, values UserFormValues, roles []RoleView,
 			}
 		}
 		if id != "" {
-			<div class="flex items-center gap-2">
+			<div class="flex items-center space-x-2">
 				@components.Checkbox("active", "", templ.Attributes{ "id": "active", "checked": values.Active })
 				<label class="text-sm text-gray-700 dark:text-gray-300" for="active">Active account</label>
 			</div>
 		}
-		<div class="flex items-center gap-3">
+		<div class="flex items-center space-x-3">
 			@components.Button("primary", userFormSubmit(id), templ.Attributes{ "type": "submit" })
 			@components.ButtonLink("secondary", "/users", "Cancel", templ.Attributes{ "hx-target": "body" })
 		</div>

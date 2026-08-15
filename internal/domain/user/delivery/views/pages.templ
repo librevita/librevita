@@ -166,34 +166,34 @@ templ Home(token string, p *auth.Principal, stats DashboardStats) {
 					@components.Card() {
 						@components.CardHeader("Clinic profile") { }
 					<dl class="space-y-3 text-sm">
-						<div class="flex items-center justify-between gap-4">
+						<div class="flex items-center justify-between space-x-4">
 							<dt class="text-gray-500 dark:text-gray-400">Name</dt>
 							<dd class="font-medium text-gray-900 dark:text-white">{ stats.Clinic.Name }</dd>
 						</div>
-						<div class="flex items-center justify-between gap-4">
+						<div class="flex items-center justify-between space-x-4">
 							<dt class="text-gray-500 dark:text-gray-400">Timezone</dt>
 							<dd class="font-medium text-gray-900 dark:text-white">{ stats.Clinic.Timezone }</dd>
 						</div>
 						if stats.Clinic.City != "" {
-							<div class="flex items-center justify-between gap-4">
+							<div class="flex items-center justify-between space-x-4">
 								<dt class="text-gray-500 dark:text-gray-400">City</dt>
 								<dd class="font-medium text-gray-900 dark:text-white">{ stats.Clinic.City }, { stats.Clinic.State }</dd>
 							</div>
 						}
 						if stats.Clinic.TaxID != "" {
-							<div class="flex items-center justify-between gap-4">
+							<div class="flex items-center justify-between space-x-4">
 								<dt class="text-gray-500 dark:text-gray-400">Tax ID</dt>
 								<dd class="font-medium text-gray-900 dark:text-white">{ stats.Clinic.TaxID }</dd>
 							</div>
 						}
 						if stats.Clinic.Phone != "" {
-							<div class="flex items-center justify-between gap-4">
+							<div class="flex items-center justify-between space-x-4">
 								<dt class="text-gray-500 dark:text-gray-400">Phone</dt>
 								<dd class="font-medium text-gray-900 dark:text-white">{ stats.Clinic.Phone }</dd>
 							</div>
 						}
 						if stats.Clinic.Email != "" {
-							<div class="flex items-center justify-between gap-4">
+							<div class="flex items-center justify-between space-x-4">
 								<dt class="text-gray-500 dark:text-gray-400">Email</dt>
 								<dd class="font-medium text-gray-900 dark:text-white">{ stats.Clinic.Email }</dd>
 							</div>
@@ -222,7 +222,7 @@ templ ActivityFeed(activity []ActivityRow, cursor int64) {
 				for _, ev := range activity {
 					<li class="mb-6 ml-4">
 						<span class={ "absolute w-3 h-3 rounded-full mt-1.5 -left-1.5 border border-white " + dotColor(ev.Result) }></span>
-						<div class="flex items-baseline justify-between gap-4">
+						<div class="flex items-baseline justify-between space-x-4">
 							<h4 class="text-sm font-semibold text-gray-900 dark:text-white">{ ev.Action }</h4>
 							<time class="shrink-0 text-xs text-gray-400 dark:text-gray-400">{ ev.When }</time>
 						</div>

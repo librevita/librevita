@@ -55,7 +55,7 @@ templ IdentifierSystemsPage(token string, p *auth.Principal, rows []SystemRow, e
 					</ol>
 				</nav>
 				<h1 class="mb-4 text-xl font-semibold text-gray-900 sm:text-2xl dark:text-white">Identifier systems</h1>
-				<div class="flex flex-wrap items-center justify-between gap-3">
+				<div class="flex flex-wrap items-center justify-between space-x-3">
 					<p class="max-w-xl text-sm text-gray-500 dark:text-gray-400">Document kinds patients can present (CPF, SUS, NIF, passport, ...), each with its shape, normalization, and check digit. Add the systems of your jurisdiction; deactivate instead of deleting, since patient records reference them.</p>
 					<button type="button" data-lv-modal-open="add-system-modal" class="inline-flex items-center rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600">
 						<svg class="mr-2 h-5 w-5 -ml-1" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true"><path fill-rule="evenodd" d="M10 5a1 1 0 011 1v3h3a1 1 0 110 2h-3v3a1 1 0 11-2 0v-3H6a1 1 0 110-2h3V6a1 1 0 011-1z" clip-rule="evenodd"></path></svg>
@@ -192,7 +192,7 @@ templ SystemForm(token string, id string, values SystemFormValues, errMsg string
 				@CheckFieldsPartial(values)
 			</div>
 		}
-		<div class="mt-6 flex items-center gap-3 border-t border-gray-200 pt-4 dark:border-gray-700">
+		<div class="mt-6 flex items-center space-x-3 border-t border-gray-200 pt-4 dark:border-gray-700">
 			@components.Button("primary", systemFormSubmit(id), templ.Attributes{ "type": "submit" })
 			@components.Button("secondary", "Cancel", templ.Attributes{ "type": "button", "data-lv-modal-close": true })
 		</div>

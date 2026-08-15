@@ -127,6 +127,18 @@ const legacyFallbacks: Plugin = {
         for (const prop of ['top', 'right', 'bottom', 'left']) {
           decl.cloneBefore({ prop, value: v });
         }
+      } else if (value.includes('--tw-space-')) {
+        // Tailwind's space-x/space-y emit
+        // calc(<len>*(1 - var(--tw-space-[xy]-reverse))) (margin on the
+        // siblings), but multiplication in calc() is Firefox 117+ and
+        // the XP floor drops the whole declaration, so the spacing
+        // silently disappears. The reverse variable is always defined
+        // to 0 in the same rule (the app never sets space-x-reverse),
+        // so the forms collapse to the plain length and 0, keeping the
+        // modern output byte-identical in effect.
+        decl.value = value
+          .replace(/calc\(([^)]*)\*\(1 - var\(--tw-space-[xy]-reverse\)\)\)/g, '$1')
+          .replace(/calc\(([^)]*)\*var\(--tw-space-[xy]-reverse\)\)/g, '0');
       }
     });
   },
