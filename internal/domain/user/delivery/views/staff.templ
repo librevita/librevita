@@ -82,7 +82,7 @@ templ StaffPage(token string, p *auth.Principal, rows []PhysicianRow, pager Staf
 					</ol>
 				</nav>
 				<h1 class="mb-4 text-xl font-semibold text-gray-900 sm:text-2xl dark:text-white">Physicians</h1>
-				<div class="flex flex-wrap items-center justify-between gap-3">
+				<div class="flex flex-wrap items-center justify-between space-x-3">
 					<p class="text-sm text-gray-500 dark:text-gray-400">Clinical staff directory</p>
 					if p != nil && p.Role == auth.RoleAdmin {
 						@components.ButtonLink("primary", "/staff/new", "New physician", nil)
@@ -124,7 +124,7 @@ templ StaffTable(token string, rows []PhysicianRow, pager StaffPager, errMsg str
 						for _, ph := range rows {
 							<tr class="hover:bg-gray-100 dark:hover:bg-gray-700">
 								<td class="p-4">
-									<div class="flex items-center gap-3">
+									<div class="flex items-center space-x-3">
 										@components.Avatar(shared.Initials(ph.Name), "h-10 w-10 text-sm bg-indigo-100 text-indigo-700 dark:bg-indigo-900 dark:text-indigo-300")
 										<div>
 											<p class="text-base font-semibold text-gray-900 dark:text-white">{ ph.Name }</p>
@@ -209,7 +209,7 @@ templ StaffForm(token string, id string, values StaffFormValues, specialties []S
 				<p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">A physician can have more than one.</p>
 				<div class="mt-2 flex flex-col space-y-2 sm:flex-row sm:flex-wrap sm:space-y-0 sm:-mx-1">
 					for _, sp := range specialties {
-						<label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 sm:w-1/2 sm:px-1">
+						<label class="flex items-center space-x-2 text-sm text-gray-700 dark:text-gray-300 sm:w-1/2 sm:px-1">
 							@components.Checkbox("specialties", "", templ.Attributes{ "value": sp.ID, "checked": sp.Selected })
 							{ sp.Name }
 						</label>
@@ -217,7 +217,7 @@ templ StaffForm(token string, id string, values StaffFormValues, specialties []S
 				</div>
 			</fieldset>
 		}
-		<div class="flex items-center gap-3">
+		<div class="flex items-center space-x-3">
 			@components.Button("primary", staffFormSubmit(admin), templ.Attributes{ "type": "submit" })
 			@components.ButtonLink("secondary", "/staff", "Cancel", templ.Attributes{ "hx-target": "body" })
 		</div>
@@ -355,7 +355,7 @@ templ StaffRequestsPage(token string, p *auth.Principal, rows []StaffRequestRow,
 					</ol>
 				</nav>
 				<h1 class="mb-4 text-xl font-semibold text-gray-900 sm:text-2xl dark:text-white">Staff change requests</h1>
-				<div class="flex flex-wrap items-center gap-3">
+				<div class="flex flex-wrap items-center space-x-3">
 					<div class="relative">
 						<svg class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400 dark:text-gray-500" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd"></path></svg>
 						@components.Input("q", "pl-9 md:w-64 xl:w-96", templ.Attributes{ "id": "sr-search", "type": "search", "value": pager.Q, "placeholder": "Search physician or requester", "hx-get": "/staff/requests", "hx-trigger": "input changed delay:300ms", "hx-target": "#staff-requests-list", "hx-swap": "innerHTML" })
@@ -414,7 +414,7 @@ templ StaffRequestsTable(token string, rows []StaffRequestRow, pager StaffReques
 								<td class="p-4 whitespace-nowrap text-base text-gray-500 dark:text-gray-400">{ r.CreatedAt }</td>
 								<td class="p-4 text-right">
 									if r.Status == "pending" {
-										<div class="flex items-center justify-end gap-2">
+										<div class="flex items-center justify-end space-x-2">
 											<form method="post" action={ "/staff/requests/" + r.ID + "/approve" } class="inline">
 												<input type="hidden" name="_csrf" value={ token }>
 												@components.Button("primary", "Approve", templ.Attributes{ "type": "submit" })
@@ -521,7 +521,7 @@ templ StaffCreateForm(token string, specialties []SpecialtyView, errMsg string) 
 				<p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">A physician can have more than one.</p>
 				<div class="mt-2 flex flex-col space-y-2 sm:flex-row sm:flex-wrap sm:space-y-0 sm:-mx-1">
 					for _, sp := range specialties {
-						<label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 sm:w-1/2 sm:px-1">
+						<label class="flex items-center space-x-2 text-sm text-gray-700 dark:text-gray-300 sm:w-1/2 sm:px-1">
 							@components.Checkbox("specialties", "", templ.Attributes{ "value": sp.ID, "checked": sp.Selected })
 							{ sp.Name }
 						</label>
@@ -529,7 +529,7 @@ templ StaffCreateForm(token string, specialties []SpecialtyView, errMsg string) 
 				</div>
 			</fieldset>
 		}
-		<div class="flex items-center gap-3">
+		<div class="flex items-center space-x-3">
 			@components.Button("primary", "Create physician", templ.Attributes{ "type": "submit" })
 			@components.ButtonLink("secondary", "/staff", "Cancel", templ.Attributes{ "hx-target": "body" })
 		</div>

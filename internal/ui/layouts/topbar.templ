@@ -9,7 +9,7 @@ import (
 // and the user menu.
 templ Topbar(title string, token string, principal *auth.Principal) {
 	<header class="relative z-40 flex h-16 shrink-0 items-center justify-between border-b border-gray-200 bg-white px-3 dark:border-gray-700 dark:bg-gray-800 lg:px-5">
-		<div class="flex items-center gap-3">
+		<div class="flex items-center space-x-3">
 			<button type="button" data-lv-nav-toggle class="rounded-md p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-900 focus:outline-none dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white md:hidden" aria-label="Open navigation" aria-expanded="false">
 				<span data-lv-nav-open-icon>
 					@components.Icon("menu", "h-6 w-6")
@@ -18,7 +18,7 @@ templ Topbar(title string, token string, principal *auth.Principal) {
 					@components.Icon("close", "h-6 w-6")
 				</span>
 			</button>
-			<a href="/" class="flex items-center gap-2">
+			<a href="/" class="flex items-center space-x-2">
 				@Logo("h-8 w-8 text-indigo-600 dark:text-indigo-400")
 				<span class="text-xl font-semibold text-gray-900 dark:text-white">LibreVita</span>
 			</a>
@@ -26,7 +26,7 @@ templ Topbar(title string, token string, principal *auth.Principal) {
 		</div>
 		if principal != nil {
 			<div class="relative">
-				<button type="button" data-lv-user-menu-toggle class="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:hover:bg-gray-700" aria-haspopup="true" aria-expanded="false">
+				<button type="button" data-lv-user-menu-toggle class="flex items-center space-x-2 rounded-md px-2 py-1.5 text-sm hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:hover:bg-gray-700" aria-haspopup="true" aria-expanded="false">
 					<img src="/profile/avatar" alt="Profile picture" class="h-8 w-8 rounded-full">
 					<span class="hidden text-sm font-medium text-gray-700 dark:text-gray-200 lg:block">{ principal.Name }</span>
 					@components.Icon("expand_more", "hidden h-4 w-4 text-gray-400 dark:text-gray-500 lg:block")
@@ -38,14 +38,14 @@ templ Topbar(title string, token string, principal *auth.Principal) {
 						<p class="mt-1 text-xs text-gray-400 dark:text-gray-400">Signed in as { principal.Role.String() }</p>
 					</div>
 					<div class="p-2">
-						<a href="/profile" class="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:text-gray-200 dark:hover:bg-gray-600">
+						<a href="/profile" class="flex w-full items-center space-x-2 rounded-md px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:text-gray-200 dark:hover:bg-gray-600">
 							@components.Icon("person", "h-4 w-4")
 							Profile
 						</a>
 					</div>
 					<form method="post" hx-boost="false" action="/auth/logout" class="p-2">
 						<input type="hidden" name="_csrf" value={ token }>
-						<button type="submit" class="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:text-gray-200 dark:hover:bg-gray-600">
+						<button type="submit" class="flex w-full items-center space-x-2 rounded-md px-3 py-2 text-sm text-gray-700 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:text-gray-200 dark:hover:bg-gray-600">
 							@components.Icon("logout", "h-4 w-4")
 							Sign out
 						</button>

@@ -64,8 +64,8 @@ templ PatientListPage(token string, p *auth.Principal, q string, status string, 
 					</ol>
 				</nav>
 				<h1 class="mb-4 text-xl font-semibold text-gray-900 sm:text-2xl dark:text-white">All patients</h1>
-				<div class="flex flex-wrap items-center justify-between gap-3">
-					<div class="flex flex-wrap items-center gap-3">
+				<div class="flex flex-wrap items-center justify-between space-x-3">
+					<div class="flex flex-wrap items-center space-x-3">
 						@patientSearchInput(q)
 						@IdentifierLookupForm()
 						<select id="status-filter" name="status" hx-get="/patients" hx-trigger="change" hx-include="#patient-search" hx-target="#patient-list" hx-swap="innerHTML" class="input mt-0 w-auto">
@@ -188,7 +188,7 @@ templ PatientRowCells(pt PatientRow) {
 		</div>
 	</td>
 	<td class="p-4">
-		<div class="flex items-center gap-3">
+		<div class="flex items-center space-x-3">
 			@components.Avatar(shared.Initials(pt.DisplayName), "h-10 w-10 text-sm bg-indigo-100 text-indigo-700 dark:bg-indigo-900 dark:text-indigo-300")
 			<div class="min-w-0">
 				<a class="text-base font-semibold text-gray-900 hover:text-indigo-600 dark:text-white dark:hover:text-indigo-400" href={ "/patients/" + pt.ID }>{ pt.DisplayName }</a>
