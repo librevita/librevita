@@ -32,6 +32,18 @@ export function focusAppMain(): void {
   }
 }
 
+// Reports the exact throw site of htmx's internal errors: the source
+// map of the minified bundle is unreliable on the old engines, but
+// Firefox errors carry fileName/lineNumber/columnNumber directly.
+export function reportHtmxErrors(): void {
+  document.addEventListener('htmx:onLoadError', (evt) => {
+    const detail = (evt as CustomEvent<{ error: Error }>).detail;
+    const e = detail.error as Error & { fileName?: string; lineNumber?: number; columnNumber?: number };
+    console.error('htmx throw-site:', e.fileName, e.lineNumber, e.columnNumber);
+    console.error('htmx error stack:', e.stack);
+  });
+}
+
 export function closestOrSelf(
   node: EventTarget | null,
   selector: string,
