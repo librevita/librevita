@@ -61,14 +61,14 @@ type DashboardStats struct {
 templ Home(token string, p *auth.Principal, stats DashboardStats) {
 	@layouts.App("Dashboard", token, p, "dashboard") {
 		<div class="mx-auto max-w-7xl p-4 lg:p-6">
-			<div class="grid gap-4 xl:grid-cols-2 2xl:grid-cols-3">
-				<div class="2xl:col-span-2">
+			<div class="flex flex-col space-y-4 xl:flex-row xl:flex-wrap xl:space-y-0 xl:-mx-2">
+				<div class="xl:w-1/2 xl:px-2 2xl:w-2/3">
 					@components.Card() {
 						@components.CardHeader("Recent activity") { }
 						@ActivityFeed(stats.Activity, stats.ActivityCursor)
 					}
 				</div>
-				<section>
+				<section class="xl:w-1/2 xl:px-2 2xl:w-1/3">
 					@components.Card() {
 						<header class="mb-4">
 							<h3 class="text-lg font-semibold text-gray-900 dark:text-white">Statistics</h3>
@@ -114,14 +114,22 @@ templ Home(token string, p *auth.Principal, stats DashboardStats) {
 					}
 				</section>
 			</div>
-			<div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 2xl:grid-cols-4">
+			<div class="mt-4 flex flex-col space-y-4 sm:flex-row sm:flex-wrap sm:space-y-0 sm:-mx-2">
+				<div class="sm:w-1/2 sm:px-2 2xl:w-1/4">
 				@components.StatCard("Patients", stats.Patients)
+				</div>
+				<div class="sm:w-1/2 sm:px-2 2xl:w-1/4">
 				@components.StatCard("Staff", stats.Staff)
+				</div>
+				<div class="sm:w-1/2 sm:px-2 2xl:w-1/4">
 				@components.StatCard("Total users", stats.Users)
+				</div>
+				<div class="sm:w-1/2 sm:px-2 2xl:w-1/4">
 				@components.StatCard("Access policies", stats.Policies)
+				</div>
 			</div>
-			<div class="my-4 grid grid-cols-1 xl:grid-cols-2 xl:gap-4">
-				<div class="mb-4 xl:mb-0">
+			<div class="my-4 flex flex-col space-y-4 xl:flex-row xl:flex-wrap xl:space-y-0 xl:-mx-2">
+				<div class="xl:w-1/2 xl:px-2">
 					@components.Card() {
 						@components.CardHeader("Registered users") { }
 					<div class="flex flex-col">
@@ -154,7 +162,7 @@ templ Home(token string, p *auth.Principal, stats DashboardStats) {
 					</div>
 					}
 				</div>
-				<section>
+				<section class="xl:w-1/2 xl:px-2">
 					@components.Card() {
 						@components.CardHeader("Clinic profile") { }
 					<dl class="space-y-3 text-sm">
