@@ -17,7 +17,7 @@ import './compat.ts';
 import './htmx-runtime.ts';
 import 'htmx-ext-sse/dist/sse.js';
 
-import { configureHtmx, forwardCsrf, focusAppMain } from './core.ts';
+import { configureHtmx, forwardCsrf, focusAppMain, stripFullDocument, reportHtmxErrors } from './core.ts';
 import * as sidebar from './sidebar.ts';
 import * as userMenu from './user-menu.ts';
 import * as tabs from './tabs.ts';
@@ -29,6 +29,11 @@ import * as datepicker from './datepicker.tsx';
 
 configureHtmx();
 forwardCsrf();
+stripFullDocument();
+// Debug diagnostics for the old engines; only in dev-mode bundles.
+if (__LV_DEV__) {
+  reportHtmxErrors();
+}
 
 sidebar.init();
 userMenu.init();

@@ -15,6 +15,10 @@ declare module 'htmx-ext-sse/dist/sse.js';
 
 declare const htmx: typeof import('htmx.org/dist/htmx.esm.js').default;
 
+// Injected by esbuild (build.ts): true in dev-mode bundles
+// (npm run assets -- --dev), false in production.
+declare const __LV_DEV__: boolean;
+
 declare interface HtmxRequestDetail {
   headers: Record<string, string>;
 }
@@ -22,5 +26,11 @@ declare interface HtmxRequestDetail {
 declare interface HtmxAfterSwapDetail {
   elt: HTMLElement | null;
   target: HTMLElement | null;
+}
+
+// htmx:beforeSwap: serverResponse is mutable; core.ts strips the
+// full-document wrapper of boosted responses here.
+declare interface HtmxBeforeSwapDetail {
+  serverResponse: string;
 }
 

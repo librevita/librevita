@@ -15,8 +15,11 @@ import (
 // the assets are self-hosted and content-addressed, so 'self' covers
 // everything and no CDN is involved. The only inline script is the theme
 // bootstrap, allowed through its content hash (ui.ThemeScriptHash) — a
-// static script needs no per-request nonce.
-const contentSecurityPolicy = "default-src 'self'; script-src 'self' '" + ui.ThemeScriptHash + "'; style-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+// static script needs no per-request nonce. base-uri is 'self' (not
+// 'none') because Firefox resolves history.pushState URLs against the
+// document base and enforces the directive; 'self' still blocks the
+// cross-origin <base> hijack.
+const contentSecurityPolicy = "default-src 'self'; script-src 'self' '" + ui.ThemeScriptHash + "'; style-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
 
 // crossOriginResourcePolicy keeps other origins from embedding or
 // reading the application assets.
