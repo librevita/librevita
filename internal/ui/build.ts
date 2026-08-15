@@ -2,8 +2,10 @@
 // Manifest: package.json + package-lock.json (no version pinning in
 // the Taskfile). Produces the content-addressed assets in
 // internal/ui/static (app-<hash>.css, app-<hash>.js and the versioned
-// HTMX runtime) plus internal/ui/assets.go with their paths, which the
-// templates render and the Go binary embeds via //go:embed.
+// HTMX runtime) plus the Inter webfonts (woff2+woff, in
+// internal/ui/static/fonts) and internal/ui/assets.go with the asset
+// paths, which the templates render and the Go binary embeds via
+// //go:embed.
 
 import * as esbuild from 'esbuild';
 import { createHash } from 'node:crypto';
@@ -18,8 +20,10 @@ import cssnano from 'cssnano';
 
 const cssOut = 'internal/ui/static/css';
 const jsOut = 'internal/ui/static/js';
+const fontsOut = 'internal/ui/static/fonts';
 await mkdir(cssOut, { recursive: true });
 await mkdir(jsOut, { recursive: true });
+await mkdir(fontsOut, { recursive: true });
 
 // npm run assets -- --dev: unminified bundle with an inline source map
 // for debugging on the old engines.
@@ -117,26 +121,34 @@ const legacyFallbacks: Plugin = {
     });
   },
   Rule(rule) {
-    rule.selectors = rule.selectors.map((selector) => {
-      let out = selector;
-      // `X:is(.dark *)` means "X that is a descendant of .dark", which
-      // is exactly `.dark X`; the bare form means any descendant, i.e.
-      // `.dark *`. (The naive `X.dark *` rewrite is wrong: it would
-      // target descendants of an X.dark element instead.)
-      if (out.includes(':is(.dark *)')) {
-        const rest = out.replace(/:is\(\.dark \*\)/g, '');
-        out = rest ? '.dark ' + rest : '.dark *';
-      }
-      // :where() is Firefox 78+. Tailwind's preflight uses it for the
-      // form-element resets; an unsupported selector in a list drops
-      // the whole rule (spec behavior), which leaves buttons and
-      // inputs with the browser's default background. Rewriting
-      // :where(S) to S keeps the matching (raising specificity to the
-      // natural selector weight, still below the utilities).
-      out = out.replace(/:where\(:not\(([^()]*)\)\)/g, ':not($1)');
-      out = out.replace(/:where\(([^()]*)\)/g, '$1');
-      return out;
-    });
+    rule.selectors = rule.selectors
+      .map((selector) => {
+        let out = selector;
+        // `X:is(.dark *)` means "X that is a descendant of .dark", which
+        // is exactly `.dark X`; the bare form means any descendant, i.e.
+        // `.dark *`. (The naive `X.dark *` rewrite is wrong: it would
+        // target descendants of an X.dark element instead.)
+        if (out.includes(':is(.dark *)')) {
+          const rest = out.replace(/:is\(\.dark \*\)/g, '');
+          out = rest ? '.dark ' + rest : '.dark *';
+        }
+        // :where() is Firefox 78+. Tailwind's preflight uses it for the
+        // form-element resets; an unsupported selector in a list drops
+        // the whole rule (spec behavior), which leaves buttons and
+        // inputs with the browser's default background. Rewriting
+        // :where(S) to S keeps the matching (raising specificity to the
+        // natural selector weight, still below the utilities).
+        out = out.replace(/:where\(:not\(([^()]*)\)\)/g, ':not($1)');
+        out = out.replace(/:where\(([^()]*)\)/g, '$1');
+        // :host is shadow-DOM only (Firefox 63+); Tailwind's preflight
+        // pairs it with html, and an unsupported selector in a list
+        // drops the whole rule (spec behavior), so the font-family,
+        // line-height and tab-size resets never apply on the XP floor.
+        // No shadow roots exist in the app, so the selector can go.
+        out = out.replace(/:host(\([^)]*\))?/g, '');
+        return out;
+      })
+      .filter((selector) => selector.trim() !== '');
   },
 };
 
@@ -144,6 +156,39 @@ const legacyFallbacks: Plugin = {
 // step used to run separately: Tailwind as a plugin, autoprefixer for
 // the XP floor, and cssnano minification (the production flag was
 // hardcoded in the npm script).
+// The Inter webfonts: static latin weights used by the app (the theme
+// sets font-sans to Inter), copied from @fontsource/inter with
+// content-addressed names, plus the @font-face rules appended to the
+// main CSS. Both woff2 (Firefox 39+/modern) and woff (Safari 4.1-era
+// WebKit) are shipped; engines without webfont support fall back to the
+// system stack. Appended after the postcss pipeline, so the legacy
+// fallbacks never touch them.
+const FONT_WEIGHTS = [400, 500, 600];
+const fontSrcDir = 'node_modules/@fontsource/inter/files';
+
+async function buildFonts(): Promise<string> {
+  for (const entry of await readdir(fontsOut)) {
+    if (/^inter-.*\.woff2?$/.test(entry)) {
+      await unlink(`${fontsOut}/${entry}`);
+    }
+  }
+  const faces: string[] = [];
+  for (const weight of FONT_WEIGHTS) {
+    const srcs: string[] = [];
+    for (const ext of ['woff2', 'woff']) {
+      const raw = await readFile(`${fontSrcDir}/inter-latin-${weight}-normal.${ext}`);
+      const hash = createHash('sha256').update(raw).digest('hex').slice(0, 10);
+      const name = `inter-${weight}-${hash}.${ext}`;
+      await writeFile(`${fontsOut}/${name}`, raw);
+      srcs.push(`url(/static/fonts/${name}) format('${ext}')`);
+    }
+    faces.push(
+      `@font-face{font-family:'Inter';font-style:normal;font-weight:${weight};font-display:swap;src:${srcs.join(',')}}`,
+    );
+  }
+  return faces.join('\n');
+}
+
 async function buildCss(): Promise<{ name: string; hash: string; integrity: string }> {
   const input = await readFile('internal/ui/input.css', 'utf8');
   const result = await postcss([
@@ -156,7 +201,7 @@ async function buildCss(): Promise<{ name: string; hash: string; integrity: stri
     // the legacy fallbacks.
     legacyFallbacks,
   ]).process(input, { from: 'internal/ui/input.css' });
-  return writeHashed(cssOut, 'app', '.css', result.css);
+  return writeHashed(cssOut, 'app', '.css', result.css + '\n' + (await buildFonts()));
 }
 
 // The single application bundle: the theme bootstrap (which must run
