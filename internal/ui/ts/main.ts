@@ -6,6 +6,21 @@
 // is the single application bundle (build.ts): it is loaded blocking
 // in the head, after the htmx runtime.
 
+// core-js polyfills for the built-ins WebKit 533 lacks. They are
+// bundled inline by esbuild (before the Babel es5 lowering), so no
+// post-bundle imports; only the modules the application actually uses.
+import 'core-js/modules/es.function.bind.js';
+import 'core-js/modules/es.object.assign.js';
+import 'core-js/modules/es.array.from.js';
+import 'core-js/modules/es.array.includes.js';
+import 'core-js/modules/es.string.includes.js';
+import 'core-js/modules/es.weak-map.js';
+// DOM polyfills from the ecosystem (bundled inline by esbuild).
+import 'classlist-polyfill';
+import elementClosest from 'element-closest';
+elementClosest(window);
+import 'nodelist-foreach';
+
 import './compat.ts';
 // The HTMX runtime and its SSE extension are bundled here, so the
 // whole client is a single deferred file. htmx-runtime.ts must load
@@ -30,6 +45,29 @@ forwardCsrf();
 // Debug diagnostics for the old engines; only in dev-mode bundles.
 if (__LV_DEV__) {
   reportHtmxErrors();
+  // htmx 1.9 catches handler errors and logs them through console.error;
+  // window.onerror never fires. Intercept to capture the error object
+  // (message, line, stack when available) for the old engines.
+  const origConsoleError = console.error;
+  console.error = function (...args: unknown[]): void {
+    origConsoleError.apply(console, args);
+    const e = args[0] as Error & { line?: number; sourceId?: number; fileName?: string };
+    if (e instanceof Error) {
+      origConsoleError.call(
+        console,
+        'LV-CAUGHT:',
+        e.message,
+        '| line:', e.line,
+        '| sourceId:', e.sourceId,
+        '| file:', e.fileName,
+        '| stack:', e.stack,
+      );
+    }
+  };
+  // Uncaught errors never reach the interceptor above.
+  window.onerror = function (message, source, lineno, colno, error) {
+    origConsoleError.call(console, 'LV-UNCAUGHT:', message, '|', source, lineno, colno, '|', error);
+  };
 }
 
 sidebar.init();

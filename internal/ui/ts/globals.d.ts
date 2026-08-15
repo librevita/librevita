@@ -13,6 +13,12 @@ declare module 'htmx.org/dist/htmx.min.js' {
   export default htmx;
 }
 declare module 'htmx.org/dist/ext/sse.js';
+declare module 'classlist-polyfill';
+declare module 'nodelist-foreach';
+declare module 'element-closest' {
+  const polyfill: (window: Window) => void;
+  export default polyfill;
+}
 
 declare const __LV_DEV__: boolean;
 

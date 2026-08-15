@@ -11,11 +11,18 @@
     "test": "node --import ./internal/ui/test-loader.ts --test internal/ui/ts/ui_test.ts"
   },
   "devDependencies": {
+    "@babel/core": "8.0.1",
+    "@babel/plugin-transform-reserved-words": "8.0.1",
+    "@babel/preset-env": "8.0.2",
     "@types/node": "^26.2.0",
     "autoprefixer": "^10.5.4",
+    "classlist-polyfill": "1.2.0",
+    "core-js": "3.50.0",
     "cssnano": "^8.0.4",
+    "element-closest": "3.0.2",
     "esbuild": "0.28.1",
     "linkedom": "^0.18.10",
+    "nodelist-foreach": "1.0.1",
     "postcss": "^8.5.26",
     "postcss-combine-media-query": "^2.1.0",
     "postcss-sort-media-queries": "^6.7.1",

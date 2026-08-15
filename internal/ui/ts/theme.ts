@@ -20,12 +20,22 @@ function prefersDark(): boolean {
   return window.matchMedia('(prefers-color-scheme: dark)').matches;
 }
 
+// Toggles the dark class without classList: the bootstrap runs in the
+// head before the bundle's polyfills, and engines below Safari 5.1
+// (WebKit 533) have no classList at all.
+function toggleDark(on: boolean): void {
+  const html = document.documentElement;
+  const has = (' ' + html.className + ' ').indexOf(' dark ') !== -1;
+  if (on && !has) {
+    html.className = html.className.replace(/\s*$/, '') + (html.className ? ' ' : '') + 'dark';
+  } else if (!on && has) {
+    html.className = html.className.replace(/\s*dark\s*/g, ' ').replace(/^\s+|\s+$/g, '');
+  }
+}
+
 function applyTheme(): void {
   const theme = readTheme();
-  document.documentElement.classList.toggle(
-    'dark',
-    theme === 'dark' || (theme === 'system' && prefersDark()),
-  );
+  toggleDark(theme === 'dark' || (theme === 'system' && prefersDark()));
 }
 
 applyTheme();

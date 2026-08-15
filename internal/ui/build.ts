@@ -10,6 +10,7 @@ import { createHash } from 'node:crypto';
 import { mkdir, readFile, readdir, unlink, writeFile } from 'node:fs/promises';
 import { readFileSync } from 'node:fs';
 import postcss, { type Plugin } from 'postcss';
+import { transformAsync } from '@babel/core';
 import tailwindcss from 'tailwindcss';
 import postcssSortMediaQueries from 'postcss-sort-media-queries';
 import postcssCombineMediaQuery from 'postcss-combine-media-query';
@@ -24,6 +25,27 @@ await mkdir(jsOut, { recursive: true });
 // npm run assets -- --dev: unminified bundle with an inline source map
 // for debugging on the old engines.
 const devMode = process.argv.includes('--dev');
+
+// WebKit 533 (Safari 4) does not implement the XMLHttpRequest Level 2
+// `response` attribute for plain text responses (it arrived in Safari
+// 5): there `xhr.response` reads as undefined and the htmx swap dies
+// with "content is not an object". htmx 1.9.12 reads only xhr.response
+// (never responseText), so patch those reads at build time to fall back
+// to responseText. The readable and the minified dist use different
+// variable names for the XHR (xhr, this, f). Applied while bundling, so
+// a bare npm ci can never wipe the fix.
+const patchHtmxXhrResponse: esbuild.Plugin = {
+  name: 'patch-htmx-xhr-response',
+  setup(build) {
+    build.onLoad({ filter: /[\\/]node_modules[\\/]htmx\.org[\\/]dist[\\/]htmx\.(min\.)?js$/ }, async (args) => {
+      const contents = await readFile(args.path, 'utf8');
+      return {
+        contents: contents.replace(/(\b(?:xhr|this|f))\.response(?![A-Za-z0-9])/g, '$1.response !== undefined ? $1.response : $1.responseText'),
+        loader: 'js',
+      };
+    });
+  },
+};
 
 // Browser floor: Firefox 52 ESR / Goanna. esbuild's firefox52 feature matrix
 // rejects for-of and destructuring (its feature matrix is conservative,
@@ -165,19 +187,33 @@ async function buildCss(): Promise<{ name: string; hash: string; integrity: stri
 // (npm run assets -- --dev) the output is unminified with an external
 // source map, so old-engine devtools can map stacks back to the TS
 // sources.
+//
+// PoC: the output goes through Babel (@babel/preset-env, safari 4)
+// after esbuild, lowering the ES2015 syntax that esbuild refuses to
+// lower (let/const, arrows, template literals, for-of), so the bundle
+// parses on engines below ES2015 (WebKit 533 of Safari 4). The
+// reserved-words plugin quotes reserved-word property names and object
+// keys (the ES3-era parser of WebKit 533 rejects them), and the
+// iterableIsArray assumption turns for-of into index loops, avoiding
+// the Symbol.iterator machinery entirely.
 async function buildJs(): Promise<{ name: string; hash: string; integrity: string }> {
   const result = await esbuild.build({
     entryPoints: ['internal/ui/ts/main.ts'],
     bundle: true,
     platform: 'browser',
     format: 'iife',
-    target: 'firefox58',
-    minify: !devMode,
+    target: 'es2015',
+    minify: false,
     sourcemap: devMode ? 'inline' : false,
     supported: xpSupported,
     // Lets the bundle gate debug diagnostics (reportHtmxErrors) on the
     // build mode; esbuild tree-shakes the dead branch in production.
     define: { __LV_DEV__: devMode ? 'true' : 'false' },
+    // Dev mode bundles the readable htmx dist (htmx.js) instead of the
+    // minified one, so errors on the old engines point at real
+    // functions and line numbers.
+    alias: devMode ? { 'htmx.org/dist/htmx.min.js': 'htmx.org/dist/htmx.js' } : undefined,
+    plugins: [patchHtmxXhrResponse],
     write: false,
     // TSX compiles to calls of the local factory h() (jsx.ts). Explicit
     // here (esbuild would read jsxFactory from tsconfig, but only when it
@@ -187,7 +223,20 @@ async function buildJs(): Promise<{ name: string; hash: string; integrity: strin
     jsxFactory: 'h',
   });
   const output = result.outputFiles[0];
-  const asset = await writeHashed(jsOut, 'app', '.js', output.text);
+  let text = output.text;
+  const babel = await transformAsync(text, {
+    assumptions: { iterableIsArray: true },
+    presets: [['@babel/preset-env', { targets: { safari: '4' } }]],
+    plugins: ['@babel/plugin-transform-reserved-words'],
+  });
+  text = babel ? babel.code ?? text : text;
+  if (!devMode) {
+    // Minify with the es5 target: the default esnext target would
+    // re-introduce ??/?., which the XP floor gate rejects.
+    const min = await esbuild.transform(text, { minify: true, target: 'es5' });
+    text = min.code;
+  }
+  const asset = await writeHashed(jsOut, 'app', '.js', text);
   assertXpFloor(`${jsOut}/${asset.name}`);
   return asset;
 }
@@ -256,12 +305,22 @@ async function buildTheme(): Promise<{ script: string; hash: string }> {
     bundle: true,
     platform: 'browser',
     format: 'iife',
-    target: 'firefox58',
-    minify: !devMode,
+    target: 'es2015',
+    minify: false,
     supported: xpSupported,
     write: false,
   });
-  const script = result.outputFiles[0].text;
+  let script = result.outputFiles[0].text;
+  const babel = await transformAsync(script, {
+    assumptions: { iterableIsArray: true },
+    presets: [['@babel/preset-env', { targets: { safari: '4' } }]],
+    plugins: ['@babel/plugin-transform-reserved-words'],
+  });
+  script = babel ? babel.code ?? script : script;
+  if (!devMode) {
+    const min = await esbuild.transform(script, { minify: true, target: 'es5' });
+    script = min.code;
+  }
   if (script.includes('`')) {
     throw new Error('theme bootstrap contains a backtick; the Go raw string cannot embed it');
   }
