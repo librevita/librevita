@@ -53,27 +53,50 @@ The UI follows the GOTH stack: Go + templ + HTMX, server-driven and progressive.
   state always lives on the server. The strict Content-Security-Policy (`script-src 'self'`, no
   `unsafe-eval`/`unsafe-inline`) is never relaxed
 - **Tailwind CSS 3.4.17** compiled at build time with a hex palette override (the v3.4 default `oklch` colors are
-  unparseable by XP-era browsers)
+  unparseable by legacy browsers)
 - The frontend build is driven by **Node** (24 LTS, see `.nvmrc`; the same version
   is pinned in the Taskfile): `package.json`
   declares the dependencies and scripts, and `package-lock.json` pins them with integrity hashes — nothing is versioned
-  inside the Taskfile. esbuild bundles the TypeScript source to the XP floor (`target=firefox58`, verified by
-  `assertXpFloor` after the build) and the PostCSS pipeline compiles Tailwind from `internal/ui/input.css`; no one
+  inside the Taskfile. esbuild bundles the TypeScript source to the legacy floor (`target=firefox58`, verified by
+  `assertLegacyFloor` after the build) and the PostCSS pipeline compiles Tailwind from `internal/ui/input.css`; no one
   writes ES5. The output is a single stylesheet and a single script with content-addressed names
   (`app-<hash>.css`, `app-<hash>.js`) carrying the HTMX runtime, its SSE extension and the application code,
   loaded with `defer`; the templates render them with Subresource Integrity hashes, so the assets can be cached
   immutably. The theme bootstrap is a small inline head script (allowed by its CSP content hash), so the dark
   class exists before first paint while the bundle loads deferred
-- **TypeScript** in `internal/ui/ts` with strict checking (`tsc --noEmit`, `lib: ES2017+DOM` aligned to the XP floor, so
+- **TypeScript** in `internal/ui/ts` with strict checking (`tsc --noEmit`, `lib: ES2017+DOM` aligned to the legacy floor, so
   APIs missing from Firefox 52 are compile errors)
 
 The runtime assets (HTMX and its SSE extension) come from npm packages pinned in `package-lock.json`, bundled into the
-single application script, and are documented in `VENDOR.md`. The compatibility floor is Windows XP-era browsers (Pale
-Moon 28.8, Basilisk 55, K-Meleon 74G/76, Firefox 52 ESR); newer engines are covered automatically. The server applies a
+single application script, and are documented in `VENDOR.md`. The compatibility floor is legacy browsers (Pale
+Moon 28.8, Basilisk 55, K-Meleon 74G/76, Firefox 52 ESR); newer engines are covered automatically — see
+[Supported Browsers](#supported-browsers). The server applies a
 strict CSP, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `X-Frame-Options: DENY`,
 `Cross-Origin-Resource-Policy: same-origin`, `Permissions-Policy` (camera/microphone/geolocation denied), and
 `Cache-Control: no-store` on all non-static responses; `Strict-Transport-Security` is opt-in via `--hsts-max-age` for
 HTTPS deployments. The application is same-origin and no CORS is configured.
+
+### Supported Browsers
+
+The reference hardware is a PowerPC Mac (iBook G4, 1024×768), and the UI must remain fast and fully functional on
+20+ year old machines — reception desks with legacy PCs or cheap SBCs are first-class targets, not an afterthought.
+Layout uses flexbox only (CSS Grid is Firefox 52+, `gap` in flex is Firefox 63+), fonts are self-hosted Inter
+(woff2+woff), and the PostCSS `legacyFallbacks` pipeline rewrites every modern syntax the floor cannot parse
+(`:where()`, `:is(.dark *)`, `:host`, space-separated `rgb()`, 4-digit hex, `calc()` multiplication in the
+`space-x/y` utilities) into equivalent classic CSS, verified in the build. The single JS bundle is compiled by
+esbuild with the legacy floor asserted after the build (`assertLegacyFloor` rejects `?.`, `??`, lookbehind, named groups and
+unicode property escapes), so a tool or dependency upgrade can never silently break the floor.
+
+| Browser                                                                | Status                                                                                       |
+| ---------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| AquaFox / TenFourFox 45 (Firefox 45-era, PPC Mac)                      | **Primary floor** — the reference browser on the iBook; fully supported                      |
+| Firefox 52 ESR / Goanna (Pale Moon 28.8, Basilisk 55, K-Meleon 74G/76) | Fully supported — the JS floor (`esbuild` `firefox58` target + assertions)                   |
+| Firefox ESR / Chrome / Edge / modern Safari                            | Fully supported — all features, automatic                                                    |
+| NetSurf 3.x                                                            | Not supported — no `XMLHttpRequest`/`DOMParser`/`MutationObserver` bindings; htmx cannot run |
+
+The floor is defined twice and enforced independently: CSS syntax in the `legacyFallbacks` PostCSS plugin
+(`internal/ui/build.ts`) and JavaScript syntax in the esbuild target plus `assertLegacyFloor`, which also runs in CI.
+Browserslist (`package.json`) drives autoprefixer only, aligned to `Firefox >= 45`.
 
 ## Container Image
 
