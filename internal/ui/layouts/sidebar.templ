@@ -1,42 +1,95 @@
 package layouts
 
-import "librevita.org/internal/core/auth"
+import (
+	"librevita.org/internal/core/auth"
+	"librevita.org/internal/ui/components"
+)
 
 // Sidebar is the navigation rail: role-aware link groups. It is a drawer
-// on small screens (data-lv-drawer + md:!flex) and static from md up.
+// on small screens (data-lv-drawer, <md), an icon-only rail on medium
+// screens (data-lv-rail, md..xl) and a static full sidebar from xl up.
+// The drawer and the desktop sidebar render the same navMenu, so the
+// menu is identical at every size.
 templ Sidebar(principal *auth.Principal, active string) {
-	<aside data-lv-drawer class="fixed bottom-0 left-0 top-16 z-40 hidden w-64 flex-col overflow-y-auto border-r border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800 md:static md:z-auto md:!flex">
-		<nav class="flex-1 space-y-6 px-3 py-4">
-			<div class="space-y-1">
-				<p class="px-3 pb-1 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">General</p>
-				@navLink("/", "Dashboard", "dashboard", active == "dashboard")
-				@navLink("/patients", "Patients", "patients", active == "patients")
-				if principal != nil && principal.Role != auth.RolePatient {
-					@navLink("/staff", "Physicians", "patients", active == "physicians")
+	<aside data-lv-drawer class="fixed bottom-0 left-0 top-16 z-40 hidden w-64 flex-col overflow-y-auto border-r border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800 md:hidden">
+		@navMenu(principal, active)
+	</aside>
+	<aside data-lv-rail class="hidden w-16 shrink-0 flex-col border-r border-gray-200 bg-white py-4 dark:border-gray-700 dark:bg-gray-800 md:flex xl:hidden">
+		<nav class="flex flex-col items-center gap-1">
+			for _, section := range navSections(principal) {
+				for _, item := range section.Items {
+					@navIconLink(item, active == item.Active)
 				}
-				if principal != nil && principal.Role == auth.RoleReceptionist {
-					@navLink("/staff/my-requests", "My requests", "user", active == "my-requests")
-				}
-			</div>
-			if principal != nil && principal.Role == auth.RoleAdmin {
-				<div class="space-y-1">
-					<p class="px-3 pb-1 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">Management</p>
-					@navLink("/users", "Users", "user", active == "users")
-					@navLink("/specialties", "Specialties", "policies", active == "specialties")
-					@navLink("/roles", "Roles", "user", active == "roles")
-					@navLink("/staff/requests", "Staff requests", "user", active == "staff-requests")
-					@navLink("/identifier-systems", "Identifier systems", "policies", active == "identifier-systems")
-					@navLink("/policies", "Access policies", "policies", active == "policies")
-				</div>
 			}
 		</nav>
 	</aside>
+	<aside class="hidden w-64 shrink-0 flex-col overflow-y-auto border-r border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800 xl:flex">
+		@navMenu(principal, active)
+	</aside>
 }
 
-templ navLink(href string, label string, icon string, active bool) {
-	<a href={ href } class={ navClass(active) }>
-		@navIcon(icon)
-		{ label }
+// navMenu is the full sidebar menu (links with labels), shared by the
+// mobile drawer and the desktop sidebar.
+templ navMenu(principal *auth.Principal, active string) {
+	<nav class="flex-1 space-y-6 px-3 py-4">
+		for _, section := range navSections(principal) {
+			<div class="space-y-1">
+				<p class="px-3 pb-1 text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">{ section.Title }</p>
+				for _, item := range section.Items {
+					@navLink(item, active == item.Active)
+				}
+			</div>
+		}
+	</nav>
+}
+
+type navItem struct {
+	Href   string
+	Label  string
+	Icon   string
+	Active string
+}
+
+type navSection struct {
+	Title string
+	Items []navItem
+}
+
+func navSections(principal *auth.Principal) []navSection {
+	general := []navItem{
+		{"/", "Dashboard", "home", "dashboard"},
+		{"/patients", "Patients", "person", "patients"},
+	}
+	if principal != nil && principal.Role != auth.RolePatient {
+		general = append(general, navItem{"/staff", "Physicians", "stethoscope", "physicians"})
+	}
+	if principal != nil && principal.Role == auth.RoleReceptionist {
+		general = append(general, navItem{"/staff/my-requests", "My requests", "assignment", "my-requests"})
+	}
+	sections := []navSection{{"General", general}}
+	if principal != nil && principal.Role == auth.RoleAdmin {
+		sections = append(sections, navSection{"Management", []navItem{
+			{"/users", "Users", "group", "users"},
+			{"/specialties", "Specialties", "medical_services", "specialties"},
+			{"/roles", "Roles", "shield", "roles"},
+			{"/staff/requests", "Staff requests", "inbox", "staff-requests"},
+			{"/identifier-systems", "Identifier systems", "fingerprint", "identifier-systems"},
+			{"/policies", "Access policies", "policy", "policies"},
+		}})
+	}
+	return sections
+}
+
+templ navLink(item navItem, active bool) {
+	<a href={ item.Href } class={ navClass(active) }>
+		@components.Icon(item.Icon, "h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400")
+		{ item.Label }
+	</a>
+}
+
+templ navIconLink(item navItem, active bool) {
+	<a href={ item.Href } title={ item.Label } aria-label={ item.Label } class={ railClass(active) }>
+		@components.Icon(item.Icon, "h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400")
 	</a>
 }
 
@@ -48,27 +101,12 @@ func navClass(active bool) string {
 	return base + "text-gray-900 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700"
 }
 
-templ navIcon(name string) {
-	switch name {
-	case "dashboard":
-		<svg class="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
-			<path stroke-linecap="round" stroke-linejoin="round" d="M2.25 12l8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25" />
-		</svg>
-	case "admin":
-		<svg class="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
-			<path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" />
-		</svg>
-	case "patients":
-		<svg class="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
-			<path stroke-linecap="round" stroke-linejoin="round" d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" />
-		</svg>
-	case "user":
-		<svg class="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
-			<path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
-		</svg>
-	case "policies":
-		<svg class="h-6 w-6 shrink-0 text-gray-500 dark:text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
-			<path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" />
-		</svg>
+func railClass(active bool) string {
+	base := "flex h-11 w-11 items-center justify-center rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 "
+	if active {
+		return base + "bg-gray-100 text-gray-900 dark:bg-gray-700 dark:text-white"
 	}
+	return base + "text-gray-500 hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white"
 }
+
+
