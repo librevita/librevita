@@ -117,9 +117,26 @@ const legacyFallbacks: Plugin = {
     });
   },
   Rule(rule) {
-    rule.selectors = rule.selectors.map((selector) =>
-      selector.replace(/:is\(\.dark \*\)/g, '.dark *'),
-    );
+    rule.selectors = rule.selectors.map((selector) => {
+      let out = selector;
+      // `X:is(.dark *)` means "X that is a descendant of .dark", which
+      // is exactly `.dark X`; the bare form means any descendant, i.e.
+      // `.dark *`. (The naive `X.dark *` rewrite is wrong: it would
+      // target descendants of an X.dark element instead.)
+      if (out.includes(':is(.dark *)')) {
+        const rest = out.replace(/:is\(\.dark \*\)/g, '');
+        out = rest ? '.dark ' + rest : '.dark *';
+      }
+      // :where() is Firefox 78+. Tailwind's preflight uses it for the
+      // form-element resets; an unsupported selector in a list drops
+      // the whole rule (spec behavior), which leaves buttons and
+      // inputs with the browser's default background. Rewriting
+      // :where(S) to S keeps the matching (raising specificity to the
+      // natural selector weight, still below the utilities).
+      out = out.replace(/:where\(:not\(([^()]*)\)\)/g, ':not($1)');
+      out = out.replace(/:where\(([^()]*)\)/g, '$1');
+      return out;
+    });
   },
 };
 

@@ -110,7 +110,7 @@ output is minified and has a single `@media (min-width: …)` block per Tailwind
 Dark mode uses Tailwind's class strategy (`darkMode: 'class'`). The `dark` class is toggled on the `<html>` element by
 the inline theme bootstrap in the head (system follow) and by the theme-pref module on the profile page
 (light, system, or dark). The compiled dark
-variant is `:is(.dark *)`, which only matches descendants of the element carrying the `dark` class, so surface
+variant is `:is(.dark *)`, rewritten to `.dark <sel>` for the old engines (same matching, same specificity) and only matching descendants of the element carrying the `dark` class, so surface
 backgrounds live on `<body>` and below — never on the `<html>` element itself.
 
 The strict Content-Security-Policy (`script-src 'self'`, no `unsafe-eval`/`unsafe-inline`) is enforced at runtime;
