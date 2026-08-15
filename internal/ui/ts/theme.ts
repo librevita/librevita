@@ -7,7 +7,7 @@
 // The preference comes from the server: the authenticated shell renders
 // data-ui-theme (system|light|dark) on <html>, per user. Anonymous pages
 // have no attribute and follow the system scheme. Browsers without
-// prefers-color-scheme (the XP floor) stay light.
+// prefers-color-scheme (the legacy floor) stay light.
 
 function readTheme(): string {
   return document.documentElement.getAttribute('data-ui-theme') ?? 'system';

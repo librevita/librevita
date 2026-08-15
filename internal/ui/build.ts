@@ -33,42 +33,42 @@ const devMode = process.argv.includes('--dev');
 // rejects for-of and destructuring (its feature matrix is conservative,
 // even though Firefox 52 supports both natively); firefox58 accepts them
 // while still lowering `?.`/`??`/class fields, so the output stays
-// compatible with the XP floor. The generated files are verified
+// compatible with the legacy floor. The generated files are verified
 // afterwards so a tool or dependency upgrade can never silently break
 // the floor.
-const xpForbidden = /\?\.|\?\?=|\?\?|\bcatch\s*\{/;
+const legacyFloorForbidden = /\?\.|\?\?=|\?\?|\bcatch\s*\{/;
 
 // Regex features esbuild cannot lower: lookbehind (?<= ?<!), named
 // groups (?<name>) and unicode property escapes (\p{...} \P{...}) are
 // valid ES2017+ syntax, so the parse-level checks never see them and
 // the firefox58 target passes them through verbatim. Firefox 52 /
 // Goanna reject all three at runtime, so grep the artifacts directly.
-const xpHardRegex = /\(\?<|\\p\{|\\P\{/;
+const legacyFloorHardRegex = /\(\?<|\\p\{|\\P\{/;
 
 // The firefox58 matrix still allows optional catch binding (catch {}),
 // which is a syntax error on Firefox 52 / Goanna. Force esbuild to keep
 // a binding so the floor can parse the file.
-const xpSupported = { 'optional-catch-binding': false };
+const legacyFloorSupported = { 'optional-catch-binding': false };
 
-function assertXpFloorCode(code: string, what: string) {
-  const offenders = code.match(xpForbidden) ?? [];
+function assertLegacyFloorCode(code: string, what: string) {
+  const offenders = code.match(legacyFloorForbidden) ?? [];
   if (offenders.length > 0) {
     throw new Error(
-      `${what} contains syntax the XP floor cannot parse ` +
+      `${what} contains syntax the legacy floor cannot parse ` +
         `(${offenders.length} matches of ?./??): lower it or drop the dependency`,
     );
   }
-  const regexOffenders = code.match(xpHardRegex) ?? [];
+  const regexOffenders = code.match(legacyFloorHardRegex) ?? [];
   if (regexOffenders.length > 0) {
     throw new Error(
-      `${what} contains regex syntax the XP floor cannot parse ` +
+      `${what} contains regex syntax the legacy floor cannot parse ` +
         `(${regexOffenders.length} matches of lookbehind/named groups/unicode property escapes)`,
     );
   }
 }
 
-function assertXpFloor(file: string) {
-  assertXpFloorCode(readFileSync(file, 'utf8'), file);
+function assertLegacyFloor(file: string) {
+  assertLegacyFloorCode(readFileSync(file, 'utf8'), file);
 }
 
 // Legacy fixes for the Firefox 45-era engines (TenFourFox/AquaFox):
@@ -114,7 +114,7 @@ const legacyFallbacks: Plugin = {
         );
       } else if (/#[0-9a-f]{4}\b/i.test(value)) {
         // The shorthand #RGBA (Tailwind's transparent outlines and
-        // ring colors minify to it) is Firefox 49+, so the XP floor
+        // ring colors minify to it) is Firefox 49+, so the legacy floor
         // drops the whole declaration; expand it to rgba() with the
         // standard digit doubling.
         decl.value = value.replace(
@@ -131,7 +131,7 @@ const legacyFallbacks: Plugin = {
         // Tailwind's space-x/space-y emit
         // calc(<len>*(1 - var(--tw-space-[xy]-reverse))) (margin on the
         // siblings), but multiplication in calc() is Firefox 117+ and
-        // the XP floor drops the whole declaration, so the spacing
+        // the legacy floor drops the whole declaration, so the spacing
         // silently disappears. The reverse variable is always defined
         // to 0 in the same rule (the app never sets space-x-reverse),
         // so the forms collapse to the plain length and 0, keeping the
@@ -165,7 +165,7 @@ const legacyFallbacks: Plugin = {
         // :host is shadow-DOM only (Firefox 63+); Tailwind's preflight
         // pairs it with html, and an unsupported selector in a list
         // drops the whole rule (spec behavior), so the font-family,
-        // line-height and tab-size resets never apply on the XP floor.
+        // line-height and tab-size resets never apply on the legacy floor.
         // No shadow roots exist in the app, so the selector can go.
         out = out.replace(/:host(\([^)]*\))?/g, '');
         return out;
@@ -176,7 +176,7 @@ const legacyFallbacks: Plugin = {
 
 // The CSS pipeline mirrors the old postcss.config.ts, which the bundle
 // step used to run separately: Tailwind as a plugin, autoprefixer for
-// the XP floor, and cssnano minification (the production flag was
+// the legacy floor, and cssnano minification (the production flag was
 // hardcoded in the npm script).
 // The Inter webfonts: static latin weights used by the app (the theme
 // sets font-sans to Inter), copied from @fontsource/inter with
@@ -241,7 +241,7 @@ async function buildJs(): Promise<{ name: string; hash: string; integrity: strin
     target: 'firefox58',
     minify: !devMode,
     sourcemap: devMode ? 'inline' : false,
-    supported: xpSupported,
+    supported: legacyFloorSupported,
     // Lets the bundle gate debug diagnostics (reportHtmxErrors) on the
     // build mode; esbuild tree-shakes the dead branch in production.
     define: { __LV_DEV__: devMode ? 'true' : 'false' },
@@ -249,13 +249,13 @@ async function buildJs(): Promise<{ name: string; hash: string; integrity: strin
     // TSX compiles to calls of the local factory h() (jsx.ts). Explicit
     // here (esbuild would read jsxFactory from tsconfig, but only when it
     // discovers it via cwd) and never 'preserve': raw JSX in the output
-    // would be invalid JavaScript that assertXpFloor cannot detect.
+    // would be invalid JavaScript that assertLegacyFloor cannot detect.
     jsx: 'transform',
     jsxFactory: 'h',
   });
   const output = result.outputFiles[0];
   const asset = await writeHashed(jsOut, 'app', '.js', output.text);
-  assertXpFloor(`${jsOut}/${asset.name}`);
+  assertLegacyFloor(`${jsOut}/${asset.name}`);
   return asset;
 }
 
@@ -325,14 +325,14 @@ async function buildTheme(): Promise<{ script: string; hash: string }> {
     format: 'iife',
     target: 'firefox58',
     minify: !devMode,
-    supported: xpSupported,
+    supported: legacyFloorSupported,
     write: false,
   });
   const script = result.outputFiles[0].text;
   if (script.includes('`')) {
     throw new Error('theme bootstrap contains a backtick; the Go raw string cannot embed it');
   }
-  assertXpFloorCode(script, 'theme bootstrap');
+  assertLegacyFloorCode(script, 'theme bootstrap');
   return { script, hash: 'sha256-' + createHash('sha256').update(script).digest('base64') };
 }
 

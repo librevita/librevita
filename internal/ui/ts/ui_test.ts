@@ -264,7 +264,7 @@ test('jsx.h passes normalized children to components', () => {
   assert.equal(multi.textContent, 'onetwo');
 });
 
-test('jsx.ts source avoids syntax the XP floor cannot parse', () => {
+test('jsx.ts source avoids syntax the legacy floor cannot parse', () => {
   const code = readFileSync(new URL('./jsx.ts', import.meta.url), 'utf8');
   assert.equal(code.match(/\?\.|\?\?=|\?\?|\bcatch\s*\{/), null);
 });

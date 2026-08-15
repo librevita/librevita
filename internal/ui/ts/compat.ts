@@ -1,4 +1,4 @@
-// Compatibility layer for the XP floor (Firefox 52 ESR / Goanna) and
+// Compatibility layer for the legacy floor (Firefox 52 ESR / Goanna) and
 // the PowerPC-era engines (TenFourFox/AquaFox, Firefox 45-based) that
 // still browse the app. Every polyfill is feature-detected and
 // removable when the floor moves on. Do not add core-js: keep this

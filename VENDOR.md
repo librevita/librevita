@@ -90,7 +90,7 @@ since April 2024; the application never uses `hx-on` (eval) and hardens htmx wit
 | Package                       | Version | License    | Purpose                                                |
 | ----------------------------- | ------- | ---------- | ------------------------------------------------------ |
 | `typescript`                  | 5.9.3   | Apache-2.0 | Type checking (`tsc --noEmit`)                         |
-| `esbuild`                     | 0.28.1  | MIT        | Bundler for the TS modules (XP floor target)           |
+| `esbuild`                     | 0.28.1  | MIT        | Bundler for the TS modules (legacy floor target)            |
 | `tailwindcss`                 | 3.4.17  | MIT        | CSS framework; compiled into `app-<hash>.css` at build |
 | `postcss`                     | 8.5.26  | MIT        | CSS pipeline core (run in-process by `build.ts`)       |
 | `postcss-sort-media-queries`  | 6.7.1   | MIT        | Mobile-first ordering of `@media` blocks               |
@@ -99,11 +99,11 @@ since April 2024; the application never uses `hx-on` (eval) and hardens htmx wit
 | `cssnano`                     | 8.0.4   | MIT        | Minification in production builds                      |
 | `linkedom`                    | 0.18.13 | ISC        | DOM implementation for the `node:test` unit tests      |
 
-The bundles are compiled with `target=firefox58` and the output is verified after the build by `assertXpFloor`: no
+The bundles are compiled with `target=firefox58` and the output is verified after the build by `assertLegacyFloor`: no
 `?.`/`??` and no optional catch binding (`catch {}`, a syntax error on Firefox 52 and Goanna) may reach the output.
 esbuild is forced to lower optional catch binding (`supported: { 'optional-catch-binding': false }`) because its
 firefox58 feature matrix would otherwise allow it. The build fails on any modern-only syntax, which is the automated
-half of the XP floor.
+half of the legacy floor.
 
 PostCSS pipeline (in order): `tailwindcss`,
 `postcss-sort-media-queries` (mobile-first order), `postcss-combine-media-query` (one merged block per breakpoint),

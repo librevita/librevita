@@ -26,7 +26,7 @@ const contentSecurityPolicy = "default-src 'self'; script-src 'self' '" + ui.The
 const crossOriginResourcePolicy = "same-origin"
 
 // permissionsPolicy denies the sensitive device APIs the application
-// never uses. Older browsers (the XP floor) ignore the header.
+// never uses. Older browsers (the legacy floor) ignore the header.
 const permissionsPolicy = "camera=(), microphone=(), geolocation=()"
 
 // SecurityHeaders applies the security response headers. Pages carrying

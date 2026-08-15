@@ -4,7 +4,7 @@ package components
 // the class) with the fill inherited via currentColor. The paths are the
 // official outlined 24px SVGs from google/material-design-icons; keeping
 // them inline (instead of the icon font) avoids variable-font support
-// entirely, so the XP-era browsers render them like any SVG.
+// entirely, so the legacy browsers render them like any SVG.
 templ Icon(name string, cls string) {
 	<svg class={ cls } fill="currentColor" viewBox="0 -960 960 960" aria-hidden="true">
 		<path d={ iconPath(name) }></path>

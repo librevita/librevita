@@ -46,7 +46,7 @@ version there (and the same `GO_VERSION` in the CI workflow).
 - Conventional commit messages (`fix:`, `feat:`, `refactor:`, `docs:`, ...)
 - `gofmt` and `golangci-lint` must pass (`task lint`)
 - Go code must build with `CGO_ENABLED=0` (the production image is scratch)
-- The compatibility floor is XP-era browsers; frontend changes must keep
+- The compatibility floor is legacy browsers; frontend changes must keep
   `npm run check` and `npm test` green
 - Tests: domain use cases are unit-tested; handlers have HTTP tests; the audit
   chain, storage saga, and reconciler have dedicated suites
