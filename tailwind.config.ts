@@ -23,6 +23,19 @@ const config: Config = {
     { pattern: /^(bg|text)-gray-(100|800|700|300)$/, variants: ['dark'] },
   ],
   theme: {
+    fontFamily: {
+      sans: [
+        'Inter',
+        'ui-sans-serif',
+        'system-ui',
+        '-apple-system',
+        'Segoe UI',
+        'Roboto',
+        'Helvetica Neue',
+        'Arial',
+        'sans-serif',
+      ],
+    },
     colors: {
       transparent: 'transparent',
       current: 'currentColor',
