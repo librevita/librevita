@@ -159,6 +159,16 @@ tasks:
     deps:
       - node-check
       - node-assets
+
+  # Debug build: unminified bundle with an inline source map, so the
+  # old engines' devtools can map errors back to the TS sources. Use
+  # with `task dev` afterwards and rebuild the binary.
+  frontend-dev:
+    desc: Compile the frontend in dev mode (unminified + source map)
+    deps:
+      - node-deps
+    cmds:
+      - npm run assets -- --dev
   # ------------------------------------------------------------------------
   # Go consumers
   # ------------------------------------------------------------------------
@@ -282,11 +292,13 @@ tasks:
     generates:
       - bin/{{.NAME}}
   # Fast, unoptimized binary for the development loop: bin/NAME-dev.
+  # Uses the unminified dev assets (source map) instead of the
+  # production frontend, which would clobber them.
   dev:
     desc: Build the fast unoptimized binary (bin/{{.NAME}}-dev)
     deps:
       - gen
-      - frontend
+      - frontend-dev
     cmds:
       - go build -o bin/{{.NAME}}-dev ./cmd/web
     sources:
