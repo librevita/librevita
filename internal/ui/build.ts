@@ -9,7 +9,7 @@ import * as esbuild from 'esbuild';
 import { createHash } from 'node:crypto';
 import { mkdir, readFile, readdir, unlink, writeFile } from 'node:fs/promises';
 import { readFileSync } from 'node:fs';
-import postcss from 'postcss';
+import postcss, { type Plugin } from 'postcss';
 import tailwindcss from 'tailwindcss';
 import postcssSortMediaQueries from 'postcss-sort-media-queries';
 import postcssCombineMediaQuery from 'postcss-combine-media-query';
@@ -20,6 +20,10 @@ const cssOut = 'internal/ui/static/css';
 const jsOut = 'internal/ui/static/js';
 await mkdir(cssOut, { recursive: true });
 await mkdir(jsOut, { recursive: true });
+
+// npm run assets -- --dev: unminified bundle with an inline source map
+// for debugging on the old engines.
+const devMode = process.argv.includes('--dev');
 
 // Browser floor: Firefox 52 ESR / Goanna. esbuild's firefox52 feature matrix
 // rejects for-of and destructuring (its feature matrix is conservative,
@@ -63,6 +67,62 @@ function assertXpFloor(file: string) {
   assertXpFloorCode(readFileSync(file, 'utf8'), file);
 }
 
+// Legacy fixes for the Firefox 45-era engines (TenFourFox/AquaFox):
+// - `inset` is Firefox 66+, so single-value uses are expanded to the
+//   four longhands;
+// - `:is(.dark *)` is Firefox 78+; `.dark *` is exactly equivalent
+//   (same matching, same specificity), so dark-mode rules apply.
+// (Colors need no fallback: Tailwind already emits a hex declaration
+// before every modern rgb()/var() one.) All transforms are no-ops for
+// modern browsers.
+// Legacy fixes for the Firefox 45-era engines (TenFourFox/AquaFox).
+// Runs after cssnano, which would discard or re-merge them:
+// - the modern color syntax (`rgb(R G B / var(--tw-x,1))`) makes old
+//   Gecko drop the WHOLE rule (not just the declaration), so every
+//   such value is rewritten to the classic `rgba(R, G, B, var(...))`
+//   form, which parses and resolves fine; a comma-rgb fallback is
+//   kept before it for engines without var() support;
+// - `inset` is Firefox 66+, so single-value uses are expanded to the
+//   four longhands (cssnano would re-merge them into the shorthand);
+// - `:is(.dark *)` is Firefox 78+; `.dark *` is exactly equivalent
+//   (same matching, same specificity), so dark-mode rules apply.
+// All transforms are no-ops for modern browsers. The color rewrites
+// run in OnceExit: cssnano converts colors back to (8-digit) hex in
+// its own OnceExit phase, which would otherwise undo them.
+const legacyFallbacks: Plugin = {
+  postcssPlugin: 'legacy-fallbacks',
+  OnceExit(root) {
+    root.walkDecls((decl) => {
+      const value = decl.value;
+      if (/^rgb\(\d+ \d+ \d+\s*\/\s*/.test(value)) {
+        decl.cloneBefore({
+          value: value.replace(/^rgb\((\d+) (\d+) (\d+)\s*\/\s*.*\)$/, 'rgb($1, $2, $3)'),
+        });
+        decl.value = value.replace(/^rgb\((\d+) (\d+) (\d+)\s*\/\s*(.+)\)$/, 'rgba($1, $2, $3, $4)');
+      } else if (/#[0-9a-f]{8}/i.test(value)) {
+        // cssnano folds alpha-modifier colors into 8-digit hex (also
+        // inside box-shadow custom properties), which is Firefox 49+;
+        // expand every occurrence to the classic rgba() form.
+        decl.value = value.replace(
+          /#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})/gi,
+          (_m, r: string, g: string, b: string, a: string) =>
+            `rgba(${parseInt(r, 16)}, ${parseInt(g, 16)}, ${parseInt(b, 16)}, ${(parseInt(a, 16) / 255).toFixed(3)})`,
+        );
+      } else if (decl.prop === 'inset' && /^[^ ]+$/.test(value.trim())) {
+        const v = value.trim();
+        for (const prop of ['top', 'right', 'bottom', 'left']) {
+          decl.cloneBefore({ prop, value: v });
+        }
+      }
+    });
+  },
+  Rule(rule) {
+    rule.selectors = rule.selectors.map((selector) =>
+      selector.replace(/:is\(\.dark \*\)/g, '.dark *'),
+    );
+  },
+};
+
 // The CSS pipeline mirrors the old postcss.config.ts, which the bundle
 // step used to run separately: Tailwind as a plugin, autoprefixer for
 // the XP floor, and cssnano minification (the production flag was
@@ -75,13 +135,19 @@ async function buildCss(): Promise<{ name: string; hash: string; integrity: stri
     postcssCombineMediaQuery(),
     autoprefixer(),
     cssnano(),
+    // Runs after cssnano so the minifier does not discard or re-merge
+    // the legacy fallbacks.
+    legacyFallbacks,
   ]).process(input, { from: 'internal/ui/input.css' });
   return writeHashed(cssOut, 'app', '.css', result.css);
 }
 
 // The single application bundle: the theme bootstrap (which must run
 // before first paint) and the ui manifest (main.ts) in one file, loaded
-// blocking in the head after the htmx runtime.
+// blocking in the head after the htmx runtime. In dev mode
+// (npm run assets -- --dev) the output is unminified with an external
+// source map, so old-engine devtools can map stacks back to the TS
+// sources.
 async function buildJs(): Promise<{ name: string; hash: string; integrity: string }> {
   const result = await esbuild.build({
     entryPoints: ['internal/ui/ts/main.ts'],
@@ -89,8 +155,12 @@ async function buildJs(): Promise<{ name: string; hash: string; integrity: strin
     platform: 'browser',
     format: 'iife',
     target: 'firefox58',
-    minify: true,
+    minify: !devMode,
+    sourcemap: devMode ? 'inline' : false,
     supported: xpSupported,
+    // Lets the bundle gate debug diagnostics (reportHtmxErrors) on the
+    // build mode; esbuild tree-shakes the dead branch in production.
+    define: { __LV_DEV__: devMode ? 'true' : 'false' },
     write: false,
     // TSX compiles to calls of the local factory h() (jsx.ts). Explicit
     // here (esbuild would read jsxFactory from tsconfig, but only when it
@@ -170,7 +240,7 @@ async function buildTheme(): Promise<{ script: string; hash: string }> {
     platform: 'browser',
     format: 'iife',
     target: 'firefox58',
-    minify: true,
+    minify: !devMode,
     supported: xpSupported,
     write: false,
   });
