@@ -206,7 +206,7 @@ templ PatientDetailPage(token string, p *auth.Principal, pt *repository.GetPatie
 					</div>
 					<div class="ml-auto">@patientStatusBadge(pt.Status)</div>
 				</div>
-				<dl class="mt-6 grid grid-cols-1 gap-4 text-sm sm:grid-cols-2">
+				<dl class="mt-6 flex flex-col space-y-4 text-sm sm:flex-row sm:flex-wrap sm:space-y-0 sm:-mx-2">
 					@detailField("Birth date", orEmpty(pt.BirthDate))
 					@detailField("Sex", pt.Sex)
 					@detailField("Phone", orEmpty(pt.Phone))
@@ -295,7 +295,7 @@ func formatSize(size int64) string {
 }
 
 templ detailField(label string, value string) {
-	<div>
+	<div class="sm:w-1/2 sm:px-2">
 		<dt class="text-gray-500 dark:text-gray-400">{ label }</dt>
 		<dd class="mt-0.5 font-medium text-gray-900 dark:text-white">{ orDash(value) }</dd>
 	</div>

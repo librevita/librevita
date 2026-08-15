@@ -28,7 +28,7 @@
     "htmx.org": "1.9.12"
   },
   "browserslist": [
-    "Firefox >= 52"
+    "Firefox >= 45"
   ],
   "allowScripts": {
     "esbuild": true

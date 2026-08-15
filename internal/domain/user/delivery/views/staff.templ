@@ -207,9 +207,9 @@ templ StaffForm(token string, id string, values StaffFormValues, specialties []S
 			<fieldset>
 				<legend class="text-sm font-semibold text-gray-900 dark:text-white">Specialties</legend>
 				<p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">A physician can have more than one.</p>
-				<div class="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+				<div class="mt-2 flex flex-col space-y-2 sm:flex-row sm:flex-wrap sm:space-y-0 sm:-mx-1">
 					for _, sp := range specialties {
-						<label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+						<label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 sm:w-1/2 sm:px-1">
 							@components.Checkbox("specialties", "", templ.Attributes{ "value": sp.ID, "checked": sp.Selected })
 							{ sp.Name }
 						</label>
@@ -519,9 +519,9 @@ templ StaffCreateForm(token string, specialties []SpecialtyView, errMsg string) 
 			<fieldset>
 				<legend class="text-sm font-semibold text-gray-900 dark:text-white">Specialties</legend>
 				<p class="mt-0.5 text-xs text-gray-500 dark:text-gray-400">A physician can have more than one.</p>
-				<div class="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+				<div class="mt-2 flex flex-col space-y-2 sm:flex-row sm:flex-wrap sm:space-y-0 sm:-mx-1">
 					for _, sp := range specialties {
-						<label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
+						<label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 sm:w-1/2 sm:px-1">
 							@components.Checkbox("specialties", "", templ.Attributes{ "value": sp.ID, "checked": sp.Selected })
 							{ sp.Name }
 						</label>

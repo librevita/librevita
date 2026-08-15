@@ -168,12 +168,12 @@ export function buildPanel(): HTMLElement {
         />
         {iconButton(NEXT_ATTR, 'Next month', CHEVRON_RIGHT)}
       </div>
-      <div className="mt-3 grid grid-cols-7 text-center text-xs text-gray-500 dark:text-gray-400">
+      <div className="mt-3 flex flex-wrap text-center text-xs text-gray-500 dark:text-gray-400">
         {WEEKDAYS.map((name) => (
-          <span>{name}</span>
+          <span className="w-[calc(100%/7)]">{name}</span>
         ))}
       </div>
-      <div data-lv-datepicker-grid="" className="mt-1 grid grid-cols-7 gap-1" />
+      <div data-lv-datepicker-grid="" className="-m-0.5 mt-1 flex flex-wrap" />
       <div className="mt-3 flex items-center justify-between border-t border-gray-200 pt-3 dark:border-gray-700">
         <button
           type="button"
@@ -214,7 +214,7 @@ export function dayCell(props: DayCellProps): HTMLElement {
   const isSelected = !!props.selected && isSameDay(day, props.selected);
   const isFocused = !!props.focused && isSameDay(day, props.focused);
   const disabled = (props.min && day < props.min) || (props.max && day > props.max);
-  let cls = 'rounded-lg p-1 text-sm leading-5 ';
+  let cls = 'w-[calc(100%/7)] rounded-lg p-0.5 text-sm leading-5 ';
   if (disabled) {
     cls += 'cursor-not-allowed text-gray-300 dark:text-gray-600';
   } else if (isSelected) {
