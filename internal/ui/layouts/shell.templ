@@ -10,7 +10,7 @@ import (
 // are progressive enhancements only; navigation is plain links.
 templ App(title string, token string, principal *auth.Principal, active string) {
 	@Base(title, themeOf(principal), token) {
-		<div class="flex h-full flex-col">
+		<div class="flex h-full flex-col" x-data="sidebar">
 			@Topbar(title, token, principal)
 			<div class="flex min-h-0 flex-1">
 				@Sidebar(principal, active)

@@ -57,7 +57,7 @@ templ SpecialtiesPage(token string, p *auth.Principal, rows []SpecialtyRow, page
 				<h1 class="mb-4 text-xl font-semibold text-gray-900 sm:text-2xl dark:text-white">Specialties</h1>
 				<div class="flex flex-wrap items-center justify-between space-x-3">
 					<p class="text-sm text-gray-500 dark:text-gray-400">Clinician specialties catalog</p>
-					<button type="button" data-lv-modal-open="add-specialty-modal" class="inline-flex items-center rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600">
+					<button type="button" @click="$dispatch('lv:open-modal', { id: 'add-specialty-modal' })" class="inline-flex items-center rounded-lg bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-600">
 						<svg class="mr-2 h-5 w-5 -ml-1" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true"><path fill-rule="evenodd" d="M10 5a1 1 0 011 1v3h3a1 1 0 110 2h-3v3a1 1 0 11-2 0v-3H6a1 1 0 110-2h3V6a1 1 0 011-1z" clip-rule="evenodd"></path></svg>
 						Add specialty
 					</button>
@@ -148,7 +148,7 @@ templ SpecialtyForm(token string, errMsg string) {
 		}
 		<div class="mt-6 flex items-center space-x-3 border-t border-gray-200 pt-4 dark:border-gray-700">
 			@components.Button("primary", "Add specialty", templ.Attributes{ "type": "submit" })
-			@components.Button("secondary", "Cancel", templ.Attributes{ "type": "button", "data-lv-modal-close": true })
+			@components.Button("secondary", "Cancel", templ.Attributes{ "type": "button", "@click": "close()" })
 		</div>
 	</form>
 }

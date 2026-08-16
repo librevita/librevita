@@ -71,27 +71,30 @@ test('theme bootstrap applies the server-provided theme class', async () => {
   }
 });
 
-test('dropdown opens pinned to the viewport and closes outside', () => {
+test('dropdown.pinMenu pins the menu to the viewport and resetMenu clears it', () => {
   const { document } = parseHTML(
     '<div data-lv-dropdown>' +
       '<button type="button" data-lv-dropdown-toggle>...</button>' +
-      '<div data-lv-dropdown-menu class="hidden"></div>' +
-      '</div>' +
-      '<button id="outside">x</button>',
+      '<div data-lv-dropdown-menu></div>' +
+      '</div>',
   );
   (globalThis as unknown as { document: Document }).document = document;
   (globalThis as unknown as { window: unknown }).window = { innerWidth: 1024, innerHeight: 768 };
-  dropdown.init();
 
   const toggle = document.querySelector('[data-lv-dropdown-toggle]') as HTMLElement;
   const menu = document.querySelector('[data-lv-dropdown-menu]') as HTMLElement;
-  toggle.dispatchEvent(new Event('click', { bubbles: true }) as unknown as globalThis.Event);
-  assert.equal(menu.classList.contains('hidden'), false);
+  menu.style.display = 'block'; // what Alpine's x-show applies
+  // linkedom's getBoundingClientRect is all zeros; assert the pinning
+  // mechanics, not the exact coordinates.
+  dropdown.pinMenu(toggle, menu);
   assert.equal(menu.style.position, 'fixed');
+  assert.notEqual(menu.style.left, '');
+  assert.notEqual(menu.style.top, '');
 
-  const outside = document.getElementById('outside') as HTMLElement;
-  outside.dispatchEvent(new Event('click', { bubbles: true }) as unknown as globalThis.Event);
-  assert.equal(menu.classList.contains('hidden'), true);
+  dropdown.resetMenu(menu);
+  assert.equal(menu.style.position, '');
+  assert.equal(menu.style.left, '');
+  assert.equal(menu.style.top, '');
 });
 
 test('dropdown.keyboardTarget moves focus through items with arrows, Home and End', () => {
@@ -146,36 +149,26 @@ test('datepicker.ts source avoids syntax the legacy floor cannot parse', () => {
   assert.equal(code.match(/\?\.|\?\?=|\?\?|\bcatch\s*\{/), null);
 });
 
-test('modal opens, locks scroll and closes on Escape', () => {
+test('modal.openModal applies the a11y state and scroll lock, closeModal reverses it', () => {
   const { document } = parseHTML(
     '<body>' +
-      '<button id="trigger" data-lv-modal-open="dlg">open</button>' +
       '<div id="dlg" data-lv-modal aria-labelledby="dlg-title" class="hidden">' +
       '<h3 id="dlg-title">Title</h3>' +
       '<p id="dlg-desc" data-lv-modal-description>Description</p>' +
-      '<button id="first">a</button>' +
-      '<button id="last">b</button>' +
       '</div>' +
       '</body>',
   );
   (globalThis as unknown as { document: Document }).document = document;
-  (globalThis as unknown as { window: unknown }).window = { innerWidth: 1024, innerHeight: 768 };
-  modal.init();
 
   const modalEl = document.getElementById('dlg') as HTMLElement;
-  const trigger = document.getElementById('trigger') as HTMLElement;
-  assert.equal(modalEl.getAttribute('aria-labelledby'), 'dlg-title');
-
-  trigger.dispatchEvent(new Event('click', { bubbles: true }) as unknown as globalThis.Event);
-  assert.equal(modalEl.classList.contains('hidden'), false);
+  modal.openModal(modalEl);
+  assert.equal(modalEl.getAttribute('aria-hidden'), 'false');
   assert.equal(modalEl.getAttribute('aria-modal'), 'true');
   assert.equal(modalEl.getAttribute('aria-describedby'), 'dlg-desc');
   assert.equal(document.body.style.overflow, 'hidden');
 
-  const esc = new Event('keydown', { bubbles: true }) as unknown as globalThis.Event;
-  (esc as unknown as { key: string }).key = 'Escape';
-  document.dispatchEvent(esc);
-  assert.equal(modalEl.classList.contains('hidden'), true);
+  modal.closeModal(modalEl);
+  assert.equal(modalEl.getAttribute('aria-hidden'), 'true');
   assert.equal(modalEl.getAttribute('aria-modal'), null);
   assert.equal(modalEl.getAttribute('aria-describedby'), null);
   assert.equal(document.body.style.overflow, '');

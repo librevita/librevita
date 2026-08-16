@@ -17,17 +17,16 @@ import 'htmx.org/dist/ext/sse.js';
 import 'htmx.org/dist/ext/alpine-morph.js';
 
 import { configureHtmx, forwardCsrf, focusAppMain, reportHtmxErrors } from './core.ts';
-import * as sidebar from './sidebar.ts';
-import * as userMenu from './user-menu.ts';
+import { registerSidebar } from './sidebar.ts';
+import { registerUserMenu } from './user-menu.ts';
 import * as tabs from './tabs.ts';
-import * as dropdown from './dropdown.ts';
-import * as modal from './modal.ts';
+import { registerDropdown } from './dropdown.ts';
+import { registerModal } from './modal.ts';
 import * as tableSelect from './table-select.ts';
 import * as reveal from './reveal.ts';
 import Alpine from '@alpinejs/csp';
 import morph from '@alpinejs/morph';
 import focus from '@alpinejs/focus';
-import * as datepicker from './datepicker.ts';
 import { registerDatepicker } from './datepicker.ts';
 import { registerAgenda } from './calendar.ts';
 
@@ -38,14 +37,9 @@ if (__LV_DEV__) {
   reportHtmxErrors();
 }
 
-sidebar.init();
-userMenu.init();
 tabs.init();
 tableSelect.init();
-modal.init();
-dropdown.init();
 reveal.init();
-datepicker.init();
 // The alpine-morph htmx extension morphs swapped fragments with the
 // Alpine morph plugin (Alpine.morph), preserving component state.
 Alpine.plugin(morph);
@@ -53,6 +47,10 @@ Alpine.plugin(focus);
 (window as unknown as Record<string, unknown>).Alpine = Alpine;
 registerDatepicker(Alpine);
 registerAgenda(Alpine);
+registerDropdown(Alpine);
+registerModal(Alpine);
+registerSidebar(Alpine);
+registerUserMenu(Alpine);
 // Alpine processes the x-data trees (the datepicker popover); the
 // CSP build runs without unsafe-eval.
 Alpine.start();
@@ -63,14 +61,9 @@ document.addEventListener('htmx:afterSwap', (evt) => {
   if (!root) {
     return;
   }
-  sidebar.refresh(root);
-  userMenu.refresh(root);
   tabs.refresh(root);
   tableSelect.refresh(root);
-  modal.refresh(root);
-  dropdown.refresh(root);
   reveal.refresh(root);
-  datepicker.refresh(root);
   // Only page navigations (boosted swaps target the body) move the focus
   // to the main content; fragment swaps (search, pager, row updates) must
   // leave the focus where the user is typing or clicking.

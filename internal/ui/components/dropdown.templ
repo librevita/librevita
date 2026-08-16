@@ -1,14 +1,16 @@
 package components
 
 // DropdownMenu is the "three dots" action menu used in the table
-// Actions columns. It toggles via data-lv-dropdown-toggle and closes on
-// outside clicks or Escape; the items go in the children.
+// Actions columns. The Alpine component "dropdown" (registered in
+// internal/ui/ts) owns open/close (outside clicks, Escape), the
+// keyboard navigation and the viewport pinning; the menu carries
+// x-cloak so it stays hidden before Alpine initializes and without JS.
 templ DropdownMenu() {
-	<div class="relative" data-lv-dropdown>
-		<button type="button" data-lv-dropdown-toggle class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-gray-300 bg-white text-gray-500 hover:bg-gray-50 hover:text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white" aria-label="Actions">
+	<div class="relative" x-data="dropdown" data-lv-dropdown @click.outside="close()" @keydown.escape.window="close()">
+		<button type="button" x-ref="toggle" @click="toggle()" class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-gray-300 bg-white text-gray-500 hover:bg-gray-50 hover:text-gray-900 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white" aria-label="Actions">
 			@Icon("more_horiz", "h-4 w-4")
 		</button>
-		<div data-lv-dropdown-menu class="absolute right-0 z-20 mt-1 hidden w-44 rounded-lg border border-gray-200 bg-white shadow-lg dark:border-gray-600 dark:bg-gray-800">
+		<div data-lv-dropdown-menu x-ref="menu" x-show="open" x-cloak @keydown.arrow-down.prevent="move('ArrowDown')" @keydown.arrow-up.prevent="move('ArrowUp')" @keydown.home.prevent="move('Home')" @keydown.end.prevent="move('End')" class="absolute right-0 z-20 mt-1 w-44 rounded-lg border border-gray-200 bg-white shadow-lg dark:border-gray-600 dark:bg-gray-800">
 			<ul class="p-1.5 text-sm font-medium text-gray-700 dark:text-gray-200">
 				{ children... }
 			</ul>

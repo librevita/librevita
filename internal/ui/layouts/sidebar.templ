@@ -11,8 +11,8 @@ import (
 // The drawer and the desktop sidebar render the same navMenu, so the
 // menu is identical at every size.
 templ Sidebar(principal *auth.Principal, active string) {
-	<div data-lv-backdrop class="fixed inset-0 z-30 hidden bg-gray-900/50 md:hidden" aria-hidden="true"></div>
-	<aside data-lv-drawer class="fixed bottom-0 left-0 top-16 z-40 hidden w-64 flex-col overflow-y-auto border-r border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800 md:hidden">
+	<div data-lv-backdrop :class="open ? '' : 'hidden'" x-cloak @click="close()" class="fixed inset-0 z-30 bg-gray-900/50 md:hidden" aria-hidden="true"></div>
+	<aside data-lv-drawer :class="open ? '' : 'hidden'" x-cloak class="fixed bottom-0 left-0 top-16 z-40 w-64 flex-col overflow-y-auto border-r border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800 md:hidden">
 		@navMenu(principal, active)
 	</aside>
 	<aside data-lv-rail class="hidden w-16 shrink-0 flex-col border-r border-gray-200 bg-white py-4 dark:border-gray-700 dark:bg-gray-800 md:flex xl:hidden">
@@ -62,6 +62,7 @@ func navSections(principal *auth.Principal) []navSection {
 		{"/patients", "Patients", "person", "patients"},
 	}
 	if principal != nil && principal.Role != auth.RolePatient {
+		general = append(general, navItem{"/calendar", "Calendar", "calendar_month", "calendar"})
 		general = append(general, navItem{"/staff", "Physicians", "stethoscope", "physicians"})
 	}
 	if principal != nil && principal.Role == auth.RoleReceptionist {
