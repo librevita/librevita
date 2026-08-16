@@ -10,11 +10,11 @@ import (
 templ Topbar(title string, token string, principal *auth.Principal) {
 	<header class="relative z-40 flex h-16 shrink-0 items-center justify-between border-b border-gray-200 bg-white px-3 dark:border-gray-700 dark:bg-gray-800 lg:px-5">
 		<div class="flex items-center space-x-3">
-			<button type="button" data-lv-nav-toggle class="rounded-md p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-900 focus:outline-none dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white md:hidden" aria-label="Open navigation" aria-expanded="false">
-				<span data-lv-nav-open-icon>
+			<button type="button" @click="toggle()" :aria-expanded="open ? 'true' : 'false'" :aria-label="open ? 'Close navigation' : 'Open navigation'" class="rounded-md p-2 text-gray-500 hover:bg-gray-100 hover:text-gray-900 focus:outline-none dark:text-gray-400 dark:hover:bg-gray-700 dark:hover:text-white md:hidden">
+				<span :class="open ? 'hidden' : ''">
 					@components.Icon("menu", "h-6 w-6")
 				</span>
-				<span data-lv-nav-close-icon class="hidden">
+				<span :class="open ? '' : 'hidden'">
 					@components.Icon("close", "h-6 w-6")
 				</span>
 			</button>
@@ -25,13 +25,13 @@ templ Topbar(title string, token string, principal *auth.Principal) {
 			<h1 class="ml-4 hidden border-l border-gray-200 pl-4 text-lg font-semibold text-gray-900 dark:border-gray-700 dark:text-white sm:block">{ title }</h1>
 		</div>
 		if principal != nil {
-			<div class="relative">
-				<button type="button" data-lv-user-menu-toggle class="flex items-center space-x-2 rounded-md px-2 py-1.5 text-sm hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:hover:bg-gray-700" aria-haspopup="true" aria-expanded="false">
+			<div class="relative" x-data="userMenu" @click.outside="close()" @keydown.escape.window="close()">
+				<button type="button" @click="toggle()" :aria-expanded="open ? 'true' : 'false'" class="flex items-center space-x-2 rounded-md px-2 py-1.5 text-sm hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:hover:bg-gray-700" aria-haspopup="true" aria-expanded="false">
 					<img src="/profile/avatar" alt="Profile picture" class="h-8 w-8 rounded-full">
 					<span class="hidden text-sm font-medium text-gray-700 dark:text-gray-200 lg:block">{ principal.Name }</span>
 					@components.Icon("expand_more", "hidden h-4 w-4 text-gray-400 dark:text-gray-500 lg:block")
 				</button>
-				<div data-lv-user-menu class="absolute right-0 z-50 mt-2 hidden w-64 rounded-lg border border-gray-200 bg-white shadow-lg dark:border-gray-600 dark:bg-gray-800">
+				<div data-lv-user-menu x-show="open" x-cloak class="absolute right-0 z-50 mt-2 w-64 rounded-lg border border-gray-200 bg-white shadow-lg dark:border-gray-600 dark:bg-gray-800">
 					<div class="border-b border-gray-200 px-4 py-3 dark:border-gray-600">
 						<p class="text-sm font-medium text-gray-900 dark:text-white">{ principal.Name }</p>
 						<p class="truncate text-xs text-gray-500 dark:text-gray-400">{ principal.Email }</p>

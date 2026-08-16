@@ -1,16 +1,19 @@
 package components
 
 // Modal is the flowbite-style dialog: a dimmed backdrop, the card
-// centered in the viewport, and the header with a close button. Open it
-// with [data-lv-modal-open="#id"]; it closes via [data-lv-modal-close],
-// clicking the backdrop or pressing Escape.
+// centered in the viewport, and the header with a close button. The
+// Alpine component "modal" (registered in internal/ui/ts) owns the
+// state: open/close via the backdrop, the close button, Escape and the
+// lv:open-modal window event; x-trap (the focus plugin) traps Tab and
+// restores focus to the trigger. The dialog carries x-cloak so it stays
+// hidden before Alpine initializes and without JS.
 templ Modal(id string, title string, width string) {
-	<div id={ id } tabindex="-1" aria-hidden="true" aria-labelledby={ id + "-title" } data-lv-modal class="fixed inset-0 z-50 hidden items-center justify-center overflow-y-auto p-4">
-		<div class="absolute inset-0 bg-gray-900/50"></div>
+	<div id={ id } tabindex="-1" aria-hidden="true" aria-labelledby={ id + "-title" } x-data="modal" x-trap="open" x-show="open" x-cloak @keydown.escape.window="close()" @lv:open-modal.window="openWith($event)" class="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto p-4">
+		<div class="absolute inset-0 bg-gray-900/50" @click="close()"></div>
 		<div class={ "relative z-10 w-full rounded-lg bg-white shadow-xl dark:bg-gray-800 " + modalWidth(width) }>
 			<div class="flex items-start justify-between rounded-t border-b border-gray-200 p-5 dark:border-gray-700">
 				<h3 id={ id + "-title" } class="text-xl font-semibold text-gray-900 dark:text-white">{ title }</h3>
-				<button type="button" data-lv-modal-close class="ml-auto inline-flex items-center rounded-lg bg-transparent p-1.5 text-sm text-gray-400 hover:bg-gray-200 hover:text-gray-900 dark:hover:bg-gray-700 dark:hover:text-white" aria-label="Close">
+				<button type="button" @click="close()" class="ml-auto inline-flex items-center rounded-lg bg-transparent p-1.5 text-sm text-gray-400 hover:bg-gray-200 hover:text-gray-900 dark:hover:bg-gray-700 dark:hover:text-white" aria-label="Close">
 					@Icon("close", "h-5 w-5")
 				</button>
 			</div>
