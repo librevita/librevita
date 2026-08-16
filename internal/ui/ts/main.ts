@@ -27,6 +27,7 @@ import * as reveal from './reveal.ts';
 import Alpine from '@alpinejs/csp';
 import morph from '@alpinejs/morph';
 import focus from '@alpinejs/focus';
+import collapse from '@alpinejs/collapse';
 import { registerDatepicker } from './datepicker.ts';
 import { registerAgenda } from './calendar.ts';
 
@@ -44,6 +45,7 @@ reveal.init();
 // Alpine morph plugin (Alpine.morph), preserving component state.
 Alpine.plugin(morph);
 Alpine.plugin(focus);
+Alpine.plugin(collapse);
 (window as unknown as Record<string, unknown>).Alpine = Alpine;
 registerDatepicker(Alpine);
 registerAgenda(Alpine);

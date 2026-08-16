@@ -31,3 +31,9 @@ declare module '@alpinejs/focus' {
   const focus: (alpine: Alpine) => void;
   export default focus;
 }
+
+declare module '@alpinejs/collapse' {
+  import type { Alpine } from '@alpinejs/csp';
+  const collapse: (alpine: Alpine) => void;
+  export default collapse;
+}

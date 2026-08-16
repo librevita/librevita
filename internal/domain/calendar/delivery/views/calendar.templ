@@ -34,7 +34,7 @@ templ CalendarPage(token string, p *auth.Principal, month MonthGrid, week WeekGr
 					</div>
 				</div>
 
-				<div x-show="isView('month')" class="mt-4 rounded-lg border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
+				<div x-show="isView('month')" x-collapse class="mt-4 rounded-lg border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
 				<div class="flex items-center justify-between border-b border-gray-200 p-4 dark:border-gray-700">
 					<h2 class="text-lg font-semibold text-gray-900 dark:text-white">{ month.Title }</h2>
 					<div class="flex space-x-2">
@@ -72,7 +72,7 @@ templ CalendarPage(token string, p *auth.Principal, month MonthGrid, week WeekGr
 				</div>
 			</div>
 
-			<div x-show="isView('week')" class="mt-4 rounded-lg border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
+			<div x-show="isView('week')" x-collapse class="mt-4 rounded-lg border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
 				<div class="flex items-center justify-between border-b border-gray-200 p-4 dark:border-gray-700">
 					<h2 class="text-lg font-semibold text-gray-900 dark:text-white">{ week.Title }</h2>
 					<div class="flex space-x-2">
