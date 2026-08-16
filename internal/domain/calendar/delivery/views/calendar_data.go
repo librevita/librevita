@@ -286,3 +286,39 @@ func BuildMonthGrid(now time.Time, fixtures map[int][]Appointment) MonthGrid {
 		Days:     days,
 	}
 }
+
+// chipShow renders the physician-filter x-show expression for one
+// appointment as a pure literal comparison: the Alpine CSP build's
+// evaluator is only relied on for literals and comparisons (the
+// datepicker profile), never for $el/dataset magic.
+func chipShow(physician string) string {
+	return "physician === '' || physician === '" + physician + "'"
+}
+
+// apptStyle renders the appointment block style binding as a full
+// literal, with the geometry computed by the server.
+func apptStyle(a Appointment, gridStartHour int) string {
+	return "'top:" + strconv.Itoa(apptTop(a, gridStartHour)) + "px;height:" + strconv.Itoa(apptHeight(a)) + "px'"
+}
+
+// nowLineStyle renders the now-line style binding as a full literal.
+func nowLineStyle(offset int) string {
+	return "'top:" + strconv.Itoa(offset) + "px'"
+}
+
+// patientLineClass hides the patient line on blocks shorter than half
+// an hour, computed by the server (no client-side comparison).
+func patientLineClass(a Appointment) string {
+	base := "truncate text-[10px] leading-3"
+	if apptHeight(a) < 32 {
+		return base + " hidden"
+	}
+	return base
+}
+
+// chipShowCall renders the physician-filter x-show expression as a
+// method call with a literal argument — the datepicker profile — never
+// as an inline comparison expression.
+func chipShowCall(physician string) string {
+	return "showChip('" + physician + "')"
+}

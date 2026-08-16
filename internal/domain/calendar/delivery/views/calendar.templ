@@ -2,7 +2,6 @@ package views
 
 import (
 	"fmt"
-	"strconv"
 
 	"librevita.org/internal/core/auth"
 	"librevita.org/internal/ui/components"
@@ -22,20 +21,20 @@ templ CalendarPage(token string, p *auth.Principal, month MonthGrid, week WeekGr
 						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Schedule — mock data, not persisted.</p>
 					</div>
 					<div class="flex flex-wrap items-center space-x-3">
-						@components.Select("physician", "w-52", templ.Attributes{ "x-model": "physician", "aria-label": "Physician" }) {
+						@components.Select("physician", "w-52", templ.Attributes{ "x-ref": "select", "@change": "setPhysician()", "aria-label": "Physician" }) {
 							<option value="">All physicians</option>
 							for _, ph := range Physicians {
 								<option value={ ph }>{ ph }</option>
 							}
 						}
 					<div class="inline-flex rounded-lg border border-gray-200 bg-gray-100 p-0.5 dark:border-gray-600 dark:bg-gray-700">
-						<button type="button" @click="view = 'month'" :class="view === 'month' ? 'bg-white text-gray-900 dark:bg-gray-800 dark:text-white' : ''" class="rounded-md px-3 py-1.5 text-sm font-medium text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white">Month</button>
-						<button type="button" @click="view = 'week'" :class="view === 'week' ? 'bg-white text-gray-900 dark:bg-gray-800 dark:text-white' : ''" class="rounded-md px-3 py-1.5 text-sm font-medium text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white">Week</button>
+						<button type="button" @click="setView('month')" :class="viewClass('month')" class="rounded-md px-3 py-1.5 text-sm font-medium text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white">Month</button>
+						<button type="button" @click="setView('week')" :class="viewClass('week')" class="rounded-md px-3 py-1.5 text-sm font-medium text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white">Week</button>
 					</div>
 					</div>
 				</div>
 
-				<div x-show="view === 'month'" class="mt-4 rounded-lg border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
+				<div x-show="isView('month')" class="mt-4 rounded-lg border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
 				<div class="flex items-center justify-between border-b border-gray-200 p-4 dark:border-gray-700">
 					<h2 class="text-lg font-semibold text-gray-900 dark:text-white">{ month.Title }</h2>
 					<div class="flex space-x-2">
@@ -63,7 +62,7 @@ templ CalendarPage(token string, p *auth.Principal, month MonthGrid, week WeekGr
 									}
 								</div>
 								for _, a := range day.Appointments {
-									<span x-show="physician === '' || $el.dataset.lvPhysician === physician" data-lv-physician={ a.Physician } class={ apptChipClass(a.Status) } title={ a.Physician + " · " + a.Start + "-" + a.End + " " + a.Patient }>
+									<span x-show={ chipShowCall(a.Physician) } class={ apptChipClass(a.Status) } title={ a.Physician + " · " + a.Start + "-" + a.End + " " + a.Patient }>
 										{ a.Start }-{ a.End } { a.Patient }
 									</span>
 								}
@@ -73,7 +72,7 @@ templ CalendarPage(token string, p *auth.Principal, month MonthGrid, week WeekGr
 				</div>
 			</div>
 
-			<div x-show="view === 'week'" class="mt-4 rounded-lg border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
+			<div x-show="isView('week')" class="mt-4 rounded-lg border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
 				<div class="flex items-center justify-between border-b border-gray-200 p-4 dark:border-gray-700">
 					<h2 class="text-lg font-semibold text-gray-900 dark:text-white">{ week.Title }</h2>
 					<div class="flex space-x-2">
@@ -97,7 +96,7 @@ templ CalendarPage(token string, p *auth.Principal, month MonthGrid, week WeekGr
 					</div>
 					<div class="relative flex flex-1 flex-wrap divide-x divide-gray-200 dark:divide-gray-700">
 						if week.NowOffset >= 0 {
-							<div data-lv-now-offset={ strconv.Itoa(week.NowOffset) } x-bind:style="'top:' + $el.dataset.lvNowOffset + 'px'" class="pointer-events-none absolute right-0 left-0 z-20 border-t-2 border-dashed border-indigo-500" aria-hidden="true"></div>
+							<div x-bind:style={ nowLineStyle(week.NowOffset) } class="pointer-events-none absolute right-0 left-0 z-20 border-t-2 border-dashed border-indigo-500" aria-hidden="true"></div>
 						}
 						for _, day := range week.Days {
 							<div class="relative w-[calc(100%/7)]">
@@ -111,9 +110,9 @@ templ CalendarPage(token string, p *auth.Principal, month MonthGrid, week WeekGr
 										<div class="h-8 border-b border-gray-200 dark:border-gray-700"></div>
 									}
 									for _, a := range day.Appointments {
-										<div x-show="physician === '' || $el.dataset.lvPhysician === physician" data-lv-physician={ a.Physician } data-lv-top={ strconv.Itoa(apptTop(a, week.StartHour)) } data-lv-height={ strconv.Itoa(apptHeight(a)) } x-bind:style="'top:' + $el.dataset.lvTop + 'px;height:' + $el.dataset.lvHeight + 'px'" class={ "absolute right-0.5 left-0.5 z-10 overflow-hidden rounded border px-1 py-0.5 " + apptBlockClass(a.Status) } title={ a.Physician + " · " + a.Start + "-" + a.End + " " + a.Patient }>
+										<div x-show={ chipShowCall(a.Physician) } x-bind:style={ apptStyle(a, week.StartHour) } class={ "absolute right-0.5 left-0.5 z-10 overflow-hidden rounded border px-1 py-0.5 " + apptBlockClass(a.Status) } title={ a.Physician + " · " + a.Start + "-" + a.End + " " + a.Patient }>
 											<p class="truncate text-[10px] font-medium leading-3">{ a.Start }-{ a.End }</p>
-											<p :class="$el.parentElement.dataset.lvHeight < 32 ? 'hidden' : ''" class="truncate text-[10px] leading-3">{ a.Patient }</p>
+											<p class={ patientLineClass(a) }>{ a.Patient }</p>
 										</div>
 									}
 								</div>
