@@ -149,12 +149,12 @@ func TestNowLineOffset(t *testing.T) {
 		time string
 		want int
 	}{
-		{"08:00", 40},   // grid top, below the day headers
-		{"08:30", 72},   // first half-hour row
-		{"10:00", 168},  // two hours in: 40 + 4*32
-		{"10:15", 184},  // proportional inside the half hour
-		{"07:00", 40},   // clamped to the grid top
-		{"23:00", 808},  // clamped: 40 + 24*32 (range 8..20)
+		{"08:00", 40},  // grid top, below the day headers
+		{"08:30", 72},  // first half-hour row
+		{"10:00", 168}, // two hours in: 40 + 4*32
+		{"10:15", 184}, // proportional inside the half hour
+		{"07:00", 40},  // clamped to the grid top
+		{"23:00", 808}, // clamped: 40 + 24*32 (range 8..20)
 	}
 	for _, tc := range cases {
 		parts := strings.Split(tc.time, ":")
