@@ -1,0 +1,192 @@
+package views
+
+import (
+	"fmt"
+	"strconv"
+
+	"librevita.org/internal/core/auth"
+	"librevita.org/internal/ui/components"
+	"librevita.org/internal/ui/layouts"
+)
+
+// CalendarPage is the schedule. Mock: the grids are computed from the
+// current month/week and the appointments are static fixtures, so the
+// buttons and chips are decorative. The month/week toggle reuses the
+// generic tabs module (data-lv-tabs).
+templ CalendarPage(token string, p *auth.Principal, month MonthGrid, week WeekGrid) {
+	@layouts.App("Calendar", token, p, "calendar") {
+		<div class="p-4 lg:p-6" x-data="agenda">
+				<div class="flex flex-wrap items-center justify-between space-y-3 sm:space-y-0">
+					<div>
+						<h1 class="text-2xl font-semibold text-gray-900 dark:text-white">Calendar</h1>
+						<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Schedule — mock data, not persisted.</p>
+					</div>
+					<div class="flex flex-wrap items-center space-x-3">
+						@components.Select("physician", "w-52", templ.Attributes{ "x-model": "physician", "aria-label": "Physician" }) {
+							<option value="">All physicians</option>
+							for _, ph := range Physicians {
+								<option value={ ph }>{ ph }</option>
+							}
+						}
+					<div class="inline-flex rounded-lg border border-gray-200 bg-gray-100 p-0.5 dark:border-gray-600 dark:bg-gray-700">
+						<button type="button" @click="view = 'month'" :class="view === 'month' ? 'bg-white text-gray-900 dark:bg-gray-800 dark:text-white' : ''" class="rounded-md px-3 py-1.5 text-sm font-medium text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white">Month</button>
+						<button type="button" @click="view = 'week'" :class="view === 'week' ? 'bg-white text-gray-900 dark:bg-gray-800 dark:text-white' : ''" class="rounded-md px-3 py-1.5 text-sm font-medium text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white">Week</button>
+					</div>
+					</div>
+				</div>
+
+				<div x-show="view === 'month'" class="mt-4 rounded-lg border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
+				<div class="flex items-center justify-between border-b border-gray-200 p-4 dark:border-gray-700">
+					<h2 class="text-lg font-semibold text-gray-900 dark:text-white">{ month.Title }</h2>
+					<div class="flex space-x-2">
+						<button type="button" class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-gray-300 bg-white text-gray-500 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700" aria-label="Previous month">
+							@components.Icon("chevron_left", "h-5 w-5")
+						</button>
+						<button type="button" class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-gray-300 bg-white text-gray-500 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700" aria-label="Next month">
+							@components.Icon("chevron_right", "h-5 w-5")
+						</button>
+					</div>
+				</div>
+				<div class="p-3">
+					<div class="flex flex-wrap text-center text-xs font-medium text-gray-500 dark:text-gray-400">
+						for _, wd := range month.Weekdays {
+							<span class="w-[calc(100%/7)]">{ wd }</span>
+						}
+					</div>
+					<div class="-m-0.5 mt-1 flex flex-wrap">
+						for _, day := range month.Days {
+							<div class={ dayCellClass(day) }>
+								<div class={ "flex items-center justify-between px-1 pt-0.5 " + dayNumberClass(day) }>
+									<span>{ day.Day }</span>
+									if day.IsToday {
+										<span class="rounded-full bg-indigo-600 px-1.5 text-[10px] font-semibold text-white">Today</span>
+									}
+								</div>
+								for _, a := range day.Appointments {
+									<span x-show="physician === '' || $el.dataset.lvPhysician === physician" data-lv-physician={ a.Physician } class={ apptChipClass(a.Status) } title={ a.Physician + " · " + a.Start + "-" + a.End + " " + a.Patient }>
+										{ a.Start }-{ a.End } { a.Patient }
+									</span>
+								}
+							</div>
+						}
+					</div>
+				</div>
+			</div>
+
+			<div x-show="view === 'week'" class="mt-4 rounded-lg border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
+				<div class="flex items-center justify-between border-b border-gray-200 p-4 dark:border-gray-700">
+					<h2 class="text-lg font-semibold text-gray-900 dark:text-white">{ week.Title }</h2>
+					<div class="flex space-x-2">
+						<button type="button" class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-gray-300 bg-white text-gray-500 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700" aria-label="Previous week">
+							@components.Icon("chevron_left", "h-5 w-5")
+						</button>
+						<button type="button" class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-gray-300 bg-white text-gray-500 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700" aria-label="Next week">
+							@components.Icon("chevron_right", "h-5 w-5")
+						</button>
+					</div>
+				</div>
+				<div class="flex overflow-hidden rounded-b-lg border-t border-gray-200 dark:border-gray-700">
+					<div class="w-12 shrink-0 border-r border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-900">
+						<div class="h-10 border-b border-gray-200 dark:border-gray-700"></div>
+						for hour := week.StartHour; hour <= week.EndHour; hour++ {
+							<div class="h-8 border-b border-gray-100 dark:border-gray-900">
+								<span class="block pt-0.5 pr-2 text-right text-[10px] leading-none text-gray-400 dark:text-gray-500">{ hourLabel(hour) }</span>
+							</div>
+							<div class="h-8 border-b border-gray-200 dark:border-gray-700"></div>
+						}
+					</div>
+					<div class="relative flex flex-1 flex-wrap divide-x divide-gray-200 dark:divide-gray-700">
+						if week.NowOffset >= 0 {
+							<div data-lv-now-offset={ strconv.Itoa(week.NowOffset) } x-bind:style="'top:' + $el.dataset.lvNowOffset + 'px'" class="pointer-events-none absolute right-0 left-0 z-20 border-t-2 border-dashed border-indigo-500" aria-hidden="true"></div>
+						}
+						for _, day := range week.Days {
+							<div class="relative w-[calc(100%/7)]">
+								<div class="flex h-10 flex-col items-center justify-center border-b border-gray-200 dark:border-gray-700">
+									<p class="text-xs font-medium text-gray-500 dark:text-gray-400">{ day.Name }</p>
+									<p class={ "text-sm " + weekDayNumberClass(day) }>{ day.Day }</p>
+								</div>
+								<div class="relative">
+									for hour := week.StartHour; hour <= week.EndHour; hour++ {
+										<div class="h-8 border-b border-gray-100 dark:border-gray-900"></div>
+										<div class="h-8 border-b border-gray-200 dark:border-gray-700"></div>
+									}
+									for _, a := range day.Appointments {
+										<div x-show="physician === '' || $el.dataset.lvPhysician === physician" data-lv-physician={ a.Physician } data-lv-top={ strconv.Itoa(apptTop(a, week.StartHour)) } data-lv-height={ strconv.Itoa(apptHeight(a)) } x-bind:style="'top:' + $el.dataset.lvTop + 'px;height:' + $el.dataset.lvHeight + 'px'" class={ "absolute right-0.5 left-0.5 z-10 overflow-hidden rounded border px-1 py-0.5 " + apptBlockClass(a.Status) } title={ a.Physician + " · " + a.Start + "-" + a.End + " " + a.Patient }>
+											<p class="truncate text-[10px] font-medium leading-3">{ a.Start }-{ a.End }</p>
+											<p :class="$el.parentElement.dataset.lvHeight < 32 ? 'hidden' : ''" class="truncate text-[10px] leading-3">{ a.Patient }</p>
+										</div>
+									}
+								</div>
+							</div>
+						}
+					</div>
+				</div>
+			</div>
+
+			<div class="mt-3 flex flex-wrap space-x-4 text-xs text-gray-500 dark:text-gray-400">
+				<span class="flex items-center space-x-1.5"><span class="inline-block h-2 w-2 rounded-full bg-green-500"></span><span>Confirmed</span></span>
+				<span class="flex items-center space-x-1.5"><span class="inline-block h-2 w-2 rounded-full bg-amber-500"></span><span>Pending</span></span>
+				<span class="flex items-center space-x-1.5"><span class="inline-block h-2 w-2 rounded-full bg-red-500"></span><span>Cancelled</span></span>
+			</div>
+		</div>
+	}
+}
+
+func dayCellClass(day DayCell) string {
+	base := "flex h-24 w-[calc(100%/7)] flex-col space-y-0.5 overflow-hidden rounded-lg border border-gray-100 p-0.5 dark:border-gray-700 "
+	if day.OutOfMonth {
+		return base + "border-dashed"
+	}
+	return base
+}
+
+func dayNumberClass(day DayCell) string {
+	if day.OutOfMonth {
+		return "text-sm font-medium text-gray-300 dark:text-gray-600"
+	}
+	if day.IsToday {
+		return "text-sm font-semibold text-indigo-600 dark:text-indigo-400"
+	}
+	return "text-sm font-medium text-gray-900 dark:text-white"
+}
+
+func weekDayNumberClass(day WeekDay) string {
+	if day.IsToday {
+		return "font-semibold text-indigo-600 dark:text-indigo-400"
+	}
+	return "font-medium text-gray-900 dark:text-white"
+}
+
+func hourLabel(hour int) string {
+	return fmt.Sprintf("%02d:00", hour)
+}
+
+func apptChipClass(s AppointmentStatus) string {
+	return "block truncate rounded px-1 py-0.5 text-[10px] font-medium leading-4 " + apptClass(s)
+}
+
+func apptClass(s AppointmentStatus) string {
+	switch s {
+	case StatusConfirmed:
+		return "bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300"
+	case StatusPending:
+		return "bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300"
+	case StatusCancelled:
+		return "bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-300"
+	}
+	return "bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300"
+}
+
+// apptBlockClass styles the week-grid appointment block: background,
+// text and a matching 1px border so overlapping blocks stay separated.
+func apptBlockClass(s AppointmentStatus) string {
+	switch s {
+	case StatusConfirmed:
+		return "border-green-200 bg-green-100 text-green-800 dark:border-green-900 dark:bg-green-900/40 dark:text-green-300"
+	case StatusPending:
+		return "border-amber-200 bg-amber-100 text-amber-800 dark:border-amber-900 dark:bg-amber-900/40 dark:text-amber-300"
+	case StatusCancelled:
+		return "border-red-200 bg-red-100 text-red-800 dark:border-red-900 dark:bg-red-900/40 dark:text-red-300"
+	}
+	return "border-gray-200 bg-gray-100 text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300"
+}

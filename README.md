@@ -48,7 +48,7 @@ The UI follows the GOTH stack: Go + templ + HTMX, server-driven and progressive.
 
 - **HTMX 1.9.12** for hypermedia interactions (`allowEval=false`, `allowScriptTags=false`), with the bundled SSE
   extension (`dist/ext/sse.js`) configured for live updates
-  (`hx-ext="sse"` + `sse-connect`/`sse-swap`), pending the agenda feature — both bundled into the single application script
+  (`hx-ext="sse"` + `sse-connect`/`sse-swap`), pending the calendar feature — both bundled into the single application script
 - **First-party TypeScript** modules (bundled by esbuild) for the ephemeral client state (menus, tabs, theme); clinical
   state always lives on the server. The strict Content-Security-Policy (`script-src 'self'`, no
   `unsafe-eval`/`unsafe-inline`) is never relaxed
