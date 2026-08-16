@@ -2,13 +2,19 @@
   "compilerOptions": {
     "strict": true,
     "target": "ES2017",
-    "lib": ["ES2017", "DOM", "DOM.Iterable"],
+    "lib": [
+      "ES2017",
+      "DOM",
+      "DOM.Iterable"
+    ],
     "module": "ESNext",
     "moduleResolution": "bundler",
     "allowImportingTsExtensions": true,
     "noEmit": true,
     "skipLibCheck": true,
-    "types": ["node"],
+    "types": [
+      "node"
+    ],
     "jsx": "react",
     "jsxFactory": "h"
   },

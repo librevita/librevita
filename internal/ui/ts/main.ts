@@ -14,6 +14,7 @@ import './compat.ts';
 // base.templ (build.ts bundles theme.ts separately for that).
 import './htmx-runtime.ts';
 import 'htmx.org/dist/ext/sse.js';
+import 'htmx.org/dist/ext/alpine-morph.js';
 
 import { configureHtmx, forwardCsrf, focusAppMain, reportHtmxErrors } from './core.ts';
 import * as sidebar from './sidebar.ts';
@@ -23,7 +24,12 @@ import * as dropdown from './dropdown.ts';
 import * as modal from './modal.ts';
 import * as tableSelect from './table-select.ts';
 import * as reveal from './reveal.ts';
-import * as datepicker from './datepicker.tsx';
+import Alpine from '@alpinejs/csp';
+import morph from '@alpinejs/morph';
+import focus from '@alpinejs/focus';
+import * as datepicker from './datepicker.ts';
+import { registerDatepicker } from './datepicker.ts';
+import { registerAgenda } from './calendar.ts';
 
 configureHtmx();
 forwardCsrf();
@@ -40,6 +46,16 @@ modal.init();
 dropdown.init();
 reveal.init();
 datepicker.init();
+// The alpine-morph htmx extension morphs swapped fragments with the
+// Alpine morph plugin (Alpine.morph), preserving component state.
+Alpine.plugin(morph);
+Alpine.plugin(focus);
+(window as unknown as Record<string, unknown>).Alpine = Alpine;
+registerDatepicker(Alpine);
+registerAgenda(Alpine);
+// Alpine processes the x-data trees (the datepicker popover); the
+// CSP build runs without unsafe-eval.
+Alpine.start();
 
 document.addEventListener('htmx:afterSwap', (evt) => {
   const detail = (evt as CustomEvent<HtmxAfterSwapDetail>).detail;

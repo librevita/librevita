@@ -127,18 +127,19 @@ const legacyFallbacks: Plugin = {
         for (const prop of ['top', 'right', 'bottom', 'left']) {
           decl.cloneBefore({ prop, value: v });
         }
-      } else if (value.includes('--tw-space-')) {
-        // Tailwind's space-x/space-y emit
-        // calc(<len>*(1 - var(--tw-space-[xy]-reverse))) (margin on the
-        // siblings), but multiplication in calc() is Firefox 117+ and
-        // the legacy floor drops the whole declaration, so the spacing
-        // silently disappears. The reverse variable is always defined
-        // to 0 in the same rule (the app never sets space-x-reverse),
-        // so the forms collapse to the plain length and 0, keeping the
-        // modern output byte-identical in effect.
+      } else if (value.includes('--tw-space-') || value.includes('--tw-divide-')) {
+        // Tailwind's space-x/space-y and divide-x emit
+        // calc(<len>*(1 - var(--tw-<kind>-[xy]-reverse))) (margins on
+        // the siblings, border widths for divide), but multiplication
+        // in calc() is Firefox 117+ and the XP floor drops the whole
+        // declaration, so the spacing silently disappears. The reverse
+        // variable is always defined to 0 in the same rule (the app
+        // never sets space-*-reverse), so the forms collapse to the
+        // plain length and 0, keeping the modern output byte-identical
+        // in effect.
         decl.value = value
-          .replace(/calc\(([^)]*)\*\(1 - var\(--tw-space-[xy]-reverse\)\)\)/g, '$1')
-          .replace(/calc\(([^)]*)\*var\(--tw-space-[xy]-reverse\)\)/g, '0');
+          .replace(/calc\(([^)]*)\*\(1 - var\(--tw-(?:space|divide)-[xy]-reverse\)\)\)/g, '$1')
+          .replace(/calc\(([^)]*)\*var\(--tw-(?:space|divide)-[xy]-reverse\)\)/g, '0');
       }
     });
   },
@@ -254,9 +255,52 @@ async function buildJs(): Promise<{ name: string; hash: string; integrity: strin
     jsxFactory: 'h',
   });
   const output = result.outputFiles[0];
-  const asset = await writeHashed(jsOut, 'app', '.js', output.text);
+  const asset = await writeHashed(jsOut, 'app', '.js', await lowerLegacyBundle(output.text));
   assertLegacyFloor(`${jsOut}/${asset.name}`);
   return asset;
+}
+
+// Babel preset-env lowers whatever the bundled dependencies (Alpine's
+// CSP build, htmx) ship that the floor cannot parse — async/await above
+// all (esbuild cannot transform it), but also optional catch binding,
+// class fields and any other ES2016+ feature in the dependency trees.
+// The targets come from the project's browserslist (Firefox >= 45), so
+// the same config file drives Babel and autoprefixer. The step runs on
+// every build: the first-party code is already esbuild-lowered and
+// passes through nearly untouched, and a future dependency can never
+// slip syntax past the hand-rolled checks again (async itself was such
+// a blind spot). The output is re-minified with esbuild afterwards
+// (Babel re-prints unminified; esbuild's minifier is target-aware, so
+// it cannot introduce modern syntax), and assertLegacyFloor still gates
+// the final artifact.
+async function lowerLegacyBundle(code: string): Promise<string> {
+  const babel = await import('@babel/core');
+  const out = await babel.transformAsync(code, {
+    // preset-env reads the browserslist ("Firefox >= 45") from
+    // package.json automatically; modules are already bundled by
+    // esbuild into an iife. (Babel 8 enables the bugfix plugins
+    // always, so no bugfixes option is set.)
+    presets: [['@babel/preset-env', { modules: false }]],
+    comments: false,
+    sourceMaps: false,
+    babelrc: false,
+    configFile: false,
+  });
+  if (!out?.code) {
+    throw new Error('babel: transform produced no output');
+  }
+  if (devMode) {
+    return out.code;
+  }
+  const min = await esbuild.transform(out.code, {
+    minify: true,
+    target: 'firefox58',
+    // Babel's regenerator helpers use optional catch binding
+    // (catch {}); the firefox58 matrix would keep it, so the same
+    // override as the main build forces the lowering.
+    supported: legacyFloorSupported,
+  });
+  return min.code;
 }
 
 // Content-addressed names: the hash is the fingerprint of the content,

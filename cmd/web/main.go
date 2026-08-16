@@ -21,11 +21,11 @@ import (
 	"librevita.org/internal/core/server"
 	"librevita.org/internal/core/storage"
 	"librevita.org/internal/core/telemetry"
-	"librevita.org/internal/domain/calendar"
 	"librevita.org/internal/domain/clinic"
 	"librevita.org/internal/domain/patient"
 	"librevita.org/internal/domain/user"
 	"librevita.org/internal/ui"
+	"librevita.org/internal/ui/components"
 )
 
 func main() {
@@ -50,8 +50,8 @@ func main() {
 		policy.Module,
 		server.Module,
 		ui.Module,
+		components.Module,
 		user.Module,
 		patient.Module,
-		calendar.Module,
 	).Run()
 }
