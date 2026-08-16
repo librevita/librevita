@@ -255,9 +255,39 @@ async function buildJs(): Promise<{ name: string; hash: string; integrity: strin
     jsxFactory: 'h',
   });
   const output = result.outputFiles[0];
-  const asset = await writeHashed(jsOut, 'app', '.js', await lowerLegacyBundle(output.text));
+  const asset = await writeHashed(
+    jsOut,
+    'app',
+    '.js',
+    await patchAlpineStyleAttribute(await lowerLegacyBundle(output.text)),
+  );
   assertLegacyFloor(`${jsOut}/${asset.name}`);
   return asset;
+}
+
+// Alpine's x-transition applies inline styles through
+// setAttribute("style", ...) (the Wl helper), which the strict CSP
+// (style-src 'self') blocks: every transition logs a violation and the
+// effect breaks. The CSSOM form (style.cssText = ...) is not subject to
+// style-src, so the two call sites are rewritten. The count is asserted
+// so an Alpine upgrade that changes the helper's shape fails the build
+// instead of spamming the console silently.
+async function patchAlpineStyleAttribute(code: string): Promise<string> {
+  const callSites = (code.match(/setAttribute\("style",/g) ?? []).length;
+  if (callSites !== 2) {
+    throw new Error(
+      `alpine style patch: expected 2 setAttribute("style") call sites, found ${callSites}`,
+    );
+  }
+  // Replace the whole call (including its closing paren) so the
+  // assignment stays syntactically valid: setAttribute("style",X) ->
+  // style.cssText=X.
+  const patched = code.replace(/setAttribute\("style",([^)]+)\)/g, 'style.cssText=$1');
+  // The patch runs after every parser in the pipeline, so validate the
+  // syntax here — a stray token would otherwise ship silently (the
+  // floor assertions are regex-based and the minifier never re-parses).
+  await esbuild.transform(patched, { minify: false });
+  return patched;
 }
 
 // Babel preset-env lowers whatever the bundled dependencies (Alpine's
