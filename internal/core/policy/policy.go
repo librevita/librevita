@@ -73,6 +73,9 @@ var DefaultPolicies = map[string]string{
 	"staff.request": `principal.role in ['admin', 'receptionist']`,
 	"staff.approve": `principal.role == 'admin'`,
 
+	// Clinic calendar: the schedule is open to the clinical staff.
+	"calendar.view": `principal.role in ['admin', 'physician', 'receptionist']`,
+
 	// Patient registry, available to the clinical roles.
 	"patient.view": `principal.role in ['admin', 'physician', 'receptionist']`,
 
