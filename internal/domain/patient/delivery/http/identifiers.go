@@ -317,7 +317,7 @@ func (h *Handler) systemOptions(ctx context.Context) []views.SystemOption {
 	out := make([]views.SystemOption, 0, len(systems))
 	for _, s := range systems {
 		if s.Active == 1 {
-			out = append(out, views.SystemOption{System: s.System, DisplayName: s.DisplayName})
+			out = append(out, views.SystemOption{System: s.System, DisplayName: s.DisplayName, Mask: s.Mask})
 		}
 	}
 	return out
@@ -373,6 +373,7 @@ func systemFormValues(c echo.Context) views.SystemFormValues {
 		System:           strings.TrimSpace(c.FormValue("system")),
 		DisplayName:      strings.TrimSpace(c.FormValue("display_name")),
 		Pattern:          strings.TrimSpace(c.FormValue("pattern")),
+		Mask:             strings.TrimSpace(c.FormValue("mask")),
 		Transform:        strings.TrimSpace(c.FormValue("transform")),
 		CheckAlgorithm:   strings.TrimSpace(c.FormValue("check_algorithm")),
 		CheckBaseLen:     toInt("check_base_len"),
@@ -393,6 +394,7 @@ func systemInput(values views.SystemFormValues) identifier.SystemInput {
 		System:           values.System,
 		DisplayName:      values.DisplayName,
 		Pattern:          values.Pattern,
+		Mask:             values.Mask,
 		Transform:        identifier.Transform(values.Transform),
 		CheckAlgorithm:   identifier.CheckAlgorithm(values.CheckAlgorithm),
 		CheckBaseLen:     toInt(values.CheckBaseLen, 0),

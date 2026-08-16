@@ -22,6 +22,7 @@ type SystemFormValues struct {
 	System             string
 	DisplayName        string
 	Pattern            string
+	Mask               string
 	Transform          string
 	CheckAlgorithm     string
 	CheckBaseLen       string
@@ -174,19 +175,23 @@ templ SystemForm(token string, id string, values SystemFormValues, errMsg string
 			@components.Input("pattern", "", templ.Attributes{ "type": "text", "value": values.Pattern, "placeholder": "anchored regex, e.g. [0-9]{8}", "required": true, "class": "input font-mono" })
 			<p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Applied to the transformed value, anchored: the whole input must match.</p>
 		}
+		@components.Field("mask", "Input mask") {
+			@components.Input("mask", "", templ.Attributes{ "type": "text", "value": values.Mask, "placeholder": "e.g. 999.999.999-99", "class": "input font-mono" })
+			<p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Optional typing mask for the document field (9 digit, A uppercase, a lowercase, * any; the rest are literals). The pattern is still the validation authority.</p>
+		}
 		@components.Field("transform", "Transform") {
 			@components.Select("transform", "", templ.Attributes{ "id": "transform" }) {
-				@systemOption("none", "Keep as typed (trim, collapse spaces)", values.Transform)
-				@systemOption("digits", "Digits only", values.Transform)
-				@systemOption("upper", "Uppercase", values.Transform)
-				@systemOption("lower", "Lowercase", values.Transform)
+				@systemOption("none", "Keep as typed (trim, collapse spaces)", "", values.Transform)
+				@systemOption("digits", "Digits only", "", values.Transform)
+				@systemOption("upper", "Uppercase", "", values.Transform)
+				@systemOption("lower", "Lowercase", "", values.Transform)
 			}
 		}
 		@components.Field("check_algorithm", "Check digit") {
 			@components.Select("check_algorithm", "", templ.Attributes{ "id": "check_algorithm", "hx-get": "/identifier-systems/check-fields", "hx-trigger": "change", "hx-include": "[name='check_algorithm']", "hx-target": "#system-check-fields", "hx-swap": "innerHTML" }) {
-				@systemOption("none", "None", values.CheckAlgorithm)
-				@systemOption("mod11_desc", "Modulo 11, descending weights (CPF/NIF)", values.CheckAlgorithm)
-				@systemOption("mod11_cyclic", "Modulo 11, cyclic weights 2-9 (SUS)", values.CheckAlgorithm)
+				@systemOption("none", "None", "", values.CheckAlgorithm)
+				@systemOption("mod11_desc", "Modulo 11, descending weights (CPF/NIF)", "", values.CheckAlgorithm)
+				@systemOption("mod11_cyclic", "Modulo 11, cyclic weights 2-9 (SUS)", "", values.CheckAlgorithm)
 			}
 			<div id="system-check-fields">
 				@CheckFieldsPartial(values)

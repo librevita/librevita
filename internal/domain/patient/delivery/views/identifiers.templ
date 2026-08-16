@@ -22,6 +22,7 @@ type IdentifierRow struct {
 type SystemOption struct {
 	System      string
 	DisplayName string
+	Mask        string
 }
 
 // LookupHit is one patient matched by the exact document lookup.
@@ -112,18 +113,18 @@ type IdentifierFormValues struct {
 // the form in place, so validation errors keep the typed values; the
 // success path is a redirect to the detail page.
 templ IdentifierForm(token string, patientID string, systems []SystemOption, values IdentifierFormValues, errMsg string) {
-	<form method="post" action={ "/patients/" + patientID + "/identifiers" } hx-post={ "/patients/" + patientID + "/identifiers" } hx-target="this" hx-swap="outerHTML" id="identifier-form" class="mt-4 flex flex-wrap items-end space-x-3 border-t border-gray-200 pt-4 dark:border-gray-700">
+	<form method="post" action={ "/patients/" + patientID + "/identifiers" } hx-post={ "/patients/" + patientID + "/identifiers" } hx-target="this" hx-swap="outerHTML" id="identifier-form" x-data="identifiermask" class="mt-4 flex flex-wrap items-end space-x-3 border-t border-gray-200 pt-4 dark:border-gray-700">
 		<input type="hidden" name="_csrf" value={ token }>
 		@components.Field("system", "Document type") {
-			@components.Select("system", "mt-0", templ.Attributes{ "id": "system" }) {
-				@systemOption("", "Detect automatically", values.System)
+			@components.Select("system", "mt-0", templ.Attributes{ "id": "system", "x-ref": "system", "@change": "systemChanged()" }) {
+				@systemOption("", "Detect automatically", values.System, "")
 				for _, s := range systems {
-					@systemOption(s.System, s.DisplayName, values.System)
+					@systemOption(s.System, s.DisplayName, values.System, s.Mask)
 				}
 			}
 		}
 		@components.Field("value", "Value") {
-			@components.Input("value", "mt-0", templ.Attributes{ "id": "value", "type": "text", "value": values.Value, "required": true, "autofocus": true })
+			@components.Input("value", "mt-0", templ.Attributes{ "id": "value", "type": "text", "value": values.Value, "required": true, "autofocus": true, "x-ref": "value", "x-mask:dynamic": "maskFor(system)" })
 		}
 		@components.Button("primary", "Add document", templ.Attributes{ "type": "submit" })
 		if errMsg != "" {
@@ -132,11 +133,19 @@ templ IdentifierForm(token string, patientID string, systems []SystemOption, val
 	</form>
 }
 
-templ systemOption(value string, label string, selected string) {
+templ systemOption(value string, label string, selected string, mask string) {
 	if value == selected {
-		<option value={ value } selected>{ label }</option>
+		if mask != "" {
+			<option value={ value } selected data-mask={ mask }>{ label }</option>
+		} else {
+			<option value={ value } selected>{ label }</option>
+		}
 	} else {
-		<option value={ value }>{ label }</option>
+		if mask != "" {
+			<option value={ value } data-mask={ mask }>{ label }</option>
+		} else {
+			<option value={ value }>{ label }</option>
+		}
 	}
 }
 

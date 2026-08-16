@@ -22,14 +22,14 @@ LIMIT 1;
 
 -- name: CreateIdentifierSystem :one
 INSERT INTO identifier_systems (
-    id, system, display_name, pattern, transform,
+    id, system, display_name, pattern, mask, transform,
     check_algorithm,
     check_base_len,
     check_dv_count,
     check_start_weight,
     created_by
 )
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING *;
 
 -- name: UpdateIdentifierSystem :one
@@ -37,6 +37,7 @@ UPDATE identifier_systems
 SET
     display_name = ?,
     pattern = ?,
+    mask = ?,
     transform = ?,
     check_algorithm = ?,
     check_base_len = ?,

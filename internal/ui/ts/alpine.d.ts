@@ -37,3 +37,9 @@ declare module '@alpinejs/collapse' {
   const collapse: (alpine: Alpine) => void;
   export default collapse;
 }
+
+declare module '@alpinejs/mask' {
+  import type { Alpine } from '@alpinejs/csp';
+  const mask: (alpine: Alpine) => void;
+  export default mask;
+}
