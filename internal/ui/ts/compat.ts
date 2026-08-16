@@ -1,12 +1,15 @@
-// Compatibility layer for the legacy floor (Firefox 52 ESR / Goanna) and
-// the PowerPC-era engines (TenFourFox/AquaFox, Firefox 45-based) that
-// still browse the app. Every polyfill is feature-detected and
+// Compatibility layer for the legacy floor (Firefox 52 ESR / Goanna)
+// and the PowerPC-era engines (TenFourFox/AquaFox, Firefox 45-based)
+// that still browse the app. Every polyfill is feature-detected and
 // removable when the floor moves on. Do not add core-js: keep this
 // file small and auditable.
 //
-// The ambient declarations below are required because the TS lib (ES2017)
-// does not know these APIs; the polyfill and its declaration must always
-// change together.
+// Import this module FIRST in main.ts: some shims (the ShadowRoot
+// stub) must exist before the Alpine bundle runs.
+//
+// The ambient declarations below are required because the TS lib
+// (ES2017) does not know these APIs; the polyfill and its declaration
+// must always change together.
 
 declare global {
   interface Window {
@@ -57,6 +60,40 @@ if (typeof Array.prototype.flatMap !== 'function') {
     thisArg?: unknown,
   ): R[] {
     return this.map(mapper, thisArg).flat();
+  };
+}
+
+// ShadowRoot (Firefox 63+) is referenced unguarded in Alpine's
+// data-stack lookup, which runs on every event; the stub class makes
+// the instanceof checks resolve to false, which is the correct
+// non-shadow-DOM behavior. queueMicrotask (Firefox 69+) is already
+// polyfilled above and by Alpine itself.
+if (typeof window !== 'undefined' && window.ShadowRoot === undefined) {
+  (window as unknown as Record<string, unknown>).ShadowRoot = class ShadowRoot {};
+}
+
+// The Alpine focus plugin (x-trap) calls composedPath (Firefox 53+)
+// and getRootNode (Firefox 53+) while activating the trap; both are
+// TypeError on the 45-era engines. The fallbacks walk the parent chain,
+// which is the correct non-shadow-DOM result.
+if (typeof Event.prototype.composedPath !== 'function') {
+  Event.prototype.composedPath = function (this: Event): EventTarget[] {
+    const path: EventTarget[] = [];
+    let node = this.target as Node | null;
+    while (node) {
+      path.push(node);
+      node = node.parentNode;
+    }
+    return path;
+  };
+}
+if (typeof Node.prototype.getRootNode !== 'function') {
+  Node.prototype.getRootNode = function (this: Node): Node {
+    let node: Node = this;
+    while (node.parentNode) {
+      node = node.parentNode;
+    }
+    return node;
   };
 }
 
