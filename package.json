@@ -11,6 +11,7 @@
     "test": "node --import ./internal/ui/test-loader.ts --test internal/ui/ts/ui_test.ts"
   },
   "devDependencies": {
+    "@alpinejs/collapse": "^3.16.1",
     "@alpinejs/csp": "^3.16.1",
     "@alpinejs/focus": "^3.16.1",
     "@alpinejs/morph": "^3.16.1",
