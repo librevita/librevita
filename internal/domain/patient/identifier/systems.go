@@ -21,6 +21,7 @@ type SystemInput struct {
 	System           string
 	DisplayName      string
 	Pattern          string
+	Mask             string
 	Transform        Transform
 	CheckAlgorithm   CheckAlgorithm
 	CheckBaseLen     int
@@ -91,6 +92,7 @@ func (s *SystemsService) Create(ctx context.Context, createdBy string, in System
 		System:           cfg.System,
 		DisplayName:      cfg.DisplayName,
 		Pattern:          cfg.Pattern,
+		Mask:             cfg.Mask,
 		Transform:        string(cfg.Transform),
 		CheckAlgorithm:   string(cfg.CheckAlgorithm),
 		CheckBaseLen:     int64(cfg.CheckBaseLen),
@@ -123,6 +125,7 @@ func (s *SystemsService) Update(ctx context.Context, id string, in SystemInput) 
 	row, err := s.q.UpdateIdentifierSystem(ctx, repository.UpdateIdentifierSystemParams{
 		DisplayName:      cfg.DisplayName,
 		Pattern:          cfg.Pattern,
+		Mask:             cfg.Mask,
 		Transform:        string(cfg.Transform),
 		CheckAlgorithm:   string(cfg.CheckAlgorithm),
 		CheckBaseLen:     int64(cfg.CheckBaseLen),

@@ -65,6 +65,7 @@ type SystemConfig struct {
 	System           string
 	DisplayName      string
 	Pattern          string
+	Mask             string
 	Transform        Transform
 	CheckAlgorithm   CheckAlgorithm
 	CheckBaseLen     int
@@ -81,6 +82,7 @@ func ParseSystemConfig(row repository.IdentifierSystem) (SystemConfig, error) {
 		System:           row.System,
 		DisplayName:      row.DisplayName,
 		Pattern:          row.Pattern,
+		Mask:             row.Mask,
 		Transform:        Transform(row.Transform),
 		CheckAlgorithm:   CheckAlgorithm(row.CheckAlgorithm),
 		CheckBaseLen:     int(row.CheckBaseLen),
@@ -107,6 +109,9 @@ func (c SystemConfig) validateShape() error {
 	}
 	if c.DisplayName == "" {
 		return fmt.Errorf("display name is required")
+	}
+	if len(c.Mask) > 64 {
+		return fmt.Errorf("mask must be at most 64 characters")
 	}
 	if !c.Transform.Valid() {
 		return fmt.Errorf("invalid transform %q", c.Transform)

@@ -72,20 +72,20 @@ templ PatientForm(token string, id string, systems []SystemOption, values Patien
 					}
 				</div>
 			</div>
-			<div class="flex flex-wrap space-x-4">
+			<div class="flex flex-wrap space-x-4" x-data="identifiermask">
 				<div class="flex-1">
 					@components.Field("identifier_system", "Identification document type") {
-						@components.Select("identifier_system", "", templ.Attributes{ "id": "identifier_system" }) {
-							@identifierSystemOption("", "Detect automatically", values.IdentifierSystem)
+						@components.Select("identifier_system", "", templ.Attributes{ "id": "identifier_system", "x-ref": "system", "@change": "systemChanged()" }) {
+							@identifierSystemOption("", "Detect automatically", values.IdentifierSystem, "")
 							for _, s := range systems {
-								@identifierSystemOption(s.System, s.DisplayName, values.IdentifierSystem)
+								@identifierSystemOption(s.System, s.DisplayName, values.IdentifierSystem, s.Mask)
 							}
 						}
 					}
 				</div>
 				<div class="flex-1">
 					@components.Field("identifier_value", "Identification document") {
-						@components.Input("identifier_value", "", templ.Attributes{ "id": "identifier_value", "type": "text", "value": values.IdentifierValue, "placeholder": "CPF, SUS, NIF, passport..." })
+						@components.Input("identifier_value", "", templ.Attributes{ "id": "identifier_value", "type": "text", "value": values.IdentifierValue, "placeholder": "CPF, SUS, NIF, passport...", "x-ref": "value", "x-mask:dynamic": "maskFor(system)" })
 						<p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Stored encrypted; duplicates are rejected across the deployment.</p>
 					}
 				</div>
@@ -147,11 +147,19 @@ templ sexOption(value string, label string, selected string) {
 	}
 }
 
-templ identifierSystemOption(value string, label string, selected string) {
+templ identifierSystemOption(value string, label string, selected string, mask string) {
 	if value == selected {
-		<option value={ value } selected>{ label }</option>
+		if mask != "" {
+			<option value={ value } selected data-mask={ mask }>{ label }</option>
+		} else {
+			<option value={ value } selected>{ label }</option>
+		}
 	} else {
-		<option value={ value }>{ label }</option>
+		if mask != "" {
+			<option value={ value } data-mask={ mask }>{ label }</option>
+		} else {
+			<option value={ value }>{ label }</option>
+		}
 	}
 }
 
