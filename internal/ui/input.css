@@ -33,6 +33,12 @@
 
   /* htmx loading indicators (includeIndicatorStyles is disabled in
      ui.ts, so these rules replace the default stylesheet). */
+  /* Elements Alpine hides until it initializes (x-cloak); without
+     this rule the popover flashes open before the bundle runs. */
+  [x-cloak] {
+    display: none !important;
+  }
+
   .htmx-indicator {
     display: none;
   }

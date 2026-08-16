@@ -1,18 +1,81 @@
 package components
 
+import (
+	"net/url"
+	"strconv"
+	"time"
+)
+
+// DatepickerPanel is the server-rendered popover calendar fragment. The
+// client (Alpine) toggles the wrapper's visibility and picks days; the
+// previous/next buttons navigate months with htmx, swapping this panel
+// (hx-target + alpine-morph keeps the Alpine state).
+templ DatepickerPanel(data DatepickerPanelData) {
+	<div data-lv-datepicker-panel class="w-72 rounded-lg border border-gray-200 bg-white p-3 shadow-lg dark:border-gray-700 dark:bg-gray-800">
+		<div class="flex items-center justify-between">
+			<button type="button" hx-get={ data.PrevURL } hx-target="[data-lv-datepicker-panel]" hx-swap="morph" hx-ext="alpine-morph" class={ dpNavButton } aria-label="Previous month">
+				@Icon("chevron_left", "h-5 w-5")
+			</button>
+			<div data-lv-datepicker-label class="text-sm font-medium text-gray-900 dark:text-white">{ data.Title }</div>
+			<button type="button" hx-get={ data.NextURL } hx-target="[data-lv-datepicker-panel]" hx-swap="morph" hx-ext="alpine-morph" class={ dpNavButton } aria-label="Next month">
+				@Icon("chevron_right", "h-5 w-5")
+			</button>
+		</div>
+		<div class="mt-3 flex flex-wrap text-center text-xs text-gray-500 dark:text-gray-400">
+			for _, wd := range data.Weekdays {
+				<span class="w-[calc(100%/7)]">{ wd }</span>
+			}
+		</div>
+		<div class="-m-0.5 mt-1 flex flex-wrap">
+			for _, c := range data.Cells {
+				<button type="button" data-lv-datepicker-day data-lv-day={ c.ISO } @click={ "pick('" + c.ISO + "')" } :class={ "dayClass('" + c.ISO + "')" } class={ dpCellClass(c) + " w-[calc(100%/7)] p-0.5" } disabled={ c.Disabled }>
+					<span class="block w-full rounded-lg px-1 py-1">{ c.Day }</span>
+				</button>
+			}
+		</div>
+		<div class="mt-3 flex items-center justify-between border-t border-gray-200 pt-3 dark:border-gray-700">
+			<button type="button" @click="clear()" class="rounded-lg px-3 py-1.5 text-sm font-medium text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-700">
+				Clear
+			</button>
+			<button type="button" @click="today()" class="rounded-lg px-3 py-1.5 text-sm font-medium text-indigo-600 hover:bg-indigo-50 dark:text-indigo-400 dark:hover:bg-gray-700">
+				Today
+			</button>
+		</div>
+	</div>
+}
+
 // Datepicker renders a Flowbite-style date input: a calendar icon on
-// the left and the popover calendar wired by the datepicker TS module
-// (data-lv-datepicker on the wrapper, data-lv-datepicker-input on the
-// field). The value uses the ISO yyyy-mm-dd layout. Pass id, name,
-// value, required and hx-* attributes in attrs; do not pass class or
-// type.
+// the left and a popover calendar. The popover is rendered by the
+// server (DatepickerPanel, fetched via htmx on month navigation); the
+// Alpine component "datepicker" (registered in internal/ui/ts) manages
+// the ephemeral state: open/close, outside-click, Escape and the arrow
+// keys. The value uses the ISO yyyy-mm-dd layout. Pass id, name,
+// value, min, max, required and hx-* attributes in attrs; do not pass
+// class or type.
 templ Datepicker(name string, extraClass string, attrs templ.Attributes) {
-	<div class="relative" data-lv-datepicker>
+	<div class="relative" x-data="datepicker" data-lv-datepicker @click.outside="close()" @keydown.escape.window="close()">
 		<div class="pointer-events-none absolute inset-y-0 start-0 flex items-center ps-3">
 			@Icon("calendar_month", "h-4 w-4 text-gray-500 dark:text-gray-400")
 		</div>
-		@Input(name, "ps-9 "+extraClass, datepickerInputAttrs(attrs))
+		@Input(name, "ps-9 cursor-pointer "+extraClass, datepickerInputAttrs(attrs))
+		<div x-show="open" x-cloak class="absolute z-10 mt-2" @keydown.arrow-left.prevent="move(-1)" @keydown.arrow-right.prevent="move(1)" @keydown.arrow-up.prevent="move(-7)" @keydown.arrow-down.prevent="move(7)">
+			@DatepickerPanel(initialPanel(attrs))
+		</div>
 	</div>
+}
+
+// initialPanel renders the popover for the month of the current value
+// (or today), carrying the value/min/max so the selection and limits
+// survive the htmx month navigation.
+func initialPanel(attrs templ.Attributes) DatepickerPanelData {
+	value, _ := attrs["value"].(string)
+	min, _ := attrs["min"].(string)
+	max, _ := attrs["max"].(string)
+	if t := parseISODate(value); t != nil {
+		return BuildDatepickerPanel(t.Year(), int(t.Month()), value, min, max)
+	}
+	now := time.Now()
+	return BuildDatepickerPanel(now.Year(), int(now.Month()), value, min, max)
 }
 
 // datepickerInputAttrs merges the fixed datepicker attributes with the
@@ -24,9 +87,147 @@ func datepickerInputAttrs(attrs templ.Attributes) templ.Attributes {
 		"data-lv-datepicker-input": "",
 		"placeholder":             "yyyy-mm-dd",
 		"autocomplete":            "off",
+		"readonly":                "",
+		"x-ref":                   "input",
+		"@click":                  "toggle()",
 	}
 	for key, value := range attrs {
 		merged[key] = value
 	}
 	return merged
 }
+
+
+
+// DpCell is one calendar cell of the datepicker popover. ISO is the
+// yyyy-mm-dd value the client picks; the surrounding months' days are
+// rendered greyed out like the clinic calendar.
+type DpCell struct {
+	ISO        string
+	Day        int
+	InMonth    bool
+	IsToday    bool
+	IsSelected bool
+	Disabled   bool
+}
+
+// DatepickerPanelData is the server-rendered popover calendar: the
+// month title, the htmx navigation URLs for the previous/next month,
+// and the day cells.
+type DatepickerPanelData struct {
+	Title    string
+	PrevURL  string
+	NextURL  string
+	Weekdays []string
+	Cells    []DpCell
+}
+
+// BuildDatepickerPanel computes the calendar for year/month (defaults to
+// the current month). selected/min/max are ISO dates or empty; cells
+// outside [min, max] are disabled. The navigation URLs keep the
+// selected/min/max, so the client state survives month changes.
+func BuildDatepickerPanel(year int, month int, selected string, min string, max string) DatepickerPanelData {
+	if year < 1900 || year > 2100 {
+		year, month = time.Now().Year(), int(time.Now().Month())
+	}
+	if month < 1 || month > 12 {
+		year, month = time.Now().Year(), int(time.Now().Month())
+	}
+
+	first := time.Date(year, time.Month(month), 1, 0, 0, 0, 0, time.UTC)
+	daysInMonth := time.Date(year, time.Month(month)+1, 0, 0, 0, 0, 0, time.UTC).Day()
+	prevDays := time.Date(year, time.Month(month), 0, 0, 0, 0, 0, time.UTC).Day()
+	leading := int(first.Weekday())
+
+	minT, maxT := parseISODate(min), parseISODate(max)
+	selT := parseISODate(selected)
+	today := time.Now().UTC()
+
+	var cells []DpCell
+	for i := 0; i < leading; i++ {
+		d := time.Date(year, time.Month(month)-1, prevDays-leading+1+i, 0, 0, 0, 0, time.UTC)
+		cells = append(cells, dpCell(d, false, selT, minT, maxT, today))
+	}
+	for d := 1; d <= daysInMonth; d++ {
+		t := time.Date(year, time.Month(month), d, 0, 0, 0, 0, time.UTC)
+		cells = append(cells, dpCell(t, true, selT, minT, maxT, today))
+	}
+	for i := 1; len(cells)%7 != 0; i++ {
+		t := time.Date(year, time.Month(month)+1, i, 0, 0, 0, 0, time.UTC)
+		cells = append(cells, dpCell(t, false, selT, minT, maxT, today))
+	}
+
+	q := url.Values{}
+	if selected != "" {
+		q.Set("selected", selected)
+	}
+	if min != "" {
+		q.Set("min", min)
+	}
+	if max != "" {
+		q.Set("max", max)
+	}
+
+	prev := time.Date(year, time.Month(month)-1, 1, 0, 0, 0, 0, time.UTC)
+	next := time.Date(year, time.Month(month)+1, 1, 0, 0, 0, 0, time.UTC)
+
+	return DatepickerPanelData{
+		Title:    first.Format("January 2006"),
+		Weekdays: []string{"Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"},
+		PrevURL:  dpNavURL(prev, q),
+		NextURL:  dpNavURL(next, q),
+		Cells:    cells,
+	}
+}
+
+func dpCell(t time.Time, inMonth bool, selT, minT, maxT *time.Time, today time.Time) DpCell {
+	iso := t.Format("2006-01-02")
+	disabled := (minT != nil && t.Before(*minT)) || (maxT != nil && t.After(*maxT))
+	return DpCell{
+		ISO:        iso,
+		Day:        t.Day(),
+		InMonth:    inMonth,
+		IsToday:    t.Year() == today.Year() && t.YearDay() == today.YearDay(),
+		IsSelected: selT != nil && iso == selT.Format("2006-01-02"),
+		Disabled:   disabled,
+	}
+}
+
+func dpNavURL(t time.Time, q url.Values) string {
+	q.Set("year", strconv.Itoa(t.Year()))
+	q.Set("month", strconv.Itoa(int(t.Month())))
+	return "/ui/datepicker?" + q.Encode()
+}
+
+// parseISODate parses "2006-01-02"; nil for empty or malformed input.
+func parseISODate(s string) *time.Time {
+	if s == "" {
+		return nil
+	}
+	t, err := time.Parse("2006-01-02", s)
+	if err != nil {
+		return nil
+	}
+	return &t
+}
+
+// dpCellClass returns the static (server) classes of a day cell; the
+// client adds the keyboard focus ring via Alpine.
+func dpCellClass(c DpCell) string {
+	base := "rounded-lg p-1 text-sm leading-5 focus:outline-none "
+	switch {
+	case c.Disabled:
+		return base + "cursor-not-allowed text-gray-300 dark:text-gray-600"
+	case c.IsSelected:
+		return base + "bg-indigo-600 font-medium text-white"
+	case c.IsToday:
+		return base + "font-medium text-indigo-600 hover:bg-indigo-50 dark:text-indigo-400 dark:hover:bg-gray-700"
+	case !c.InMonth:
+		return base + "text-gray-400 hover:bg-gray-100 dark:text-gray-500 dark:hover:bg-gray-700"
+	default:
+		return base + "text-gray-900 hover:bg-gray-100 dark:text-white dark:hover:bg-gray-700"
+	}
+}
+
+// dpNavButton is the shared prev/next chevron button classes.
+const dpNavButton = "inline-flex h-9 w-9 items-center justify-center rounded-lg border border-gray-300 bg-white text-gray-500 hover:bg-gray-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700"

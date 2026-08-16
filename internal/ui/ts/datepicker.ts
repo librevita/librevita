@@ -1,90 +1,115 @@
-// Pure date helpers for the datepicker widget. Kept as a plain TS
-// module (no DOM, no JSX) so `node --test` can exercise them directly;
-// datepicker-panel.tsx and datepicker-widget.tsx import from here.
+// Datepicker Alpine component (CSP build): owns the ephemeral state of
+// the popover — open/close, outside-click, Escape, arrow-key focus and
+// the value pick. The calendar grid itself is rendered by the server
+// (components.DatepickerPanel) and navigates months with htmx swaps,
+// so no DOM is built here. Registered before Alpine.start() in main.ts.
+//
+// The Alpine CSP build forbids inline expressions beyond literals,
+// property paths and registered method calls, so the template only uses
+// pick('yyyy-mm-dd') / dayClass('yyyy-mm-dd') with literal arguments.
 
-const MONTHS = [
-  'January',
-  'February',
-  'March',
-  'April',
-  'May',
-  'June',
-  'July',
-  'August',
-  'September',
-  'October',
-  'November',
-  'December',
-];
+// Type-only import: the Alpine runtime is injected by main.ts, so this
+// module stays side-effect-free and unit-testable.
+import type { Alpine, AlpineComponent } from '@alpinejs/csp';
 
-// parseISO parses a yyyy-mm-dd string into a local Date, rejecting
-// non-dates, out-of-range values and non-ISO formats.
-export function parseISO(value: string): Date | null {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
-  if (!match) {
+export function formatISODate(d: Date): string {
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${d.getFullYear()}-${m}-${day}`;
+}
+
+export function parseISO(s: string): Date | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+  if (!m) {
     return null;
   }
-  const year = Number(match[1]);
-  const month = Number(match[2]);
-  const day = Number(match[3]);
-  if (month < 1 || month > 12 || day < 1 || day > daysInMonth(year, month - 1)) {
+  const y = Number(m[1]);
+  const mo = Number(m[2]);
+  const d = Number(m[3]);
+  const date = new Date(y, mo - 1, d);
+  // Reject rolled-over dates (2025-02-30 -> March 2nd).
+  if (date.getFullYear() !== y || date.getMonth() !== mo - 1 || date.getDate() !== d) {
     return null;
   }
-  return new Date(year, month - 1, day);
+  return date;
 }
 
-// formatISO renders a Date as yyyy-mm-dd.
-export function formatISO(date: Date): string {
-  const year = String(date.getFullYear()).padStart(4, '0');
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return year + '-' + month + '-' + day;
+// registerDatepicker wires the component into the injected Alpine
+// instance; main.ts calls it before Alpine.start().
+export function registerDatepicker(alpine: Alpine): void {
+  alpine.data('datepicker', (() => ({
+  open: false,
+  focused: '',
+
+  init(this: AlpineComponent): void {
+    const input = this.$refs.input as HTMLInputElement | null;
+    this.focused = input ? input.value : '';
+    if (!this.focused) {
+      this.focused = formatISODate(new Date());
+    }
+  },
+
+  toggle(this: AlpineComponent): void {
+    this.open = !this.open;
+  },
+
+  close(this: AlpineComponent): void {
+    this.open = false;
+  },
+
+  pick(this: AlpineComponent, iso: string): void {
+    const input = this.$refs.input as HTMLInputElement | null;
+    if (input) {
+      input.value = iso;
+    }
+    this.focused = iso;
+    this.close();
+  },
+
+  clear(this: AlpineComponent): void {
+    const input = this.$refs.input as HTMLInputElement | null;
+    if (input) {
+      input.value = '';
+    }
+    this.close();
+  },
+
+  today(this: AlpineComponent): void {
+    this.pick(formatISODate(new Date()));
+  },
+
+  // move shifts the keyboard focus within the currently rendered
+  // month; crossing into the previous/next month is left for a later
+  // iteration (the server owns the grid).
+  move(this: AlpineComponent, delta: number): void {
+    const panel = this.$root.querySelector('[data-lv-datepicker-panel]');
+    if (!panel) {
+      return;
+    }
+    const days = Array.from(panel.querySelectorAll('[data-lv-datepicker-day]')).map(
+      (c: Element) => c.getAttribute('data-lv-day') || '',
+    );
+    if (days.length === 0) {
+      return;
+    }
+    let idx = days.indexOf(this.focused);
+    if (idx === -1) {
+      this.focused = days[0];
+      return;
+    }
+    const next = idx + delta;
+    if (next >= 0 && next < days.length) {
+      this.focused = days[next];
+    }
+  },
+
+  dayClass(this: AlpineComponent, iso: string): string {
+    return this.focused === iso ? 'ring-2 ring-indigo-500 ring-inset' : '';
+  },
+  })) as unknown as () => AlpineComponent);
 }
 
-// daysInMonth returns the number of days in the given month (0-based).
-export function daysInMonth(year: number, month: number): number {
-  return new Date(year, month + 1, 0).getDate();
-}
-
-// isSameDay compares two Dates by calendar day.
-export function isSameDay(a: Date, b: Date): boolean {
-  return (
-    a.getFullYear() === b.getFullYear() &&
-    a.getMonth() === b.getMonth() &&
-    a.getDate() === b.getDate()
-  );
-}
-
-// addMonths returns a new Date shifted by delta months, clamped to the
-// last valid day of the target month (Jan 31 + 1 month -> Feb 28/29).
-export function addMonths(date: Date, delta: number): Date {
-  const year = date.getFullYear();
-  const month = date.getMonth() + delta;
-  const targetYear = year + Math.floor(month / 12);
-  const targetMonth = ((month % 12) + 12) % 12;
-  const day = Math.min(date.getDate(), daysInMonth(targetYear, targetMonth));
-  return new Date(targetYear, targetMonth, day);
-}
-
-// addDays returns a new Date shifted by delta days.
-export function addDays(date: Date, delta: number): Date {
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate() + delta);
-}
-
-// monthLabel renders "Month YYYY" for the header.
-export function monthLabel(year: number, month: number): string {
-  return MONTHS[month] + ' ' + String(year);
-}
-
-// buildGrid returns the 42 cells (6 weeks starting on Sunday) that make
-// up the calendar for the given 0-based month, with out-of-month days
-// included.
-export function buildGrid(year: number, month: number): Date[] {
-  const first = new Date(year, month, 1);
-  const start = new Date(year, month, 1 - first.getDay());
-  const cells: Date[] = [];
-  for (let i = 0; i < 42; i++) {
-    cells.push(new Date(start.getFullYear(), start.getMonth(), start.getDate() + i));
-  }
-  return cells;
+export function init(): void {
+  // The component is registered via registerDatepicker; Alpine.start()
+  // runs in main.ts.
 }

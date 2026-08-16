@@ -20,7 +20,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { transformSync } from 'esbuild';
 
-const SOURCE = /\.(ts|tsx)$/;
+const SOURCE = /\.ts$/;
 
 // The SOURCE test runs on the URL itself so non-file schemes (node:
 // builtins, data:, etc.) never reach fileURLToPath.

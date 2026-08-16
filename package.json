@@ -11,8 +11,14 @@
     "test": "node --import ./internal/ui/test-loader.ts --test internal/ui/ts/ui_test.ts"
   },
   "devDependencies": {
+    "@alpinejs/csp": "^3.16.1",
+    "@alpinejs/focus": "^3.16.1",
+    "@alpinejs/morph": "^3.16.1",
+    "@babel/core": "^8.0.1",
+    "@babel/preset-env": "^8.0.2",
     "@fontsource/inter": "^5.3.0",
     "@types/node": "^26.2.0",
+    "alpinejs": "^3.16.1",
     "autoprefixer": "^10.5.4",
     "cssnano": "^8.0.4",
     "esbuild": "0.28.1",
