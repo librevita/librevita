@@ -60,54 +60,65 @@ The theme bootstrap is bundled separately and rendered inline in the head (ui.Th
 exactly that static script through its content hash (ui.ThemeScriptHash in `script-src`), so no `unsafe-inline` and
 no per-request nonce is needed.
 
-| Package        | Version | License | Purpose                                 |
-| -------------- | ------- | ------- | --------------------------------------- |
-| `htmx.org`              | 1.9.12  | 0BSD    | Hypermedia runtime (`dist/htmx.min.js`) |
-| `htmx.org` (ext/sse.js) | 1.9.12  | 0BSD    | SSE extension (`dist/ext/sse.js`)       |
+| Package                 | Version | License | Purpose                                         |
+| ----------------------- | ------- | ------- | ----------------------------------------------- |
+| `htmx.org`              | 1.9.12  | 0BSD    | Hypermedia runtime (`dist/htmx.min.js`)         |
+| `htmx.org` (ext/sse.js) | 1.9.12  | 0BSD    | SSE extension (`dist/ext/sse.js`)               |
+| `@alpinejs/csp`         | 3.16.1  | MIT     | CSP-safe Alpine core (no `unsafe-eval`)         |
+| `@alpinejs/morph`       | 3.16.1  | MIT     | DOM morphing used by the htmx alpine-morph swap |
+| `@alpinejs/focus`       | 3.16.1  | MIT     | `x-trap` focus trapping for the modal           |
 
-`htmx.org` is the only third-party runtime JavaScript. It is not copied: `internal/ui/build.ts` bundles its
-`dist/htmx.min.js` (the 1.x UMD) and its SSE extension (`dist/ext/sse.js`) into the single application script
-(`app-<hash>.js`) along with the first-party TypeScript (the ui manifest). `htmx-runtime.ts` publishes the api object
-as the global `htmx` before the extension loads; the SSE extension is an IIFE calling `htmx.defineExtension('sse', ...)`.
-The stylesheet (`app-<hash>.css`) is the PostCSS pipeline over `internal/ui/input.css`. Everything under
+`htmx.org` and the Alpine packages are the third-party runtime JavaScript. They are not copied:
+`internal/ui/build.ts` bundles the htmx `dist/htmx.min.js` (the 1.x UMD), its SSE extension (`dist/ext/sse.js`), the
+Alpine CSP core and the morph/focus plugins into the single application script (`app-<hash>.js`) along with the
+first-party TypeScript (the ui manifest). `htmx-runtime.ts` publishes the api object as the global `htmx` before the
+extension loads; the SSE extension is an IIFE calling `htmx.defineExtension('sse', ...)`; `main.ts` registers the
+Alpine plugins and the CSP components, publishes `window.Alpine` for the htmx alpine-morph extension and starts
+Alpine. The stylesheet (`app-<hash>.css`) is the PostCSS pipeline over `internal/ui/input.css`. Everything under
 `internal/ui/static` is generated at build time, content addressed, and served with Subresource Integrity hashes (see
 `internal/ui/assets.go`).
 
-The SSE extension is configured (bundled and registered) for the upcoming agenda live updates. Elements opt in with
+The SSE extension is configured (bundled and registered) for the upcoming calendar live updates. Elements opt in with
 `hx-ext="sse"` plus `sse-connect="/endpoint"` (EventSource URL) and `sse-swap="<event-name>"` on the receiving element;
 the server sends named events whose data is swapped into the element.
 
 HTMX 1.9.12 is the terminal line for this application: it is ES5-era (IE11-compatible) and runs on the PowerPC-era
 engines (TenFourFox/AquaFox, Firefox 45-based) with a single compatibility shim (`Document.evaluate` arguments in
 compat.ts). HTMX 2.x was evaluated and rejected as a runtime: its modern APIs required a full compatibility layer
-(XPath evaluator, getRootNode, ShadowRoot, append, Object.*, selector flags), and the 4.x line requires
+(XPath evaluator, getRootNode, ShadowRoot, append, Object.\*, selector flags), and the 4.x line requires
 `fetch`/`ReadableStream`/`AbortController`/`crypto.randomUUID`, which break the floor outright. The 1.9 line is frozen
 since April 2024; the application never uses `hx-on` (eval) and hardens htmx with `allowEval=false` and
 `allowScriptTags=false`.
 
 ### Build-time devDependencies
 
-| Package                       | Version | License    | Purpose                                                |
-| ----------------------------- | ------- | ---------- | ------------------------------------------------------ |
-| `typescript`                  | 5.9.3   | Apache-2.0 | Type checking (`tsc --noEmit`)                         |
-| `esbuild`                     | 0.28.1  | MIT        | Bundler for the TS modules (legacy floor target)            |
-| `tailwindcss`                 | 3.4.17  | MIT        | CSS framework; compiled into `app-<hash>.css` at build |
-| `postcss`                     | 8.5.26  | MIT        | CSS pipeline core (run in-process by `build.ts`)       |
-| `postcss-sort-media-queries`  | 6.7.1   | MIT        | Mobile-first ordering of `@media` blocks               |
-| `postcss-combine-media-query` | 2.1.0   | MIT        | Merges identical adjacent `@media` blocks              |
-| `autoprefixer`                | 10.5.4  | MIT        | Vendor prefixes (driven by `browserslist`)             |
-| `cssnano`                     | 8.0.4   | MIT        | Minification in production builds                      |
-| `linkedom`                    | 0.18.13 | ISC        | DOM implementation for the `node:test` unit tests      |
+| Package                       | Version | License    | Purpose                                                    |
+| ----------------------------- | ------- | ---------- | ---------------------------------------------------------- |
+| `typescript`                  | 5.9.3   | Apache-2.0 | Type checking (`tsc --noEmit`)                             |
+| `esbuild`                     | 0.28.1  | MIT        | Bundler for the TS modules (legacy floor target)           |
+| `@babel/core`                 | 8.0.1   | MIT        | Babel transform for the post-esbuild floor pass            |
+| `@babel/preset-env`           | 8.0.2   | MIT        | Browserslist-driven lowering of the bundled dependencies   |
+| `tailwindcss`                 | 3.4.17  | MIT        | CSS framework; compiled into `app-<hash>.css` at build     |
+| `postcss`                     | 8.5.26  | MIT        | CSS pipeline core (run in-process by `build.ts`)           |
+| `postcss-sort-media-queries`  | 6.7.1   | MIT        | Mobile-first ordering of `@media` blocks                   |
+| `postcss-combine-media-query` | 2.1.0   | MIT        | Merges identical adjacent `@media` blocks                  |
+| `autoprefixer`                | 10.5.4  | MIT        | Vendor prefixes (driven by `browserslist`)                 |
+| `cssnano`                     | 8.0.4   | MIT        | Minification in production builds                          |
+| `linkedom`                    | 0.18.13 | ISC        | DOM implementation for the `node:test` unit tests          |
+| `@types/node`                 | 26.2.0  | MIT        | Node typings for the build/test scripts                    |
+| `@fontsource/inter`           | 5.3.0   | OFL-1.1    | Self-hosted Inter webfonts (woff2+woff, latin 400/500/600) |
 
 The bundles are compiled with `target=firefox58` and the output is verified after the build by `assertLegacyFloor`: no
 `?.`/`??` and no optional catch binding (`catch {}`, a syntax error on Firefox 52 and Goanna) may reach the output.
 esbuild is forced to lower optional catch binding (`supported: { 'optional-catch-binding': false }`) because its
-firefox58 feature matrix would otherwise allow it. The build fails on any modern-only syntax, which is the automated
-half of the legacy floor.
+firefox58 feature matrix would otherwise allow it. A Babel `preset-env` pass then lowers whatever the bundled
+dependencies (Alpine's CSP build) ship beyond the floor — `async/await` above all, which esbuild cannot transform —
+driven by the same browserslist (`Firefox >= 45`) that feeds autoprefixer, and the output is re-minified with
+esbuild. The build fails on any modern-only syntax, which is the automated half of the legacy floor.
 
 PostCSS pipeline (in order): `tailwindcss`,
 `postcss-sort-media-queries` (mobile-first order), `postcss-combine-media-query` (one merged block per breakpoint),
-`autoprefixer` (driven by the `browserslist` `Firefox >= 52` entry) and `cssnano` (minification). The compiled
+`autoprefixer` (driven by the `browserslist` `Firefox >= 45` entry) and `cssnano` (minification). The compiled
 output is minified and has a single `@media (min-width: …)` block per Tailwind breakpoint.
 
 Dark mode uses Tailwind's class strategy (`darkMode: 'class'`). The `dark` class is toggled on the `<html>` element by
