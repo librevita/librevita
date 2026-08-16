@@ -287,14 +287,6 @@ func BuildMonthGrid(now time.Time, fixtures map[int][]Appointment) MonthGrid {
 	}
 }
 
-// chipShow renders the physician-filter x-show expression for one
-// appointment as a pure literal comparison: the Alpine CSP build's
-// evaluator is only relied on for literals and comparisons (the
-// datepicker profile), never for $el/dataset magic.
-func chipShow(physician string) string {
-	return "physician === '' || physician === '" + physician + "'"
-}
-
 // apptStyle renders the appointment block style binding as a full
 // literal, with the geometry computed by the server.
 func apptStyle(a Appointment, gridStartHour int) string {
