@@ -18,6 +18,13 @@ import (
 	"github.com/disintegration/imaging"
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
+	// The standard library registers png, jpeg and gif (through
+	// imaging); the extra sniffed formats need their supplementary
+	// decoders registered here or processAvatar would reject bmp, tiff
+	// and webp uploads as undecodable.
+	_ "golang.org/x/image/bmp"
+	_ "golang.org/x/image/tiff"
+	_ "golang.org/x/image/webp"
 
 	"librevita.org/internal/core/server"
 	"librevita.org/internal/core/storage"
@@ -35,9 +42,11 @@ const avatarDomain = "avatar"
 const maxAvatarSize = 2 << 20
 
 // avatarImageTypes are the accepted image content types, matched
-// against the sniffed payload rather than the client header.
+// against the sniffed payload rather than the client header. Every
+// accepted source is processed down to one JPEG, whatever its origin.
 var avatarImageTypes = map[string]bool{
 	"image/jpeg": true, "image/png": true, "image/webp": true, "image/gif": true,
+	"image/bmp": true, "image/tiff": true,
 }
 
 // avatarSize is the square side every avatar is processed to (centered
@@ -57,7 +66,9 @@ const avatarJPEGQuality = 85
 // AvatarUpload stores the signed-in user's avatar. The owner is the
 // principal from the session — never a form field — and the previous
 // avatars are removed only after the new one is stored, so a failed
-// upload never leaves the user without a picture.
+// upload never leaves the user without a picture. Failures render the
+// profile page with the error message: the form submits natively, so
+// an error body would land bare on the browser.
 func (h *Handler) AvatarUpload(c echo.Context) error {
 	ctx := c.Request().Context()
 	p := server.Principal(c)
@@ -67,13 +78,13 @@ func (h *Handler) AvatarUpload(c echo.Context) error {
 
 	file, err := c.FormFile("avatar")
 	if err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest, "an image is required")
+		return h.profilePage(ctx, c, p, http.StatusBadRequest, "an image is required")
 	}
 	if file.Size <= 0 {
-		return echo.NewHTTPError(http.StatusBadRequest, "the image is empty")
+		return h.profilePage(ctx, c, p, http.StatusBadRequest, "the image is empty")
 	}
 	if file.Size > maxAvatarSize {
-		return echo.NewHTTPError(http.StatusRequestEntityTooLarge, "the image exceeds the size limit")
+		return h.profilePage(ctx, c, p, http.StatusBadRequest, "the image exceeds the size limit")
 	}
 
 	src, err := file.Open()
@@ -91,7 +102,7 @@ func (h *Handler) AvatarUpload(c echo.Context) error {
 	}
 	contentType := http.DetectContentType(head[:n])
 	if !avatarImageTypes[contentType] {
-		return echo.NewHTTPError(http.StatusBadRequest, "the file is not a supported image")
+		return h.profilePage(ctx, c, p, http.StatusBadRequest, "the file is not a supported image")
 	}
 
 	// The upload is bounded by the route body limit (2 MiB), so the
@@ -103,7 +114,7 @@ func (h *Handler) AvatarUpload(c echo.Context) error {
 	}
 	processed, err := processAvatar(payload)
 	if err != nil {
-		return echo.NewHTTPError(http.StatusBadRequest, err.Error())
+		return h.profilePage(ctx, c, p, http.StatusBadRequest, err.Error())
 	}
 
 	userID := uuid.MustParse(p.ID)
@@ -170,10 +181,11 @@ func (h *Handler) UserAvatar(c echo.Context) error {
 }
 
 // serveAvatar streams the newest avatar of userID, or the initials
-// placeholder when the user has none. Both payloads are served with
-// the same caching contract: private (the picture is per-user, never
-// for shared caches), one hour to live, and a strong ETag so browsers
-// holding the current picture get a 304 instead of the payload.
+// placeholder when the user has none. Both payloads share the caching
+// contract: private (the picture is per-user, never for shared caches),
+// no-cache (revalidate before every use, so an upload reflects on the
+// very next navigation), and a strong ETag so the revalidation answers
+// 304 without the payload.
 func (h *Handler) serveAvatar(ctx context.Context, c echo.Context, userID uuid.UUID, name string) error {
 	avatars, err := h.files.List(ctx, avatarDomain, userID)
 	if err != nil {
@@ -205,9 +217,13 @@ func (h *Handler) serveAvatar(ctx context.Context, c echo.Context, userID uuid.U
 
 // avatarCacheHeaders sets the shared caching contract and answers 304
 // when the client validates with an If-None-Match that still matches;
-// it reports whether the caller should proceed to send the body.
+// it reports whether the caller should proceed to send the body. The
+// representation is revalidated on every use (no-cache) rather than
+// held for a long max-age: an upload must show up on the next page
+// load, not an hour later, and the ETag keeps that revalidation free
+// of payloads.
 func avatarCacheHeaders(c echo.Context, etag string) bool {
-	c.Response().Header().Set("Cache-Control", "private, max-age=3600")
+	c.Response().Header().Set("Cache-Control", "private, no-cache")
 	quoted := `"` + etag + `"`
 	c.Response().Header().Set("ETag", quoted)
 	if inm := c.Request().Header.Get("If-None-Match"); inm != "" && etagMatches(inm, quoted) {

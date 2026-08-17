@@ -208,8 +208,9 @@ func TestAvatarUploadServeRemove(t *testing.T) {
 }
 
 // TestAvatarCacheContract pins the caching behavior: both the real
-// picture and the placeholder are private with a one-hour lifetime, and
-// a validating request (If-None-Match) gets a 304 instead of the body.
+// picture and the placeholder are private and revalidated before every
+// use (no-cache), and a validating request (If-None-Match) gets a 304
+// instead of the body — so an upload reflects on the next page load.
 func TestAvatarCacheContract(t *testing.T) {
 	e, sessions, _, _ := newAvatarEnv(t)
 	token, err := sessions.Create(context.Background(), auth.Principal{
@@ -231,12 +232,12 @@ func TestAvatarCacheContract(t *testing.T) {
 		return rec, rec.Header().Get("ETag")
 	}
 
-	// Placeholder: private, one hour, ETag present, 200 on first fetch.
+	// Placeholder: private + no-cache, ETag present, 200 on first fetch.
 	rec, etag := get("")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("placeholder status = %d, want 200", rec.Code)
 	}
-	if cc := rec.Header().Get("Cache-Control"); cc != "private, max-age=3600" {
+	if cc := rec.Header().Get("Cache-Control"); cc != "private, no-cache" {
 		t.Errorf("placeholder cache-control = %q", cc)
 	}
 	if etag == "" {
@@ -275,7 +276,7 @@ func TestAvatarCacheContract(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("picture status = %d, want 200", rec.Code)
 	}
-	if cc := rec.Header().Get("Cache-Control"); cc != "private, max-age=3600" {
+	if cc := rec.Header().Get("Cache-Control"); cc != "private, no-cache" {
 		t.Errorf("picture cache-control = %q", cc)
 	}
 	if etag == "" || strings.HasPrefix(strings.Trim(etag, `"`), "ph-") {
@@ -289,6 +290,75 @@ func TestAvatarCacheContract(t *testing.T) {
 	rec, _ = get("W/" + etag)
 	if rec.Code != http.StatusNotModified {
 		t.Fatalf("picture with weak tag = %d, want 304", rec.Code)
+	}
+}
+
+// tinyBMP is a minimal 1x1 24bpp bitmap (54-byte header, one padded
+// row of three blue pixel bytes), for the supplementary-decoder test.
+var tinyBMP = func() []byte {
+	b := make([]byte, 58)
+	copy(b, "BM")
+	put32(b[2:], 58)                          // file size
+	put32(b[10:], 54)                         // pixel data offset
+	put32(b[14:], 40)                         // DIB header size
+	put32(b[18:], 1)                          // width
+	put32(b[22:], 1)                          // height
+	put16(b[26:], 1)                          // planes
+	put16(b[28:], 24)                         // bits per pixel
+	b[54], b[55], b[56], b[57] = 0, 0, 255, 0 // B G R + row padding
+	return b
+}()
+
+func put16(b []byte, v uint16) {
+	b[0], b[1] = byte(v), byte(v>>8)
+}
+
+func put32(b []byte, v uint32) {
+	b[0], b[1], b[2], b[3] = byte(v), byte(v>>8), byte(v>>16), byte(v>>24)
+}
+
+// TestAvatarAcceptsSupplementaryFormats pins the extra decoders: bmp
+// and webp pass the sniffed gate and are processed down to the same
+// 256x256 JPEG as every other source.
+func TestAvatarAcceptsSupplementaryFormats(t *testing.T) {
+	// A real webp is not hand-craftable here; the gate + decoder
+	// registration is the same mechanism as bmp, so the bitmap fixture
+	// pins the whole pipeline (sniff, decode, thumbnail, re-encode).
+	e, sessions, _, _ := newAvatarEnv(t)
+	token, err := sessions.Create(context.Background(), auth.Principal{
+		ID: testAdminID.String(), Email: "admin@example.org", Name: "Admin", Role: auth.RoleAdmin,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cookie := sessions.Cookie(token)
+
+	buf, ctype := avatarMultipart(t, "avatar", "pixel.bmp", tinyBMP, "image/bmp")
+	req := httptest.NewRequest(http.MethodPost, "/profile/avatar", buf)
+	req.Header.Set("Content-Type", ctype)
+	req.AddCookie(cookie)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+	if rec.Code != http.StatusFound {
+		t.Fatalf("bmp upload status = %d, want 302", rec.Code)
+	}
+
+	srv := httptest.NewRequest(http.MethodGet, "/profile/avatar", nil)
+	srv.AddCookie(cookie)
+	srec := httptest.NewRecorder()
+	e.ServeHTTP(srec, srv)
+	if srec.Code != http.StatusOK {
+		t.Fatalf("serve status = %d", srec.Code)
+	}
+	img, format, err := image.Decode(bytes.NewReader(srec.Body.Bytes()))
+	if err != nil {
+		t.Fatalf("response is not a decodable image: %v", err)
+	}
+	if format != "jpeg" {
+		t.Errorf("response format = %q, want jpeg", format)
+	}
+	if b := img.Bounds(); b.Dx() != 256 || b.Dy() != 256 {
+		t.Errorf("response size = %dx%d, want 256x256", b.Dx(), b.Dy())
 	}
 }
 
