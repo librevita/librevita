@@ -276,7 +276,7 @@ func TestNotFoundPublicPaths(t *testing.T) {
 // the global 1M body limit skips the avatar and document routes, so
 // their own per-route limits (2M avatar, 25M documents) are reachable.
 func TestSecurityHeadersAreStrict(t *testing.T) {
-	e := New(auth.NewCSRF(&config.Config{Mode: "development"}), &config.Config{Mode: "development"})
+	e := New(auth.NewCSRF(&config.Config{Mode: "development"}), &config.Config{Mode: "development"}, testLogger())
 	e.GET("/x", func(c echo.Context) error { return c.NoContent(http.StatusOK) })
 
 	req := httptest.NewRequest(http.MethodGet, "/x", nil)
@@ -304,7 +304,7 @@ func TestSecurityHeadersAreStrict(t *testing.T) {
 }
 
 func TestSecurityHeadersHSTSIsConfigurable(t *testing.T) {
-	e := New(auth.NewCSRF(&config.Config{Mode: "development"}), &config.Config{Mode: "development", HSTSMaxAge: 31536000})
+	e := New(auth.NewCSRF(&config.Config{Mode: "development"}), &config.Config{Mode: "development", HSTSMaxAge: 31536000}, testLogger())
 	e.GET("/x", func(c echo.Context) error { return c.NoContent(http.StatusOK) })
 
 	req := httptest.NewRequest(http.MethodGet, "/x", nil)
@@ -318,7 +318,7 @@ func TestSecurityHeadersHSTSIsConfigurable(t *testing.T) {
 
 func TestBodyLimitRaisesAvatarUploadCap(t *testing.T) {
 	csrf := auth.NewCSRF(&config.Config{Mode: "development"})
-	e := New(csrf, &config.Config{Mode: "development"})
+	e := New(csrf, &config.Config{Mode: "development"}, testLogger())
 	e.POST("/profile/avatar", func(c echo.Context) error { return c.NoContent(http.StatusOK) })
 	e.POST("/profile", func(c echo.Context) error { return c.NoContent(http.StatusOK) })
 
