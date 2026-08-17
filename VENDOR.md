@@ -139,3 +139,10 @@ The UI follows the design language of the MIT-licensed
 [flowbite-admin-dashboard](https://github.com/themesberg/flowbite-admin-dashboard): the shell layout (topbar, sidebar,
 stat cards, tables), the sign-in page, and the dark mode palette. No code is copied; markup is rendered server-side with
 templ and interaction stays with htmx and the first-party TypeScript modules as progressive enhancement.
+
+## Vendored files
+
+| File                                       | Source                                                         | License          | Notes                                                                            |
+| ------------------------------------------ | -------------------------------------------------------------- | ---------------- | -------------------------------------------------------------------------------- |
+| `internal/ui/static/illustrations/404.svg` | flowbite-admin-dashboard `static/images/illustrations/404.svg` | MIT (Themesberg) | Astronaut illustration shown on the error page for non-server errors. Unchanged. |
+| `internal/ui/static/illustrations/500.svg` | flowbite-admin-dashboard `static/images/illustrations/500.svg` | MIT (Themesberg) | Astronaut illustration shown on 5xx error pages. Unchanged.                      |

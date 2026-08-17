@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/labstack/echo/v4"
+	"librevita.org/internal/ui/pages"
 )
 
 // Problem is an RFC 7807 problem-details response.
@@ -41,7 +42,16 @@ func ProblemErrorHandler(err error, c echo.Context) {
 	}
 
 	if !IsHtmx(c) && wantsHTML(c.Request()) {
-		if err := Render(c, status, ErrorPage(status, http.StatusText(status), detail)); err != nil {
+		c.Response().Header().Set(echo.HeaderContentType, "text/html; charset=utf-8")
+		title := http.StatusText(status)
+		if status == http.StatusNotFound {
+			title = "Page not found"
+			detail = "Oops! Looks like you followed a bad link. If you think this is a problem with us, please tell us."
+		} else if status >= http.StatusInternalServerError {
+			title = "Something has gone seriously wrong"
+			detail = "It's always time for a coffee break. We should be back by the time you finish your coffee."
+		}
+		if err := Render(c, status, pages.ErrorPage(status, title, detail)); err != nil {
 			c.Logger().Error(err)
 		}
 		return
