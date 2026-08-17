@@ -1,0 +1,53 @@
+package pages
+
+import (
+	"librevita.org/internal/ui"
+)
+
+// ErrorPage is the browser-facing error screen for any status code,
+// following the Flowbite 404/500 pages: a full-height centered column
+// with the illustration on top, the heading and detail copy beneath
+// (Flowbite-style 404/500 wording, supplied by the handler) and a Go
+// back home button. Only actual 404s get
+// the lost-page illustration (a person at a desk whose screen shows
+// "404"); every other status gets the space illustration (an astronaut
+// floating in space with the moon alongside and a rocket flying past).
+// Plain
+// navigations
+// (a submitted form, an address-bar URL) must not dump the bare RFC
+// 7807 JSON in the user's face; the problem+json envelope stays
+// reserved for API clients. The app stylesheet is linked (inline style
+// attributes would be blocked by the strict CSP), the theme bootstrap
+// ships inlined under its CSP content hash, and the illustrations are
+// served from /static (same-origin, allowed by default-src 'self',
+// cached immutably).
+templ ErrorPage(status int, title string, detail string) {
+	<!DOCTYPE html>
+	<html lang="en">
+		<head>
+			<meta charset="utf-8">
+			<meta name="viewport" content="width=device-width, initial-scale=1">
+			<title>{ status } { title } - LibreVita</title>
+			@templ.Raw(`<script>` + ui.ThemeScript + `</script>`)
+			<link rel="stylesheet" href={ ui.AppCSS } integrity={ ui.AppCSSIntegrity }>
+		</head>
+		<body class="bg-gray-50 dark:bg-gray-800">
+			<main class="bg-gray-50 dark:bg-gray-900">
+				<div class="mx-auto flex h-screen flex-col items-center justify-center px-6 xl:px-0 dark:bg-gray-900">
+					if status == 404 {
+						<img src="/static/illustrations/404.svg" alt="Person at a desk whose screen shows 404" class="block md:max-w-lg">
+					} else {
+						<img src="/static/illustrations/500.svg" alt="Astronaut floating in space with the moon alongside and a rocket flying past" class="block md:max-w-lg">
+					}
+					<div class="text-center xl:max-w-4xl">
+						<h1 class="mb-3 text-2xl font-bold leading-tight text-gray-900 sm:text-4xl lg:text-5xl dark:text-white">{ title }</h1>
+						if detail != "" && detail != title {
+							<p class="mb-5 text-base font-normal text-gray-500 md:text-lg dark:text-gray-400">{ detail }</p>
+						}
+						<a href="/" class="mr-3 inline-flex items-center rounded-lg bg-indigo-600 px-5 py-2.5 text-center text-sm font-medium text-white hover:bg-indigo-700 focus:ring-4 focus:ring-indigo-300 dark:bg-indigo-500 dark:hover:bg-indigo-600 dark:focus:ring-indigo-800">Go back home</a>
+					</div>
+				</div>
+			</main>
+		</body>
+	</html>
+}
