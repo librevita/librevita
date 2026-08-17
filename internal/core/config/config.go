@@ -126,8 +126,17 @@ type DatabaseConfig struct {
 	Path string `koanf:"path"`
 
 	// DqliteAddrs is the comma-separated list of dqlite node addresses
-	// (the wire protocol), e.g. "node1:9001,node2:9001,node3:9001".
+	// (the wire protocol), e.g. "node1:9001,node2:9001,node3:9001". It
+	// is the bootstrap candidate list; either DqliteAddrs or
+	// DqliteDiscoverySRV is required.
 	DqliteAddrs string `koanf:"dqlite_addrs"`
+
+	// DqliteDiscoverySRV optionally names a DNS SRV record (e.g.
+	// "_dqlite._tcp.librevita.svc.cluster.local") whose targets seed
+	// the candidate node list in place of static DqliteAddrs. The
+	// record is queried on every reconnect, so cluster membership can
+	// change without restarting the application.
+	DqliteDiscoverySRV string `koanf:"dqlite_discovery_srv"`
 
 	// DqliteDatabase is the database name on the dqlite cluster.
 	DqliteDatabase string `koanf:"dqlite_database"`
@@ -189,6 +198,7 @@ func RegisterFlags(fs *pflag.FlagSet) {
 	stringFlag(fs, "db-driver", DriverSQLite, "database backend: sqlite or dqlite")
 	stringFlag(fs, "db-path", "", "SQLite database path")
 	stringFlag(fs, "dqlite-addrs", "", "comma-separated dqlite node addresses (wire protocol)")
+	stringFlag(fs, "dqlite-discovery-srv", "", "DNS SRV record seeding the dqlite node candidates, e.g. _dqlite._tcp.librevita.svc.cluster.local")
 	stringFlag(fs, "dqlite-database", defaultDqliteDatabase, "dqlite database name")
 	stringFlag(fs, "log-mode", defaultLogMode, "production log mode: console, file, or rotating")
 	stringFlag(fs, "log-path", "", "log file path")
@@ -331,6 +341,8 @@ func (c *Config) normalize() {
 	if strings.TrimSpace(c.Database.DqliteDatabase) == "" {
 		c.Database.DqliteDatabase = defaultDqliteDatabase
 	}
+	c.Database.DqliteAddrs = strings.TrimSpace(c.Database.DqliteAddrs)
+	c.Database.DqliteDiscoverySRV = strings.TrimSpace(c.Database.DqliteDiscoverySRV)
 
 	c.Logging.Mode = strings.ToLower(strings.TrimSpace(c.Logging.Mode))
 	if c.Logging.Mode == "" {
@@ -368,8 +380,8 @@ func (c *Config) validate() error {
 				addresses++
 			}
 		}
-		if addresses == 0 {
-			return fmt.Errorf("config: database.dqlite_addrs requires at least one node address (e.g. \"node1:9001,node2:9001,node3:9001\")")
+		if addresses == 0 && c.Database.DqliteDiscoverySRV == "" {
+			return fmt.Errorf("config: database.dqlite_addrs requires at least one node address (e.g. \"node1:9001,node2:9001,node3:9001\") or database.dqlite_discovery_srv (an SRV record)")
 		}
 	}
 
@@ -439,6 +451,8 @@ func mapFlagKey(name string) string {
 		return "database.path"
 	case "dqlite-addrs", "dqlite_addrs":
 		return "database.dqlite_addrs"
+	case "dqlite-discovery-srv", "dqlite_discovery_srv":
+		return "database.dqlite_discovery_srv"
 	case "dqlite-database", "dqlite_database":
 		return "database.dqlite_database"
 	case "log-mode", "log_mode":
@@ -501,6 +515,8 @@ func mapEnvironmentKey(key string) string {
 		return "database.path"
 	case "dqlite_addrs", "database_dqlite_addrs":
 		return "database.dqlite_addrs"
+	case "dqlite_discovery_srv", "database_dqlite_discovery_srv":
+		return "database.dqlite_discovery_srv"
 	case "dqlite_database", "database_dqlite_database":
 		return "database.dqlite_database"
 	case "log_mode", "logging_mode":

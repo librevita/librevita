@@ -67,26 +67,29 @@ func TestValidateDqliteAddrs(t *testing.T) {
 	cases := []struct {
 		name    string
 		addrs   string
+		srv     string
 		wantErr bool
 	}{
-		{"valid", "node1:9001, node2:9001", false},
-		{"single", "node1:9001", false},
-		{"missing", "", true},
-		{"only separators", ",, ,", true},
-		{"whitespace", "   ", true},
+		{"valid", "node1:9001, node2:9001", "", false},
+		{"single", "node1:9001", "", false},
+		{"missing", "", "", true},
+		{"only separators", ",, ,", "", true},
+		{"whitespace", "   ", "", true},
+		{"srv only", "", "_dqlite._tcp.librevita.svc.cluster.local", false},
+		{"srv only with empty separators", "  , ", "_dqlite._tcp.librevita.svc.cluster.local", false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			cfg := &Config{
-				Database: DatabaseConfig{Driver: DriverDqlite, DqliteAddrs: tc.addrs, DqliteDatabase: "lv"},
+				Database: DatabaseConfig{Driver: DriverDqlite, DqliteAddrs: tc.addrs, DqliteDiscoverySRV: tc.srv, DqliteDatabase: "lv"},
 				Logging:  LoggingConfig{Mode: LogModeConsole},
 			}
 			err := cfg.validate()
 			if tc.wantErr && err == nil {
-				t.Fatalf("validate(%q) = nil, want error", tc.addrs)
+				t.Fatalf("validate(%q/%q) = nil, want error", tc.addrs, tc.srv)
 			}
 			if !tc.wantErr && err != nil {
-				t.Fatalf("validate(%q) = %v, want nil", tc.addrs, err)
+				t.Fatalf("validate(%q/%q) = %v, want nil", tc.addrs, tc.srv, err)
 			}
 		})
 	}
@@ -125,6 +128,46 @@ func TestStorageFlagsMapToNestedKeys(t *testing.T) {
 		cfg.Storage.S3.AccessKey != "ak" || cfg.Storage.S3.SecretKey != "sk" ||
 		cfg.Storage.S3.Region != "us-east-1" || cfg.Storage.S3.Secure || cfg.Storage.S3.PathStyle {
 		t.Errorf("s3 = %+v", cfg.Storage.S3)
+	}
+}
+
+func TestDqliteFlagsMapToNestedKeys(t *testing.T) {
+	flags := pflag.NewFlagSet("dqlite-test", pflag.ContinueOnError)
+	RegisterFlags(flags)
+	if err := flags.Parse([]string{
+		"--dqlite-addrs", "node1:9001,node2:9001",
+		"--dqlite-discovery-srv", "_dqlite._tcp.librevita.svc.cluster.local",
+		"--dqlite-database", "lv",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	k := koanf.New(".")
+	if err := k.Load(posflag.ProviderWithFlag(flags, ".", k, func(f *pflag.Flag) (string, any) {
+		return mapFlagKey(f.Name), posflag.FlagVal(flags, f)
+	}), nil); err != nil {
+		t.Fatal(err)
+	}
+	var cfg Config
+	if err := k.Unmarshal("", &cfg); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Database.DqliteAddrs != "node1:9001,node2:9001" {
+		t.Errorf("DqliteAddrs = %q", cfg.Database.DqliteAddrs)
+	}
+	if cfg.Database.DqliteDiscoverySRV != "_dqlite._tcp.librevita.svc.cluster.local" {
+		t.Errorf("DqliteDiscoverySRV = %q", cfg.Database.DqliteDiscoverySRV)
+	}
+	if cfg.Database.DqliteDatabase != "lv" {
+		t.Errorf("DqliteDatabase = %q", cfg.Database.DqliteDatabase)
+	}
+}
+
+func TestDqliteEnvKeysMapToNestedKeys(t *testing.T) {
+	if got := mapEnvironmentKey("database_dqlite_discovery_srv"); got != "database.dqlite_discovery_srv" {
+		t.Errorf("database_dqlite_discovery_srv -> %q", got)
+	}
+	if got := mapEnvironmentKey("dqlite_discovery_srv"); got != "database.dqlite_discovery_srv" {
+		t.Errorf("dqlite_discovery_srv -> %q", got)
 	}
 }
 
