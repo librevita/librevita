@@ -35,17 +35,15 @@ func RequestLog(log *slog.Logger) echo.MiddlewareFunc {
 			// panics, by contrast, are committed as 500 by Recover before
 			// control reaches here.
 			status := c.Response().Status
+			var he *echo.HTTPError
 			if !c.Response().Committed {
 				switch {
 				case err == nil:
 					status = http.StatusOK
+				case errors.As(err, &he):
+					status = he.Code
 				default:
-					var he *echo.HTTPError
-					if errors.As(err, &he) {
-						status = he.Code
-					} else {
-						status = http.StatusInternalServerError
-					}
+					status = http.StatusInternalServerError
 				}
 			}
 
