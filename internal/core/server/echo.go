@@ -4,6 +4,7 @@
 package server
 
 import (
+	"log/slog"
 	"net"
 	"net/http"
 	"strings"
@@ -17,7 +18,7 @@ import (
 )
 
 // New creates the Echo instance and installs global middleware.
-func New(csrf *auth.CSRF, cfg *config.Config) *echo.Echo {
+func New(csrf *auth.CSRF, cfg *config.Config, log *slog.Logger) *echo.Echo {
 	e := echo.New()
 
 	e.HideBanner = true
@@ -52,6 +53,8 @@ func New(csrf *auth.CSRF, cfg *config.Config) *echo.Echo {
 
 	// Middleware order is significant.
 	e.Use(middleware.RequestID())
+	// RequestLog sits outside Recover so recovered panics surface as 500s.
+	e.Use(RequestLog(log))
 	e.Use(middleware.Recover())
 	// Same-origin application; no CORS is configured. Do not add a
 	// permissive CORS middleware for future authenticated endpoints.
