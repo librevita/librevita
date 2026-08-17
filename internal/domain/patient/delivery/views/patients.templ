@@ -5,11 +5,10 @@ import (
 	"net/url"
 	"strconv"
 
-	"librevita.org/internal/ui/shared"
-
 	"librevita.org/internal/core/auth"
 	"librevita.org/internal/ui/components"
 	"librevita.org/internal/ui/layouts"
+	"librevita.org/internal/ui/shared"
 )
 
 // PatientRow is a patient decorated for the list table.
@@ -38,42 +37,17 @@ type PatientPager struct {
 
 // PatientListPage renders the patient registry following the
 // flowbite-admin-dashboard CRUD layout: breadcrumb, toolbar with search,
-// filter and bulk actions, and the paged table fragment.
+// filter and primary action, and the paged table fragment.
 templ PatientListPage(token string, p *auth.Principal, q string, field string, status string, systems []SystemOption, patients []PatientRow, pager PatientPager, errMsg string) {
 	@layouts.App("Patients", token, p, "patients") {
 		<div class="w-full">
 			<div class="border-b border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
-				<nav class="mb-4" aria-label="Breadcrumb">
-					<ol class="inline-flex items-center space-x-1 text-sm font-medium md:space-x-2">
-						<li class="inline-flex items-center">
-							<a href="/" class="inline-flex items-center text-gray-700 hover:text-indigo-600 dark:text-gray-300 dark:hover:text-white">
-								<svg class="mr-2.5 h-5 w-5" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true"><path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z"></path></svg>
-								Home
-							</a>
-						</li>
-						<li>
-							<div class="flex items-center">
-								<svg class="h-6 w-6 text-gray-400" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"></path></svg>
-								<a href="/patients" class="ml-1 text-gray-700 hover:text-indigo-600 md:ml-2 dark:text-gray-300 dark:hover:text-white">Patients</a>
-							</div>
-						</li>
-						<li>
-							<div class="flex items-center">
-								<svg class="h-6 w-6 text-gray-400" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"></path></svg>
-								<span class="ml-1 text-gray-400 md:ml-2 dark:text-gray-500" aria-current="page">List</span>
-							</div>
-						</li>
-					</ol>
-				</nav>
+				@patientBreadcrumb()
 				<h1 class="mb-4 text-xl font-semibold text-gray-900 sm:text-2xl dark:text-white">All patients</h1>
 				<div class="flex flex-wrap items-center justify-between space-x-3">
 					<div class="flex flex-wrap items-center space-x-3">
-						@patientSearchInput(q, field, systems)
-						<select id="status-filter" name="status" hx-get="/patients" hx-trigger="change" hx-include="#patient-search, #search-field" hx-target="#patient-list" hx-swap="innerHTML" class="input mt-0 w-auto">
-							@statusOption("", "All statuses", status)
-							@statusOption("active", "Active", status)
-							@statusOption("inactive", "Inactive", status)
-						</select>
+						@patientSearchInput(q, field, status, systems)
+						@patientStatusFilter(status)
 					</div>
 					@components.ButtonLink("primary", "/patients/new", "New patient", nil)
 				</div>
@@ -87,11 +61,75 @@ templ PatientListPage(token string, p *auth.Principal, q string, field string, s
 	}
 }
 
-templ statusOption(value string, label string, selected string) {
-	if value == selected {
-		<option value={ value } selected>{ label }</option>
-	} else {
-		<option value={ value }>{ label }</option>
+templ patientBreadcrumb() {
+	<nav class="mb-4" aria-label="Breadcrumb">
+		<ol class="inline-flex items-center space-x-1 text-sm font-medium md:space-x-2">
+			<li class="inline-flex items-center">
+				<a href="/" class="inline-flex items-center text-gray-700 hover:text-indigo-600 dark:text-gray-300 dark:hover:text-white">
+					<svg class="mr-2.5 h-5 w-5" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
+						<path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z"></path>
+					</svg>
+					Home
+				</a>
+			</li>
+			<li>
+				<div class="flex items-center">
+					<svg class="h-6 w-6 text-gray-400" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
+						<path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"></path>
+					</svg>
+					<a href="/patients" class="ml-1 text-gray-700 hover:text-indigo-600 md:ml-2 dark:text-gray-300 dark:hover:text-white">Patients</a>
+				</div>
+			</li>
+			<li>
+				<div class="flex items-center">
+					<svg class="h-6 w-6 text-gray-400" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true">
+						<path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"></path>
+					</svg>
+					<span class="ml-1 text-gray-400 md:ml-2 dark:text-gray-500" aria-current="page">List</span>
+				</div>
+			</li>
+		</ol>
+	</nav>
+}
+
+// patientStatusFilter renders the status filter dropdown. The Alpine component
+// statusMenu owns open/close state and syncs the selection to the hidden input
+// #status-filter, which triggers the htmx request to reload the patient list.
+templ patientStatusFilter(status string) {
+	<div class="relative shrink-0" x-data="statusMenu" data-status={ status } @click.outside="close()" @keydown.escape.window="close()">
+		<button type="button" x-ref="toggle" @click="toggle()" aria-haspopup="true" :aria-expanded="open ? 'true' : 'false'" class="flex h-full items-center space-x-2 rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:border-gray-600 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600">
+			<span class="flex items-center space-x-1.5">
+				<span x-show="isActive('active')" class="h-2 w-2 rounded-full bg-green-400 dark:bg-green-500"></span>
+				<span x-show="isActive('inactive')" class="h-2 w-2 rounded-full bg-red-500"></span>
+				<span x-text="label">{ statusLabelText(status) }</span>
+			</span>
+			@components.Icon("expand_more", "h-4 w-4 shrink-0 text-gray-400 dark:text-gray-500")
+		</button>
+		<div x-show="open" x-cloak class="absolute left-0 top-full z-20 mt-1 w-44 rounded-lg border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-600 dark:bg-gray-800">
+			<button type="button" class="flex w-full items-center px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700" :class="isActive('') ? 'bg-indigo-50 font-medium text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300' : ''" @click="choose('')">
+				All statuses
+			</button>
+			<button type="button" class="flex w-full items-center space-x-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700" :class="isActive('active') ? 'bg-indigo-50 font-medium text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300' : ''" @click="choose('active')">
+				<span class="h-2 w-2 rounded-full bg-green-400 dark:bg-green-500"></span>
+				<span>Active</span>
+			</button>
+			<button type="button" class="flex w-full items-center space-x-2 px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700" :class="isActive('inactive') ? 'bg-indigo-50 font-medium text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300' : ''" @click="choose('inactive')">
+				<span class="h-2 w-2 rounded-full bg-red-500"></span>
+				<span>Inactive</span>
+			</button>
+		</div>
+		<input type="hidden" name="status" id="status-filter" x-ref="status" value={ status } hx-get="/patients" hx-trigger="change" hx-include="#patient-search, #search-field" hx-target="#patient-list" hx-swap="innerHTML">
+	</div>
+}
+
+func statusLabelText(status string) string {
+	switch status {
+	case "active":
+		return "Active"
+	case "inactive":
+		return "Inactive"
+	default:
+		return "All statuses"
 	}
 }
 
@@ -100,7 +138,9 @@ templ statusOption(value string, label string, selected string) {
 // every interaction refreshes both together.
 templ PatientListTable(patients []PatientRow, pager PatientPager, errMsg string) {
 	if errMsg != "" {
-		@components.Alert(errMsg, false)
+		<div class="mb-4">
+			@components.Alert(errMsg, false)
+		</div>
 	}
 	if len(patients) == 0 {
 		<div class="overflow-hidden rounded-lg bg-white p-6 text-center shadow-sm dark:bg-gray-800">
@@ -114,8 +154,8 @@ templ PatientListTable(patients []PatientRow, pager PatientPager, errMsg string)
 						<tr>
 							@components.Th("Patient", "p-4")
 							@components.Th("Birth date", "p-4")
-						@components.Th("Document", "p-4")
-						@components.Th("Phone", "p-4")
+							@components.Th("Document", "p-4")
+							@components.Th("Phone", "p-4")
 							@components.Th("Status", "p-4")
 							<th scope="col" class="p-4 text-right text-xs font-medium uppercase tracking-wider text-gray-500 dark:text-gray-400">Actions</th>
 						</tr>
@@ -132,6 +172,8 @@ templ PatientListTable(patients []PatientRow, pager PatientPager, errMsg string)
 	}
 }
 
+const patientPageSize = 50
+
 // patientPager renders the shared number pager with the registry htmx
 // wiring (search, scope and status filter are included in the request).
 templ patientPager(pager PatientPager) {
@@ -143,10 +185,8 @@ templ patientPager(pager PatientPager) {
 	})
 }
 
-const patientPageSize = 20
-
 func patientPageHref(pager PatientPager, page int) string {
-	href := "/patients?page=" + itoa(page)
+	href := "/patients?page=" + strconv.Itoa(page)
 	if pager.Q != "" {
 		href += "&q=" + url.QueryEscape(pager.Q)
 	}
@@ -160,7 +200,7 @@ func patientPageHref(pager PatientPager, page int) string {
 }
 
 func patientPageVals(pager PatientPager, page int) string {
-	return `{"page":` + itoa(page) + `}`
+	return `{"page":` + strconv.Itoa(page) + `}`
 }
 
 // PatientRowOnly is the archive/restore response: a bare row, swapped in
@@ -168,7 +208,7 @@ func patientPageVals(pager PatientPager, page int) string {
 // wraps the row into a table and mis-parses them.
 templ PatientRowOnly(rows []PatientRow) {
 	for _, pt := range rows {
-		<tr>@PatientRowCells(pt)</tr>
+		<tr class="hover:bg-gray-100 dark:hover:bg-gray-700">@PatientRowCells(pt)</tr>
 	}
 }
 
@@ -192,7 +232,7 @@ templ PatientRowCells(pt PatientRow) {
 	<td class="p-4 whitespace-nowrap">
 		<div class="flex items-center justify-end">
 			@components.DropdownMenu() {
-				@components.DropdownItem("/patients/"+ pt.ID+"/edit", nil) {
+				@components.DropdownItem("/patients/" + pt.ID + "/edit", nil) {
 					Edit
 				}
 				if pt.Status == "active" {
@@ -215,10 +255,10 @@ templ patientStatusCell(status string) {
 	<div class="flex items-center">
 		if status == "active" {
 			<span class="mr-2 h-2.5 w-2.5 rounded-full bg-green-400 dark:bg-green-500"></span>
-			<span class="text-base text-gray-900 dark:text-white">Active</span>
+			<span class="text-base font-normal text-gray-900 dark:text-white">Active</span>
 		} else {
 			<span class="mr-2 h-2.5 w-2.5 rounded-full bg-red-500"></span>
-			<span class="text-base text-gray-900 dark:text-white">Inactive</span>
+			<span class="text-base font-normal text-gray-900 dark:text-white">Inactive</span>
 		}
 	</div>
 }
@@ -231,10 +271,6 @@ templ PatientListTableWithAlert(patients []PatientRow, pager PatientPager, alert
 	@components.Alert(alertMsg, true)
 }
 
-func itoa(n int) string {
-	return strconv.Itoa(n)
-}
-
 // patientSearchInput is the registry "search with dropdown" control:
 // a scope menu (all fields, name, email, and the active document
 // types) attached to a debounced search box, with an immediate Search
@@ -242,31 +278,31 @@ func itoa(n int) string {
 // document lookup for that system. The Alpine component searchMenu
 // owns the menu; the hidden input "field" carries the selected scope
 // into every htmx request.
-templ patientSearchInput(q string, field string, systems []SystemOption) {
-	<div class="flex w-full items-stretch rounded-md border border-gray-300 bg-white shadow-sm md:w-[32rem] dark:border-gray-600 dark:bg-gray-700">
+templ patientSearchInput(q string, field string, status string, systems []SystemOption) {
+	<div class="flex w-full items-stretch rounded-md border border-gray-300 bg-white shadow-sm sm:w-[28rem] md:w-[36rem] lg:w-[42rem] xl:w-[48rem] dark:border-gray-600 dark:bg-gray-700">
 		<div class="relative shrink-0" x-data="searchMenu" data-field={ field } data-systems={ systemLabelsJSON(systems) } @click.outside="close()" @keydown.escape.window="close()">
-			<button type="button" x-ref="toggle" @click="toggle()" aria-haspopup="true" :aria-expanded="open ? 'true' : 'false'" class="flex h-full items-center gap-1.5 rounded-l-md border-r border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-600">
-				<span x-text="label">All fields</span>
-				<svg class="h-4 w-4 shrink-0 text-gray-400 dark:text-gray-500" fill="currentColor" viewBox="0 -960 960 960" aria-hidden="true"><path d="m480-345 240-240-56-56-184 184-184-184-56 56 240 240Z"></path></svg>
+			<button type="button" x-ref="toggle" @click="toggle()" aria-haspopup="true" :aria-expanded="open ? 'true' : 'false'" class="flex h-full items-center space-x-1.5 rounded-l-md border-r border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-600">
+				<span x-text="label" class="max-w-[7rem] truncate sm:max-w-[10rem] md:max-w-[13rem]">All fields</span>
+				@components.Icon("expand_more", "h-4 w-4 shrink-0 text-gray-400 dark:text-gray-500")
 			</button>
-			<div x-show="open" x-cloak class="absolute left-0 top-full z-20 mt-1 w-56 rounded-lg border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-600 dark:bg-gray-800">
-				<button type="button" class="block w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700" :class="field === '' ? 'bg-indigo-50 dark:bg-indigo-900/40' : ''" @click="choose('')">All fields</button>
-				<button type="button" class="block w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700" :class="field === 'name' ? 'bg-indigo-50 dark:bg-indigo-900/40' : ''" @click="choose('name')">Name</button>
-				<button type="button" class="block w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700" :class="field === 'email' ? 'bg-indigo-50 dark:bg-indigo-900/40' : ''" @click="choose('email')">Email</button>
+			<div x-show="open" x-cloak class="absolute left-0 top-full z-20 mt-1 w-64 rounded-lg border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-600 dark:bg-gray-800">
+				<button type="button" class="block w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700" :class="field === '' ? 'bg-indigo-50 font-medium text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300' : ''" @click="choose('')">All fields</button>
+				<button type="button" class="block w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700" :class="field === 'name' ? 'bg-indigo-50 font-medium text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300' : ''" @click="choose('name')">Name</button>
+				<button type="button" class="block w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700" :class="field === 'email' ? 'bg-indigo-50 font-medium text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300' : ''" @click="choose('email')">Email</button>
 				if len(systems) > 0 {
 					<div class="my-1 border-t border-gray-200 dark:border-gray-700"></div>
 					<p class="px-4 py-1 text-xs font-medium uppercase tracking-wider text-gray-400 dark:text-gray-500">Documents</p>
 					for _, s := range systems {
-						<button type="button" data-system={ s.System } class="block w-full truncate px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700" :class="field === $el.dataset.system ? 'bg-indigo-50 dark:bg-indigo-900/40' : ''" @click="choose($el.dataset.system)">{ s.DisplayName }</button>
+						<button type="button" data-system={ s.System } class="block w-full truncate px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700" :class="field === $el.dataset.system ? 'bg-indigo-50 font-medium text-indigo-700 dark:bg-indigo-900/40 dark:text-indigo-300' : ''" @click="choose($el.dataset.system)">{ s.DisplayName }</button>
 					}
 				}
 			</div>
 			<input type="hidden" name="field" id="search-field" x-ref="field" value={ field }>
 		</div>
 		<label class="sr-only" for="patient-search">Search patients</label>
-		<input id="patient-search" class="w-full min-w-0 bg-transparent px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none dark:text-white dark:placeholder-gray-500" type="search" name="q" value={ q } placeholder="Search patients..." :placeholder="placeholder" hx-get="/patients" hx-trigger="input changed delay:300ms, keydown[event.key=='Enter'], change" hx-include="#search-field" hx-target="#patient-list" hx-swap="innerHTML">
-		<button type="button" class="flex h-full items-center gap-1.5 rounded-r-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500" hx-get="/patients" hx-include="#patient-search, #search-field" hx-target="#patient-list" hx-swap="innerHTML">
-			<svg class="h-4 w-4 shrink-0" fill="currentColor" viewBox="0 -960 960 960" aria-hidden="true"><path d="M784-120 532-372q-30 24-69 38t-83 14q-109 0-184.5-75.5T120-580q0-109 75.5-184.5T380-840q109 0 184.5 75.5T640-580q0 44-14 83t-38 69l252 252-56 56ZM380-400q75 0 127.5-52.5T560-580q0-75-52.5-127.5T380-760q-75 0-127.5 52.5T200-580q0 75 52.5 127.5T380-400Z"></path></svg>
+		<input id="patient-search" class="w-full min-w-0 flex-1 bg-transparent px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none dark:text-white dark:placeholder-gray-500" type="search" name="q" value={ q } placeholder="Search patients..." :placeholder="placeholder" hx-get="/patients" hx-trigger="input changed delay:300ms, keydown[event.key=='Enter'], change" hx-include="#search-field, #status-filter" hx-target="#patient-list" hx-swap="innerHTML">
+		<button type="button" class="flex h-full shrink-0 items-center space-x-1.5 rounded-r-md bg-indigo-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500" hx-get="/patients" hx-include="#patient-search, #search-field, #status-filter" hx-target="#patient-list" hx-swap="innerHTML">
+			@components.Icon("search", "h-4 w-4 shrink-0")
 			Search
 		</button>
 	</div>
@@ -277,6 +313,13 @@ func orDash(s string) string {
 		return "-"
 	}
 	return s
+}
+
+func orEmpty(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
 }
 
 // systemLabelsJSON encodes the document type options as a JSON map
@@ -298,12 +341,3 @@ func systemLabelsJSON(systems []SystemOption) string {
 	}
 	return string(b)
 }
-
-func orEmpty(s *string) string {
-	if s == nil {
-		return ""
-	}
-	return *s
-}
-
-

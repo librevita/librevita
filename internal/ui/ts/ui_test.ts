@@ -11,6 +11,7 @@ import { Event, parseHTML } from 'linkedom';
 import { selectTab } from './tabs.ts';
 import * as dropdown from './dropdown.ts';
 import { searchFieldLabel, searchPlaceholder } from './search-menu.ts';
+import { statusLabel, getSavedStatus, saveStatus } from './status-menu.ts';
 import * as modal from './modal.ts';
 import { parseISO, formatISODate } from './datepicker.ts';
 
@@ -136,6 +137,40 @@ test('searchMenu.searchPlaceholder invites the exact lookup for a document type'
   const systems = { 'urn:librevita:id:br:cpf': 'CPF (Brasil)' };
   assert.equal(searchPlaceholder('urn:librevita:id:br:cpf', systems), 'Exact CPF (Brasil) lookup');
   assert.equal(searchPlaceholder('urn:unknown', systems), 'Search patients...');
+});
+
+test('statusMenu.statusLabel maps status value to label', () => {
+  assert.equal(statusLabel(''), 'All statuses');
+  assert.equal(statusLabel('active'), 'Active');
+  assert.equal(statusLabel('inactive'), 'Inactive');
+  assert.equal(statusLabel('other'), 'All statuses');
+});
+
+test('statusMenu.saveStatus and getSavedStatus persist and retrieve filter state', () => {
+  const store = new Map<string, string>();
+  const mockStorage = {
+    getItem: (key: string) => store.get(key) || null,
+    setItem: (key: string, val: string) => {
+      store.set(key, val);
+    },
+    removeItem: (key: string) => {
+      store.delete(key);
+    },
+    clear: () => store.clear(),
+    key: () => null,
+    length: store.size,
+  } as unknown as Storage;
+
+  assert.equal(getSavedStatus(mockStorage), '');
+
+  saveStatus('active', mockStorage);
+  assert.equal(getSavedStatus(mockStorage), 'active');
+
+  saveStatus('inactive', mockStorage);
+  assert.equal(getSavedStatus(mockStorage), 'inactive');
+
+  saveStatus('', mockStorage);
+  assert.equal(getSavedStatus(mockStorage), '');
 });
 
 test('datepicker.parseISO accepts ISO dates and rejects everything else', () => {
