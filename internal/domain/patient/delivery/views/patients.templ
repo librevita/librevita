@@ -1,6 +1,7 @@
 package views
 
 import (
+	"encoding/json"
 	"net/url"
 	"strconv"
 
@@ -28,6 +29,7 @@ type PatientRow struct {
 // PatientPager carries the pager state for the registry table.
 type PatientPager struct {
 	Q      string
+	Field  string
 	Status string
 	Page   int
 	Total  int64
@@ -37,7 +39,7 @@ type PatientPager struct {
 // PatientListPage renders the patient registry following the
 // flowbite-admin-dashboard CRUD layout: breadcrumb, toolbar with search,
 // filter and bulk actions, and the paged table fragment.
-templ PatientListPage(token string, p *auth.Principal, q string, status string, patients []PatientRow, pager PatientPager, errMsg string) {
+templ PatientListPage(token string, p *auth.Principal, q string, field string, status string, systems []SystemOption, patients []PatientRow, pager PatientPager, errMsg string) {
 	@layouts.App("Patients", token, p, "patients") {
 		<div class="w-full">
 			<div class="border-b border-gray-200 bg-white p-4 dark:border-gray-700 dark:bg-gray-800">
@@ -66,26 +68,17 @@ templ PatientListPage(token string, p *auth.Principal, q string, status string, 
 				<h1 class="mb-4 text-xl font-semibold text-gray-900 sm:text-2xl dark:text-white">All patients</h1>
 				<div class="flex flex-wrap items-center justify-between space-x-3">
 					<div class="flex flex-wrap items-center space-x-3">
-						@patientSearchInput(q)
-						@IdentifierLookupForm()
-						<select id="status-filter" name="status" hx-get="/patients" hx-trigger="change" hx-include="#patient-search" hx-target="#patient-list" hx-swap="innerHTML" class="input mt-0 w-auto">
+						@patientSearchInput(q, field, systems)
+						<select id="status-filter" name="status" hx-get="/patients" hx-trigger="change" hx-include="#patient-search, #search-field" hx-target="#patient-list" hx-swap="innerHTML" class="input mt-0 w-auto">
 							@statusOption("", "All statuses", status)
 							@statusOption("active", "Active", status)
 							@statusOption("inactive", "Inactive", status)
 						</select>
-						<button type="button" class="btn-secondary" hx-post="/patients/bulk-archive" hx-include="input[name='ids']:checked" hx-target="#patient-list" hx-swap="innerHTML">
-							Archive selected
-							<svg class="htmx-indicator h-4 w-4 animate-spin text-gray-500" fill="none" viewBox="0 0 24 24" aria-hidden="true">
-								<circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-								<path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
-							</svg>
-						</button>
 					</div>
 					@components.ButtonLink("primary", "/patients/new", "New patient", nil)
 				</div>
 			</div>
 			<div class="flex flex-col">
-				<div id="identifier-lookup-result"></div>
 				<div id="patient-list">
 					@PatientListTable(patients, pager, errMsg)
 				</div>
@@ -114,15 +107,11 @@ templ PatientListTable(patients []PatientRow, pager PatientPager, errMsg string)
 			<p class="text-sm text-gray-500 dark:text-gray-400">No patients found.</p>
 		</div>
 	} else {
-		<div data-lv-table-select class="overflow-hidden shadow-sm">
+		<div class="overflow-hidden shadow-sm">
 			<div class="overflow-x-auto">
 				<table class="min-w-full divide-y divide-gray-200 dark:divide-gray-600">
 					<thead class="bg-gray-100 dark:bg-gray-700">
 						<tr>
-							<th scope="col" class="w-12 p-4">
-								<span class="sr-only">Select</span>
-								<input type="checkbox" name="select_all" data-lv-select-all class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" aria-label="Select all">
-							</th>
 							@components.Th("Patient", "p-4")
 							@components.Th("Birth date", "p-4")
 						@components.Th("Document", "p-4")
@@ -144,13 +133,13 @@ templ PatientListTable(patients []PatientRow, pager PatientPager, errMsg string)
 }
 
 // patientPager renders the shared number pager with the registry htmx
-// wiring (search and status filter are included in the request).
+// wiring (search, scope and status filter are included in the request).
 templ patientPager(pager PatientPager) {
 	@components.Pager(components.PagerData{
 		Total: pager.Total, Shown: pager.Shown, Page: pager.Page, PageSize: patientPageSize,
 		Href: func(p int) string { return patientPageHref(pager, p) },
 		HxVals: func(p int) string { return patientPageVals(pager, p) },
-		HxGet: "/patients", HxInclude: "#patient-search, #status-filter", HxTarget: "#patient-list",
+		HxGet: "/patients", HxInclude: "#patient-search, #search-field, #status-filter", HxTarget: "#patient-list",
 	})
 }
 
@@ -160,6 +149,9 @@ func patientPageHref(pager PatientPager, page int) string {
 	href := "/patients?page=" + itoa(page)
 	if pager.Q != "" {
 		href += "&q=" + url.QueryEscape(pager.Q)
+	}
+	if pager.Field != "" {
+		href += "&field=" + url.QueryEscape(pager.Field)
 	}
 	if pager.Status != "" {
 		href += "&status=" + url.QueryEscape(pager.Status)
@@ -182,11 +174,6 @@ templ PatientRowOnly(rows []PatientRow) {
 
 // PatientRowCells renders one row of the registry table.
 templ PatientRowCells(pt PatientRow) {
-	<td class="w-4 p-4">
-		<div class="flex items-center">
-			<input type="checkbox" name="ids" value={ pt.ID } class="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 dark:border-gray-600 dark:bg-gray-700" aria-label={ "Select " + pt.DisplayName }>
-		</div>
-	</td>
 	<td class="p-4">
 		<div class="flex items-center space-x-3">
 			@components.Avatar(shared.Initials(pt.DisplayName), "h-10 w-10 text-sm bg-indigo-100 text-indigo-700 dark:bg-indigo-900 dark:text-indigo-300")
@@ -248,12 +235,40 @@ func itoa(n int) string {
 	return strconv.Itoa(n)
 }
 
-templ patientSearchInput(q string) {
-	<div class="relative">
+// patientSearchInput is the registry "search with dropdown" control:
+// a scope menu (all fields, name, email, and the active document
+// types) attached to a debounced search box, with an immediate Search
+// button. Picking a document type turns the box into the exact
+// document lookup for that system. The Alpine component searchMenu
+// owns the menu; the hidden input "field" carries the selected scope
+// into every htmx request.
+templ patientSearchInput(q string, field string, systems []SystemOption) {
+	<div class="flex w-full items-stretch rounded-md border border-gray-300 bg-white shadow-sm md:w-[32rem] dark:border-gray-600 dark:bg-gray-700">
+		<div class="relative shrink-0" x-data="searchMenu" data-field={ field } data-systems={ systemLabelsJSON(systems) } @click.outside="close()" @keydown.escape.window="close()">
+			<button type="button" x-ref="toggle" @click="toggle()" aria-haspopup="true" :aria-expanded="open ? 'true' : 'false'" class="flex h-full items-center gap-1.5 rounded-l-md border-r border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-600">
+				<span x-text="label">All fields</span>
+				<svg class="h-4 w-4 shrink-0 text-gray-400 dark:text-gray-500" fill="currentColor" viewBox="0 -960 960 960" aria-hidden="true"><path d="m480-345 240-240-56-56-184 184-184-184-56 56 240 240Z"></path></svg>
+			</button>
+			<div x-show="open" x-cloak class="absolute left-0 top-full z-20 mt-1 w-56 rounded-lg border border-gray-200 bg-white py-1 shadow-lg dark:border-gray-600 dark:bg-gray-800">
+				<button type="button" class="block w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700" :class="field === '' ? 'bg-indigo-50 dark:bg-indigo-900/40' : ''" @click="choose('')">All fields</button>
+				<button type="button" class="block w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700" :class="field === 'name' ? 'bg-indigo-50 dark:bg-indigo-900/40' : ''" @click="choose('name')">Name</button>
+				<button type="button" class="block w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700" :class="field === 'email' ? 'bg-indigo-50 dark:bg-indigo-900/40' : ''" @click="choose('email')">Email</button>
+				if len(systems) > 0 {
+					<div class="my-1 border-t border-gray-200 dark:border-gray-700"></div>
+					<p class="px-4 py-1 text-xs font-medium uppercase tracking-wider text-gray-400 dark:text-gray-500">Documents</p>
+					for _, s := range systems {
+						<button type="button" data-system={ s.System } class="block w-full truncate px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100 dark:text-gray-200 dark:hover:bg-gray-700" :class="field === $el.dataset.system ? 'bg-indigo-50 dark:bg-indigo-900/40' : ''" @click="choose($el.dataset.system)">{ s.DisplayName }</button>
+					}
+				}
+			</div>
+			<input type="hidden" name="field" id="search-field" x-ref="field" value={ field }>
+		</div>
 		<label class="sr-only" for="patient-search">Search patients</label>
-		<svg class="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400 dark:text-gray-500" fill="currentColor" viewBox="0 0 20 20" aria-hidden="true"><path fill-rule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clip-rule="evenodd"></path></svg>
-		<input id="patient-search" class="input pl-9 md:w-64 xl:w-96" type="search" name="q" value={ q } placeholder="Search by name, document, or email..."
-			hx-get="/patients" hx-trigger="input changed delay:300ms" hx-target="#patient-list" hx-swap="innerHTML">
+		<input id="patient-search" class="w-full min-w-0 bg-transparent px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none dark:text-white dark:placeholder-gray-500" type="search" name="q" value={ q } placeholder="Search patients..." :placeholder="placeholder" hx-get="/patients" hx-trigger="input changed delay:300ms, keydown[event.key=='Enter'], change" hx-include="#search-field" hx-target="#patient-list" hx-swap="innerHTML">
+		<button type="button" class="flex h-full items-center gap-1.5 rounded-r-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500" hx-get="/patients" hx-include="#patient-search, #search-field" hx-target="#patient-list" hx-swap="innerHTML">
+			<svg class="h-4 w-4 shrink-0" fill="currentColor" viewBox="0 -960 960 960" aria-hidden="true"><path d="M784-120 532-372q-30 24-69 38t-83 14q-109 0-184.5-75.5T120-580q0-109 75.5-184.5T380-840q109 0 184.5 75.5T640-580q0 44-14 83t-38 69l252 252-56 56ZM380-400q75 0 127.5-52.5T560-580q0-75-52.5-127.5T380-760q-75 0-127.5 52.5T200-580q0 75 52.5 127.5T380-400Z"></path></svg>
+			Search
+		</button>
 	</div>
 }
 
@@ -262,6 +277,26 @@ func orDash(s string) string {
 		return "-"
 	}
 	return s
+}
+
+// systemLabelsJSON encodes the document type options as a JSON map
+// (system URN -> display name) for the searchMenu component: the
+// dropdown label and the placeholder of the search box resolve
+// through it. A malformed map degrades to an empty one in the
+// component, never to a broken page.
+func systemLabelsJSON(systems []SystemOption) string {
+	if len(systems) == 0 {
+		return "{}"
+	}
+	m := make(map[string]string, len(systems))
+	for _, s := range systems {
+		m[s.System] = s.DisplayName
+	}
+	b, err := json.Marshal(m)
+	if err != nil {
+		return "{}"
+	}
+	return string(b)
 }
 
 func orEmpty(s *string) string {

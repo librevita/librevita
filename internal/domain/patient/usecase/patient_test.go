@@ -160,7 +160,7 @@ func TestListAndSearch(t *testing.T) {
 		}
 	}
 
-	all, total, err := svc.ListPage(context.Background(), testClinicID.String(), "", "", 50, 0)
+	all, total, err := svc.ListPage(context.Background(), testClinicID.String(), "", "", "", 50, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -169,14 +169,14 @@ func TestListAndSearch(t *testing.T) {
 	}
 
 	// Whole-word prefix: 're' must not match 'Moreno'.
-	hit, _, err := svc.ListPage(context.Background(), testClinicID.String(), "bruno", "", 50, 0)
+	hit, _, err := svc.ListPage(context.Background(), testClinicID.String(), "bruno", "", "", 50, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(hit) != 1 || hit[0].DisplayName != "Bruno Lima" {
 		t.Fatalf("search 'bruno' = %+v, want only Bruno Lima", hit)
 	}
-	moreno, _, err := svc.ListPage(context.Background(), testClinicID.String(), "re", "", 50, 0)
+	moreno, _, err := svc.ListPage(context.Background(), testClinicID.String(), "re", "", "", 50, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -186,12 +186,57 @@ func TestListAndSearch(t *testing.T) {
 		}
 	}
 
-	none, _, err := svc.ListPage(context.Background(), testClinicID.String(), "zzz", "", 50, 0)
+	none, _, err := svc.ListPage(context.Background(), testClinicID.String(), "zzz", "", "", 50, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(none) != 0 {
 		t.Fatalf("search 'zzz' = %d, want 0", len(none))
+	}
+
+	// Field scope: an email term only matches under 'email', a name
+	// only under 'name'. The pattern is anchored at a word boundary,
+	// so only leading terms match.
+	in := validInput()
+	in.DisplayName = "Bruna Silveira"
+	in.Email = "bruna@example.org"
+	if _, err := svc.Create(context.Background(), testClinicID.String(), testUserID.String(), in); err != nil {
+		t.Fatal(err)
+	}
+	nameOnly, _, err := svc.ListPage(context.Background(), testClinicID.String(), "silveira", "name", "", 50, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(nameOnly) != 1 || nameOnly[0].DisplayName != "Bruna Silveira" {
+		t.Fatalf("field=name search 'silveira' = %+v, want only Bruna Silveira", nameOnly)
+	}
+	nameNoEmail, _, err := svc.ListPage(context.Background(), testClinicID.String(), "silveira", "email", "", 50, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(nameNoEmail) != 0 {
+		t.Fatalf("field=email search 'silveira' = %d, want 0 (term is a name)", len(nameNoEmail))
+	}
+	emailHit, _, err := svc.ListPage(context.Background(), testClinicID.String(), "bruna@example.org", "email", "", 50, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(emailHit) != 1 || emailHit[0].DisplayName != "Bruna Silveira" {
+		t.Fatalf("field=email search 'bruna@example.org' = %+v, want only Bruna Silveira", emailHit)
+	}
+	emailNoName, _, err := svc.ListPage(context.Background(), testClinicID.String(), "bruna@example.org", "name", "", 50, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(emailNoName) != 0 {
+		t.Fatalf("field=name search 'bruna@example.org' = %d, want 0 (term is an email)", len(emailNoName))
+	}
+	allFields, _, err := svc.ListPage(context.Background(), testClinicID.String(), "bruna", "", "", 50, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(allFields) != 1 || allFields[0].DisplayName != "Bruna Silveira" {
+		t.Fatalf("all-fields search 'bruna' = %+v, want only Bruna Silveira", allFields)
 	}
 
 	// Status filter.
@@ -202,14 +247,14 @@ func TestListAndSearch(t *testing.T) {
 	if err := svc.SetStatus(context.Background(), testClinicID.String(), pt.ID.String(), types.PatientStatusInactive); err != nil {
 		t.Fatal(err)
 	}
-	active, _, err := svc.ListPage(context.Background(), testClinicID.String(), "", types.PatientStatusActive.String(), 50, 0)
+	active, _, err := svc.ListPage(context.Background(), testClinicID.String(), "", "", types.PatientStatusActive.String(), 50, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(active) != 2 {
-		t.Fatalf("active = %d, want 2", len(active))
+	if len(active) != 3 {
+		t.Fatalf("active = %d, want 3", len(active))
 	}
-	inactive, _, err := svc.ListPage(context.Background(), testClinicID.String(), "", types.PatientStatusInactive.String(), 50, 0)
+	inactive, _, err := svc.ListPage(context.Background(), testClinicID.String(), "", "", types.PatientStatusInactive.String(), 50, 0)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -9,8 +9,8 @@ import { test } from 'node:test';
 import { readFileSync } from 'node:fs';
 import { Event, parseHTML } from 'linkedom';
 import { selectTab } from './tabs.ts';
-import { rowBoxes } from './table-select.ts';
 import * as dropdown from './dropdown.ts';
+import { searchFieldLabel, searchPlaceholder } from './search-menu.ts';
 import * as modal from './modal.ts';
 import { parseISO, formatISODate } from './datepicker.ts';
 
@@ -39,18 +39,6 @@ test('tabs.selectTab toggles panels and active classes', () => {
   const panels = group.querySelectorAll('[data-lv-panel]');
   assert.equal(panels[0].classList.contains('hidden'), true);
   assert.equal(panels[1].classList.contains('hidden'), false);
-});
-
-test('tableSelect.rowBoxes excludes the select-all box', () => {
-  const { document } = parseHTML(
-    '<div data-lv-table-select>' +
-      '<input type="checkbox" name="select_all">' +
-      '<input type="checkbox" name="ids" value="a">' +
-      '<input type="checkbox" name="ids" value="b">' +
-      '</div>',
-  );
-  const group = document.querySelector('[data-lv-table-select]') as Element;
-  assert.equal(rowBoxes(group).length, 2);
 });
 
 test('theme bootstrap applies the server-provided theme class', async () => {
@@ -125,6 +113,29 @@ test('dropdown.keyboardTarget moves focus through items with arrows, Home and En
   assert.equal(dropdown.keyboardTarget(items, toggle, document.body, 'ArrowDown'), null);
   assert.equal(dropdown.keyboardTarget([], toggle, toggle, 'ArrowDown'), null);
   assert.equal(dropdown.keyboardTarget(items, toggle, i1, 'Escape'), null);
+});
+
+test('searchMenu.searchFieldLabel maps the scope to the button label', () => {
+  assert.equal(searchFieldLabel(''), 'All fields');
+  assert.equal(searchFieldLabel('name'), 'Name');
+  assert.equal(searchFieldLabel('email'), 'Email');
+  assert.equal(searchFieldLabel('document'), 'All fields');
+  const systems = {
+    'urn:librevita:id:br:cpf': 'CPF (Brasil)',
+    'urn:librevita:id:pt:nif': 'NIF (Portugal)',
+  };
+  assert.equal(searchFieldLabel('urn:librevita:id:br:cpf', systems), 'CPF (Brasil)');
+  assert.equal(searchFieldLabel('urn:librevita:id:pt:nif', systems), 'NIF (Portugal)');
+  assert.equal(searchFieldLabel('urn:unknown', systems), 'All fields');
+});
+
+test('searchMenu.searchPlaceholder invites the exact lookup for a document type', () => {
+  assert.equal(searchPlaceholder(''), 'Search patients...');
+  assert.equal(searchPlaceholder('name'), 'Search patients...');
+  assert.equal(searchPlaceholder('email'), 'Search patients...');
+  const systems = { 'urn:librevita:id:br:cpf': 'CPF (Brasil)' };
+  assert.equal(searchPlaceholder('urn:librevita:id:br:cpf', systems), 'Exact CPF (Brasil) lookup');
+  assert.equal(searchPlaceholder('urn:unknown', systems), 'Search patients...');
 });
 
 test('datepicker.parseISO accepts ISO dates and rejects everything else', () => {

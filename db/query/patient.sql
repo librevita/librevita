@@ -52,6 +52,8 @@ WHERE clinic_id = ?;
 -- name: ListPatientsPage :many
 -- instr() searches the term literally (no LIKE wildcards), matching
 -- word prefixes: the term is anchored at a word boundary with a space.
+-- @field narrows the search to one column: '' searches everything,
+-- 'name' only display_name and 'email' only the email.
 SELECT *
 FROM patients
 WHERE
@@ -62,9 +64,11 @@ WHERE
         OR instr(
             lower(
                 ' '
-                || display_name
-                || ' '
-                || coalesce(email, '')
+                || CASE @field
+                    WHEN 'name' THEN display_name
+                    WHEN 'email' THEN coalesce(email, '')
+                    ELSE display_name || ' ' || coalesce(email, '')
+                END
             ),
             lower(' ' || @pattern)
         ) > 0
@@ -77,8 +81,17 @@ SELECT COUNT(*)
 FROM patients
 WHERE clinic_id = ?
 AND (@status_empty = '' OR status = @status_filter)
-AND (@query_empty = '' OR instr(
-lower(' ' || display_name || ' ' || COALESCE(email,
-'')),
+AND (
+@query_empty = ''
+OR instr(
+lower(
+' '
+|| CASE @field
+WHEN 'name' THEN display_name
+WHEN 'email' THEN coalesce(email, '')
+ELSE display_name || ' ' || coalesce(email, '')
+END
+),
 lower(' ' || @pattern)
-) > 0);
+) > 0
+);
