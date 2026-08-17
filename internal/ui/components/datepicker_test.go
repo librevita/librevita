@@ -1,8 +1,12 @@
 package components
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/labstack/echo/v4"
 )
 
 func TestBuildDatepickerPanel(t *testing.T) {
@@ -75,5 +79,44 @@ func TestParseISODate(t *testing.T) {
 	d := parseISODate("2025-12-25")
 	if d == nil || d.Format("2006-01-02") != "2025-12-25" {
 		t.Fatalf("2025-12-25 parsed wrong: %v", d)
+	}
+}
+
+// TestDatepickerPanelCaching pins the ETag revalidation: a matching
+// If-None-Match answers 304 without a body, and the fragment is served
+// private, no-cache so the browser must revalidate.
+func TestDatepickerPanelCaching(t *testing.T) {
+	e := echo.New()
+	e.GET("/ui/datepicker", datepickerPanelHandler)
+	url := "/ui/datepicker?year=2025&month=12&selected=2025-12-25&min=2025-12-01&max=2025-12-31"
+
+	first := httptest.NewRecorder()
+	e.ServeHTTP(first, httptest.NewRequest(http.MethodGet, url, nil))
+	if first.Code != http.StatusOK {
+		t.Fatalf("first status = %d, want 200", first.Code)
+	}
+	etag := first.Header().Get("ETag")
+	if etag == "" {
+		t.Fatalf("missing ETag on first response")
+	}
+	if cc := first.Header().Get("Cache-Control"); cc != "private, no-cache" {
+		t.Fatalf("Cache-Control = %q, want private, no-cache", cc)
+	}
+	if !strings.Contains(first.Body.String(), "December 2025") {
+		t.Fatalf("panel body missing month title")
+	}
+
+	revalidated := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, url, nil)
+	req.Header.Set("If-None-Match", etag)
+	e.ServeHTTP(revalidated, req)
+	if revalidated.Code != http.StatusNotModified {
+		t.Fatalf("revalidated status = %d, want 304", revalidated.Code)
+	}
+	if len(revalidated.Body.String()) != 0 {
+		t.Fatalf("304 must not carry a body")
+	}
+	if got := revalidated.Header().Get("ETag"); got != etag {
+		t.Fatalf("304 ETag = %q, want %q", got, etag)
 	}
 }
