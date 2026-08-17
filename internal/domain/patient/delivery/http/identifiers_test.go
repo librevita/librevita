@@ -19,6 +19,7 @@ import (
 	"librevita.org/internal/core/server"
 	"librevita.org/internal/core/storage"
 	"librevita.org/internal/domain/clinic"
+	"librevita.org/internal/domain/patient/identifier"
 	"librevita.org/internal/domain/patient/usecase"
 	"librevita.org/internal/testutil"
 )
@@ -518,4 +519,93 @@ func TestRegistryListMasksDocument(t *testing.T) {
 		t.Fatalf("list body has no patient rows: %q", body)
 	}
 	_ = withoutDoc
+}
+
+// TestRegistryListSearchField verifies the "search with dropdown"
+// scope: q narrows to the selected field (name/email) or searches all
+// fields when none is chosen.
+func TestRegistryListSearchField(t *testing.T) {
+	e, sessions, svc, _, _ := newIdentEnv(t)
+	cookie := adminSession(t, sessions)
+
+	email := "fernanda@example.org"
+	if _, err := svc.Create(context.Background(), testClinic, testAdminID.String(), usecase.PatientInput{
+		DisplayName: "Fernanda Rocha", Email: email,
+	}); err != nil {
+		t.Fatalf("create patient: %v", err)
+	}
+
+	emailPage := getWithCookie(t, e, "/patients?q=fernanda@example.org&field=email", cookie, false)
+	if emailPage.Code != http.StatusOK || !strings.Contains(emailPage.Body.String(), "Fernanda Rocha") {
+		t.Fatalf("field=email search did not match the email: %q", emailPage.Body.String())
+	}
+
+	namePage := getWithCookie(t, e, "/patients?q=fernanda@example.org&field=name", cookie, false)
+	if strings.Contains(namePage.Body.String(), "Fernanda Rocha") {
+		t.Fatalf("field=name search matched the email term: %q", namePage.Body.String())
+	}
+
+	nameHit := getWithCookie(t, e, "/patients?q=rocha&field=name", cookie, false)
+	if !strings.Contains(nameHit.Body.String(), "Fernanda Rocha") {
+		t.Fatalf("field=name search did not match the name: %q", nameHit.Body.String())
+	}
+
+	allHit := getWithCookie(t, e, "/patients?q=fernanda@example.org", cookie, false)
+	if !strings.Contains(allHit.Body.String(), "Fernanda Rocha") {
+		t.Fatalf("all-fields search did not match the email: %q", allHit.Body.String())
+	}
+}
+
+// TestRegistryDocumentLookup covers the embedded exact lookup: a
+// document type chosen in the search dropdown runs the blind-index
+// search scoped to that system and renders the owner as a normal row.
+// The plaintext is never echoed back, and the page lists the active
+// document types in the dropdown.
+func TestRegistryDocumentLookup(t *testing.T) {
+	e, sessions, svc, _, _ := newIdentEnv(t)
+	cookie := adminSession(t, sessions)
+	patientID := newPatient(t, svc, testClinic)
+	postForm(t, e, "/patients/"+patientID.String()+"/identifiers", cookie, url.Values{
+		"value": {"52998224725"},
+	})
+
+	hit := getWithCookie(t, e, "/patients?q=52998224725&field="+identifier.CPFSystem, cookie, false)
+	if hit.Code != http.StatusOK || !strings.Contains(hit.Body.String(), "Ana Souza") {
+		t.Fatalf("document lookup missed the owner: %q", hit.Body.String())
+	}
+	if !strings.Contains(hit.Body.String(), "529••••25") {
+		t.Fatalf("document lookup does not show the masked document: %q", hit.Body.String())
+	}
+	// The query echo (input value, pager hrefs) legitimately carries
+	// the typed value; the decrypted plaintext must never leave the
+	// server, so no reveal attribute may exist.
+	if strings.Contains(hit.Body.String(), `data-lv-plain="52998224725"`) {
+		t.Fatalf("document lookup leaks the plaintext: %q", hit.Body.String())
+	}
+
+	// The dropdown lists the active document types.
+	page := getWithCookie(t, e, "/patients", cookie, false)
+	if !strings.Contains(page.Body.String(), "CPF (Brasil)") || !strings.Contains(page.Body.String(), "Documents") {
+		t.Fatalf("registry page does not list the document types: %q", page.Body.String())
+	}
+
+	// The same value under another system is not the chosen document.
+	miss := getWithCookie(t, e, "/patients?q=52998224725&field="+identifier.NIFSystem, cookie, false)
+	if miss.Code != http.StatusOK || strings.Contains(miss.Body.String(), "Ana Souza") {
+		t.Fatalf("wrong-system lookup returned the owner: %q", miss.Body.String())
+	}
+
+	// An unknown scope degrades to the text search, never to the lookup.
+	unknown := getWithCookie(t, e, "/patients?q=52998224725&field=urn:librevita:id:x:unknown", cookie, true)
+	if unknown.Code != http.StatusOK || !strings.Contains(unknown.Body.String(), "No patients found") {
+		t.Fatalf("unknown scope status = %d body = %q, want the empty list", unknown.Code, unknown.Body.String())
+	}
+
+	// Short and empty values render the empty list without a lookup.
+	for _, q := range []string{"", "ab"} {
+		short := getWithCookie(t, e, "/patients?q="+q+"&field="+identifier.CPFSystem, cookie, true)
+		if short.Code != http.StatusOK || !strings.Contains(short.Body.String(), "No patients found") {
+			t.Fatalf("q=%q status = %d body = %q, want the empty list", q, short.Code, short.Body.String())
+		}
+	}
 }

@@ -22,7 +22,6 @@ import { registerUserMenu } from './user-menu.ts';
 import * as tabs from './tabs.ts';
 import { registerDropdown } from './dropdown.ts';
 import { registerModal } from './modal.ts';
-import * as tableSelect from './table-select.ts';
 import * as reveal from './reveal.ts';
 import Alpine from '@alpinejs/csp';
 import morph from '@alpinejs/morph';
@@ -32,6 +31,7 @@ import mask from '@alpinejs/mask';
 import { registerDatepicker } from './datepicker.ts';
 import { registerAgenda } from './calendar.ts';
 import { registerIdentifiermask } from './identifiermask.ts';
+import { registerSearchMenu } from './search-menu.ts';
 
 configureHtmx();
 forwardCsrf();
@@ -41,7 +41,6 @@ if (__LV_DEV__) {
 }
 
 tabs.init();
-tableSelect.init();
 reveal.init();
 // The alpine-morph htmx extension morphs swapped fragments with the
 // Alpine morph plugin (Alpine.morph), preserving component state.
@@ -55,6 +54,7 @@ registerAgenda(Alpine);
 registerIdentifiermask(Alpine);
 registerDropdown(Alpine);
 registerModal(Alpine);
+registerSearchMenu(Alpine);
 registerSidebar(Alpine);
 registerUserMenu(Alpine);
 // Alpine processes the x-data trees (the datepicker popover); the
@@ -68,7 +68,6 @@ document.addEventListener('htmx:afterSwap', (evt) => {
     return;
   }
   tabs.refresh(root);
-  tableSelect.refresh(root);
   reveal.refresh(root);
   // Only page navigations (boosted swaps target the body) move the focus
   // to the main content; fragment swaps (search, pager, row updates) must

@@ -29,6 +29,17 @@ const (
 	maxBulkArchiveIDs = 50
 )
 
+// searchField normalizes the registry search scope: only the fields
+// the SQL query understands are accepted, anything else falls back to
+// the combined search. Document type scopes (system URNs) never reach
+// the SQL: List routes them to the exact lookup before this point.
+func searchField(s string) string {
+	if s != "name" && s != "email" {
+		return ""
+	}
+	return s
+}
+
 // Handler renders the patient pages and processes submissions.
 type Handler struct {
 	svc     *usecase.Service
@@ -57,6 +68,11 @@ func (h *Handler) List(c echo.Context) error {
 		return err
 	}
 	q := strings.TrimSpace(c.QueryParam("q"))
+	rawField := strings.TrimSpace(c.QueryParam("field"))
+	field := searchField(rawField)
+	if field == "" && rawField != "" && h.isSystemField(ctx, rawField) {
+		return h.documentLookup(c, rawField, q)
+	}
 	status := c.QueryParam("status")
 	page := 1
 	if p := c.QueryParam("page"); p != "" {
@@ -65,12 +81,12 @@ func (h *Handler) List(c echo.Context) error {
 		}
 	}
 
-	patients, total, err := h.svc.ListPage(ctx, clinicID, q, status, patientListLimit, (page-1)*patientListLimit)
+	patients, total, err := h.svc.ListPage(ctx, clinicID, q, field, status, patientListLimit, (page-1)*patientListLimit)
 	if err != nil {
 		return err
 	}
 	rows := h.rows(c.Request().Context(), patients)
-	pager := views.PatientPager{Q: q, Status: status, Page: page, Total: total, Shown: int64(len(rows))}
+	pager := views.PatientPager{Q: q, Field: field, Status: status, Page: page, Total: total, Shown: int64(len(rows))}
 
 	// The search input and filters request fragments; boosted navigation
 	// (sidebar links) also arrives with HX-Request but must render the
@@ -79,7 +95,64 @@ func (h *Handler) List(c echo.Context) error {
 		return server.Render(c, http.StatusOK, views.PatientListTable(rows, pager, ""))
 	}
 	return server.Render(c, http.StatusOK, views.PatientListPage(
-		server.CSRFToken(c, h.csrf), server.Principal(c), q, status, rows, pager, ""))
+		server.CSRFToken(c, h.csrf), server.Principal(c), q, field, status, h.systemOptions(ctx), rows, pager, ""))
+}
+
+// isSystemField reports whether s is the URN of an active document
+// system, i.e. a valid exact-lookup scope of the search dropdown.
+func (h *Handler) isSystemField(ctx context.Context, s string) bool {
+	systems, err := h.systems.List(ctx)
+	if err != nil {
+		return false
+	}
+	for _, sys := range systems {
+		if sys.Active == 1 && sys.System == s {
+			return true
+		}
+	}
+	return false
+}
+
+// documentLookup answers the registry search when the dropdown scope
+// is a document type: the typed value is looked up exactly through the
+// blind index, scoped to the chosen system, and the owner renders as a
+// normal row. Like IdentifierLookup, the plaintext is never echoed
+// back and the audit detail carries only the system and the hit count.
+func (h *Handler) documentLookup(c echo.Context, system, q string) error {
+	ctx := c.Request().Context()
+	clinicID, err := h.clinicID(ctx)
+	if err != nil {
+		return err
+	}
+	var rows []views.PatientRow
+	var total int64
+	if len(q) >= minLookupLen {
+		hits, err := h.ids.FindByValue(ctx, clinicID, q)
+		if err != nil {
+			return err
+		}
+		matched := 0
+		for _, hit := range hits {
+			if hit.System != system {
+				continue
+			}
+			pt, err := h.svc.Get(ctx, clinicID, hit.PatientID)
+			if err != nil {
+				continue
+			}
+			rows = append(rows, h.rows(ctx, []repository.Patient{*pt})...)
+			matched++
+		}
+		total = int64(matched)
+		h.audit.Record(ctx, server.EventFromRequest(c, types.AuditResultSuccess,
+			"identifier.search", "", "", "system: "+system+", hits: "+strconv.Itoa(matched)))
+	}
+	pager := views.PatientPager{Q: q, Field: system, Status: "", Page: 1, Total: total, Shown: int64(len(rows))}
+	if server.IsHtmx(c) && c.Request().Header.Get("HX-Boosted") != "true" {
+		return server.Render(c, http.StatusOK, views.PatientListTable(rows, pager, ""))
+	}
+	return server.Render(c, http.StatusOK, views.PatientListPage(
+		server.CSRFToken(c, h.csrf), server.Principal(c), q, system, "", h.systemOptions(ctx), rows, pager, ""))
 }
 
 // NewPage renders the create form.
@@ -374,6 +447,7 @@ func (h *Handler) Restore(c echo.Context) error {
 func (h *Handler) BulkArchive(c echo.Context) error {
 	ctx := c.Request().Context()
 	q := strings.TrimSpace(c.QueryParam("q"))
+	field := searchField(c.QueryParam("field"))
 	status := c.QueryParam("status")
 	page := 1
 	if p := c.QueryParam("page"); p != "" {
@@ -414,12 +488,12 @@ func (h *Handler) BulkArchive(c echo.Context) error {
 		}
 	}
 
-	patients, total, err := h.svc.ListPage(ctx, clinicID, q, status, patientListLimit, (page-1)*patientListLimit)
+	patients, total, err := h.svc.ListPage(ctx, clinicID, q, field, status, patientListLimit, (page-1)*patientListLimit)
 	if err != nil {
 		return err
 	}
 	rows := h.rows(ctx, patients)
-	pager := views.PatientPager{Q: q, Status: status, Page: page, Total: total, Shown: int64(len(rows))}
+	pager := views.PatientPager{Q: q, Field: field, Status: status, Page: page, Total: total, Shown: int64(len(rows))}
 	msg := "No patients selected"
 	if archived > 0 {
 		msg = strconv.Itoa(archived) + " patient(s) archived"
