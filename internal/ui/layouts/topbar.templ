@@ -31,7 +31,7 @@ templ Topbar(title string, token string, principal *auth.Principal) {
 					<span class="hidden text-sm font-medium text-gray-700 dark:text-gray-200 lg:block">{ principal.Name }</span>
 					@components.Icon("expand_more", "hidden h-4 w-4 text-gray-400 dark:text-gray-500 lg:block")
 				</button>
-				<div data-lv-user-menu x-show="open" x-cloak class="absolute right-0 z-50 mt-2 w-64 rounded-lg border border-gray-200 bg-white shadow-lg dark:border-gray-600 dark:bg-gray-800">
+				<div data-lv-user-menu x-show="open" x-cloak x-transition:enter="transition ease-out duration-100" x-transition:enter-start="opacity-0 scale-95" x-transition:enter-end="opacity-100 scale-100" x-transition:leave="transition ease-in duration-75" x-transition:leave-start="opacity-100 scale-100" x-transition:leave-end="opacity-0 scale-95" class="absolute right-0 z-50 mt-2 w-64 origin-top-right rounded-lg border border-gray-200 bg-white shadow-lg dark:border-gray-600 dark:bg-gray-800">
 					<div class="border-b border-gray-200 px-4 py-3 dark:border-gray-600">
 						<p class="text-sm font-medium text-gray-900 dark:text-white">{ principal.Name }</p>
 						<p class="truncate text-xs text-gray-500 dark:text-gray-400">{ principal.Email }</p>
