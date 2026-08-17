@@ -32,6 +32,7 @@ import { registerDatepicker } from './datepicker.ts';
 import { registerAgenda } from './calendar.ts';
 import { registerIdentifiermask } from './identifiermask.ts';
 import { registerSearchMenu } from './search-menu.ts';
+import { registerStatusMenu } from './status-menu.ts';
 
 configureHtmx();
 forwardCsrf();
@@ -55,6 +56,7 @@ registerIdentifiermask(Alpine);
 registerDropdown(Alpine);
 registerModal(Alpine);
 registerSearchMenu(Alpine);
+registerStatusMenu(Alpine);
 registerSidebar(Alpine);
 registerUserMenu(Alpine);
 // Alpine processes the x-data trees (the datepicker popover); the
