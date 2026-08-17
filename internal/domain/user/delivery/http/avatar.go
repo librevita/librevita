@@ -227,7 +227,7 @@ func avatarCacheHeaders(c echo.Context, etag string) bool {
 	quoted := `"` + etag + `"`
 	c.Response().Header().Set("ETag", quoted)
 	if inm := c.Request().Header.Get("If-None-Match"); inm != "" && etagMatches(inm, quoted) {
-		c.NoContent(http.StatusNotModified)
+		_ = c.NoContent(http.StatusNotModified)
 		return false
 	}
 	return true

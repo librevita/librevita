@@ -310,10 +310,14 @@ var tinyBMP = func() []byte {
 }()
 
 func put16(b []byte, v uint16) {
+	// #nosec G115 -- intentional byte truncation while hand-crafting a
+	// BMP fixture header.
 	b[0], b[1] = byte(v), byte(v>>8)
 }
 
 func put32(b []byte, v uint32) {
+	// #nosec G115 -- intentional byte truncation while hand-crafting a
+	// BMP fixture header.
 	b[0], b[1], b[2], b[3] = byte(v), byte(v>>8), byte(v>>16), byte(v>>24)
 }
 
