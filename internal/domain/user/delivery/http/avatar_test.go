@@ -207,6 +207,91 @@ func TestAvatarUploadServeRemove(t *testing.T) {
 	}
 }
 
+// TestAvatarCacheContract pins the caching behavior: both the real
+// picture and the placeholder are private with a one-hour lifetime, and
+// a validating request (If-None-Match) gets a 304 instead of the body.
+func TestAvatarCacheContract(t *testing.T) {
+	e, sessions, _, _ := newAvatarEnv(t)
+	token, err := sessions.Create(context.Background(), auth.Principal{
+		ID: testAdminID.String(), Email: "admin@example.org", Name: "Admin", Role: auth.RoleAdmin,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cookie := sessions.Cookie(token)
+
+	get := func(etag string) (*httptest.ResponseRecorder, string) {
+		srv := httptest.NewRequest(http.MethodGet, "/profile/avatar", nil)
+		srv.AddCookie(cookie)
+		if etag != "" {
+			srv.Header.Set("If-None-Match", etag)
+		}
+		rec := httptest.NewRecorder()
+		e.ServeHTTP(rec, srv)
+		return rec, rec.Header().Get("ETag")
+	}
+
+	// Placeholder: private, one hour, ETag present, 200 on first fetch.
+	rec, etag := get("")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("placeholder status = %d, want 200", rec.Code)
+	}
+	if cc := rec.Header().Get("Cache-Control"); cc != "private, max-age=3600" {
+		t.Errorf("placeholder cache-control = %q", cc)
+	}
+	if etag == "" {
+		t.Fatal("placeholder has no ETag")
+	}
+	if unquoted := strings.Trim(etag, `"`); strings.HasPrefix(unquoted, "ph-") == false || len(strings.TrimPrefix(unquoted, "ph-")) != 64 {
+		t.Errorf("placeholder ETag = %q, want a quoted ph- + sha256 pair", etag)
+	}
+
+	// A validating fetch is answered with 304 and no body.
+	rec, _ = get(etag)
+	if rec.Code != http.StatusNotModified {
+		t.Fatalf("placeholder revalidated status = %d, want 304", rec.Code)
+	}
+	if rec.Body.Len() != 0 {
+		t.Error("304 carried a body")
+	}
+	// A mismatching tag must fetch the payload again.
+	rec, _ = get(`"other"`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("placeholder with stale tag = %d, want 200", rec.Code)
+	}
+
+	// Upload a real picture and repeat the contract with its ETag.
+	buf, ctype := avatarMultipart(t, "avatar", "a.png", tinyPNG, "image/png")
+	up := httptest.NewRequest(http.MethodPost, "/profile/avatar", buf)
+	up.Header.Set("Content-Type", ctype)
+	up.AddCookie(cookie)
+	uprec := httptest.NewRecorder()
+	e.ServeHTTP(uprec, up)
+	if uprec.Code != http.StatusFound {
+		t.Fatalf("upload status = %d, want 302", uprec.Code)
+	}
+
+	rec, etag = get("")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("picture status = %d, want 200", rec.Code)
+	}
+	if cc := rec.Header().Get("Cache-Control"); cc != "private, max-age=3600" {
+		t.Errorf("picture cache-control = %q", cc)
+	}
+	if etag == "" || strings.HasPrefix(strings.Trim(etag, `"`), "ph-") {
+		t.Errorf("picture ETag = %q, want a storage tag, not the placeholder's", etag)
+	}
+	rec, _ = get(etag)
+	if rec.Code != http.StatusNotModified {
+		t.Fatalf("picture revalidated status = %d, want 304", rec.Code)
+	}
+	// Weak validation (W/"tag") must match too, per RFC 9110.
+	rec, _ = get("W/" + etag)
+	if rec.Code != http.StatusNotModified {
+		t.Fatalf("picture with weak tag = %d, want 304", rec.Code)
+	}
+}
+
 // TestAvatarRejectsNonImage asserts the sniffed content type gate.
 func TestAvatarRejectsNonImage(t *testing.T) {
 	e, sessions, _, _ := newAvatarEnv(t)

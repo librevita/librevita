@@ -3,6 +3,8 @@ package http
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"html"
 	"image"
@@ -168,16 +170,23 @@ func (h *Handler) UserAvatar(c echo.Context) error {
 }
 
 // serveAvatar streams the newest avatar of userID, or the initials
-// placeholder when the user has none.
+// placeholder when the user has none. Both payloads are served with
+// the same caching contract: private (the picture is per-user, never
+// for shared caches), one hour to live, and a strong ETag so browsers
+// holding the current picture get a 304 instead of the payload.
 func (h *Handler) serveAvatar(ctx context.Context, c echo.Context, userID uuid.UUID, name string) error {
 	avatars, err := h.files.List(ctx, avatarDomain, userID)
 	if err != nil {
 		return err
 	}
 	if len(avatars) == 0 {
+		payload := avatarPlaceholder(name)
+		if !avatarCacheHeaders(c, "ph-"+avatarDigest(payload)) {
+			return nil
+		}
 		c.Response().Header().Set("Content-Type", "image/svg+xml")
 		c.Response().WriteHeader(http.StatusOK)
-		_, err := c.Response().Write(avatarPlaceholder(name))
+		_, err := c.Response().Write(payload)
 		return err
 	}
 	meta, obj, err := h.files.OpenForResource(ctx, avatarDomain, userID, avatars[0].ID)
@@ -188,8 +197,48 @@ func (h *Handler) serveAvatar(ctx context.Context, c echo.Context, userID uuid.U
 		return err
 	}
 	defer obj.Data.Close()
-	c.Response().Header().Set("Cache-Control", "private, max-age=3600")
+	if !avatarCacheHeaders(c, meta.ETag) {
+		return nil
+	}
 	return c.Stream(http.StatusOK, meta.ContentType, obj.Data)
+}
+
+// avatarCacheHeaders sets the shared caching contract and answers 304
+// when the client validates with an If-None-Match that still matches;
+// it reports whether the caller should proceed to send the body.
+func avatarCacheHeaders(c echo.Context, etag string) bool {
+	c.Response().Header().Set("Cache-Control", "private, max-age=3600")
+	quoted := `"` + etag + `"`
+	c.Response().Header().Set("ETag", quoted)
+	if inm := c.Request().Header.Get("If-None-Match"); inm != "" && etagMatches(inm, quoted) {
+		c.NoContent(http.StatusNotModified)
+		return false
+	}
+	return true
+}
+
+// etagMatches implements the weak If-None-Match comparison: the header
+// holds a comma-separated list of (possibly weak) tag literals, and a
+// bare asterisk matches any current representation.
+func etagMatches(header, want string) bool {
+	if header == "*" {
+		return true
+	}
+	for _, part := range strings.Split(header, ",") {
+		part = strings.TrimSpace(part)
+		if part == want || strings.TrimPrefix(part, "W/") == want {
+			return true
+		}
+	}
+	return false
+}
+
+// avatarDigest is the placeholder's strong tag: a hash of the SVG
+// itself, so the tag follows the bytes (initials and name edits
+// included).
+func avatarDigest(payload []byte) string {
+	sum := sha256.Sum256(payload)
+	return hex.EncodeToString(sum[:])
 }
 
 // removeAvatars deletes every avatar of the user except the given id
