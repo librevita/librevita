@@ -21,19 +21,19 @@ type Store struct {
 func NewStore(cfg *config.Config, log *slog.Logger) (*Store, error) {
 	switch cfg.Database.Driver {
 	case config.DriverDqlite:
-		db, err := openDqlite(cfg.Database.DqliteAddrs, cfg.Database.DqliteDiscoverySRV, cfg.Database.DqliteDatabase)
+		db, err := openDqlite(cfg.Database.Dqlite.Addrs, cfg.Database.Dqlite.DiscoverySRV, cfg.Database.Dqlite.Database)
 		if err != nil {
 			return nil, err
 		}
-		log.Info("using dqlite persistence", "addrs", cfg.Database.DqliteAddrs, "discovery_srv", cfg.Database.DqliteDiscoverySRV, "database", cfg.Database.DqliteDatabase)
+		log.Info("using dqlite persistence", "addrs", cfg.Database.Dqlite.Addrs, "discovery_srv", cfg.Database.Dqlite.DiscoverySRV, "database", cfg.Database.Dqlite.Database)
 		return &Store{driver: config.DriverDqlite, db: db}, nil
 
 	case config.DriverSQLite:
-		db, err := openSQLite(cfg.Database.Path)
+		db, err := openSQLite(cfg.Database.SQLite.Path)
 		if err != nil {
 			return nil, err
 		}
-		log.Info("using SQLite/WAL persistence", "path", cfg.Database.Path)
+		log.Info("using SQLite/WAL persistence", "path", cfg.Database.SQLite.Path)
 		return &Store{driver: config.DriverSQLite, db: db}, nil
 
 	default:

@@ -117,39 +117,88 @@ type AuthConfig struct {
 	MaxConcurrentHashes int `koanf:"max_concurrent_hashes"`
 }
 
-// DatabaseConfig defines the active persistence backend.
+// DatabaseConfig defines the active persistence backend. The
+// backend-specific settings live in their own section (sqlite or
+// dqlite), mirroring the storage configuration.
 type DatabaseConfig struct {
 	// Driver is DriverSQLite or DriverDqlite.
 	Driver string `koanf:"driver"`
 
-	// Path is the SQLite database path.
-	Path string `koanf:"path"`
+	// SQLite configures the embedded SQLite backend.
+	SQLite SQLiteConfig `koanf:"sqlite"`
 
-	// DqliteAddrs is the comma-separated list of dqlite node addresses
-	// (the wire protocol), e.g. "node1:9001,node2:9001,node3:9001". It
-	// is the bootstrap candidate list; either DqliteAddrs or
-	// DqliteDiscoverySRV is required.
-	DqliteAddrs string `koanf:"dqlite_addrs"`
-
-	// DqliteDiscoverySRV optionally names a DNS SRV record (e.g.
-	// "_dqlite._tcp.librevita.svc.cluster.local") whose targets seed
-	// the candidate node list in place of static DqliteAddrs. The
-	// record is queried on every reconnect, so cluster membership can
-	// change without restarting the application.
-	DqliteDiscoverySRV string `koanf:"dqlite_discovery_srv"`
-
-	// DqliteDatabase is the database name on the dqlite cluster.
-	DqliteDatabase string `koanf:"dqlite_database"`
+	// Dqlite configures the dqlite cluster backend.
+	Dqlite DqliteConfig `koanf:"dqlite"`
 }
 
-// LoggingConfig controls production logging.
+// SQLiteConfig configures the embedded SQLite backend.
+type SQLiteConfig struct {
+	// Path is the SQLite database file path.
+	Path string `koanf:"path"`
+}
+
+// DqliteConfig configures the dqlite cluster backend.
+type DqliteConfig struct {
+	// Addrs is the comma-separated list of dqlite node addresses (the
+	// wire protocol), e.g. "node1:9001,node2:9001,node3:9001". It is
+	// the bootstrap candidate list; either Addrs or DiscoverySRV is
+	// required.
+	Addrs string `koanf:"addrs"`
+
+	// DiscoverySRV optionally names a DNS SRV record (e.g.
+	// "_dqlite._tcp.librevita.svc.cluster.local") whose targets seed
+	// the candidate node list in place of static Addrs. The record is
+	// queried on every reconnect, so cluster membership can change
+	// without restarting the application.
+	DiscoverySRV string `koanf:"discovery_srv"`
+
+	// Database is the database name on the dqlite cluster.
+	Database string `koanf:"database"`
+}
+
+// LoggingConfig controls production logging. The destination-specific
+// settings live in their own section (console, file or rotating,
+// selected by Mode), mirroring the storage and database configuration.
 type LoggingConfig struct {
-	Mode       string `koanf:"mode"`
-	Path       string `koanf:"path"`
-	MaxSizeMB  int    `koanf:"max_size_mb"`
-	MaxBackups int    `koanf:"max_backups"`
-	MaxAgeDays int    `koanf:"max_age_days"`
-	Compress   bool   `koanf:"compress"`
+	// Mode is LogModeConsole, LogModeFile or LogModeRotating.
+	Mode string `koanf:"mode"`
+
+	// Console configures stderr output (no settings today).
+	Console ConsoleLogConfig `koanf:"console"`
+
+	// File configures the plain append-only file output.
+	File FileLogConfig `koanf:"file"`
+
+	// Rotating configures the lumberjack rotating file output.
+	Rotating RotatingLogConfig `koanf:"rotating"`
+}
+
+// ConsoleLogConfig configures stderr output. Kept as a section so the
+// per-mode layout stays uniform; there are no knobs yet.
+type ConsoleLogConfig struct{}
+
+// FileLogConfig configures the plain, append-only file output.
+type FileLogConfig struct {
+	// Path is the file destination.
+	Path string `koanf:"path"`
+}
+
+// RotatingLogConfig configures the lumberjack rotating file output.
+type RotatingLogConfig struct {
+	// Path is the rotating file destination.
+	Path string `koanf:"path"`
+
+	// MaxSizeMB is the size at which the file rotates, in megabytes.
+	MaxSizeMB int `koanf:"max_size_mb"`
+
+	// MaxBackups is the number of rotated files kept.
+	MaxBackups int `koanf:"max_backups"`
+
+	// MaxAgeDays is the maximum age of rotated files, in days.
+	MaxAgeDays int `koanf:"max_age_days"`
+
+	// Compress compresses rotated files.
+	Compress bool `koanf:"compress"`
 }
 
 // StorageConfig selects the file storage backend.
@@ -196,16 +245,17 @@ func RegisterFlags(fs *pflag.FlagSet) {
 	intFlag(fs, "hsts-max-age", 0, "Strict-Transport-Security max-age in seconds (0 disables; HTTPS deployments only)")
 	stringFlag(fs, "data-dir", defaultDataDir, "base directory for database and logs")
 	stringFlag(fs, "db-driver", DriverSQLite, "database backend: sqlite or dqlite")
-	stringFlag(fs, "db-path", "", "SQLite database path")
-	stringFlag(fs, "dqlite-addrs", "", "comma-separated dqlite node addresses (wire protocol)")
-	stringFlag(fs, "dqlite-discovery-srv", "", "DNS SRV record seeding the dqlite node candidates, e.g. _dqlite._tcp.librevita.svc.cluster.local")
-	stringFlag(fs, "dqlite-database", defaultDqliteDatabase, "dqlite database name")
+	stringFlag(fs, "db-sqlite-path", "", "SQLite database path")
+	stringFlag(fs, "db-dqlite-addrs", "", "comma-separated dqlite node addresses (wire protocol)")
+	stringFlag(fs, "db-dqlite-discovery-srv", "", "DNS SRV record seeding the dqlite node candidates, e.g. _dqlite._tcp.librevita.svc.cluster.local")
+	stringFlag(fs, "db-dqlite-database", defaultDqliteDatabase, "dqlite database name")
 	stringFlag(fs, "log-mode", defaultLogMode, "production log mode: console, file, or rotating")
-	stringFlag(fs, "log-path", "", "log file path")
-	intFlag(fs, "log-max-size", defaultLogSizeMB, "rotating log maximum size in MB")
-	intFlag(fs, "log-max-backups", defaultLogBackups, "rotating log backup count")
-	intFlag(fs, "log-max-age", defaultLogAgeDays, "rotating log maximum age in days")
-	boolFlag(fs, "log-compress", true, "compress rotated log files")
+	stringFlag(fs, "log-file-path", "", "log file path (file mode)")
+	stringFlag(fs, "log-rotating-path", "", "rotating log file path")
+	intFlag(fs, "log-rotating-max-size", defaultLogSizeMB, "rotating log maximum size in MB")
+	intFlag(fs, "log-rotating-max-backups", defaultLogBackups, "rotating log backup count")
+	intFlag(fs, "log-rotating-max-age", defaultLogAgeDays, "rotating log maximum age in days")
+	boolFlag(fs, "log-rotating-compress", true, "compress rotated log files")
 	stringFlag(fs, "paseto-key", "", "PASETO v4.local session key (base64, 32 bytes)")
 	stringFlag(fs, "master-key", "", "field-level encryption master key (base64, 32 bytes)")
 	intFlag(fs, "auth-max-concurrent-hashes", defaultMaxConcurrentHashes, "bound on concurrent Argon2id operations")
@@ -335,30 +385,33 @@ func (c *Config) normalize() {
 	if c.Database.Driver == "" {
 		c.Database.Driver = DriverSQLite
 	}
-	if strings.TrimSpace(c.Database.Path) == "" {
-		c.Database.Path = filepath.Join(c.DataDir, "librevita.db")
+	if strings.TrimSpace(c.Database.SQLite.Path) == "" {
+		c.Database.SQLite.Path = filepath.Join(c.DataDir, "librevita.db")
 	}
-	if strings.TrimSpace(c.Database.DqliteDatabase) == "" {
-		c.Database.DqliteDatabase = defaultDqliteDatabase
+	if strings.TrimSpace(c.Database.Dqlite.Database) == "" {
+		c.Database.Dqlite.Database = defaultDqliteDatabase
 	}
-	c.Database.DqliteAddrs = strings.TrimSpace(c.Database.DqliteAddrs)
-	c.Database.DqliteDiscoverySRV = strings.TrimSpace(c.Database.DqliteDiscoverySRV)
+	c.Database.Dqlite.Addrs = strings.TrimSpace(c.Database.Dqlite.Addrs)
+	c.Database.Dqlite.DiscoverySRV = strings.TrimSpace(c.Database.Dqlite.DiscoverySRV)
 
 	c.Logging.Mode = strings.ToLower(strings.TrimSpace(c.Logging.Mode))
 	if c.Logging.Mode == "" {
 		c.Logging.Mode = defaultLogMode
 	}
-	if strings.TrimSpace(c.Logging.Path) == "" {
-		c.Logging.Path = filepath.Join(c.DataDir, "librevita.log")
+	if strings.TrimSpace(c.Logging.File.Path) == "" {
+		c.Logging.File.Path = filepath.Join(c.DataDir, "librevita.log")
 	}
-	if c.Logging.MaxSizeMB <= 0 {
-		c.Logging.MaxSizeMB = defaultLogSizeMB
+	if strings.TrimSpace(c.Logging.Rotating.Path) == "" {
+		c.Logging.Rotating.Path = filepath.Join(c.DataDir, "librevita.log")
 	}
-	if c.Logging.MaxBackups < 0 {
-		c.Logging.MaxBackups = defaultLogBackups
+	if c.Logging.Rotating.MaxSizeMB <= 0 {
+		c.Logging.Rotating.MaxSizeMB = defaultLogSizeMB
 	}
-	if c.Logging.MaxAgeDays < 0 {
-		c.Logging.MaxAgeDays = defaultLogAgeDays
+	if c.Logging.Rotating.MaxBackups < 0 {
+		c.Logging.Rotating.MaxBackups = defaultLogBackups
+	}
+	if c.Logging.Rotating.MaxAgeDays < 0 {
+		c.Logging.Rotating.MaxAgeDays = defaultLogAgeDays
 	}
 
 	if c.Auth.MaxConcurrentHashes <= 0 {
@@ -375,13 +428,13 @@ func (c *Config) validate() error {
 	}
 	if c.Database.Driver == DriverDqlite {
 		addresses := 0
-		for _, addr := range strings.Split(c.Database.DqliteAddrs, ",") {
+		for _, addr := range strings.Split(c.Database.Dqlite.Addrs, ",") {
 			if strings.TrimSpace(addr) != "" {
 				addresses++
 			}
 		}
-		if addresses == 0 && c.Database.DqliteDiscoverySRV == "" {
-			return fmt.Errorf("config: database.dqlite_addrs requires at least one node address (e.g. \"node1:9001,node2:9001,node3:9001\") or database.dqlite_discovery_srv (an SRV record)")
+		if addresses == 0 && c.Database.Dqlite.DiscoverySRV == "" {
+			return fmt.Errorf("config: database.dqlite.addrs requires at least one node address (e.g. \"node1:9001,node2:9001,node3:9001\") or database.dqlite.discovery_srv (an SRV record)")
 		}
 	}
 
@@ -447,26 +500,28 @@ func mapFlagKey(name string) string {
 		return "data_dir"
 	case "db-driver", "db_driver":
 		return "database.driver"
-	case "db-path", "db_path":
-		return "database.path"
-	case "dqlite-addrs", "dqlite_addrs":
-		return "database.dqlite_addrs"
-	case "dqlite-discovery-srv", "dqlite_discovery_srv":
-		return "database.dqlite_discovery_srv"
-	case "dqlite-database", "dqlite_database":
-		return "database.dqlite_database"
+	case "db-sqlite-path", "db_sqlite_path":
+		return "database.sqlite.path"
+	case "db-dqlite-addrs", "db_dqlite_addrs":
+		return "database.dqlite.addrs"
+	case "db-dqlite-discovery-srv", "db_dqlite_discovery_srv":
+		return "database.dqlite.discovery_srv"
+	case "db-dqlite-database", "db_dqlite_database":
+		return "database.dqlite.database"
 	case "log-mode", "log_mode":
 		return "logging.mode"
-	case "log-path", "log_path":
-		return "logging.path"
-	case "log-max-size", "log_max_size":
-		return "logging.max_size_mb"
-	case "log-max-backups", "log_max_backups":
-		return "logging.max_backups"
-	case "log-max-age", "log_max_age":
-		return "logging.max_age_days"
-	case "log-compress", "log_compress":
-		return "logging.compress"
+	case "log-file-path", "log_file_path":
+		return "logging.file.path"
+	case "log-rotating-path", "log_rotating_path":
+		return "logging.rotating.path"
+	case "log-rotating-max-size", "log_rotating_max_size":
+		return "logging.rotating.max_size_mb"
+	case "log-rotating-max-backups", "log_rotating_max_backups":
+		return "logging.rotating.max_backups"
+	case "log-rotating-max-age", "log_rotating_max_age":
+		return "logging.rotating.max_age_days"
+	case "log-rotating-compress", "log_rotating_compress":
+		return "logging.rotating.compress"
 	case "paseto-key", "paseto_key":
 		return "paseto_key"
 	case "master-key", "master_key":
@@ -499,7 +554,7 @@ func mapFlagKey(name string) string {
 func mapEnvironmentKey(key string) string {
 	key = strings.ToLower(strings.TrimPrefix(key, envPrefix))
 	switch key {
-	case "config", "config_file":
+	case "config":
 		return keyConfigFile
 	case "mode":
 		return "mode"
@@ -509,28 +564,30 @@ func mapEnvironmentKey(key string) string {
 		return "http_port"
 	case "data_dir":
 		return "data_dir"
-	case "db_driver", "database_driver":
+	case "database_driver":
 		return "database.driver"
-	case "db_path", "database_path":
-		return "database.path"
-	case "dqlite_addrs", "database_dqlite_addrs":
-		return "database.dqlite_addrs"
-	case "dqlite_discovery_srv", "database_dqlite_discovery_srv":
-		return "database.dqlite_discovery_srv"
-	case "dqlite_database", "database_dqlite_database":
-		return "database.dqlite_database"
-	case "log_mode", "logging_mode":
+	case "database_sqlite_path":
+		return "database.sqlite.path"
+	case "database_dqlite_addrs":
+		return "database.dqlite.addrs"
+	case "database_dqlite_discovery_srv":
+		return "database.dqlite.discovery_srv"
+	case "database_dqlite_database":
+		return "database.dqlite.database"
+	case "logging_mode":
 		return "logging.mode"
-	case "log_path", "logging_path":
-		return "logging.path"
-	case "log_max_size_mb", "logging_max_size_mb":
-		return "logging.max_size_mb"
-	case "log_max_backups", "logging_max_backups":
-		return "logging.max_backups"
-	case "log_max_age_days", "logging_max_age_days":
-		return "logging.max_age_days"
-	case "log_compress", "logging_compress":
-		return "logging.compress"
+	case "logging_file_path":
+		return "logging.file.path"
+	case "logging_rotating_path":
+		return "logging.rotating.path"
+	case "logging_rotating_max_size_mb":
+		return "logging.rotating.max_size_mb"
+	case "logging_rotating_max_backups":
+		return "logging.rotating.max_backups"
+	case "logging_rotating_max_age_days":
+		return "logging.rotating.max_age_days"
+	case "logging_rotating_compress":
+		return "logging.rotating.compress"
 	case "paseto_key":
 		return "paseto_key"
 	case "master_key":

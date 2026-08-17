@@ -12,10 +12,10 @@ import (
 
 func TestLoadPrecedence(t *testing.T) {
 	t.Setenv("LIBREVITA_MODE", "production")
-	t.Setenv("LIBREVITA_DB_PATH", "env.db")
+	t.Setenv("LIBREVITA_DATABASE_SQLITE_PATH", "env.db")
 
 	configFile := filepath.Join(t.TempDir(), "config.yaml")
-	configYAML := []byte("mode: development\nhttp_bind: '127.0.0.1'\nhttp_port: 9000\ndatabase:\n  driver: sqlite\n  path: file.db\n  dqlite_addrs: node1:9001,node2:9001\n  dqlite_database: lv\n")
+	configYAML := []byte("mode: development\nhttp_bind: '127.0.0.1'\nhttp_port: 9000\ndatabase:\n  driver: sqlite\n  sqlite:\n    path: file.db\n  dqlite:\n    addrs: node1:9001,node2:9001\n    database: lv\n")
 	if err := os.WriteFile(configFile, configYAML, 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -43,23 +43,23 @@ func TestLoadPrecedence(t *testing.T) {
 	if cfg.HTTPPort != 9100 {
 		t.Errorf("HTTPPort = %d, want 9100", cfg.HTTPPort)
 	}
-	if cfg.Database.Path != "env.db" {
-		t.Errorf("Database.Path = %q, want env.db", cfg.Database.Path)
+	if cfg.Database.SQLite.Path != "env.db" {
+		t.Errorf("Database.SQLite.Path = %q, want env.db", cfg.Database.SQLite.Path)
 	}
-	if cfg.Database.DqliteAddrs != "node1:9001,node2:9001" {
-		t.Errorf("Database.DqliteAddrs = %q, want node1:9001,node2:9001", cfg.Database.DqliteAddrs)
+	if cfg.Database.Dqlite.Addrs != "node1:9001,node2:9001" {
+		t.Errorf("Database.Dqlite.Addrs = %q, want node1:9001,node2:9001", cfg.Database.Dqlite.Addrs)
 	}
-	if cfg.Database.DqliteDatabase != "lv" {
-		t.Errorf("Database.DqliteDatabase = %q, want lv", cfg.Database.DqliteDatabase)
+	if cfg.Database.Dqlite.Database != "lv" {
+		t.Errorf("Database.Dqlite.Database = %q, want lv", cfg.Database.Dqlite.Database)
 	}
 	if cfg.Logging.Mode != LogModeConsole {
 		t.Errorf("Logging.Mode = %q, want console", cfg.Logging.Mode)
 	}
-	if cfg.Logging.MaxSizeMB != defaultLogSizeMB {
-		t.Errorf("Logging.MaxSizeMB = %d, want %d", cfg.Logging.MaxSizeMB, defaultLogSizeMB)
+	if cfg.Logging.Rotating.MaxSizeMB != defaultLogSizeMB {
+		t.Errorf("Logging.Rotating.MaxSizeMB = %d, want %d", cfg.Logging.Rotating.MaxSizeMB, defaultLogSizeMB)
 	}
-	if !cfg.Logging.Compress {
-		t.Error("Logging.Compress = false, want true by default")
+	if !cfg.Logging.Rotating.Compress {
+		t.Error("Logging.Rotating.Compress = false, want true by default")
 	}
 }
 
@@ -81,7 +81,7 @@ func TestValidateDqliteAddrs(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			cfg := &Config{
-				Database: DatabaseConfig{Driver: DriverDqlite, DqliteAddrs: tc.addrs, DqliteDiscoverySRV: tc.srv, DqliteDatabase: "lv"},
+				Database: DatabaseConfig{Driver: DriverDqlite, Dqlite: DqliteConfig{Addrs: tc.addrs, DiscoverySRV: tc.srv, Database: "lv"}},
 				Logging:  LoggingConfig{Mode: LogModeConsole},
 			}
 			err := cfg.validate()
@@ -135,9 +135,10 @@ func TestDqliteFlagsMapToNestedKeys(t *testing.T) {
 	flags := pflag.NewFlagSet("dqlite-test", pflag.ContinueOnError)
 	RegisterFlags(flags)
 	if err := flags.Parse([]string{
-		"--dqlite-addrs", "node1:9001,node2:9001",
-		"--dqlite-discovery-srv", "_dqlite._tcp.librevita.svc.cluster.local",
-		"--dqlite-database", "lv",
+		"--db-dqlite-addrs", "node1:9001,node2:9001",
+		"--db-dqlite-discovery-srv", "_dqlite._tcp.librevita.svc.cluster.local",
+		"--db-dqlite-database", "lv",
+		"--db-sqlite-path", "/tmp/foo.db",
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -151,23 +152,63 @@ func TestDqliteFlagsMapToNestedKeys(t *testing.T) {
 	if err := k.Unmarshal("", &cfg); err != nil {
 		t.Fatal(err)
 	}
-	if cfg.Database.DqliteAddrs != "node1:9001,node2:9001" {
-		t.Errorf("DqliteAddrs = %q", cfg.Database.DqliteAddrs)
+	if cfg.Database.Dqlite.Addrs != "node1:9001,node2:9001" {
+		t.Errorf("Dqlite.Addrs = %q", cfg.Database.Dqlite.Addrs)
 	}
-	if cfg.Database.DqliteDiscoverySRV != "_dqlite._tcp.librevita.svc.cluster.local" {
-		t.Errorf("DqliteDiscoverySRV = %q", cfg.Database.DqliteDiscoverySRV)
+	if cfg.Database.Dqlite.DiscoverySRV != "_dqlite._tcp.librevita.svc.cluster.local" {
+		t.Errorf("Dqlite.DiscoverySRV = %q", cfg.Database.Dqlite.DiscoverySRV)
 	}
-	if cfg.Database.DqliteDatabase != "lv" {
-		t.Errorf("DqliteDatabase = %q", cfg.Database.DqliteDatabase)
+	if cfg.Database.Dqlite.Database != "lv" {
+		t.Errorf("Dqlite.Database = %q", cfg.Database.Dqlite.Database)
+	}
+	if cfg.Database.SQLite.Path != "/tmp/foo.db" {
+		t.Errorf("SQLite.Path = %q", cfg.Database.SQLite.Path)
 	}
 }
 
 func TestDqliteEnvKeysMapToNestedKeys(t *testing.T) {
-	if got := mapEnvironmentKey("database_dqlite_discovery_srv"); got != "database.dqlite_discovery_srv" {
-		t.Errorf("database_dqlite_discovery_srv -> %q", got)
+	for _, tc := range []struct {
+		in, want string
+	}{
+		{"database_dqlite_discovery_srv", "database.dqlite.discovery_srv"},
+		{"database_dqlite_addrs", "database.dqlite.addrs"},
+		{"database_dqlite_database", "database.dqlite.database"},
+		{"database_sqlite_path", "database.sqlite.path"},
+		{"database_driver", "database.driver"},
+	} {
+		if got := mapEnvironmentKey(tc.in); got != tc.want {
+			t.Errorf("%s -> %q, want %q", tc.in, got, tc.want)
+		}
 	}
-	if got := mapEnvironmentKey("dqlite_discovery_srv"); got != "database.dqlite_discovery_srv" {
-		t.Errorf("dqlite_discovery_srv -> %q", got)
+}
+
+func TestDqliteEnvKeysRejectAliases(t *testing.T) {
+	for _, alias := range []string{"db_path", "db_sqlite_path", "database_path", "db_dqlite_addrs", "dqlite_addrs", "db_dqlite_discovery_srv", "dqlite_discovery_srv", "db_dqlite_database", "dqlite_database", "db_driver"} {
+		if got := mapEnvironmentKey(alias); got != "" {
+			t.Errorf("%s -> %q, want empty (alias removed)", alias, got)
+		}
+	}
+}
+
+func TestLoggingEnvKeysRejectAliases(t *testing.T) {
+	for _, alias := range []string{"log_mode", "log_path", "logging_path", "log_max_size_mb", "logging_max_size_mb", "log_max_backups", "logging_max_backups", "log_max_age_days", "logging_max_age_days", "log_compress", "logging_compress"} {
+		if got := mapEnvironmentKey(alias); got != "" {
+			t.Errorf("%s -> %q, want empty (alias removed)", alias, got)
+		}
+	}
+	for _, canonical := range []string{"logging_mode", "logging_file_path", "logging_rotating_path", "logging_rotating_max_size_mb", "logging_rotating_max_backups", "logging_rotating_max_age_days", "logging_rotating_compress"} {
+		if got := mapEnvironmentKey(canonical); got == "" {
+			t.Errorf("%s -> empty, want a nested key", canonical)
+		}
+	}
+}
+
+func TestConfigFileEnvKeyPairing(t *testing.T) {
+	if got := mapEnvironmentKey("config"); got != keyConfigFile {
+		t.Errorf("config -> %q, want %q", got, keyConfigFile)
+	}
+	if got := mapEnvironmentKey("config_file"); got != "" {
+		t.Errorf("config_file -> %q, want empty (removed; the paired variable is LIBREVITA_CONFIG)", got)
 	}
 }
 
