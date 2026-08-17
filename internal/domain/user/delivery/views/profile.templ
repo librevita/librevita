@@ -21,14 +21,14 @@ templ Profile(token string, p *auth.Principal, joined string, errMsg string) {
 					</div>
 					<span class="ml-auto shrink-0">@components.Badge(p.Role.String())</span>
 				</div>
-				<form method="post" enctype="multipart/form-data" action="/profile/avatar" class="mt-4 flex flex-wrap items-center space-x-3 border-t border-gray-200 pt-4 dark:border-gray-700">
+				<form method="post" enctype="multipart/form-data" action="/profile/avatar" hx-boost="false" class="mt-4 flex flex-wrap items-center space-x-3 border-t border-gray-200 pt-4 dark:border-gray-700">
 					<input type="hidden" name="_csrf" value={ token }>
-					<input type="file" name="avatar" accept="image/png,image/jpeg,image/webp,image/gif" class="block w-full max-w-xs text-sm text-gray-700 file:mr-3 file:rounded-lg file:border-0 file:bg-indigo-600 file:px-4 file:py-2 file:text-sm file:font-medium file:text-white hover:file:bg-indigo-700 dark:text-gray-300 dark:file:bg-indigo-500" required>
+					<input type="file" name="avatar" accept="image/png,image/jpeg,image/webp,image/gif,image/bmp,image/tiff" class="block w-full max-w-xs text-sm text-gray-700 file:mr-3 file:rounded-lg file:border-0 file:bg-indigo-600 file:px-4 file:py-2 file:text-sm file:font-medium file:text-white hover:file:bg-indigo-700 dark:text-gray-300 dark:file:bg-indigo-500" required>
 					@components.Button("primary", "Upload picture", templ.Attributes{ "type": "submit" })
-					<form method="post" action="/profile/avatar/remove">
-						<input type="hidden" name="_csrf" value={ token }>
-						@components.Button("secondary", "Remove", templ.Attributes{ "type": "submit" })
-					</form>
+				</form>
+				<form method="post" action="/profile/avatar/remove" hx-boost="false" class="mt-4">
+					<input type="hidden" name="_csrf" value={ token }>
+					@components.Button("secondary", "Remove", templ.Attributes{ "type": "submit" })
 				</form>
 			</section>
 			<form method="post" action="/profile" hx-post="/profile" hx-target="body" hx-trigger="change from:input[name='ui_theme'], change from:select[name='timezone'], submit" class="mt-4 space-y-6 rounded-lg border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-800">

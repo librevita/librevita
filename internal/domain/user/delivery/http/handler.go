@@ -352,6 +352,13 @@ func (h *Handler) ProfilePage(c echo.Context) error {
 	if p == nil {
 		return c.Redirect(http.StatusFound, server.LoginPath)
 	}
+	return h.profilePage(ctx, c, p, http.StatusOK, "")
+}
+
+// profilePage renders the profile page with the given status and, on
+// form failures, the error message explaining what went wrong — form
+// submissions must get a screen back, never a bare error body.
+func (h *Handler) profilePage(ctx context.Context, c echo.Context, p *auth.Principal, status int, errMsg string) error {
 	user, err := h.svc.UserByID(ctx, p.ID)
 	if err != nil {
 		return err
@@ -360,8 +367,8 @@ func (h *Handler) ProfilePage(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-	return server.Render(c, http.StatusOK, views.Profile(
-		server.CSRFToken(c, h.csrf), p, clock.FormatStored(user.CreatedAt), ""))
+	return server.Render(c, status, views.Profile(
+		server.CSRFToken(c, h.csrf), p, clock.FormatStored(user.CreatedAt), errMsg))
 }
 
 // ProfileUpdate stores the user's UI theme and personal timezone.

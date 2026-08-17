@@ -2,7 +2,9 @@ package server
 
 import (
 	"errors"
+	"mime"
 	"net/http"
+	"strings"
 
 	"github.com/labstack/echo/v4"
 )
@@ -16,7 +18,10 @@ type Problem struct {
 	Instance string `json:"instance,omitempty"`
 }
 
-// ProblemErrorHandler returns errors as application/problem+json.
+// ProblemErrorHandler converts errors into responses. API clients and
+// htmx requests receive application/problem+json; a plain browser
+// navigation (a submitted form, an address-bar URL) gets a readable
+// HTML error page instead of a bare JSON body.
 func ProblemErrorHandler(err error, c echo.Context) {
 	if c.Response().Committed {
 		return
@@ -35,6 +40,13 @@ func ProblemErrorHandler(err error, c echo.Context) {
 		}
 	}
 
+	if !IsHtmx(c) && wantsHTML(c.Request()) {
+		if err := Render(c, status, ErrorPage(status, http.StatusText(status), detail)); err != nil {
+			c.Logger().Error(err)
+		}
+		return
+	}
+
 	problem := Problem{
 		Type:     "about:blank",
 		Title:    http.StatusText(status),
@@ -47,4 +59,16 @@ func ProblemErrorHandler(err error, c echo.Context) {
 	if err := c.JSON(status, problem); err != nil {
 		c.Logger().Error(err)
 	}
+}
+
+// wantsHTML reports whether the client asked for an HTML document,
+// distinguishing a browser navigation from an API client.
+func wantsHTML(r *http.Request) bool {
+	for _, part := range strings.Split(r.Header.Get("Accept"), ",") {
+		typ, _, err := mime.ParseMediaType(strings.TrimSpace(part))
+		if err == nil && (typ == "text/html" || typ == "application/xhtml+xml") {
+			return true
+		}
+	}
+	return false
 }
