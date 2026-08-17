@@ -29,25 +29,25 @@ func newProductionSink(cfg config.LoggingConfig) (zapcore.WriteSyncer, *LogSink,
 		return zapcore.AddSync(os.Stderr), &LogSink{}, nil
 
 	case config.LogModeFile:
-		if err := ensureLogDir(cfg.Path); err != nil {
+		if err := ensureLogDir(cfg.File.Path); err != nil {
 			return nil, nil, err
 		}
-		file, err := os.OpenFile(cfg.Path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+		file, err := os.OpenFile(cfg.File.Path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 		if err != nil {
 			return nil, nil, err
 		}
 		return zapcore.AddSync(file), &LogSink{closer: file}, nil
 
 	case config.LogModeRotating:
-		if err := ensureLogDir(cfg.Path); err != nil {
+		if err := ensureLogDir(cfg.Rotating.Path); err != nil {
 			return nil, nil, err
 		}
 		rotating := &lumberjack.Logger{
-			Filename:   cfg.Path,
-			MaxSize:    cfg.MaxSizeMB,
-			MaxBackups: cfg.MaxBackups,
-			MaxAge:     cfg.MaxAgeDays,
-			Compress:   cfg.Compress,
+			Filename:   cfg.Rotating.Path,
+			MaxSize:    cfg.Rotating.MaxSizeMB,
+			MaxBackups: cfg.Rotating.MaxBackups,
+			MaxAge:     cfg.Rotating.MaxAgeDays,
+			Compress:   cfg.Rotating.Compress,
 		}
 		return zapcore.AddSync(rotating), &LogSink{closer: rotating}, nil
 
