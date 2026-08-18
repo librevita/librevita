@@ -609,3 +609,43 @@ func TestRegistryDocumentLookup(t *testing.T) {
 		}
 	}
 }
+
+func TestPatientStatusCookieFilter(t *testing.T) {
+	e, sessions, _, _, _ := newIdentEnv(t)
+	cookie := adminSession(t, sessions)
+
+	// GET /patients?status=inactive sets the status cookie
+	req := httptest.NewRequest(http.MethodGet, "/patients?status=inactive", nil)
+	req.AddCookie(cookie)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+
+	var statusCookie *http.Cookie
+	for _, c := range rec.Result().Cookies() {
+		if c.Name == "lv_patient_status" {
+			statusCookie = c
+			break
+		}
+	}
+	if statusCookie == nil || statusCookie.Value != "inactive" {
+		t.Fatalf("lv_patient_status cookie = %v, want inactive", statusCookie)
+	}
+
+	// Subsequent GET /patients without query param uses saved cookie
+	req2 := httptest.NewRequest(http.MethodGet, "/patients", nil)
+	req2.AddCookie(cookie)
+	req2.AddCookie(statusCookie)
+	rec2 := httptest.NewRecorder()
+	e.ServeHTTP(rec2, req2)
+
+	if rec2.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec2.Code)
+	}
+	if !strings.Contains(rec2.Body.String(), `data-status="inactive"`) {
+		t.Fatalf("response body does not carry saved status inactive: %q", rec2.Body.String())
+	}
+}
