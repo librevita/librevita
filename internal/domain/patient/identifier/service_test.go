@@ -334,3 +334,26 @@ func TestUpdateSystemPreservesActiveState(t *testing.T) {
 		t.Errorf("updated system active = %d, want 0 (editing a deactivated system must not reactivate it)", updated.Active)
 	}
 }
+
+func TestListSkipsUndecryptableIdentifiers(t *testing.T) {
+	db := openTestDB(t)
+	svc, _, _ := newTestServices(t, db)
+	patientID := seedPatient(t, db, testClinicID)
+
+	badID := uuid.Must(uuid.NewV7())
+	_, err := db.Exec(`
+		INSERT INTO patient_identifiers (id, patient_id, system, value_ciphertext, nonce, blind_index, created_by)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+	`, badID.String(), patientID.String(), CPFSystem, []byte("invalid-ciphertext"), []byte("invalid-nonce-24-bytes--"), "0000000000000000000000000000000000000000000000000000000000000000", testUserID.String())
+	if err != nil {
+		t.Fatalf("insert bad identifier: %v", err)
+	}
+
+	got, err := svc.List(context.Background(), testClinicID.String(), patientID.String())
+	if err != nil {
+		t.Fatalf("List returned error for undecryptable row: %v", err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("List = %d, want 0", len(got))
+	}
+}

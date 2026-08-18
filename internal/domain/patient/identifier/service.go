@@ -177,7 +177,8 @@ func (s *Service) List(ctx context.Context, clinicID, patientID string) ([]*Iden
 	for _, row := range rows {
 		value, err := s.key.Open([]byte(row.System), row.ValueCiphertext, row.Nonce)
 		if err != nil {
-			return nil, fmt.Errorf("identifier: decrypt %s: %w", row.ID, err)
+			s.log.Error("identifier: failed to decrypt", "id", row.ID, "system", row.System, "error", err)
+			continue
 		}
 		out = append(out, &Identifier{
 			ID:        row.ID.String(),
@@ -212,7 +213,8 @@ func (s *Service) ListByPatients(ctx context.Context, patientIDs []string) (map[
 	for _, row := range rows {
 		value, err := s.key.Open([]byte(row.System), row.ValueCiphertext, row.Nonce)
 		if err != nil {
-			return nil, fmt.Errorf("identifier: decrypt %s: %w", row.PatientID, err)
+			s.log.Error("identifier: failed to decrypt", "patient_id", row.PatientID, "system", row.System, "error", err)
+			continue
 		}
 		patient := row.PatientID.String()
 		out[patient] = append(out[patient], string(value))
