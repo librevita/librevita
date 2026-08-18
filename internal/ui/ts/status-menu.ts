@@ -64,7 +64,7 @@ export function saveStatus(status: string, storage?: Storage): void {
 
 function triggerFilter(input: HTMLElement): void {
   if (typeof htmx !== 'undefined' && typeof htmx.trigger === 'function') {
-    htmx.trigger(input, 'change');
+    htmx.trigger(input, 'change', {});
   } else {
     input.dispatchEvent(new Event('change', { bubbles: true }));
   }
@@ -86,6 +86,7 @@ export function registerStatusMenu(Alpine: Alpine): void {
           initialStatus = saved;
           this.status = saved;
           this.label = statusLabel(saved);
+          saveStatus(saved);
           this.$nextTick(() => {
             const input = (this.$refs.status as HTMLInputElement) || document.getElementById('status-filter');
             if (input instanceof HTMLInputElement) {
@@ -99,6 +100,7 @@ export function registerStatusMenu(Alpine: Alpine): void {
 
       this.status = initialStatus;
       this.label = statusLabel(this.status);
+      saveStatus(this.status);
     },
 
     toggle(this: AlpineComponent): void {

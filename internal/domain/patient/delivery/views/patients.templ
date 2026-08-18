@@ -279,8 +279,8 @@ templ PatientListTableWithAlert(patients []PatientRow, pager PatientPager, alert
 // owns the menu; the hidden input "field" carries the selected scope
 // into every htmx request.
 templ patientSearchInput(q string, field string, status string, systems []SystemOption) {
-	<div class="flex w-full items-stretch rounded-md border border-gray-300 bg-white shadow-sm sm:w-[28rem] md:w-[36rem] lg:w-[42rem] xl:w-[48rem] dark:border-gray-600 dark:bg-gray-700">
-		<div class="relative shrink-0" x-data="searchMenu" data-field={ field } data-systems={ systemLabelsJSON(systems) } @click.outside="close()" @keydown.escape.window="close()">
+	<div class="flex w-full items-stretch rounded-md border border-gray-300 bg-white shadow-sm sm:w-[28rem] md:w-[36rem] lg:w-[42rem] xl:w-[48rem] dark:border-gray-600 dark:bg-gray-700" x-data="searchMenu" data-field={ field } data-systems={ systemLabelsJSON(systems) } @click.outside="close()" @keydown.escape.window="close()">
+		<div class="relative shrink-0">
 			<button type="button" x-ref="toggle" @click="toggle()" aria-haspopup="true" :aria-expanded="open ? 'true' : 'false'" class="flex h-full items-center space-x-1.5 rounded-l-md border-r border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-600">
 				<span x-text="label" class="max-w-[7rem] truncate sm:max-w-[10rem] md:max-w-[13rem]">All fields</span>
 				@components.Icon("expand_more", "h-4 w-4 shrink-0 text-gray-400 dark:text-gray-500")
@@ -300,7 +300,7 @@ templ patientSearchInput(q string, field string, status string, systems []System
 			<input type="hidden" name="field" id="search-field" x-ref="field" value={ field }>
 		</div>
 		<label class="sr-only" for="patient-search">Search patients</label>
-		<input id="patient-search" class="w-full min-w-0 flex-1 bg-transparent px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none dark:text-white dark:placeholder-gray-500" type="search" name="q" value={ q } placeholder="Search patients..." :placeholder="placeholder" hx-get="/patients" hx-trigger="input changed delay:300ms, keydown[event.key=='Enter'], change" hx-include="#search-field, #status-filter" hx-target="#patient-list" hx-swap="innerHTML">
+		<input id="patient-search" class="w-full min-w-0 flex-1 bg-transparent px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:outline-none dark:text-white dark:placeholder-gray-500" type="search" name="q" value={ q } placeholder="Search patients..." :placeholder="placeholder" hx-get="/patients" hx-trigger="input changed delay:300ms, change" hx-include="#search-field, #status-filter" hx-target="#patient-list" hx-swap="innerHTML">
 		<button type="button" class="flex h-full shrink-0 items-center space-x-1.5 rounded-r-md bg-indigo-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500" hx-get="/patients" hx-include="#patient-search, #search-field, #status-filter" hx-target="#patient-list" hx-swap="innerHTML">
 			@components.Icon("search", "h-4 w-4 shrink-0")
 			Search

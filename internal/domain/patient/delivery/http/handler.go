@@ -25,8 +25,9 @@ import (
 )
 
 const (
-	patientListLimit  = 50
-	maxBulkArchiveIDs = 50
+	patientListLimit        = 50
+	maxBulkArchiveIDs       = 50
+	patientStatusCookieName = "lv_patient_status"
 )
 
 // searchField normalizes the registry search scope: only the fields
@@ -74,6 +75,31 @@ func (h *Handler) List(c echo.Context) error {
 		return h.documentLookup(c, rawField, q)
 	}
 	status := c.QueryParam("status")
+	if c.QueryParams().Has("status") {
+		if status == "active" || status == "inactive" {
+			c.SetCookie(&http.Cookie{
+				Name:     patientStatusCookieName,
+				Value:    status,
+				Path:     "/",
+				SameSite: http.SameSiteLaxMode,
+				MaxAge:   31536000,
+			})
+		} else {
+			c.SetCookie(&http.Cookie{
+				Name:     patientStatusCookieName,
+				Value:    "",
+				Path:     "/",
+				SameSite: http.SameSiteLaxMode,
+				MaxAge:   -1,
+			})
+		}
+	} else {
+		if cookie, err := c.Cookie(patientStatusCookieName); err == nil && cookie != nil {
+			if cookie.Value == "active" || cookie.Value == "inactive" {
+				status = cookie.Value
+			}
+		}
+	}
 	page := 1
 	if p := c.QueryParam("page"); p != "" {
 		if n, err := strconv.Atoi(p); err == nil && n > 0 {
