@@ -21,29 +21,78 @@ var Module = fx.Module("vault",
 )
 
 // NewKeyVaultFromConfig provides the crypto.KeyVault implementation.
-// Configured via cfg.Vault.Backend ("bbolt").
+// Configured via cfg.Vault.Backend ("bbolt", "nats", "etcd", "hashicorp").
 func NewKeyVaultFromConfig(cfg *config.Config, lc fx.Lifecycle, log *slog.Logger) (crypto.KeyVault, error) {
-	switch strings.ToLower(cfg.Vault.Backend) {
+	backend := strings.ToLower(strings.TrimSpace(cfg.Vault.Backend))
+	switch backend {
 	case "bbolt", "":
 		dbPath := cfg.Vault.BBolt.Path
 		if dbPath == "" {
 			dbPath = filepath.Join(cfg.DataDir, "keys.db")
 		}
 		log.Info("initializing bbolt key vault adapter", "path", dbPath)
-		vault, err := NewBBoltVault(dbPath)
+		v, err := NewBBoltVault(dbPath)
 		if err != nil {
 			return nil, fmt.Errorf("vault: init bbolt: %w", err)
 		}
-
 		lc.Append(fx.Hook{
 			OnStop: func(ctx context.Context) error {
 				log.Info("closing bbolt key vault adapter")
-				return vault.Close()
+				return v.Close()
 			},
 		})
+		return v, nil
 
-		return vault, nil
+	case "nats":
+		url := cfg.Vault.NATS.URL
+		bucket := cfg.Vault.NATS.Bucket
+		log.Info("initializing nats jetstream key vault adapter", "url", url, "bucket", bucket)
+		v, err := NewNATSVault(url, bucket)
+		if err != nil {
+			return nil, fmt.Errorf("vault: init nats: %w", err)
+		}
+		lc.Append(fx.Hook{
+			OnStop: func(ctx context.Context) error {
+				log.Info("closing nats key vault adapter")
+				return v.Close()
+			},
+		})
+		return v, nil
+
+	case "etcd":
+		endpoints := cfg.Vault.Etcd.Endpoints
+		prefix := cfg.Vault.Etcd.Prefix
+		log.Info("initializing etcd v3 key vault adapter", "endpoints", endpoints, "prefix", prefix)
+		v, err := NewEtcdVault(endpoints, prefix)
+		if err != nil {
+			return nil, fmt.Errorf("vault: init etcd: %w", err)
+		}
+		lc.Append(fx.Hook{
+			OnStop: func(ctx context.Context) error {
+				log.Info("closing etcd key vault adapter")
+				return v.Close()
+			},
+		})
+		return v, nil
+
+	case "hashicorp", "hashicorp_vault", "openbao":
+		address := cfg.Vault.HashiCorp.Address
+		token := cfg.Vault.HashiCorp.Token
+		mount := cfg.Vault.HashiCorp.Mount
+		log.Info("initializing hashicorp vault key vault adapter", "address", address, "mount", mount)
+		v, err := NewHashiCorpVault(address, token, mount)
+		if err != nil {
+			return nil, fmt.Errorf("vault: init hashicorp vault: %w", err)
+		}
+		lc.Append(fx.Hook{
+			OnStop: func(ctx context.Context) error {
+				log.Info("closing hashicorp key vault adapter")
+				return v.Close()
+			},
+		})
+		return v, nil
+
 	default:
-		return nil, fmt.Errorf("vault: unsupported backend %q (use \"bbolt\")", cfg.Vault.Backend)
+		return nil, fmt.Errorf("vault: unsupported backend %q (use \"bbolt\", \"nats\", \"etcd\", \"hashicorp\", \"hashicorp_vault\", or \"openbao\")", cfg.Vault.Backend)
 	}
 }

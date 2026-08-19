@@ -38,6 +38,9 @@ Go module `librevita.org`, built with `CGO_ENABLED=0` into a static binary on a 
 | `github.com/disintegration/imaging`        | v1.6.2    | MIT          | Image resize and re-encode (avatar pipeline)        |
 | `golang.org/x/term`                        | v0.45.0   | BSD-3-Clause | Terminal width detection for the console logger     |
 | `go.etcd.io/bbolt`                         | v1.3.11   | MIT          | Embedded Key-Value database for patient DEKs (KeyVault) |
+| `github.com/nats-io/nats.go`               | v1.53.1   | Apache-2.0   | NATS JetStream KeyValue client for distributed KeyVault |
+| `go.etcd.io/etcd/client/v3`                | v3.7.1    | Apache-2.0   | etcd v3 client for cloud-native KeyVault              |
+| `github.com/hashicorp/vault/api`           | v1.23.0   | MPL-2.0      | HashiCorp Vault / OpenBao secret manager KeyVault     |
 
 ### Build-time Go tools
 
