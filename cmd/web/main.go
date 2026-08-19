@@ -21,6 +21,7 @@ import (
 	"librevita.org/internal/core/server"
 	"librevita.org/internal/core/storage"
 	"librevita.org/internal/core/telemetry"
+	"librevita.org/internal/core/vault"
 	"librevita.org/internal/domain/calendar"
 	"librevita.org/internal/domain/clinic"
 	"librevita.org/internal/domain/patient"
@@ -36,6 +37,7 @@ func main() {
 	fx.New(
 		config.Module,
 		telemetry.Module,
+		vault.Module,
 		crypto.Module,
 		fx.WithLogger(func(log *slog.Logger) fxevent.Logger {
 			fxLogger := &fxevent.SlogLogger{Logger: log}
