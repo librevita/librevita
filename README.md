@@ -185,6 +185,10 @@ storage:
     region: "" # may be empty outside AWS
     secure: false # HTTPS for the S3 endpoint
     path_style: true # path-style addressing for S3-compatible APIs
+vault:
+  backend: bbolt # bbolt
+  bbolt:
+    path: ./data/keys.db # default: <data_dir>/keys.db
 ```
 
 All configuration flags are:
@@ -222,8 +226,10 @@ All configuration flags are:
 | `--storage-s3-region`          | `LIBREVITA_STORAGE_S3_REGION`             | S3 region (may be empty outside AWS)                                                                                                                         |
 | `--storage-s3-secure`          | `LIBREVITA_STORAGE_S3_SECURE`             | Use HTTPS for the S3 endpoint                                                                                                                                |
 | `--storage-s3-path-style`      | `LIBREVITA_STORAGE_S3_PATH_STYLE`         | Use path-style S3 addressing                                                                                                                                 |
+| `--vault-backend`              | `LIBREVITA_VAULT_BACKEND`                 | Key vault storage backend: `bbolt`                                                                                                                           |
+| `--vault-bbolt-path`           | `LIBREVITA_VAULT_BBOLT_PATH`              | Embedded bbolt key vault database path (default `<data-dir>/keys.db`)                                                                                        |
 
-Environment variables are the config keys with `_` separators, always in the full section form (`LIBREVITA_DATABASE_*`, `LIBREVITA_LOGGING_*`, `LIBREVITA_STORAGE_*`); no short aliases are accepted.
+Environment variables are the config keys with `_` separators, always in the full section form (`LIBREVITA_DATABASE_*`, `LIBREVITA_LOGGING_*`, `LIBREVITA_STORAGE_*`, `LIBREVITA_VAULT_*`); no short aliases are accepted.
 
 ## File Storage
 
@@ -239,6 +245,17 @@ implement it, selected with `storage.backend`:
 
 The backend is wired through the Fx module and injected as the `Store` interface, so domains never depend on the
 concrete implementation.
+
+## Key Vault & Envelope Encryption
+
+Sensitive patient data (such as FHIR identification documents) is protected using Envelope Encryption with physical state separation in `internal/core/crypto`:
+
+- **KEK (Key Encryption Key)** — derived via HKDF-BLAKE2b-256 from `LIBREVITA_MASTER_KEY` (`master_key`) using info string `librevita:kek:v1`. The KEK is kept strictly in memory and never written to disk.
+- **DEK (Data Encryption Key)** — a cryptographically random 32-byte key generated per patient (`urn:librevita:patient:<id>`). Patient data fields (e.g. `value_ciphertext` in `patient_identifiers`) are encrypted using XChaCha20-Poly1305 with random 24-byte nonces under the patient's DEK.
+- **KeyVault Port & Adapters** — patient DEKs are encrypted under the KEK and stored outside SQLite in a dedicated key vault. The active implementation is configured with `vault.backend`:
+  - **`bbolt`** — embedded Key-Value database (default `<data-dir>/keys.db`).
+- **Crypto-Shredding** — calling `DeletePatientDEK` permanently deletes the patient's DEK from the vault. All database records belonging to that patient instantly become unreadable cryptographic noise, fulfilling GDPR / LGPD Right to be Forgotten compliance without requiring database wipes.
+- **Blind Index Engine** — exact match queries (`WHERE blind_index = ?`) use a global Blind Index Key derived via HKDF-BLAKE2b-256 (`librevita:blind-index:v1`) to compute a deterministic BLAKE2b-256 hex digest (`system || '\x00' || value`), keeping queries fast without compromising per-patient encryption isolation.
 
 ## Logging
 
@@ -399,8 +416,9 @@ The clinical and administrative features are organized in `internal/domain`:
 
 - **Patients** — full registry CRUD with whole-word search (debounced server-side), status (active/archived), bulk
   archive, an audit-backed change history on the detail page, clinical attachments (uploads are checksummed into the
-  audit chain, downloads are audited), and FHIR-style identification documents (system + value) stored encrypted at
-  field level with a keyed blind index for exact lookup; duplicates are rejected deployment-wide. The document
+  audit chain, downloads are audited), and FHIR-style identification documents (system + value) protected via
+  per-patient DEK Envelope Encryption with a keyed blind index for exact lookup and KeyVault Crypto-Shredding for
+  GDPR/LGPD Right to be Forgotten compliance; duplicates are rejected deployment-wide. The document
   systems themselves are administered at runtime (pattern, transform, check digit), so a deployment registers its
   jurisdictions' documents without a code change. Editing is governed by the
   resource-level `patient.edit` policy: physicians edit only the patients they registered, admins edit everything.

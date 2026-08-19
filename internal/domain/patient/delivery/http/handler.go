@@ -77,6 +77,7 @@ func (h *Handler) List(c echo.Context) error {
 	status := c.QueryParam("status")
 	if c.QueryParams().Has("status") {
 		if status == "active" || status == "inactive" {
+			// #nosec G124 -- non-sensitive UI patient status filter cookie
 			c.SetCookie(&http.Cookie{
 				Name:     patientStatusCookieName,
 				Value:    status,
@@ -85,6 +86,7 @@ func (h *Handler) List(c echo.Context) error {
 				MaxAge:   31536000,
 			})
 		} else {
+			// #nosec G124 -- non-sensitive UI patient status filter cookie
 			c.SetCookie(&http.Cookie{
 				Name:     patientStatusCookieName,
 				Value:    "",
