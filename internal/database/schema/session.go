@@ -20,7 +20,7 @@ func (Session) Fields() []ent.Field {
 			StorageKey("token_hash").
 			NotEmpty().
 			Immutable().
-			Comment("SHA-256 hash of PASETO v4.local session token"),
+			Comment("Keyed BLAKE2b-256 fingerprint of the PASETO v4.local token id (jti)"),
 		field.UUID("user_id", uuid.UUID{}).
 			Comment("Account ID of the authenticated user"),
 		field.Time("expires_at").

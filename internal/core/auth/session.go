@@ -5,7 +5,6 @@ package auth
 import (
 	"context"
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
@@ -16,6 +15,7 @@ import (
 
 	"aidanwoods.dev/go-paseto"
 	"github.com/google/uuid"
+	"golang.org/x/crypto/blake2b"
 
 	"librevita.org/internal/core/config"
 	"librevita.org/internal/types"
@@ -136,7 +136,7 @@ func (m *SessionManager) Create(ctx context.Context, p Principal) (string, error
 		return "", fmt.Errorf("auth: invalid user id: %w", err)
 	}
 
-	if err := m.repo.Create(ctx, hashToken(jtiHex), userUUID, expires); err != nil {
+	if err := m.repo.Create(ctx, m.hashToken(jtiHex), userUUID, expires); err != nil {
 		return "", fmt.Errorf("auth: store session: %w", err)
 	}
 	return rawToken, nil
@@ -155,7 +155,7 @@ func (m *SessionManager) Authenticate(ctx context.Context, token string) (*Princ
 		return nil, ErrNoSession
 	}
 
-	sess, err := m.repo.GetActive(ctx, hashToken(jti), time.Now().UTC())
+	sess, err := m.repo.GetActive(ctx, m.hashToken(jti), time.Now().UTC())
 	if err != nil || sess == nil || sess.User == nil || !sess.User.Active {
 		return nil, ErrNoSession
 	}
@@ -184,7 +184,7 @@ func (m *SessionManager) Destroy(ctx context.Context, token string) error {
 	if err != nil {
 		return nil
 	}
-	return m.repo.Delete(ctx, hashToken(jti))
+	return m.repo.Delete(ctx, m.hashToken(jti))
 }
 
 // CleanupExpired removes expired sessions from the database.
@@ -235,9 +235,15 @@ func ContextWithPrincipal(ctx context.Context, p *Principal) context.Context {
 
 type principalContextKey struct{}
 
-func hashToken(token string) string {
-	sum := sha256.Sum256([]byte(token))
-	return hex.EncodeToString(sum[:])
+// hashToken computes the keyed BLAKE2b-256 fingerprint of the session
+// token id (jti) stored in the sessions table for revocation.
+func (m *SessionManager) hashToken(token string) string {
+	h, err := blake2b.New256(m.key.ExportBytes())
+	if err != nil {
+		panic(fmt.Sprintf("auth: blake2b init: %v", err))
+	}
+	h.Write([]byte(token))
+	return hex.EncodeToString(h.Sum(nil))
 }
 
 func decodeKey(encoded string) ([]byte, error) {
