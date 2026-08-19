@@ -25,6 +25,7 @@ import (
 	"librevita.org/internal/core/policy"
 	"librevita.org/internal/core/server"
 	"librevita.org/internal/core/storage"
+	"librevita.org/internal/core/vault"
 	"librevita.org/internal/domain/clinic"
 	"librevita.org/internal/domain/patient/identifier"
 	"librevita.org/internal/domain/patient/usecase"
@@ -38,13 +39,13 @@ var testAdminID = uuid.MustParse("01990000-0000-7000-8000-00000000000a")
 // migration rows, and the two services the handlers use.
 func newIdentifierServices(t *testing.T, db *sql.DB, log *slog.Logger) (*identifier.Service, *identifier.SystemsService) {
 	t.Helper()
-	vault, err := crypto.NewBBoltVault(filepath.Join(t.TempDir(), "keys.db"))
+	v, err := vault.NewBBoltVault(filepath.Join(t.TempDir(), "keys.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = vault.Close() })
+	t.Cleanup(func() { _ = v.Close() })
 
-	key, err := crypto.NewMasterKey("nAmIvOXVc0vb6M9G7P9q2j2yK1WxP3sJ8q5dR4tU6wA=", vault)
+	key, err := crypto.NewMasterKey("nAmIvOXVc0vb6M9G7P9q2j2yK1WxP3sJ8q5dR4tU6wA=", v)
 	if err != nil {
 		t.Fatal(err)
 	}

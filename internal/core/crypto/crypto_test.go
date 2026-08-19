@@ -1,4 +1,4 @@
-package crypto
+package crypto_test
 
 import (
 	"bytes"
@@ -14,24 +14,26 @@ import (
 	"go.uber.org/fx/fxtest"
 
 	"librevita.org/internal/core/config"
+	"librevita.org/internal/core/crypto"
+	"librevita.org/internal/core/vault"
 )
 
 const testKey = "nAmIvOXVc0vb6M9G7P9q2j2yK1WxP3sJ8q5dR4tU6wA="
 
-func mustVault(t *testing.T) KeyVault {
+func mustVault(t *testing.T) crypto.KeyVault {
 	t.Helper()
-	vault, err := NewBBoltVault(filepath.Join(t.TempDir(), "keys.db"))
+	v, err := vault.NewBBoltVault(filepath.Join(t.TempDir(), "keys.db"))
 	if err != nil {
 		t.Fatalf("NewBBoltVault: %v", err)
 	}
-	t.Cleanup(func() { _ = vault.Close() })
-	return vault
+	t.Cleanup(func() { _ = v.Close() })
+	return v
 }
 
-func mustEngine(t *testing.T) *Engine {
+func mustEngine(t *testing.T) *crypto.Engine {
 	t.Helper()
-	vault := mustVault(t)
-	eng, err := NewEngine(testKey, vault)
+	v := mustVault(t)
+	eng, err := crypto.NewEngine(testKey, v)
 	if err != nil {
 		t.Fatalf("NewEngine: %v", err)
 	}
@@ -39,7 +41,7 @@ func mustEngine(t *testing.T) *Engine {
 }
 
 func TestNewEngineRejectsInvalidInput(t *testing.T) {
-	vault := mustVault(t)
+	v := mustVault(t)
 	cases := []struct {
 		name    string
 		encoded string
@@ -50,7 +52,7 @@ func TestNewEngineRejectsInvalidInput(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if _, err := NewEngine(tc.encoded, vault); err == nil {
+			if _, err := crypto.NewEngine(tc.encoded, v); err == nil {
 				t.Fatal("expected an error")
 			}
 		})
@@ -58,7 +60,7 @@ func TestNewEngineRejectsInvalidInput(t *testing.T) {
 }
 
 func TestNewEngineRequiresVault(t *testing.T) {
-	if _, err := NewEngine(testKey, nil); err == nil {
+	if _, err := crypto.NewEngine(testKey, nil); err == nil {
 		t.Fatal("expected error when vault is nil")
 	}
 }
@@ -66,13 +68,13 @@ func TestNewEngineRequiresVault(t *testing.T) {
 func TestKEKDEKPatientDataEncryptionAndCryptoShredding(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
-	vault, err := NewBBoltVault(filepath.Join(dir, "keys.db"))
+	v, err := vault.NewBBoltVault(filepath.Join(dir, "keys.db"))
 	if err != nil {
 		t.Fatalf("NewBBoltVault: %v", err)
 	}
-	defer func() { _ = vault.Close() }()
+	defer func() { _ = v.Close() }()
 
-	eng, err := NewEngine(testKey, vault)
+	eng, err := crypto.NewEngine(testKey, v)
 	if err != nil {
 		t.Fatalf("NewEngine: %v", err)
 	}
@@ -124,52 +126,8 @@ func TestKEKDEKPatientDataEncryptionAndCryptoShredding(t *testing.T) {
 
 	// 5. Decryption must fail after Crypto-Shredding with ErrKeyNotFound
 	_, err = eng.DecryptPatientData(ctx, patientURN, aad, ct, nonce)
-	if !errors.Is(err, ErrKeyNotFound) {
-		t.Fatalf("DecryptPatientData after shredding = %v, want %v", err, ErrKeyNotFound)
-	}
-}
-
-func TestBBoltVaultDirectOperations(t *testing.T) {
-	dir := t.TempDir()
-	dbPath := filepath.Join(dir, "keys.db")
-
-	vault, err := NewBBoltVault(dbPath)
-	if err != nil {
-		t.Fatalf("NewBBoltVault: %v", err)
-	}
-	defer func() { _ = vault.Close() }()
-
-	ctx := context.Background()
-	patientURN := "urn:librevita:patient:018f7654-3210-7000-8000-000000000001"
-	encDEK := []byte("encrypted-dek-payload-32-bytes!!")
-
-	// Get before Put should return ErrKeyNotFound
-	if _, err := vault.GetDEK(ctx, patientURN); !errors.Is(err, ErrKeyNotFound) {
-		t.Fatalf("GetDEK before Put = %v, want %v", err, ErrKeyNotFound)
-	}
-
-	// Put DEK
-	if err := vault.PutDEK(ctx, patientURN, encDEK); err != nil {
-		t.Fatalf("PutDEK: %v", err)
-	}
-
-	// Get DEK
-	got, err := vault.GetDEK(ctx, patientURN)
-	if err != nil {
-		t.Fatalf("GetDEK: %v", err)
-	}
-	if !bytes.Equal(got, encDEK) {
-		t.Fatalf("GetDEK = %q, want %q", got, encDEK)
-	}
-
-	// Delete DEK (Crypto-Shredding)
-	if err := vault.DeleteDEK(ctx, patientURN); err != nil {
-		t.Fatalf("DeleteDEK: %v", err)
-	}
-
-	// Get after Delete should return ErrKeyNotFound
-	if _, err := vault.GetDEK(ctx, patientURN); !errors.Is(err, ErrKeyNotFound) {
-		t.Fatalf("GetDEK after Delete = %v, want %v", err, ErrKeyNotFound)
+	if !errors.Is(err, crypto.ErrKeyNotFound) {
+		t.Fatalf("DecryptPatientData after shredding = %v, want %v", err, crypto.ErrKeyNotFound)
 	}
 }
 
@@ -223,22 +181,22 @@ func TestBlindIndexDeterministicAndSeparated(t *testing.T) {
 
 func TestNewFromConfigKeyPolicy(t *testing.T) {
 	log := slog.New(slog.DiscardHandler)
-	vault := mustVault(t)
+	v := mustVault(t)
 
 	for _, env := range []string{"production", "staging"} {
 		cfg := &config.Config{Mode: env}
-		if _, err := NewFromConfig(cfg, vault, log); err == nil {
+		if _, err := crypto.NewFromConfig(cfg, v, log); err == nil {
 			t.Fatalf("NewFromConfig(%s) without key = nil error, want error", env)
 		}
 	}
 
 	cfg := &config.Config{Mode: "production", MasterKey: testKey}
-	if _, err := NewFromConfig(cfg, vault, log); err != nil {
+	if _, err := crypto.NewFromConfig(cfg, v, log); err != nil {
 		t.Fatalf("NewFromConfig with key: %v", err)
 	}
 
 	dev := &config.Config{Mode: "development"}
-	eng, err := NewFromConfig(dev, vault, log)
+	eng, err := crypto.NewFromConfig(dev, v, log)
 	if err != nil {
 		t.Fatalf("NewFromConfig(development): %v", err)
 	}
@@ -259,21 +217,22 @@ func TestFxModuleIntegration(t *testing.T) {
 		MasterKey: testKey,
 	}
 
-	var vault KeyVault
-	var eng *Engine
+	var keyVault crypto.KeyVault
+	var eng *crypto.Engine
 
 	app := fxtest.New(t,
 		fx.Provide(
 			func() *config.Config { return cfg },
 			func() *slog.Logger { return slog.New(slog.DiscardHandler) },
 		),
-		Module,
-		fx.Populate(&vault, &eng),
+		vault.Module,
+		crypto.Module,
+		fx.Populate(&keyVault, &eng),
 	)
 	app.RequireStart()
 	defer app.RequireStop()
 
-	if vault == nil || eng == nil {
+	if keyVault == nil || eng == nil {
 		t.Fatal("Fx population failed")
 	}
 

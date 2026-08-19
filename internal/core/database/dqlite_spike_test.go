@@ -11,8 +11,8 @@ import (
 
 	"github.com/google/uuid"
 
-	clinicrepo "librevita.org/internal/domain/clinic/repository"
 	"librevita.org/internal/core/crypto"
+	"librevita.org/internal/core/vault"
 	patientrepo "librevita.org/internal/domain/patient/repository"
 	"librevita.org/internal/domain/patient/identifier"
 	userrepo "librevita.org/internal/domain/user/repository"
@@ -95,13 +95,13 @@ func TestDqliteSpike(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	vault, err := crypto.NewBBoltVault(filepath.Join(t.TempDir(), "keys.db"))
+	v, err := vault.NewBBoltVault(filepath.Join(t.TempDir(), "keys.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { vault.Close() })
+	t.Cleanup(func() { _ = v.Close() })
 
-	key, err := crypto.NewMasterKey("nAmIvOXVc0vb6M9G7P9q2j2yK1WxP3sJ8q5dR4tU6wA=", vault)
+	key, err := crypto.NewMasterKey("nAmIvOXVc0vb6M9G7P9q2j2yK1WxP3sJ8q5dR4tU6wA=", v)
 	if err != nil {
 		t.Fatal(err)
 	}

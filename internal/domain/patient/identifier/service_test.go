@@ -14,6 +14,7 @@ import (
 
 	"librevita.org/internal/core/crypto"
 	"librevita.org/internal/core/database"
+	"librevita.org/internal/core/vault"
 	"librevita.org/internal/domain/patient/repository"
 )
 
@@ -39,13 +40,13 @@ func openTestDB(t *testing.T) *sql.DB {
 
 func newTestServices(t *testing.T, db *sql.DB) (*Service, *SystemsService, *Registry) {
 	t.Helper()
-	vault, err := crypto.NewBBoltVault(filepath.Join(t.TempDir(), "keys.db"))
+	v, err := vault.NewBBoltVault(filepath.Join(t.TempDir(), "keys.db"))
 	if err != nil {
 		t.Fatalf("bbolt vault: %v", err)
 	}
-	t.Cleanup(func() { _ = vault.Close() })
+	t.Cleanup(func() { _ = v.Close() })
 
-	key, err := crypto.NewMasterKey("nAmIvOXVc0vb6M9G7P9q2j2yK1WxP3sJ8q5dR4tU6wA=", vault)
+	key, err := crypto.NewMasterKey("nAmIvOXVc0vb6M9G7P9q2j2yK1WxP3sJ8q5dR4tU6wA=", v)
 	if err != nil {
 		t.Fatalf("master key: %v", err)
 	}
