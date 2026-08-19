@@ -29,7 +29,7 @@ func (r *patientRepository) Create(ctx context.Context, rec patientmodel.Patient
 		SetBlindIndex(rec.BlindIndex).
 		SetEncryptedPayload(rec.EncryptedPayload).
 		SetNonce(rec.Nonce).
-		SetStatus(rec.Status.String())
+		SetStatus(patient.Status(rec.Status))
 
 	if rec.CreatedBy != nil {
 		create.SetCreatedBy(*rec.CreatedBy)
@@ -93,7 +93,7 @@ func (r *patientRepository) Update(ctx context.Context, rec patientmodel.Patient
 		SetBlindIndex(rec.BlindIndex).
 		SetEncryptedPayload(rec.EncryptedPayload).
 		SetNonce(rec.Nonce).
-		SetStatus(rec.Status.String()).
+		SetStatus(patient.Status(rec.Status)).
 		SetUpdatedAt(time.Now())
 
 	updated, err := update.Save(ctx)
@@ -112,7 +112,7 @@ func (r *patientRepository) BulkSetStatus(ctx context.Context, clinicID uuid.UUI
 			patient.ClinicIDEQ(clinicID),
 			patient.IDIn(patientIDs...),
 		).
-		SetStatus(status.String()).
+		SetStatus(patient.Status(status)).
 		SetUpdatedAt(time.Now()).
 		Save(ctx)
 	if err != nil {
@@ -124,7 +124,7 @@ func (r *patientRepository) BulkSetStatus(ctx context.Context, clinicID uuid.UUI
 func (r *patientRepository) ListByClinicAndStatus(ctx context.Context, clinicID uuid.UUID, status *types.PatientStatus) ([]patientmodel.PatientRecord, error) {
 	query := r.client.Patient.Query().Where(patient.ClinicIDEQ(clinicID))
 	if status != nil {
-		query = query.Where(patient.StatusEQ(status.String()))
+		query = query.Where(patient.StatusEQ(patient.Status(*status)))
 	}
 	rows, err := query.Order(ent.Desc(patient.FieldCreatedAt)).All(ctx)
 	if err != nil {

@@ -18,7 +18,7 @@ type Clinic struct {
 func (Clinic) Fields() []ent.Field {
 	return []ent.Field{
 		field.UUID("id", uuid.UUID{}).
-			Default(uuid.New).
+			Default(newUUIDv7).
 			Immutable(),
 		field.String("name").
 			NotEmpty().

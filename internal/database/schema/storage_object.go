@@ -19,7 +19,7 @@ type StorageObject struct {
 func (StorageObject) Fields() []ent.Field {
 	return []ent.Field{
 		field.UUID("id", uuid.UUID{}).
-			Default(uuid.New).
+			Default(newUUIDv7).
 			Immutable(),
 		field.String("key").
 			NotEmpty().
@@ -41,10 +41,11 @@ func (StorageObject) Fields() []ent.Field {
 			NonNegative().
 			Comment("File size in bytes"),
 		field.String("etag").
-			NotEmpty(),
+			NotEmpty().
+			Comment("ETag returned by the storage backend"),
 		field.String("checksum").
 			NotEmpty().
-			Comment("SHA-256 or BLAKE2b checksum"),
+			Comment("Canonical BLAKE2b-256 digest of the payload"),
 		field.UUID("created_by", uuid.UUID{}).
 			Comment("User ID who uploaded the file"),
 		field.Time("created_at").

@@ -19,15 +19,16 @@ type StaffChangeRequest struct {
 func (StaffChangeRequest) Fields() []ent.Field {
 	return []ent.Field{
 		field.UUID("id", uuid.UUID{}).
-			Default(uuid.New).
+			Default(newUUIDv7).
 			Immutable(),
 		field.UUID("user_id", uuid.UUID{}).
 			Comment("Target staff user account ID"),
 		field.UUID("requested_by", uuid.UUID{}).
 			Comment("User ID who created the request"),
-		field.String("status").
+		field.Enum("status").
+			Values("pending", "approved", "rejected").
 			Default("pending").
-			Comment("Request status: pending, approved, rejected"),
+			Comment("Request lifecycle status"),
 		field.String("changes").
 			NotEmpty().
 			Comment("JSON payload describing requested attribute changes"),

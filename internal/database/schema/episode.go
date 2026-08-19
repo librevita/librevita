@@ -30,7 +30,7 @@ func (Episode) Mixin() []ent.Mixin {
 func (Episode) Fields() []ent.Field {
 	return []ent.Field{
 		field.UUID("id", uuid.UUID{}).
-			Default(uuid.New).
+			Default(newUUIDv7).
 			Immutable(),
 		field.UUID("clinic_id", uuid.UUID{}).
 			Comment("Clinic tenant ID"),
@@ -42,12 +42,14 @@ func (Episode) Fields() []ent.Field {
 			Optional().
 			Nillable().
 			Comment("Linked appointment ID if applicable"),
-		field.String("episode_type").
+		field.Enum("episode_type").
+			Values("consultation", "anamnesis", "evolution", "prescription", "exam_request", "diagnostic").
 			Default("consultation").
-			Comment("Type: consultation, anamnesis, evolution, prescription, exam_request, diagnostic"),
-		field.String("status").
+			Comment("Type of the episode"),
+		field.Enum("status").
+			Values("draft", "finalized", "archived").
 			Default("draft").
-			Comment("Status: draft, finalized, archived"),
+			Comment("Lifecycle status of the episode"),
 		field.Time("created_at").
 			Default(time.Now).
 			Immutable(),

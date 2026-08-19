@@ -80,8 +80,8 @@ func (r *systemRepository) Create(ctx context.Context, s *patientmodel.Identifie
 		SetDisplayName(s.DisplayName).
 		SetPattern(s.Pattern).
 		SetMask(s.Mask).
-		SetTransform(string(s.Transform)).
-		SetCheckAlgorithm(string(s.CheckAlgorithm)).
+		SetTransform(identifiersystem.Transform(s.Transform)).
+		SetCheckAlgorithm(identifiersystem.CheckAlgorithm(s.CheckAlgorithm)).
 		SetCheckBaseLen(s.CheckBaseLen).
 		SetCheckDvCount(s.CheckDVCount).
 		SetCheckStartWeight(s.CheckStartWeight).
@@ -105,8 +105,8 @@ func (r *systemRepository) Update(ctx context.Context, s *patientmodel.Identifie
 		SetDisplayName(s.DisplayName).
 		SetPattern(s.Pattern).
 		SetMask(s.Mask).
-		SetTransform(string(s.Transform)).
-		SetCheckAlgorithm(string(s.CheckAlgorithm)).
+		SetTransform(identifiersystem.Transform(s.Transform)).
+		SetCheckAlgorithm(identifiersystem.CheckAlgorithm(s.CheckAlgorithm)).
 		SetCheckBaseLen(s.CheckBaseLen).
 		SetCheckDvCount(s.CheckDVCount).
 		SetCheckStartWeight(s.CheckStartWeight).
@@ -211,8 +211,8 @@ func (r *systemRepository) SeedDefaults(ctx context.Context) error {
 			SetSystem(sys.System).
 			SetDisplayName(sys.DisplayName).
 			SetPattern(sys.Pattern).
-			SetTransform(string(sys.Transform)).
-			SetCheckAlgorithm(string(sys.CheckAlgorithm)).
+			SetTransform(identifiersystem.Transform(sys.Transform)).
+			SetCheckAlgorithm(identifiersystem.CheckAlgorithm(sys.CheckAlgorithm)).
 			SetCheckBaseLen(sys.CheckBaseLen).
 			SetCheckDvCount(sys.CheckDVCount).
 			SetCheckStartWeight(sys.CheckStartWeight).

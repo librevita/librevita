@@ -18,7 +18,7 @@ type IdentifierSystem struct {
 func (IdentifierSystem) Fields() []ent.Field {
 	return []ent.Field{
 		field.UUID("id", uuid.UUID{}).
-			Default(uuid.New).
+			Default(newUUIDv7).
 			Immutable(),
 		field.String("system").
 			NotEmpty().
@@ -30,12 +30,14 @@ func (IdentifierSystem) Fields() []ent.Field {
 		field.String("pattern").
 			NotEmpty().
 			Comment("Regex validation pattern"),
-		field.String("transform").
+		field.Enum("transform").
+			Values("none", "digits", "upper", "lower").
 			Default("none").
-			Comment("Canonicalization transform: none, digits, upper, lower"),
-		field.String("check_algorithm").
+			Comment("Canonicalization transform applied to raw input"),
+		field.Enum("check_algorithm").
+			Values("none", "mod11_desc", "mod11_cyclic").
 			Default("none").
-			Comment("Checksum algorithm: none, mod11_desc, mod11_cyclic"),
+			Comment("Check-digit algorithm"),
 		field.Int("check_base_len").
 			Default(0),
 		field.Int("check_dv_count").

@@ -40,12 +40,17 @@ type PatientStatus string
 const (
 	PatientStatusActive   PatientStatus = "active"
 	PatientStatusInactive PatientStatus = "inactive"
+	PatientStatusArchived PatientStatus = "archived"
 )
 
 // Valid reports whether s is one of the options the database CHECK
 // constraint accepts.
 func (s PatientStatus) Valid() bool {
-	return s == PatientStatusActive || s == PatientStatusInactive
+	switch s {
+	case PatientStatusActive, PatientStatusInactive, PatientStatusArchived:
+		return true
+	}
+	return false
 }
 
 // String returns the stored representation of s.

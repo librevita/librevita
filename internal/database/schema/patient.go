@@ -28,14 +28,15 @@ func (Patient) Mixin() []ent.Mixin {
 func (Patient) Fields() []ent.Field {
 	return []ent.Field{
 		field.UUID("id", uuid.UUID{}).
-			Default(uuid.New).
+			Default(newUUIDv7).
 			Immutable().
-			Comment("Primary unique identifier (UUID v4/v7)"),
+			Comment("Primary unique identifier (UUIDv7)"),
 		field.UUID("clinic_id", uuid.UUID{}).
 			Comment("Tenant isolation: clinic ID reference"),
-		field.String("status").
+		field.Enum("status").
+			Values("active", "inactive", "archived").
 			Default("active").
-			Comment("Lifecycle status: active, inactive, archived"),
+			Comment("Lifecycle status of the patient"),
 		field.UUID("created_by", uuid.UUID{}).
 			Optional().
 			Nillable().

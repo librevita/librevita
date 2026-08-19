@@ -19,7 +19,7 @@ func (ZeroKnowledgeMixin) Fields() []ent.Field {
 		field.String("blind_index").
 			MaxLen(64).
 			NotEmpty().
-			Comment("HMAC/BLAKE2b keyed hash for exact-match searches without revealing cleartext"),
+			Comment("BLAKE2b-256 keyed hash for exact-match searches without revealing cleartext"),
 		field.Bytes("encrypted_payload").
 			NotEmpty().
 			Comment("XChaCha20-Poly1305 encrypted domain payload"),

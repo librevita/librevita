@@ -56,7 +56,7 @@ func (r *policyRepository) SeedDefaults(ctx context.Context, defaults map[string
 		_, err = tx.AccessPolicyVersion.Create().
 			SetPolicyID(pol.ID).
 			SetExpression(expr).
-			SetOrigin("seed").
+			SetOrigin(accesspolicyversion.OriginSeed).
 			Save(ctx)
 		if err != nil {
 			_ = tx.Rollback()
@@ -136,7 +136,7 @@ func (r *policyRepository) Set(ctx context.Context, name, expression string, act
 	verCreate := tx.AccessPolicyVersion.Create().
 		SetPolicyID(polID).
 		SetExpression(expression).
-		SetOrigin(origin)
+		SetOrigin(accesspolicyversion.Origin(origin))
 
 	if actor.ID != "" {
 		verCreate.SetChangedBy(actor.ID)
@@ -183,7 +183,7 @@ func (r *policyRepository) History(ctx context.Context, name string, limit int) 
 			ID:             int64(v.ID),
 			PolicyID:       v.PolicyID.String(),
 			Expression:     v.Expression,
-			Origin:         v.Origin,
+			Origin:         string(v.Origin),
 			CreatedAt:      v.CreatedAt,
 			ChangedBy:      v.ChangedBy,
 			ChangedByEmail: v.ChangedByEmail,
