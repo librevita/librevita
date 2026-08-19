@@ -252,8 +252,11 @@ Sensitive patient data (such as FHIR identification documents) is protected usin
 
 - **KEK (Key Encryption Key)** — derived via HKDF-BLAKE2b-256 from `LIBREVITA_MASTER_KEY` (`master_key`) using info string `librevita:kek:v1`. The KEK is kept strictly in memory and never written to disk.
 - **DEK (Data Encryption Key)** — a cryptographically random 32-byte key generated per patient (`urn:librevita:patient:<id>`). Patient data fields (e.g. `value_ciphertext` in `patient_identifiers`) are encrypted using XChaCha20-Poly1305 with random 24-byte nonces under the patient's DEK.
-- **KeyVault Port & Adapters** — patient DEKs are encrypted under the KEK and stored outside SQLite in a dedicated key vault. The active implementation is configured with `vault.backend`:
+- **KeyVault Port & Adapters** — patient DEKs are encrypted under the KEK and stored outside SQLite in a dedicated key vault in `internal/core/vault`. The active implementation is configured with `vault.backend`:
   - **`bbolt`** — embedded Key-Value database (default `<data-dir>/keys.db`).
+  - **`nats`** — high-performance NATS JetStream KeyValue store (`--vault-nats-url`, `--vault-nats-bucket`).
+  - **`etcd`** — cloud-native Raft consensus KV store (`--vault-etcd-endpoints`, `--vault-etcd-prefix`).
+  - **`hashicorp`**, **`hashicorp_vault`**, or **`openbao`** — enterprise HashiCorp Vault / OpenBao secret manager (`--vault-hashicorp-address`, `--vault-hashicorp-token`, `--vault-hashicorp-mount`). Hard-delete metadata purges enforce physical Crypto-Shredding.
 - **Crypto-Shredding** — calling `DeletePatientDEK` permanently deletes the patient's DEK from the vault. All database records belonging to that patient instantly become unreadable cryptographic noise, fulfilling GDPR / LGPD Right to be Forgotten compliance without requiring database wipes.
 - **Blind Index Engine** — exact match queries (`WHERE blind_index = ?`) use a global Blind Index Key derived via HKDF-BLAKE2b-256 (`librevita:blind-index:v1`) to compute a deterministic BLAKE2b-256 hex digest (`system || '\x00' || value`), keeping queries fast without compromising per-patient encryption isolation.
 

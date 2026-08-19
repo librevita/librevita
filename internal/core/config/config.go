@@ -118,17 +118,45 @@ type Config struct {
 // settings live in their own section (bbolt), mirroring DatabaseConfig
 // and StorageConfig.
 type VaultConfig struct {
-	// Backend is "bbolt" (default).
+	// Backend is "bbolt" (default), "nats", "etcd", or "hashicorp" ("vault").
 	Backend string `koanf:"backend"`
 
 	// BBolt configures the embedded bbolt key vault.
 	BBolt BBoltConfig `koanf:"bbolt"`
+
+	// NATS configures the NATS JetStream key vault.
+	NATS NATSVaultConfig `koanf:"nats"`
+
+	// Etcd configures the etcd v3 key vault.
+	Etcd EtcdVaultConfig `koanf:"etcd"`
+
+	// HashiCorp configures the HashiCorp Vault / OpenBao key vault.
+	HashiCorp HashiCorpVaultConfig `koanf:"hashicorp"`
 }
 
 // BBoltConfig configures the embedded bbolt key vault.
 type BBoltConfig struct {
 	// Path is the bbolt key vault database file path.
 	Path string `koanf:"path"`
+}
+
+// NATSVaultConfig configures the NATS JetStream KeyValue vault.
+type NATSVaultConfig struct {
+	URL    string `koanf:"url"`
+	Bucket string `koanf:"bucket"`
+}
+
+// EtcdVaultConfig configures the etcd v3 KeyValue vault.
+type EtcdVaultConfig struct {
+	Endpoints string `koanf:"endpoints"`
+	Prefix    string `koanf:"prefix"`
+}
+
+// HashiCorpVaultConfig configures the HashiCorp Vault / OpenBao key vault.
+type HashiCorpVaultConfig struct {
+	Address string `koanf:"address"`
+	Token   string `koanf:"token"`
+	Mount   string `koanf:"mount"`
 }
 
 // AuthConfig controls authentication behavior.
@@ -288,8 +316,15 @@ func RegisterFlags(fs *pflag.FlagSet) {
 	stringFlag(fs, "storage-s3-region", "", "S3 region (may be empty outside AWS)")
 	boolFlag(fs, "storage-s3-secure", true, "use HTTPS for the S3 endpoint")
 	boolFlag(fs, "storage-s3-path-style", true, "use path-style S3 addressing")
-	stringFlag(fs, "vault-backend", "bbolt", "key vault storage backend: bbolt")
+	stringFlag(fs, "vault-backend", "bbolt", "key vault storage backend: bbolt, nats, etcd, or hashicorp")
 	stringFlag(fs, "vault-bbolt-path", "", "bbolt key vault path (default <data-dir>/keys.db)")
+	stringFlag(fs, "vault-nats-url", "", "NATS server URL (e.g. nats://localhost:4222)")
+	stringFlag(fs, "vault-nats-bucket", "patient_deks", "NATS JetStream KeyValue bucket name")
+	stringFlag(fs, "vault-etcd-endpoints", "", "comma-separated etcd v3 endpoints (e.g. localhost:2379)")
+	stringFlag(fs, "vault-etcd-prefix", "/librevita/keys/", "etcd key prefix")
+	stringFlag(fs, "vault-hashicorp-address", "", "HashiCorp Vault / OpenBao address (e.g. http://localhost:8200)")
+	stringFlag(fs, "vault-hashicorp-token", "", "HashiCorp Vault / OpenBao authentication token")
+	stringFlag(fs, "vault-hashicorp-mount", "secret", "HashiCorp Vault KV v2 mount path")
 }
 
 // IsProduction reports whether the application runs in production.
@@ -451,9 +486,9 @@ func (c *Config) normalize() {
 
 func (c *Config) validate() error {
 	switch c.Vault.Backend {
-	case "", "bbolt":
+	case "", "bbolt", "nats", "etcd", "hashicorp", "hashicorp_vault", "openbao":
 	default:
-		return fmt.Errorf("config: invalid vault.backend %q (use \"bbolt\")", c.Vault.Backend)
+		return fmt.Errorf("config: invalid vault.backend %q (use \"bbolt\", \"nats\", \"etcd\", \"hashicorp\", \"hashicorp_vault\", or \"openbao\")", c.Vault.Backend)
 	}
 
 	switch c.Database.Driver {
@@ -586,6 +621,20 @@ func mapFlagKey(name string) string {
 		return "vault.backend"
 	case "vault-bbolt-path", "vault_bbolt_path":
 		return "vault.bbolt.path"
+	case "vault-nats-url", "vault_nats_url":
+		return "vault.nats.url"
+	case "vault-nats-bucket", "vault_nats_bucket":
+		return "vault.nats.bucket"
+	case "vault-etcd-endpoints", "vault_etcd_endpoints":
+		return "vault.etcd.endpoints"
+	case "vault-etcd-prefix", "vault_etcd_prefix":
+		return "vault.etcd.prefix"
+	case "vault-hashicorp-address", "vault_hashicorp_address":
+		return "vault.hashicorp.address"
+	case "vault-hashicorp-token", "vault_hashicorp_token":
+		return "vault.hashicorp.token"
+	case "vault-hashicorp-mount", "vault_hashicorp_mount":
+		return "vault.hashicorp.mount"
 	default:
 		return ""
 	}
@@ -656,6 +705,20 @@ func mapEnvironmentKey(key string) string {
 		return "vault.backend"
 	case "vault_bbolt_path":
 		return "vault.bbolt.path"
+	case "vault_nats_url":
+		return "vault.nats.url"
+	case "vault_nats_bucket":
+		return "vault.nats.bucket"
+	case "vault_etcd_endpoints":
+		return "vault.etcd.endpoints"
+	case "vault_etcd_prefix":
+		return "vault.etcd.prefix"
+	case "vault_hashicorp_address":
+		return "vault.hashicorp.address"
+	case "vault_hashicorp_token":
+		return "vault.hashicorp.token"
+	case "vault_hashicorp_mount":
+		return "vault.hashicorp.mount"
 	default:
 		return ""
 	}

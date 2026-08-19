@@ -1,0 +1,118 @@
+package vault
+
+import (
+	"context"
+	"encoding/base64"
+	"errors"
+	"fmt"
+	"net/http"
+	"strings"
+
+	"github.com/hashicorp/vault/api"
+
+	"librevita.org/internal/core/crypto"
+)
+
+// HashiCorpVault implements crypto.KeyVault for HashiCorp Vault / OpenBao using KV v2 engine.
+type HashiCorpVault struct {
+	client *api.Client
+	mount  string
+}
+
+// NewHashiCorpVault initializes a HashiCorp Vault / OpenBao API client.
+func NewHashiCorpVault(address, token, mount string) (*HashiCorpVault, error) {
+	if address == "" {
+		return nil, errors.New("vault: hashicorp vault address is required")
+	}
+	if token == "" {
+		return nil, errors.New("vault: hashicorp vault token is required")
+	}
+	if mount == "" {
+		mount = "secret"
+	}
+
+	config := api.DefaultConfig()
+	config.Address = address
+
+	client, err := api.NewClient(config)
+	if err != nil {
+		return nil, fmt.Errorf("vault: hashicorp client init: %w", err)
+	}
+	client.SetToken(token)
+
+	return &HashiCorpVault{
+		client: client,
+		mount:  mount,
+	}, nil
+}
+
+func (v *HashiCorpVault) secretPath(patientURN string) string {
+	sanitized := strings.NewReplacer(":", "_", "/", "_", ".", "_", " ", "_").Replace(patientURN)
+	return "librevita/patient-deks/" + sanitized
+}
+
+// PutDEK stores the base64-encoded encrypted DEK in Vault KV v2 under secretPath.
+func (v *HashiCorpVault) PutDEK(ctx context.Context, patientURN string, encryptedDEK []byte) error {
+	path := v.secretPath(patientURN)
+	data := map[string]interface{}{
+		"dek": base64.StdEncoding.EncodeToString(encryptedDEK),
+	}
+	if _, err := v.client.KVv2(v.mount).Put(ctx, path, data); err != nil {
+		return fmt.Errorf("vault: hashicorp put: %w", err)
+	}
+	return nil
+}
+
+// GetDEK retrieves and decodes the encrypted DEK from Vault KV v2.
+// Returns crypto.ErrKeyNotFound if the secret does not exist (HTTP 404).
+func (v *HashiCorpVault) GetDEK(ctx context.Context, patientURN string) ([]byte, error) {
+	path := v.secretPath(patientURN)
+	secret, err := v.client.KVv2(v.mount).Get(ctx, path)
+	if err != nil {
+		if isVaultNotFound(err) {
+			return nil, crypto.ErrKeyNotFound
+		}
+		return nil, fmt.Errorf("vault: hashicorp get: %w", err)
+	}
+	if secret == nil || secret.Data == nil {
+		return nil, crypto.ErrKeyNotFound
+	}
+	rawDEK, ok := secret.Data["dek"].(string)
+	if !ok || rawDEK == "" {
+		return nil, crypto.ErrInvalidDEK
+	}
+	decoded, err := base64.StdEncoding.DecodeString(rawDEK)
+	if err != nil {
+		return nil, fmt.Errorf("vault: hashicorp decode dek: %w", err)
+	}
+	return decoded, nil
+}
+
+// DeleteDEK permanently purges the secret payload and metadata from Vault KV v2,
+// executing hard Crypto-Shredding (bypassing soft-delete/version retention).
+func (v *HashiCorpVault) DeleteDEK(ctx context.Context, patientURN string) error {
+	path := v.secretPath(patientURN)
+	// DeleteMetadata permanently destroys all secret versions and metadata in KV v2.
+	err := v.client.KVv2(v.mount).DeleteMetadata(ctx, path)
+	if err != nil && !isVaultNotFound(err) {
+		return fmt.Errorf("vault: hashicorp delete metadata: %w", err)
+	}
+	return nil
+}
+
+// Close implements crypto.KeyVault; stateless HTTP client has no persistent connection to close.
+func (v *HashiCorpVault) Close() error {
+	return nil
+}
+
+// isVaultNotFound checks if a Vault API response error corresponds to HTTP 404 Not Found.
+func isVaultNotFound(err error) bool {
+	if err == nil {
+		return false
+	}
+	var respErr *api.ResponseError
+	if errors.As(err, &respErr) {
+		return respErr.StatusCode == http.StatusNotFound
+	}
+	return strings.Contains(err.Error(), "404") || strings.Contains(err.Error(), "secret not found")
+}
