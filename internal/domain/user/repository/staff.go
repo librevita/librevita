@@ -11,7 +11,6 @@ import (
 	"librevita.org/ent/staffchangerequest"
 	"librevita.org/ent/user"
 	usermodel "librevita.org/internal/domain/user/model"
-	"librevita.org/internal/types"
 )
 
 type staffRequestRepository struct {
@@ -72,7 +71,7 @@ func (r *staffRequestRepository) ListByRequester(ctx context.Context, requesterI
 			StaffName:    staffName,
 			StaffEmail:   staffEmail,
 			RequestedBy:  req.RequestedBy,
-			Status:       req.Status,
+			Status:       string(req.Status),
 			Changes:      req.Changes,
 			DecisionNote: req.DecisionNote,
 			CreatedAt:    req.CreatedAt,
@@ -90,7 +89,7 @@ func (r *staffRequestRepository) ListFiltered(ctx context.Context, status, q str
 		Order(ent.Desc(staffchangerequest.FieldCreatedAt))
 
 	if status != "" {
-		query = query.Where(staffchangerequest.StatusEQ(status))
+		query = query.Where(staffchangerequest.StatusEQ(staffchangerequest.Status(status)))
 	}
 	if q != "" {
 		query = query.Where(
@@ -109,7 +108,7 @@ func (r *staffRequestRepository) ListFiltered(ctx context.Context, status, q str
 
 	countQuery := r.client.StaffChangeRequest.Query()
 	if status != "" {
-		countQuery = countQuery.Where(staffchangerequest.StatusEQ(status))
+		countQuery = countQuery.Where(staffchangerequest.StatusEQ(staffchangerequest.Status(status)))
 	}
 	if q != "" {
 		countQuery = countQuery.Where(
@@ -148,7 +147,7 @@ func (r *staffRequestRepository) ListFiltered(ctx context.Context, status, q str
 			StaffEmail:    staffEmail,
 			RequestedBy:   req.RequestedBy,
 			RequesterName: requesterName,
-			Status:        req.Status,
+			Status:        string(req.Status),
 			Changes:       req.Changes,
 			DecisionNote:  req.DecisionNote,
 			CreatedAt:     req.CreatedAt,
@@ -163,7 +162,7 @@ func (r *staffRequestRepository) ListFiltered(ctx context.Context, status, q str
 func (r *staffRequestRepository) Reject(ctx context.Context, id, deciderID uuid.UUID, note string) error {
 	decidedAt := time.Now().UTC()
 	update := r.client.StaffChangeRequest.UpdateOneID(id).
-		SetStatus(types.StaffRequestRejected.String()).
+		SetStatus(staffchangerequest.StatusRejected).
 		SetDecidedAt(decidedAt).
 		SetDecidedBy(deciderID)
 	if note != "" {
@@ -186,7 +185,7 @@ func toStaffChangeRequestDomain(req *ent.StaffChangeRequest) *usermodel.StaffCha
 		ID:           req.ID,
 		UserID:       req.UserID,
 		RequestedBy:  req.RequestedBy,
-		Status:       req.Status,
+		Status:       string(req.Status),
 		Changes:      req.Changes,
 		DecisionNote: req.DecisionNote,
 		CreatedAt:    req.CreatedAt,

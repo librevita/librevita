@@ -21,7 +21,7 @@ func TestPatientEnums(t *testing.T) {
 		t.Fatal("ParseSex must reject values outside the CHECK set")
 	}
 
-	for _, status := range []PatientStatus{PatientStatusActive, PatientStatusInactive} {
+	for _, status := range []PatientStatus{PatientStatusActive, PatientStatusInactive, PatientStatusArchived} {
 		if !status.Valid() {
 			t.Fatalf("%q must be valid", status)
 		}
@@ -29,10 +29,10 @@ func TestPatientEnums(t *testing.T) {
 			t.Fatalf("ParsePatientStatus(%q) = %q, %v; want %q, true", status.String(), got, ok, status)
 		}
 	}
-	if PatientStatus("archived").Valid() {
+	if PatientStatus("suspended").Valid() {
 		t.Fatal("status outside the CHECK set must not be valid")
 	}
-	if _, ok := ParsePatientStatus("archived"); ok {
+	if _, ok := ParsePatientStatus("suspended"); ok {
 		t.Fatal("ParsePatientStatus must reject values outside the CHECK set")
 	}
 }

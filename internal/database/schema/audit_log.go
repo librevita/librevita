@@ -40,9 +40,9 @@ func (AuditLog) Fields() []ent.Field {
 		field.String("resource").
 			NotEmpty().
 			Comment("e.g. user, session, patient"),
-		field.String("result").
-			NotEmpty().
-			Comment("success or failure"),
+		field.Enum("result").
+			Values("success", "failure").
+			Comment("Outcome of the audited operation"),
 		field.String("ip").
 			Optional().
 			Nillable(),

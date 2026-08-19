@@ -30,7 +30,7 @@ func (Appointment) Mixin() []ent.Mixin {
 func (Appointment) Fields() []ent.Field {
 	return []ent.Field{
 		field.UUID("id", uuid.UUID{}).
-			Default(uuid.New).
+			Default(newUUIDv7).
 			Immutable(),
 		field.UUID("clinic_id", uuid.UUID{}).
 			Comment("Clinic tenant ID"),
@@ -42,9 +42,10 @@ func (Appointment) Fields() []ent.Field {
 			Comment("Scheduled start timestamp"),
 		field.Time("end_time").
 			Comment("Scheduled end timestamp"),
-		field.String("status").
+		field.Enum("status").
+			Values("scheduled", "confirmed", "in_progress", "completed", "cancelled", "no_show").
 			Default("scheduled").
-			Comment("Status: scheduled, confirmed, in_progress, completed, cancelled, no_show"),
+			Comment("Status of the appointment"),
 		field.UUID("created_by", uuid.UUID{}).
 			Optional().
 			Nillable(),

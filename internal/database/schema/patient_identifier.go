@@ -19,7 +19,7 @@ type PatientIdentifier struct {
 func (PatientIdentifier) Fields() []ent.Field {
 	return []ent.Field{
 		field.UUID("id", uuid.UUID{}).
-			Default(uuid.New).
+			Default(newUUIDv7).
 			Immutable(),
 		field.UUID("patient_id", uuid.UUID{}).
 			Comment("Belonging patient ID"),

@@ -19,7 +19,7 @@ type Specialty struct {
 func (Specialty) Fields() []ent.Field {
 	return []ent.Field{
 		field.UUID("id", uuid.UUID{}).
-			Default(uuid.New).
+			Default(newUUIDv7).
 			Immutable(),
 		field.UUID("clinic_id", uuid.UUID{}).
 			Comment("Clinic tenant ID"),

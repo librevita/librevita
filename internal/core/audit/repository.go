@@ -40,7 +40,7 @@ func (r *auditRepository) Recent(ctx context.Context, limit int, before int64) (
 			ActorEmail: row.ActorEmail,
 			Action:     row.Action,
 			Resource:   row.Resource,
-			Result:     row.Result,
+			Result:     string(row.Result),
 			Detail:     row.Detail,
 		})
 	}
@@ -66,7 +66,7 @@ func (r *auditRepository) ForResource(ctx context.Context, resource string, limi
 			ActorEmail: row.ActorEmail,
 			Action:     row.Action,
 			Resource:   row.Resource,
-			Result:     row.Result,
+			Result:     string(row.Result),
 			Detail:     row.Detail,
 		})
 	}
@@ -91,7 +91,7 @@ func (r *auditRepository) Record(ctx context.Context, ev Event, createdAt time.T
 		SetAction(ev.Action).
 		SetResource(ev.Resource).
 		SetResourceName(ev.ResourceName).
-		SetResult(string(ev.Result)).
+		SetResult(auditlog.Result(ev.Result)).
 		SetActorName(ev.ActorName).
 		SetActorRole(ev.ActorRole).
 		SetUserAgent(ev.UserAgent).
@@ -142,7 +142,7 @@ func (r *auditRepository) All(ctx context.Context) ([]StoredEntry, error) {
 			Action:       row.Action,
 			Resource:     row.Resource,
 			ResourceName: row.ResourceName,
-			Result:       row.Result,
+			Result:       string(row.Result),
 			IP:           row.IP,
 			RequestID:    row.RequestID,
 			Detail:       row.Detail,

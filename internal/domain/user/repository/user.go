@@ -12,9 +12,9 @@ import (
 	"librevita.org/ent"
 	"librevita.org/ent/role"
 	"librevita.org/ent/specialty"
+	"librevita.org/ent/staffchangerequest"
 	"librevita.org/ent/user"
 	usermodel "librevita.org/internal/domain/user/model"
-	"librevita.org/internal/types"
 )
 
 type userRepository struct {
@@ -82,7 +82,7 @@ func (r *userRepository) GetByID(ctx context.Context, id uuid.UUID) (*usermodel.
 		RoleIsClinical: roleIsClinical,
 		Active:         u.Active,
 		Timezone:       u.Timezone,
-		UITheme:        u.UITheme,
+		UITheme:        string(u.UITheme),
 		CreatedAt:      u.CreatedAt,
 		UpdatedAt:      u.UpdatedAt,
 	}, nil
@@ -117,7 +117,7 @@ func (r *userRepository) GetByEmail(ctx context.Context, email string) (*usermod
 		RoleIsClinical: roleIsClinical,
 		Active:         u.Active,
 		Timezone:       u.Timezone,
-		UITheme:        u.UITheme,
+		UITheme:        string(u.UITheme),
 		CreatedAt:      u.CreatedAt,
 		UpdatedAt:      u.UpdatedAt,
 	}, nil
@@ -148,7 +148,7 @@ func (r *userRepository) Update(ctx context.Context, u *usermodel.User) (*usermo
 func (r *userRepository) UpdatePreferences(ctx context.Context, id uuid.UUID, timezone, theme string) error {
 	err := r.client.User.UpdateOneID(id).
 		SetTimezone(timezone).
-		SetUITheme(theme).
+		SetUITheme(user.UITheme(theme)).
 		SetUpdatedAt(time.Now()).
 		Exec(ctx)
 	if err != nil {
@@ -236,7 +236,7 @@ func (r *userRepository) ListPage(ctx context.Context, q string, limit, offset i
 	if trimmed != "" {
 		pattern := "% " + strings.ToLower(trimmed) + "%"
 		predicate := func(s *entsql.Selector) {
-			s.Where(entsql.ExprP("lower(' ' || " + s.C(user.FieldEmail) + " || ' ' || " + s.C(user.FieldDisplayName) + ") LIKE ?", pattern))
+			s.Where(entsql.ExprP("lower(' ' || "+s.C(user.FieldEmail)+" || ' ' || "+s.C(user.FieldDisplayName)+") LIKE ?", pattern))
 		}
 		query = query.Where(predicate)
 		countQuery = countQuery.Where(predicate)
@@ -351,7 +351,7 @@ func (r *userRepository) ApplyApprovedStaffChange(ctx context.Context, reqID, us
 
 	decidedAt := time.Now().UTC()
 	if err := tx.StaffChangeRequest.UpdateOneID(reqID).
-		SetStatus(types.StaffRequestApproved.String()).
+		SetStatus(staffchangerequest.StatusApproved).
 		SetDecidedAt(decidedAt).
 		SetDecidedBy(deciderID).
 		Exec(ctx); err != nil {
@@ -378,7 +378,7 @@ func toUserDomain(u *ent.User, roleName string) *usermodel.User {
 		RoleName:     roleName,
 		Active:       u.Active,
 		Timezone:     u.Timezone,
-		UITheme:      u.UITheme,
+		UITheme:      string(u.UITheme),
 		CreatedAt:    u.CreatedAt,
 		UpdatedAt:    u.UpdatedAt,
 	}

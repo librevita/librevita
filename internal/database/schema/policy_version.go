@@ -40,9 +40,10 @@ func (AccessPolicyVersion) Fields() []ent.Field {
 		field.String("changed_by_email").
 			Optional().
 			Nillable(),
-		field.String("origin").
+		field.Enum("origin").
+			Values("seed", "admin", "system").
 			Default("system").
-			Comment("Origin: seed, admin, system"),
+			Comment("Origin of the policy version"),
 		field.Time("created_at").
 			Default(time.Now).
 			Immutable(),

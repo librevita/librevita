@@ -18,7 +18,7 @@ type User struct {
 func (User) Fields() []ent.Field {
 	return []ent.Field{
 		field.UUID("id", uuid.UUID{}).
-			Default(uuid.New).
+			Default(newUUIDv7).
 			Immutable(),
 		field.String("email").
 			NotEmpty().
@@ -39,9 +39,10 @@ func (User) Fields() []ent.Field {
 		field.String("timezone").
 			Default("").
 			Comment("User personal IANA timezone"),
-		field.String("ui_theme").
+		field.Enum("ui_theme").
+			Values("system", "light", "dark").
 			Default("system").
-			Comment("User UI theme preference: system, light, dark"),
+			Comment("User UI theme preference"),
 		field.Time("created_at").
 			Default(time.Now).
 			Immutable(),
