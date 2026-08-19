@@ -1,11 +1,9 @@
 // Package usecase holds the patient domain service: validation and
-// persistence of patient records.
+// persistence of patient records with Zero-Knowledge encryption.
 package usecase
 
 import (
 	"context"
-	"database/sql"
-	"errors"
 	"fmt"
 	"log/slog"
 	"net/mail"
@@ -15,8 +13,9 @@ import (
 	"github.com/google/uuid"
 
 	"librevita.org/internal/core/auth"
+	"librevita.org/internal/core/crypto"
 	"librevita.org/internal/core/policy"
-	"librevita.org/internal/domain/patient/repository"
+	patientmodel "librevita.org/internal/domain/patient/model"
 	"librevita.org/internal/types"
 )
 
@@ -33,49 +32,45 @@ type ValidationError struct{ Msg string }
 
 func (e *ValidationError) Error() string { return e.Msg }
 
-// ErrNotFound is returned when the patient does not exist.
-var ErrNotFound = errors.New("patient: not found")
+// Re-export domain models, records, and contracts from patient/model.
+type (
+	PatientPayload           = patientmodel.PatientPayload
+	Patient                  = patientmodel.Patient
+	PatientRecord            = patientmodel.PatientRecord
+	PatientRecordWithCreator = patientmodel.PatientRecordWithCreator
+	GetPatientWithCreatorRow = patientmodel.GetPatientWithCreatorRow
+	PatientInput             = patientmodel.PatientInput
+	PatientRepository        = patientmodel.PatientRepository
+)
 
-// PatientInput is the editable profile of a patient.
-type PatientInput struct {
-	DisplayName string
-	BirthDate   string
-	Sex         types.Sex
-	Phone       string
-	Email       string
-	Street      string
-	City        string
-	State       string
-	PostalCode  string
-	Notes       string
-
-	// IdentifierSystem and IdentifierValue carry the identification
-	// document typed in the patient form. The patient service ignores
-	// them: the HTTP handler registers the document through the
-	// identifier subsystem after the patient row exists.
-	IdentifierSystem string
-	IdentifierValue  string
-}
+var (
+	ErrNotFound  = patientmodel.ErrNotFound
+	ErrForbidden = patientmodel.ErrForbidden
+)
 
 // Service persists and validates patient records.
 type Service struct {
-	db       *sql.DB
-	q        *repository.Queries
+	repo     PatientRepository
+	crypto   *crypto.Engine
 	log      *slog.Logger
 	policies *policy.PolicyEngine
 }
 
 // NewService is the Fx provider.
-func NewService(db *sql.DB, log *slog.Logger, policies *policy.PolicyEngine) *Service {
-	return &Service{db: db, q: repository.New(db), log: log, policies: policies}
+func NewService(repo PatientRepository, engine *crypto.Engine, log *slog.Logger, policies *policy.PolicyEngine) *Service {
+	return &Service{
+		repo:     repo,
+		crypto:   engine,
+		log:      log,
+		policies: policies,
+	}
 }
 
-// ErrForbidden reports a resource-level policy denial.
-var ErrForbidden = errors.New("usecase: permission denied")
+func patientURN(id uuid.UUID) string {
+	return "urn:librevita:patient:" + id.String()
+}
 
-// AuthorizePatientEdit evaluates the fine-grained patient.edit policy
-// against the record itself: an admin edits anything, a physician only
-// the patients they registered. Callers audit the denial.
+// AuthorizePatientEdit evaluates the fine-grained patient.edit policy.
 func (s *Service) AuthorizePatientEdit(ctx context.Context, principal *auth.Principal, id string, createdBy *string, status types.PatientStatus) error {
 	resource := map[string]any{
 		"id":         id,
@@ -93,9 +88,8 @@ func (s *Service) AuthorizePatientEdit(ctx context.Context, principal *auth.Prin
 	return nil
 }
 
-// Create validates in and inserts a patient for the clinic, recording
-// createdBy (the user id of the registrar).
-func (s *Service) Create(ctx context.Context, clinicID, createdBy string, in PatientInput) (*repository.Patient, error) {
+// Create validates in, encrypts PII/PHI, and inserts a patient record.
+func (s *Service) Create(ctx context.Context, clinicID, createdBy string, in PatientInput) (*Patient, error) {
 	normalized, err := normalize(in)
 	if err != nil {
 		return nil, err
@@ -104,12 +98,20 @@ func (s *Service) Create(ctx context.Context, clinicID, createdBy string, in Pat
 	if err != nil {
 		return nil, fmt.Errorf("usecase: generate patient id: %w", err)
 	}
-	patient, err := s.q.CreatePatient(ctx, repository.CreatePatientParams{
-		ID:          id,
-		ClinicID:    uuid.MustParse(clinicID),
+	cUUID, err := uuid.Parse(clinicID)
+	if err != nil {
+		return nil, fmt.Errorf("usecase: invalid clinic id: %w", err)
+	}
+
+	blindHex, err := s.crypto.BlindIndex("patient.display_name", strings.ToLower(normalized.DisplayName))
+	if err != nil {
+		return nil, fmt.Errorf("usecase: compute blind index: %w", err)
+	}
+
+	payload := PatientPayload{
 		DisplayName: normalized.DisplayName,
 		BirthDate:   strPtr(normalized.BirthDate),
-		Sex:         normalized.Sex.String(),
+		Sex:         normalized.Sex,
 		Phone:       strPtr(normalized.Phone),
 		Email:       strPtr(normalized.Email),
 		Street:      strPtr(normalized.Street),
@@ -117,53 +119,129 @@ func (s *Service) Create(ctx context.Context, clinicID, createdBy string, in Pat
 		State:       strPtr(normalized.State),
 		PostalCode:  strPtr(normalized.PostalCode),
 		Notes:       strPtr(normalized.Notes),
-		CreatedBy:   uuidOrNil(createdBy),
-	})
+	}
+
+	ciphertext, nonce, err := s.crypto.EncryptStruct(ctx, patientURN(id), []byte("patient"), payload)
+	if err != nil {
+		return nil, fmt.Errorf("usecase: encrypt patient: %w", err)
+	}
+
+	var cb *uuid.UUID
+	if createdBy != "" {
+		parsed := uuid.MustParse(createdBy)
+		cb = &parsed
+	}
+
+	rec := PatientRecord{
+		ID:               id,
+		ClinicID:         cUUID,
+		BlindIndex:       blindHex,
+		EncryptedPayload: ciphertext,
+		Nonce:            nonce,
+		Status:           types.PatientStatusActive,
+		CreatedBy:        cb,
+	}
+
+	saved, err := s.repo.Create(ctx, rec)
 	if err != nil {
 		return nil, fmt.Errorf("usecase: create patient: %w", err)
 	}
-	return &patient, nil
+
+	return s.toPatientModel(saved, &payload), nil
 }
 
-// GetWithCreator returns a patient with the registrar's email, scoped
-// to the clinic.
-func (s *Service) GetWithCreator(ctx context.Context, clinicID, id string) (*repository.GetPatientWithCreatorRow, error) {
-	row, err := s.q.GetPatientWithCreator(ctx, repository.GetPatientWithCreatorParams{
-		ID: uuid.MustParse(id), ClinicID: uuid.MustParse(clinicID),
-	})
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, ErrNotFound
-	}
+// Get returns a patient by id, scoped to the clinic, with transparent decryption.
+func (s *Service) Get(ctx context.Context, clinicID, id string) (*Patient, error) {
+	pUUID, err := uuid.Parse(id)
 	if err != nil {
-		return nil, fmt.Errorf("usecase: get patient with creator: %w", err)
+		return nil, fmt.Errorf("usecase: invalid patient id: %w", err)
 	}
-	return &row, nil
-}
-
-// Get returns a patient by id, scoped to the clinic.
-func (s *Service) Get(ctx context.Context, clinicID, id string) (*repository.Patient, error) {
-	patient, err := s.q.GetPatientByID(ctx, repository.GetPatientByIDParams{
-		ID: uuid.MustParse(id), ClinicID: uuid.MustParse(clinicID),
-	})
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, ErrNotFound
-	}
+	cUUID, err := uuid.Parse(clinicID)
 	if err != nil {
-		return nil, fmt.Errorf("usecase: get patient: %w", err)
+		return nil, fmt.Errorf("usecase: invalid clinic id: %w", err)
 	}
-	return &patient, nil
+
+	p, err := s.repo.Get(ctx, cUUID, pUUID)
+	if err != nil {
+		return nil, err
+	}
+
+	payload, err := s.decryptPayload(ctx, p)
+	if err != nil {
+		return nil, fmt.Errorf("usecase: decrypt patient %s: %w", id, err)
+	}
+
+	return s.toPatientModel(p, payload), nil
 }
 
-// Update validates in and applies it to the patient.
-func (s *Service) Update(ctx context.Context, clinicID, id string, in PatientInput) (*repository.Patient, error) {
+// GetWithCreator returns a patient with the registrar's email, scoped to the clinic.
+func (s *Service) GetWithCreator(ctx context.Context, clinicID, id string) (*GetPatientWithCreatorRow, error) {
+	pUUID, err := uuid.Parse(id)
+	if err != nil {
+		return nil, fmt.Errorf("usecase: invalid patient id: %w", err)
+	}
+	cUUID, err := uuid.Parse(clinicID)
+	if err != nil {
+		return nil, fmt.Errorf("usecase: invalid clinic id: %w", err)
+	}
+
+	res, err := s.repo.GetWithCreator(ctx, cUUID, pUUID)
+	if err != nil {
+		return nil, err
+	}
+
+	payload, err := s.decryptPayload(ctx, &res.Record)
+	if err != nil {
+		return nil, fmt.Errorf("usecase: decrypt patient %s: %w", id, err)
+	}
+
+	pt := s.toPatientModel(&res.Record, payload)
+	return &GetPatientWithCreatorRow{
+		ID:           pt.ID,
+		ClinicID:     pt.ClinicID,
+		DisplayName:  pt.DisplayName,
+		BirthDate:    pt.BirthDate,
+		Sex:          pt.Sex,
+		Phone:        pt.Phone,
+		Email:        pt.Email,
+		Street:       pt.Street,
+		City:         pt.City,
+		State:        pt.State,
+		PostalCode:   pt.PostalCode,
+		Notes:        pt.Notes,
+		Status:       pt.Status,
+		CreatedBy:    pt.CreatedBy,
+		CreatedAt:    pt.CreatedAt,
+		UpdatedAt:    pt.UpdatedAt,
+		CreatorEmail: res.CreatorEmail,
+		CreatorName:  res.CreatorName,
+	}, nil
+}
+
+// Update validates in, encrypts new payload, and updates the patient.
+func (s *Service) Update(ctx context.Context, clinicID, id string, in PatientInput) (*Patient, error) {
 	normalized, err := normalize(in)
 	if err != nil {
 		return nil, err
 	}
-	patient, err := s.q.UpdatePatient(ctx, repository.UpdatePatientParams{
+	pUUID, err := uuid.Parse(id)
+	if err != nil {
+		return nil, fmt.Errorf("usecase: invalid patient id: %w", err)
+	}
+	cUUID, err := uuid.Parse(clinicID)
+	if err != nil {
+		return nil, fmt.Errorf("usecase: invalid clinic id: %w", err)
+	}
+
+	blindHex, err := s.crypto.BlindIndex("patient.display_name", strings.ToLower(normalized.DisplayName))
+	if err != nil {
+		return nil, fmt.Errorf("usecase: compute blind index: %w", err)
+	}
+
+	payload := PatientPayload{
 		DisplayName: normalized.DisplayName,
 		BirthDate:   strPtr(normalized.BirthDate),
-		Sex:         normalized.Sex.String(),
+		Sex:         normalized.Sex,
 		Phone:       strPtr(normalized.Phone),
 		Email:       strPtr(normalized.Email),
 		Street:      strPtr(normalized.Street),
@@ -171,60 +249,173 @@ func (s *Service) Update(ctx context.Context, clinicID, id string, in PatientInp
 		State:       strPtr(normalized.State),
 		PostalCode:  strPtr(normalized.PostalCode),
 		Notes:       strPtr(normalized.Notes),
-		ID:          uuid.MustParse(id),
-		ClinicID:    uuid.MustParse(clinicID),
-	})
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, ErrNotFound
 	}
+
+	ciphertext, nonce, err := s.crypto.EncryptStruct(ctx, patientURN(pUUID), []byte("patient"), payload)
 	if err != nil {
-		return nil, fmt.Errorf("usecase: update patient: %w", err)
+		return nil, fmt.Errorf("usecase: encrypt patient: %w", err)
 	}
-	return &patient, nil
+
+	rec := PatientRecord{
+		ID:               pUUID,
+		ClinicID:         cUUID,
+		BlindIndex:       blindHex,
+		EncryptedPayload: ciphertext,
+		Nonce:            nonce,
+		Status:           types.PatientStatusActive,
+	}
+
+	// Preserve existing status on update
+	existing, err := s.repo.Get(ctx, cUUID, pUUID)
+	if err != nil {
+		return nil, err
+	}
+	rec.Status = existing.Status
+	rec.CreatedBy = existing.CreatedBy
+
+	updated, err := s.repo.Update(ctx, rec)
+	if err != nil {
+		return nil, err
+	}
+
+	return s.toPatientModel(updated, &payload), nil
 }
 
 // SetStatus updates the patient status, scoped to the clinic.
 func (s *Service) SetStatus(ctx context.Context, clinicID, id string, status types.PatientStatus) error {
-	err := s.q.UpdatePatientStatus(ctx, repository.UpdatePatientStatusParams{
-		Status: status.String(), ID: uuid.MustParse(id), ClinicID: uuid.MustParse(clinicID),
-	})
+	pUUID, err := uuid.Parse(id)
+	if err != nil {
+		return fmt.Errorf("usecase: invalid patient id: %w", err)
+	}
+	cUUID, err := uuid.Parse(clinicID)
+	if err != nil {
+		return fmt.Errorf("usecase: invalid clinic id: %w", err)
+	}
+
+	count, err := s.repo.BulkSetStatus(ctx, cUUID, []uuid.UUID{pUUID}, status)
 	if err != nil {
 		return fmt.Errorf("usecase: set patient status: %w", err)
+	}
+	if count == 0 {
+		return ErrNotFound
 	}
 	return nil
 }
 
-// ListPage returns one page of patients matching q (scoped to field,
-// ” for all fields) and status, ordered by display name, together
-// with the total match count.
-func (s *Service) ListPage(ctx context.Context, clinicID, q, field, status string, limit, offset int) ([]repository.Patient, int64, error) {
-	// The SQL pattern matches whole-word prefixes: the term must start a
-	// word in the name or a document/email value. instr() matches the
-	// term literally, so LIKE wildcards in the input have no effect.
-	pattern := strings.TrimSpace(q)
-	rows, err := s.q.ListPatientsPage(ctx, repository.ListPatientsPageParams{
-		ClinicID: uuid.MustParse(clinicID), StatusEmpty: status, StatusFilter: status,
-		QueryEmpty: q, Field: field, Pattern: strPtr(pattern), Limit: int64(limit), Offset: int64(offset),
-	})
+// ListPage returns one page of decrypted patients.
+func (s *Service) ListPage(ctx context.Context, clinicID, q, field, status string, limit, offset int) ([]Patient, int64, error) {
+	cUUID, err := uuid.Parse(clinicID)
 	if err != nil {
-		return nil, 0, fmt.Errorf("usecase: list patients page: %w", err)
+		return nil, 0, fmt.Errorf("usecase: invalid clinic id: %w", err)
 	}
-	total, err := s.q.CountPatientsMatching(ctx, repository.CountPatientsMatchingParams{
-		ClinicID: uuid.MustParse(clinicID), StatusEmpty: status, StatusFilter: status,
-		QueryEmpty: q, Field: field, Pattern: strPtr(pattern),
-	})
+
+	var statusFilter *types.PatientStatus
+	if status != "" {
+		st := types.PatientStatus(status)
+		statusFilter = &st
+	}
+
+	records, err := s.repo.ListByClinicAndStatus(ctx, cUUID, statusFilter)
 	if err != nil {
-		return nil, 0, fmt.Errorf("usecase: count patients: %w", err)
+		return nil, 0, fmt.Errorf("usecase: list patients: %w", err)
 	}
-	return rows, total, nil
+
+	total := len(records)
+	filtered := make([]Patient, 0, total)
+	trimmedQ := strings.ToLower(strings.TrimSpace(q))
+
+	for _, rec := range records {
+		payload, err := s.decryptPayload(ctx, &rec)
+		if err != nil {
+			s.log.Error("usecase: list decrypt patient failed", "id", rec.ID, "error", err)
+			continue
+		}
+		if trimmedQ != "" {
+			matchesName := matchWordPrefix(payload.DisplayName, trimmedQ)
+			matchesEmail := payload.Email != nil && strings.HasPrefix(strings.ToLower(*payload.Email), trimmedQ)
+
+			switch field {
+			case "name":
+				if !matchesName {
+					continue
+				}
+			case "email":
+				if !matchesEmail {
+					continue
+				}
+			default:
+				if !matchesName && !matchesEmail {
+					continue
+				}
+			}
+		}
+		pt := s.toPatientModel(&rec, payload)
+		filtered = append(filtered, *pt)
+	}
+
+	// Apply pagination over filtered list
+	start := offset
+	if start > len(filtered) {
+		start = len(filtered)
+	}
+	end := start + limit
+	if end > len(filtered) {
+		end = len(filtered)
+	}
+
+	return filtered[start:end], int64(len(filtered)), nil
 }
 
+func matchWordPrefix(text, query string) bool {
+	words := strings.Fields(strings.ToLower(text))
+	for _, w := range words {
+		if strings.HasPrefix(w, query) {
+			return true
+		}
+	}
+	return false
+}
+
+// Count returns total number of patients for the clinic.
 func (s *Service) Count(ctx context.Context, clinicID string) (int64, error) {
-	count, err := s.q.CountPatients(ctx, uuid.MustParse(clinicID))
+	cUUID, err := uuid.Parse(clinicID)
+	if err != nil {
+		return 0, fmt.Errorf("usecase: invalid clinic id: %w", err)
+	}
+	count, err := s.repo.Count(ctx, cUUID)
 	if err != nil {
 		return 0, fmt.Errorf("usecase: count patients: %w", err)
 	}
-	return count, nil
+	return int64(count), nil
+}
+
+func (s *Service) decryptPayload(ctx context.Context, rec *PatientRecord) (*PatientPayload, error) {
+	var payload PatientPayload
+	if err := s.crypto.DecryptInto(ctx, patientURN(rec.ID), []byte("patient"), rec.EncryptedPayload, rec.Nonce, &payload); err != nil {
+		return nil, err
+	}
+	return &payload, nil
+}
+
+func (s *Service) toPatientModel(rec *PatientRecord, payload *PatientPayload) *Patient {
+	return &Patient{
+		ID:          rec.ID,
+		ClinicID:    rec.ClinicID,
+		DisplayName: payload.DisplayName,
+		BirthDate:   payload.BirthDate,
+		Sex:         payload.Sex,
+		Phone:       payload.Phone,
+		Email:       payload.Email,
+		Street:      payload.Street,
+		City:        payload.City,
+		State:       payload.State,
+		PostalCode:  payload.PostalCode,
+		Notes:       payload.Notes,
+		Status:      rec.Status,
+		CreatedBy:   rec.CreatedBy,
+		CreatedAt:   rec.CreatedAt,
+		UpdatedAt:   rec.UpdatedAt,
+	}
 }
 
 func normalize(in PatientInput) (PatientInput, error) {
@@ -275,15 +466,6 @@ func normalize(in PatientInput) (PatientInput, error) {
 		return out, &ValidationError{Msg: "notes are too long"}
 	}
 	return out, nil
-}
-
-// uuidOrNil maps an empty optional id to the Nil uuid the storage layer
-// stores as NULL.
-func uuidOrNil(s string) uuid.UUID {
-	if s == "" {
-		return uuid.Nil
-	}
-	return uuid.MustParse(s)
 }
 
 func strPtr(s string) *string {

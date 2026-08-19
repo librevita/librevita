@@ -6,13 +6,16 @@ import (
 
 	"go.uber.org/fx"
 
-	"librevita.org/internal/domain/clinic"
+	"librevita.org/internal/domain/clinic/usecase"
 )
 
 // Module provides the CEL policy engine used for authorization. Policies
 // are seeded and compiled after the database migrations run.
 var Module = fx.Module("policy",
-	fx.Provide(NewPolicyEngine),
+	fx.Provide(
+		NewPolicyRepository,
+		NewPolicyEngine,
+	),
 	fx.Invoke(registerLifecycle),
 	fx.Invoke(wireClinicContext),
 )
@@ -20,7 +23,7 @@ var Module = fx.Module("policy",
 // wireClinicContext exposes the installation's clinic id as
 // context.clinic_id in every policy evaluation (see
 // PolicyEngine.SetClockProvider).
-func wireClinicContext(pe *PolicyEngine, clocks *clinic.ClockProvider) {
+func wireClinicContext(pe *PolicyEngine, clocks *usecase.ClockProvider) {
 	pe.SetClockProvider(clocks)
 }
 

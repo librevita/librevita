@@ -2,7 +2,6 @@ package usecase
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,15 +9,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"librevita.org/internal/domain/user/repository"
 	"librevita.org/internal/types"
-)
-
-// Staff request errors.
-var (
-	ErrRequestNotFound   = errors.New("usecase: staff change request not found")
-	ErrRequestNotPending = errors.New("usecase: staff change request is not pending")
-	ErrEmailInUse        = errors.New("usecase: that email already belongs to another account")
 )
 
 // StaffChange is the JSON payload of a proposed physician profile change.
@@ -29,25 +20,13 @@ type StaffChange struct {
 	Previous    *StaffChange `json:"previous,omitempty"`
 }
 
-// ListPhysiciansPage returns one page of clinical staff accounts with
-// their specialties joined as a comma-separated string, plus the total.
-func (s *Service) ListPhysiciansPage(ctx context.Context, limit, offset int) ([]repository.ListPhysiciansPageRow, int64, error) {
-	rows, err := s.users.ListPhysiciansPage(ctx, repository.ListPhysiciansPageParams{
-		Limit: int64(limit), Offset: int64(offset),
-	})
-	if err != nil {
-		return nil, 0, fmt.Errorf("usecase: list physicians: %w", err)
-	}
-	total, err := s.users.CountPhysicians(ctx)
-	if err != nil {
-		return nil, 0, fmt.Errorf("usecase: count physicians: %w", err)
-	}
-	return rows, total, nil
+// ListPhysiciansPage returns one page of clinical staff accounts with their specialties joined as a comma-separated string, plus the total.
+func (s *Service) ListPhysiciansPage(ctx context.Context, limit, offset int) ([]ListPhysiciansPageRow, int64, error) {
+	return s.userRepo.ListPhysiciansPage(ctx, limit, offset)
 }
 
-// CreateStaffChangeRequest records a receptionist's proposal to change a
-// physician's profile. The request stays pending until an admin decides.
-func (s *Service) CreateStaffChangeRequest(ctx context.Context, userID, requestedBy string, change StaffChange) (*repository.StaffChangeRequest, error) {
+// CreateStaffChangeRequest records a receptionist's proposal to change a physician's profile.
+func (s *Service) CreateStaffChangeRequest(ctx context.Context, userID, requestedBy string, change StaffChange) (*StaffChangeRequest, error) {
 	change.Name = strings.TrimSpace(change.Name)
 	change.Email = normalizeEmail(change.Email)
 	if change.Name == "" {
@@ -60,31 +39,37 @@ func (s *Service) CreateStaffChangeRequest(ctx context.Context, userID, requeste
 		return nil, err
 	}
 
-	// Reject proposals that would collide with another account's email.
-	current, err := s.users.GetUserByID(ctx, uuid.MustParse(userID))
+	uUUID, err := uuid.Parse(userID)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, ErrUserNotFound
-		}
-		return nil, fmt.Errorf("usecase: load staff user: %w", err)
+		return nil, fmt.Errorf("usecase: invalid user id: %w", err)
 	}
-	// Snapshot the profile at request time so the diff stays readable
-	// after the change was applied or rejected.
+	reqUUID, err := uuid.Parse(requestedBy)
+	if err != nil {
+		return nil, fmt.Errorf("usecase: invalid requester id: %w", err)
+	}
+
+	current, err := s.userRepo.GetByID(ctx, uUUID)
+	if err != nil {
+		return nil, err
+	}
+
+	userSpecs, err := s.specialtyRepo.ListByUser(ctx, uUUID)
+	if err != nil {
+		return nil, fmt.Errorf("usecase: list user specialties: %w", err)
+	}
+
 	previous := &StaffChange{Name: current.DisplayName, Email: current.Email}
-	assigned, err := s.users.ListUserSpecialties(ctx, uuid.MustParse(userID))
-	if err != nil {
-		return nil, fmt.Errorf("usecase: load staff specialties: %w", err)
-	}
-	for _, sp := range assigned {
+	for _, sp := range userSpecs {
 		previous.Specialties = append(previous.Specialties, sp.ID.String())
 	}
 	change.Previous = previous
+
 	if change.Email != current.Email {
-		other, err := s.users.GetUserByEmail(ctx, change.Email)
-		if err == nil && other.ID.String() != userID {
+		other, err := s.userRepo.GetByEmail(ctx, change.Email)
+		if err == nil && other.ID != uUUID {
 			return nil, ErrEmailInUse
 		}
-		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		if err != nil && !errors.Is(err, ErrUserNotFound) {
 			return nil, fmt.Errorf("usecase: check email: %w", err)
 		}
 	}
@@ -97,142 +82,88 @@ func (s *Service) CreateStaffChangeRequest(ctx context.Context, userID, requeste
 	if err != nil {
 		return nil, fmt.Errorf("usecase: generate request id: %w", err)
 	}
-	req, err := s.users.CreateStaffChangeRequest(ctx, repository.CreateStaffChangeRequestParams{
-		ID: id, UserID: uuid.MustParse(userID), RequestedBy: uuid.MustParse(requestedBy), Changes: string(payload),
+
+	req, err := s.staffReqRepo.Create(ctx, &StaffChangeRequest{
+		ID:          id,
+		UserID:      uUUID,
+		RequestedBy: reqUUID,
+		Changes:     string(payload),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("usecase: create staff change request: %w", err)
 	}
-	return &req, nil
+	return req, nil
 }
 
-// ListMyStaffChangeRequests returns every request made by the given
-// requester, newest first, with the current status.
-func (s *Service) ListMyStaffChangeRequests(ctx context.Context, requesterID string) ([]repository.ListStaffChangeRequestsByRequesterRow, error) {
-	rows, err := s.users.ListStaffChangeRequestsByRequester(ctx, repository.ListStaffChangeRequestsByRequesterParams{
-		RequestedBy: uuid.MustParse(requesterID), Limit: 50,
-	})
+// ListMyStaffChangeRequests returns every request made by the given requester.
+func (s *Service) ListMyStaffChangeRequests(ctx context.Context, requesterID string) ([]ListStaffChangeRequestsByRequesterRow, error) {
+	reqUUID, err := uuid.Parse(requesterID)
 	if err != nil {
-		return nil, fmt.Errorf("usecase: list my staff change requests: %w", err)
+		return nil, fmt.Errorf("usecase: invalid requester id: %w", err)
 	}
-	return rows, nil
+	return s.staffReqRepo.ListByRequester(ctx, reqUUID, 50)
 }
 
-// ListStaffChangeRequestsFiltered returns the change requests newest
-// first, filtered by status (empty for all) and a term matching the
-// physician or the requester, with the total match count.
-func (s *Service) ListStaffChangeRequestsFiltered(ctx context.Context, status, q string, limit, offset int) ([]repository.ListStaffChangeRequestsFilteredRow, int64, error) {
-	pattern := "%" + strings.TrimSpace(q) + "%"
-	rows, err := s.users.ListStaffChangeRequestsFiltered(ctx, repository.ListStaffChangeRequestsFilteredParams{
-		StatusEmpty: status, StatusFilter: status,
-		QEmpty: q, Q: pattern, Limit: int64(limit), Offset: int64(offset),
-	})
-	if err != nil {
-		return nil, 0, fmt.Errorf("usecase: list staff change requests: %w", err)
-	}
-	total, err := s.users.CountStaffChangeRequestsFiltered(ctx, repository.CountStaffChangeRequestsFilteredParams{
-		StatusEmpty: status, StatusFilter: status,
-		QEmpty: q, Q: pattern,
-	})
-	if err != nil {
-		return nil, 0, fmt.Errorf("usecase: count staff change requests: %w", err)
-	}
-	return rows, total, nil
+// ListStaffChangeRequestsFiltered returns the change requests filtered by status and search term.
+func (s *Service) ListStaffChangeRequestsFiltered(ctx context.Context, status, q string, limit, offset int) ([]ListStaffChangeRequestsFilteredRow, int64, error) {
+	return s.staffReqRepo.ListFiltered(ctx, status, q, limit, offset)
 }
 
-// ApproveStaffChangeRequest applies the proposed changes to the
-// physician account and marks the request approved. The approval is a
-// single transaction, so the applied state never diverges from the
-// request status.
+// ApproveStaffChangeRequest applies the proposed changes to the physician account and marks the request approved.
 func (s *Service) ApproveStaffChangeRequest(ctx context.Context, id, decidedBy string) error {
-	tx, err := s.db.BeginTx(ctx, nil)
+	reqUUID, err := uuid.Parse(id)
 	if err != nil {
-		return fmt.Errorf("usecase: begin staff change tx: %w", err)
+		return fmt.Errorf("usecase: invalid request id: %w", err)
 	}
-	queries := repository.New(tx)
-	committed := false
-	defer func() {
-		if !committed {
-			_ = tx.Rollback()
-		}
-	}()
-
-	req, err := queries.GetStaffChangeRequest(ctx, uuid.MustParse(id))
+	deciderUUID, err := uuid.Parse(decidedBy)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return ErrRequestNotFound
-		}
-		return fmt.Errorf("usecase: load staff change request: %w", err)
+		return fmt.Errorf("usecase: invalid decider id: %w", err)
+	}
+
+	req, err := s.staffReqRepo.GetByID(ctx, reqUUID)
+	if err != nil {
+		return err
 	}
 	if types.StaffRequestStatus(req.Status) != types.StaffRequestPending {
 		return ErrRequestNotPending
 	}
+
 	var change StaffChange
 	if err := json.Unmarshal([]byte(req.Changes), &change); err != nil {
 		return fmt.Errorf("usecase: decode staff change: %w", err)
 	}
-	// Defense in depth: requests created before the create-time
-	// validation may still carry malformed ids.
 	if err := validateSpecialtyIDs(change.Specialties); err != nil {
 		return err
 	}
 
-	user, err := queries.GetUserByID(ctx, req.UserID)
-	if err != nil {
-		return fmt.Errorf("usecase: load staff user: %w", err)
-	}
-	if _, err := queries.UpdateUser(ctx, repository.UpdateUserParams{
-		ID:          req.UserID,
-		Email:       change.Email,
-		DisplayName: change.Name,
-		RoleID:      user.RoleID,
-		Active:      user.Active,
-	}); err != nil {
-		return ErrEmailInUse
-	}
-	if err := queries.ClearUserSpecialties(ctx, req.UserID); err != nil {
-		return fmt.Errorf("usecase: clear staff specialties: %w", err)
-	}
+	var spUUIDs []uuid.UUID
 	for _, spID := range change.Specialties {
-		if spID == "" {
-			continue
-		}
-		if err := queries.AddUserSpecialty(ctx, repository.AddUserSpecialtyParams{
-			UserID: req.UserID, SpecialtyID: uuid.MustParse(spID),
-		}); err != nil {
-			return fmt.Errorf("usecase: add staff specialty: %w", err)
+		if spID != "" {
+			spUUIDs = append(spUUIDs, uuid.MustParse(spID))
 		}
 	}
-	if err := queries.DecideStaffChangeRequest(ctx, repository.DecideStaffChangeRequestParams{
-		Status: types.StaffRequestApproved.String(), DecisionNote: sql.NullString{}, DecidedBy: uuid.MustParse(decidedBy), ID: uuid.MustParse(id),
-	}); err != nil {
-		return fmt.Errorf("usecase: approve staff change request: %w", err)
-	}
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("usecase: commit staff change tx: %w", err)
-	}
-	committed = true
-	return nil
+
+	return s.userRepo.ApplyApprovedStaffChange(ctx, reqUUID, req.UserID, deciderUUID, change.Name, change.Email, spUUIDs)
 }
 
 // RejectStaffChangeRequest marks the request rejected with a note.
 func (s *Service) RejectStaffChangeRequest(ctx context.Context, id, decidedBy, note string) error {
-	req, err := s.users.GetStaffChangeRequest(ctx, uuid.MustParse(id))
+	reqUUID, err := uuid.Parse(id)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return ErrRequestNotFound
-		}
-		return fmt.Errorf("usecase: load staff change request: %w", err)
+		return fmt.Errorf("usecase: invalid request id: %w", err)
+	}
+	deciderUUID, err := uuid.Parse(decidedBy)
+	if err != nil {
+		return fmt.Errorf("usecase: invalid decider id: %w", err)
+	}
+
+	req, err := s.staffReqRepo.GetByID(ctx, reqUUID)
+	if err != nil {
+		return err
 	}
 	if types.StaffRequestStatus(req.Status) != types.StaffRequestPending {
 		return ErrRequestNotPending
 	}
-	note = strings.TrimSpace(note)
-	if err := s.users.DecideStaffChangeRequest(ctx, repository.DecideStaffChangeRequestParams{
-		Status: types.StaffRequestRejected.String(), DecisionNote: sql.NullString{String: note, Valid: note != ""},
-		DecidedBy: uuid.MustParse(decidedBy), ID: uuid.MustParse(id),
-	}); err != nil {
-		return fmt.Errorf("usecase: reject staff change request: %w", err)
-	}
-	return nil
+
+	return s.staffReqRepo.Reject(ctx, reqUUID, deciderUUID, strings.TrimSpace(note))
 }

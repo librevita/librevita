@@ -53,13 +53,12 @@ internal/ui/static/fonts/*.woff
 internal/ui/static/fonts/*.woff2
 internal/ui/assets.go
 
-# Generated sqlc repositories
-**/repository/*.sql.go
-**/repository/db.go
-**/repository/models.go
 
-# Consolidated schema generated from db/migrations by cmd/schemagen
-db/schema/*.sql
 
 # Generated templ views
 **/*_templ.go
+
+# Generated Ent ORM code (source of truth: internal/database/schema/)
+ent/
+
+

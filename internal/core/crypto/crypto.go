@@ -18,6 +18,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"hash"
@@ -83,6 +84,13 @@ func deriveEngine(raw []byte, vault KeyVault) *Engine {
 	}
 }
 
+// ZeroBytes securely zeroes the memory of a byte slice to prevent sensitive material from lingering in RAM.
+func ZeroBytes(b []byte) {
+	for i := range b {
+		b[i] = 0
+	}
+}
+
 // SetupPatientDEK generates a fresh random 32-byte DEK for patientURN, encrypts it
 // with the KEK, and stores it in the KeyVault. Returns the plaintext DEK.
 func (e *Engine) SetupPatientDEK(ctx context.Context, patientURN string) ([]byte, error) {
@@ -93,10 +101,12 @@ func (e *Engine) SetupPatientDEK(ctx context.Context, patientURN string) ([]byte
 
 	encDEK, err := e.encryptWithKEK(dek)
 	if err != nil {
+		ZeroBytes(dek)
 		return nil, fmt.Errorf("crypto: encrypt dek: %w", err)
 	}
 
 	if err := e.vault.PutDEK(ctx, patientURN, encDEK); err != nil {
+		ZeroBytes(dek)
 		return nil, fmt.Errorf("crypto: save dek to vault: %w", err)
 	}
 
@@ -132,10 +142,23 @@ func (e *Engine) EnsurePatientDEK(ctx context.Context, patientURN string) ([]byt
 
 // EncryptPatientData encrypts patient data using the patient's DEK from vault under XChaCha20-Poly1305.
 func (e *Engine) EncryptPatientData(ctx context.Context, patientURN string, aad, plaintext []byte) (ciphertext, nonce []byte, err error) {
-	dek, err := e.EnsurePatientDEK(ctx, patientURN)
+	return e.EncryptPayload(ctx, patientURN, aad, plaintext)
+}
+
+// DecryptPatientData decrypts patient data using the patient's DEK from vault under XChaCha20-Poly1305.
+// Returns ErrKeyNotFound if the patient's DEK has been deleted (Crypto-Shredded).
+func (e *Engine) DecryptPatientData(ctx context.Context, patientURN string, aad, ciphertext, nonce []byte) ([]byte, error) {
+	return e.DecryptPayload(ctx, patientURN, aad, ciphertext, nonce)
+}
+
+// EncryptPayload encrypts any domain payload using the entity/patient DEK from vault under XChaCha20-Poly1305.
+// Ensures that ephemeral keys in memory are wiped with ZeroBytes upon completion.
+func (e *Engine) EncryptPayload(ctx context.Context, urn string, aad, plaintext []byte) (ciphertext, nonce []byte, err error) {
+	dek, err := e.EnsurePatientDEK(ctx, urn)
 	if err != nil {
 		return nil, nil, fmt.Errorf("crypto: get dek for encrypt: %w", err)
 	}
+	defer ZeroBytes(dek)
 
 	aead, err := chacha20poly1305.NewX(dek)
 	if err != nil {
@@ -151,13 +174,14 @@ func (e *Engine) EncryptPatientData(ctx context.Context, patientURN string, aad,
 	return ciphertext, nonce, nil
 }
 
-// DecryptPatientData decrypts patient data using the patient's DEK from vault under XChaCha20-Poly1305.
-// Returns ErrKeyNotFound if the patient's DEK has been deleted (Crypto-Shredded).
-func (e *Engine) DecryptPatientData(ctx context.Context, patientURN string, aad, ciphertext, nonce []byte) ([]byte, error) {
-	dek, err := e.GetPatientDEK(ctx, patientURN)
+// DecryptPayload decrypts any domain payload using the entity/patient DEK from vault under XChaCha20-Poly1305.
+// Ensures that ephemeral keys in memory are wiped with ZeroBytes upon completion.
+func (e *Engine) DecryptPayload(ctx context.Context, urn string, aad, ciphertext, nonce []byte) ([]byte, error) {
+	dek, err := e.GetPatientDEK(ctx, urn)
 	if err != nil {
 		return nil, fmt.Errorf("crypto: get dek for decrypt: %w", err)
 	}
+	defer ZeroBytes(dek)
 
 	aead, err := chacha20poly1305.NewX(dek)
 	if err != nil {
@@ -170,6 +194,33 @@ func (e *Engine) DecryptPatientData(ctx context.Context, patientURN string, aad,
 	}
 
 	return plaintext, nil
+}
+
+// EncryptStruct serializes a Go struct to JSON and encrypts it using the entity's DEK.
+// Transient plaintext JSON buffer is securely wiped with ZeroBytes.
+func (e *Engine) EncryptStruct(ctx context.Context, urn string, aad []byte, source any) (ciphertext, nonce []byte, err error) {
+	data, err := json.Marshal(source)
+	if err != nil {
+		return nil, nil, fmt.Errorf("crypto: marshal struct: %w", err)
+	}
+	defer ZeroBytes(data)
+
+	return e.EncryptPayload(ctx, urn, aad, data)
+}
+
+// DecryptInto decrypts a ciphertext payload and unmarshals the JSON into the target struct.
+// Transient decrypted buffer is securely wiped with ZeroBytes.
+func (e *Engine) DecryptInto(ctx context.Context, urn string, aad, ciphertext, nonce []byte, target any) error {
+	plaintext, err := e.DecryptPayload(ctx, urn, aad, ciphertext, nonce)
+	if err != nil {
+		return err
+	}
+	defer ZeroBytes(plaintext)
+
+	if err := json.Unmarshal(plaintext, target); err != nil {
+		return fmt.Errorf("crypto: unmarshal decrypted payload: %w", err)
+	}
+	return nil
 }
 
 // Seal encrypts plaintext using the global KEK directly.

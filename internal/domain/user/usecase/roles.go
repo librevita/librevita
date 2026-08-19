@@ -2,38 +2,21 @@ package usecase
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/google/uuid"
-
-	"librevita.org/internal/domain/user/repository"
-)
-
-// Role errors.
-var (
-	ErrDuplicateRole = errors.New("usecase: role already exists")
-	ErrSystemRole    = errors.New("usecase: system roles cannot be renamed or deleted")
-	ErrRoleInUse     = errors.New("usecase: role is assigned to accounts")
 )
 
 const maxRoleNameLen = 40
 
 // ListRoles returns every role, system roles first.
-func (s *Service) ListRoles(ctx context.Context) ([]repository.Role, error) {
-	rows, err := s.users.ListRoles(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("usecase: list roles: %w", err)
-	}
-	return rows, nil
+func (s *Service) ListRoles(ctx context.Context) ([]Role, error) {
+	return s.roleRepo.List(ctx)
 }
 
-// CreateRole adds a new role. The four seeded roles are the system ones;
-// new roles are ordinary rows the administrator manages freely. Clinical
-// roles appear in the physician directory and take part in the staff
-// change workflow.
-func (s *Service) CreateRole(ctx context.Context, name string, clinical bool) (*repository.Role, error) {
+// CreateRole adds a new role.
+func (s *Service) CreateRole(ctx context.Context, name string, clinical bool) (*Role, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return nil, &ValidationError{Msg: "role name is required"}
@@ -45,20 +28,15 @@ func (s *Service) CreateRole(ctx context.Context, name string, clinical bool) (*
 	if err != nil {
 		return nil, fmt.Errorf("usecase: generate role id: %w", err)
 	}
-	role, err := s.users.CreateRole(ctx, repository.CreateRoleParams{ID: id, Name: name, IsClinical: clinical})
-	if err != nil {
-		if strings.Contains(err.Error(), "UNIQUE") {
-			return nil, ErrDuplicateRole
-		}
-		return nil, fmt.Errorf("usecase: create role: %w", err)
-	}
-	return &role, nil
+	return s.roleRepo.Create(ctx, &Role{
+		ID:         id,
+		Name:       name,
+		IsClinical: clinical,
+	})
 }
 
-// RenameRole changes a non-system role's name. The CEL policies match on
-// names, so renaming a role also means updating the policies that
-// reference it.
-func (s *Service) RenameRole(ctx context.Context, id, name string) (*repository.Role, error) {
+// RenameRole changes a non-system role's name.
+func (s *Service) RenameRole(ctx context.Context, id, name string) (*Role, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return nil, &ValidationError{Msg: "role name is required"}
@@ -66,68 +44,76 @@ func (s *Service) RenameRole(ctx context.Context, id, name string) (*repository.
 	if len(name) > maxRoleNameLen {
 		return nil, &ValidationError{Msg: "role name is too long"}
 	}
-	current, err := s.users.GetRoleByID(ctx, uuid.MustParse(id))
+	rUUID, err := uuid.Parse(id)
+	if err != nil {
+		return nil, fmt.Errorf("usecase: invalid role id: %w", err)
+	}
+	current, err := s.roleRepo.GetByID(ctx, rUUID)
 	if err != nil {
 		return nil, fmt.Errorf("usecase: load role: %w", err)
 	}
 	if current.System {
 		return nil, ErrSystemRole
 	}
-	role, err := s.users.RenameRole(ctx, repository.RenameRoleParams{Name: name, ID: uuid.MustParse(id)})
-	if err != nil {
-		if strings.Contains(err.Error(), "UNIQUE") {
-			return nil, ErrDuplicateRole
-		}
-		return nil, fmt.Errorf("usecase: rename role: %w", err)
-	}
-	return &role, nil
+	return s.roleRepo.Update(ctx, &Role{
+		ID:         rUUID,
+		Name:       name,
+		IsClinical: current.IsClinical,
+	})
 }
 
 // DeleteRole removes a non-system role that no account uses.
 func (s *Service) DeleteRole(ctx context.Context, id string) error {
-	current, err := s.users.GetRoleByID(ctx, uuid.MustParse(id))
+	rUUID, err := uuid.Parse(id)
+	if err != nil {
+		return fmt.Errorf("usecase: invalid role id: %w", err)
+	}
+	current, err := s.roleRepo.GetByID(ctx, rUUID)
 	if err != nil {
 		return fmt.Errorf("usecase: load role: %w", err)
 	}
 	if current.System {
 		return ErrSystemRole
 	}
-	count, err := s.users.CountUsersByRoleID(ctx, uuid.MustParse(id))
+	count, err := s.roleRepo.CountUsersWithRole(ctx, rUUID)
 	if err != nil {
 		return fmt.Errorf("usecase: count role users: %w", err)
 	}
 	if count > 0 {
 		return ErrRoleInUse
 	}
-	if err := s.users.DeleteRole(ctx, uuid.MustParse(id)); err != nil {
-		return fmt.Errorf("usecase: delete role: %w", err)
-	}
-	return nil
+	return s.roleRepo.Delete(ctx, rUUID)
 }
 
-// SetRoleClinical marks a non-system role as clinical staff, which puts
-// its accounts in the physician directory and the change workflow.
+// SetRoleClinical marks a non-system role as clinical staff.
 func (s *Service) SetRoleClinical(ctx context.Context, id string, clinical bool) error {
-	current, err := s.users.GetRoleByID(ctx, uuid.MustParse(id))
+	rUUID, err := uuid.Parse(id)
+	if err != nil {
+		return fmt.Errorf("usecase: invalid role id: %w", err)
+	}
+	current, err := s.roleRepo.GetByID(ctx, rUUID)
 	if err != nil {
 		return fmt.Errorf("usecase: load role: %w", err)
 	}
 	if current.System {
 		return ErrSystemRole
 	}
-	if _, err := s.users.SetRoleClinical(ctx, repository.SetRoleClinicalParams{
-		IsClinical: clinical, ID: uuid.MustParse(id),
-	}); err != nil {
+	_, err = s.roleRepo.Update(ctx, &Role{
+		ID:         rUUID,
+		Name:       current.Name,
+		IsClinical: clinical,
+	})
+	if err != nil {
 		return fmt.Errorf("usecase: set role clinical: %w", err)
 	}
 	return nil
 }
 
 // RoleByID loads a role.
-func (s *Service) RoleByID(ctx context.Context, id string) (*repository.Role, error) {
-	role, err := s.users.GetRoleByID(ctx, uuid.MustParse(id))
+func (s *Service) RoleByID(ctx context.Context, id string) (*Role, error) {
+	rUUID, err := uuid.Parse(id)
 	if err != nil {
-		return nil, fmt.Errorf("usecase: load role: %w", err)
+		return nil, fmt.Errorf("usecase: invalid role id: %w", err)
 	}
-	return &role, nil
+	return s.roleRepo.GetByID(ctx, rUUID)
 }

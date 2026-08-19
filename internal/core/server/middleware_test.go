@@ -9,10 +9,13 @@ import (
 	"strings"
 	"testing"
 
+	"entgo.io/ent/dialect"
+	entsql "entgo.io/ent/dialect/sql"
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 	_ "modernc.org/sqlite"
 
+	"librevita.org/ent"
 	"librevita.org/internal/core/audit"
 	"librevita.org/internal/core/auth"
 	"librevita.org/internal/core/config"
@@ -23,7 +26,7 @@ import (
 	"librevita.org/internal/ui"
 )
 
-func openTestDB(t *testing.T) *sql.DB {
+func openTestDB(t *testing.T) *ent.Client {
 	t.Helper()
 	db, err := sql.Open("sqlite", "file:server-test-"+uuid.NewString()+"?mode=memory&cache=shared")
 	if err != nil {
@@ -35,14 +38,18 @@ func openTestDB(t *testing.T) *sql.DB {
 	if err := database.Migrate(context.Background(), db, slog.New(slog.DiscardHandler)); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
-	return db
+
+	drv := entsql.OpenDB(dialect.SQLite, db)
+	client := ent.NewClient(ent.Driver(drv))
+	t.Cleanup(func() { client.Close() })
+	return client
 }
 
 func testLogger() *slog.Logger { return slog.New(slog.DiscardHandler) }
 
 func TestRequireAuthRedirectsAnonymous(t *testing.T) {
 	db := openTestDB(t)
-	sessions, err := auth.NewSessionManager(db, &config.Config{Mode: "development"}, testLogger())
+	sessions, err := auth.NewSessionManager(auth.NewSessionRepository(db), &config.Config{Mode: "development"}, testLogger())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,7 +67,7 @@ func TestRequireAuthRedirectsAnonymous(t *testing.T) {
 
 func TestRequireAuthAcceptsValidSession(t *testing.T) {
 	db := openTestDB(t)
-	sessions, err := auth.NewSessionManager(db, &config.Config{Mode: "development"}, testLogger())
+	sessions, err := auth.NewSessionManager(auth.NewSessionRepository(db), &config.Config{Mode: "development"}, testLogger())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,7 +103,7 @@ func TestRequireAuthAcceptsValidSession(t *testing.T) {
 }
 
 func TestRequirePolicyAllowsAndDenies(t *testing.T) {
-	pe, err := policy.NewPolicyEngine(openTestDB(t), testLogger())
+	pe, err := policy.NewPolicyEngine(policy.NewPolicyRepository(openTestDB(t)), testLogger())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -135,7 +142,7 @@ func TestRequirePolicyAllowsAndDenies(t *testing.T) {
 }
 
 func TestRequirePolicyRedirectsWithoutPrincipal(t *testing.T) {
-	pe, err := policy.NewPolicyEngine(openTestDB(t), testLogger())
+	pe, err := policy.NewPolicyEngine(policy.NewPolicyRepository(openTestDB(t)), testLogger())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -157,11 +164,11 @@ func TestRequirePolicyRedirectsWithoutPrincipal(t *testing.T) {
 
 func TestRequirePolicyDenialIsAudited(t *testing.T) {
 	db := openTestDB(t)
-	auditLogger, err := audit.NewLogger(db, testLogger())
+	auditLogger, err := audit.NewLogger(audit.NewAuditRepository(db), testLogger())
 	if err != nil {
 		t.Fatal(err)
 	}
-	pe, err := policy.NewPolicyEngine(openTestDB(t), testLogger())
+	pe, err := policy.NewPolicyEngine(policy.NewPolicyRepository(openTestDB(t)), testLogger())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -186,20 +193,19 @@ func TestRequirePolicyDenialIsAudited(t *testing.T) {
 		t.Fatalf("GET /admin = %d, want 403", rec.Code)
 	}
 
-	var action, resource, result string
-	if err := db.QueryRow(`SELECT action, resource, result FROM audit_log`).
-		Scan(&action, &resource, &result); err != nil {
+	lastAudit, err := db.AuditLog.Query().First(context.Background())
+	if err != nil {
 		t.Fatalf("read audit_log: %v", err)
 	}
-	if action != "authorize" || resource != "policy:admin.view" || result != types.AuditResultFailure.String() {
-		t.Fatalf("unexpected audit row: %q %q %q", action, resource, result)
+	if lastAudit.Action != "authorize" || lastAudit.Resource != "policy:admin.view" || lastAudit.Result != types.AuditResultFailure.String() {
+		t.Fatalf("unexpected audit row: %q %q %q", lastAudit.Action, lastAudit.Resource, lastAudit.Result)
 	}
 }
 
 func newTestAudit(t *testing.T) *audit.Logger {
 	t.Helper()
 	db := openTestDB(t)
-	l, err := audit.NewLogger(db, testLogger())
+	l, err := audit.NewLogger(audit.NewAuditRepository(db), testLogger())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -208,7 +214,7 @@ func newTestAudit(t *testing.T) *audit.Logger {
 
 func TestNotFoundRedirectsAnonymous(t *testing.T) {
 	db := openTestDB(t)
-	sessions, err := auth.NewSessionManager(db, &config.Config{Mode: "development"}, testLogger())
+	sessions, err := auth.NewSessionManager(auth.NewSessionRepository(db), &config.Config{Mode: "development"}, testLogger())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -228,7 +234,7 @@ func TestNotFoundRedirectsAnonymous(t *testing.T) {
 
 func TestNotFoundAuthenticated(t *testing.T) {
 	db := openTestDB(t)
-	sessions, err := auth.NewSessionManager(db, &config.Config{Mode: "development"}, testLogger())
+	sessions, err := auth.NewSessionManager(auth.NewSessionRepository(db), &config.Config{Mode: "development"}, testLogger())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -257,7 +263,7 @@ func TestNotFoundAuthenticated(t *testing.T) {
 
 func TestNotFoundPublicPaths(t *testing.T) {
 	db := openTestDB(t)
-	sessions, err := auth.NewSessionManager(db, &config.Config{Mode: "development"}, testLogger())
+	sessions, err := auth.NewSessionManager(auth.NewSessionRepository(db), &config.Config{Mode: "development"}, testLogger())
 	if err != nil {
 		t.Fatal(err)
 	}

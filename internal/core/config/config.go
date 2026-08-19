@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -24,8 +25,9 @@ import (
 
 // Supported persistence drivers.
 const (
-	DriverSQLite = "sqlite" // Embedded SQLite for the monolith and edge deployments.
-	DriverDqlite = "dqlite" // dqlite cluster for distributed deployments.
+	DriverSQLite   = "sqlite"   // Embedded SQLite for the monolith and edge deployments.
+	DriverPostgres = "postgres" // PostgreSQL for scalable cloud deployments.
+	DriverDqlite   = "dqlite"   // dqlite cluster for distributed deployments.
 )
 
 // Supported production log destinations.
@@ -166,14 +168,17 @@ type AuthConfig struct {
 }
 
 // DatabaseConfig defines the active persistence backend. The
-// backend-specific settings live in their own section (sqlite or
-// dqlite), mirroring the storage configuration.
+// backend-specific settings live in their own section (sqlite,
+// postgres, or dqlite), mirroring the storage configuration.
 type DatabaseConfig struct {
-	// Driver is DriverSQLite or DriverDqlite.
+	// Driver is DriverSQLite, DriverPostgres, or DriverDqlite.
 	Driver string `koanf:"driver"`
 
 	// SQLite configures the embedded SQLite backend.
 	SQLite SQLiteConfig `koanf:"sqlite"`
+
+	// Postgres configures the PostgreSQL backend.
+	Postgres PostgresConfig `koanf:"postgres"`
 
 	// Dqlite configures the dqlite cluster backend.
 	Dqlite DqliteConfig `koanf:"dqlite"`
@@ -183,6 +188,61 @@ type DatabaseConfig struct {
 type SQLiteConfig struct {
 	// Path is the SQLite database file path.
 	Path string `koanf:"path"`
+}
+
+// PostgresConfig configures the PostgreSQL backend.
+type PostgresConfig struct {
+	// URL is the full connection string / DSN (e.g. "postgres://user:pass@host:5432/dbname?sslmode=disable").
+	URL string `koanf:"url"`
+	// Host is the PostgreSQL server host.
+	Host string `koanf:"host"`
+	// Port is the PostgreSQL server port (default 5432).
+	Port int `koanf:"port"`
+	// User is the PostgreSQL username.
+	User string `koanf:"user"`
+	// Password is the PostgreSQL password.
+	Password string `koanf:"password"`
+	// Database is the PostgreSQL database name.
+	Database string `koanf:"database"`
+	// SSLMode is the PostgreSQL SSL mode (disable, require, verify-ca, verify-full; default "disable").
+	SSLMode string `koanf:"sslmode"`
+	// MaxOpenConns is the maximum number of open connections (default 25).
+	MaxOpenConns int `koanf:"max_open_conns"`
+	// MaxIdleConns is the maximum number of idle connections (default 5).
+	MaxIdleConns int `koanf:"max_idle_conns"`
+}
+
+// DSN returns the PostgreSQL connection string.
+func (p *PostgresConfig) DSN() string {
+	if strings.TrimSpace(p.URL) != "" {
+		return strings.TrimSpace(p.URL)
+	}
+	host := p.Host
+	if host == "" {
+		host = "127.0.0.1"
+	}
+	port := p.Port
+	if port <= 0 {
+		port = 5432
+	}
+	ssl := p.SSLMode
+	if ssl == "" {
+		ssl = "disable"
+	}
+	user := p.User
+	if user == "" {
+		user = "postgres"
+	}
+	db := p.Database
+	if db == "" {
+		db = "librevita"
+	}
+	if p.Password != "" {
+		return fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=%s",
+			url.QueryEscape(user), url.QueryEscape(p.Password), host, port, db, ssl)
+	}
+	return fmt.Sprintf("postgres://%s@%s:%d/%s?sslmode=%s",
+		url.QueryEscape(user), host, port, db, ssl)
 }
 
 // DqliteConfig configures the dqlite cluster backend.
@@ -292,8 +352,17 @@ func RegisterFlags(fs *pflag.FlagSet) {
 	stringFlag(fs, "trusted-proxies", "", "comma-separated proxy IPs allowed to set X-Forwarded-For")
 	intFlag(fs, "hsts-max-age", 0, "Strict-Transport-Security max-age in seconds (0 disables; HTTPS deployments only)")
 	stringFlag(fs, "data-dir", defaultDataDir, "base directory for database and logs")
-	stringFlag(fs, "db-driver", DriverSQLite, "database backend: sqlite or dqlite")
+	stringFlag(fs, "db-driver", DriverSQLite, "database backend: sqlite, postgres, or dqlite")
 	stringFlag(fs, "db-sqlite-path", "", "SQLite database path")
+	stringFlag(fs, "db-postgres-url", "", "PostgreSQL connection string (DSN)")
+	stringFlag(fs, "db-postgres-host", "", "PostgreSQL host")
+	intFlag(fs, "db-postgres-port", 5432, "PostgreSQL port")
+	stringFlag(fs, "db-postgres-user", "", "PostgreSQL user")
+	stringFlag(fs, "db-postgres-password", "", "PostgreSQL password")
+	stringFlag(fs, "db-postgres-database", "", "PostgreSQL database name")
+	stringFlag(fs, "db-postgres-sslmode", "disable", "PostgreSQL SSL mode (disable, require, verify-ca, verify-full)")
+	intFlag(fs, "db-postgres-max-open-conns", 25, "PostgreSQL max open connections")
+	intFlag(fs, "db-postgres-max-idle-conns", 5, "PostgreSQL max idle connections")
 	stringFlag(fs, "db-dqlite-addrs", "", "comma-separated dqlite node addresses (wire protocol)")
 	stringFlag(fs, "db-dqlite-discovery-srv", "", "DNS SRV record seeding the dqlite node candidates, e.g. _dqlite._tcp.librevita.svc.cluster.local")
 	stringFlag(fs, "db-dqlite-database", defaultDqliteDatabase, "dqlite database name")
@@ -451,6 +520,22 @@ func (c *Config) normalize() {
 	c.Database.Dqlite.Addrs = strings.TrimSpace(c.Database.Dqlite.Addrs)
 	c.Database.Dqlite.DiscoverySRV = strings.TrimSpace(c.Database.Dqlite.DiscoverySRV)
 
+	c.Database.Postgres.URL = strings.TrimSpace(c.Database.Postgres.URL)
+	c.Database.Postgres.Host = strings.TrimSpace(c.Database.Postgres.Host)
+	c.Database.Postgres.User = strings.TrimSpace(c.Database.Postgres.User)
+	c.Database.Postgres.Password = strings.TrimSpace(c.Database.Postgres.Password)
+	c.Database.Postgres.Database = strings.TrimSpace(c.Database.Postgres.Database)
+	c.Database.Postgres.SSLMode = strings.TrimSpace(c.Database.Postgres.SSLMode)
+	if c.Database.Postgres.Port <= 0 {
+		c.Database.Postgres.Port = 5432
+	}
+	if c.Database.Postgres.MaxOpenConns <= 0 {
+		c.Database.Postgres.MaxOpenConns = 25
+	}
+	if c.Database.Postgres.MaxIdleConns <= 0 {
+		c.Database.Postgres.MaxIdleConns = 5
+	}
+
 	c.Logging.Mode = strings.ToLower(strings.TrimSpace(c.Logging.Mode))
 	if c.Logging.Mode == "" {
 		c.Logging.Mode = defaultLogMode
@@ -492,10 +577,10 @@ func (c *Config) validate() error {
 	}
 
 	switch c.Database.Driver {
-	case DriverSQLite, DriverDqlite:
+	case DriverSQLite, DriverPostgres, DriverDqlite:
 	default:
-		return fmt.Errorf("config: invalid database.driver %q (use %q or %q)",
-			c.Database.Driver, DriverSQLite, DriverDqlite)
+		return fmt.Errorf("config: invalid database.driver %q (use %q, %q, or %q)",
+			c.Database.Driver, DriverSQLite, DriverPostgres, DriverDqlite)
 	}
 	if c.Database.Driver == DriverDqlite {
 		addresses := 0
@@ -573,6 +658,24 @@ func mapFlagKey(name string) string {
 		return "database.driver"
 	case "db-sqlite-path", "db_sqlite_path":
 		return "database.sqlite.path"
+	case "db-postgres-url", "db_postgres_url":
+		return "database.postgres.url"
+	case "db-postgres-host", "db_postgres_host":
+		return "database.postgres.host"
+	case "db-postgres-port", "db_postgres_port":
+		return "database.postgres.port"
+	case "db-postgres-user", "db_postgres_user":
+		return "database.postgres.user"
+	case "db-postgres-password", "db_postgres_password":
+		return "database.postgres.password"
+	case "db-postgres-database", "db_postgres_database":
+		return "database.postgres.database"
+	case "db-postgres-sslmode", "db_postgres_sslmode":
+		return "database.postgres.sslmode"
+	case "db-postgres-max-open-conns", "db_postgres_max_open_conns":
+		return "database.postgres.max_open_conns"
+	case "db-postgres-max-idle-conns", "db_postgres_max_idle_conns":
+		return "database.postgres.max_idle_conns"
 	case "db-dqlite-addrs", "db_dqlite_addrs":
 		return "database.dqlite.addrs"
 	case "db-dqlite-discovery-srv", "db_dqlite_discovery_srv":
@@ -657,6 +760,24 @@ func mapEnvironmentKey(key string) string {
 		return "database.driver"
 	case "database_sqlite_path":
 		return "database.sqlite.path"
+	case "database_postgres_url":
+		return "database.postgres.url"
+	case "database_postgres_host":
+		return "database.postgres.host"
+	case "database_postgres_port":
+		return "database.postgres.port"
+	case "database_postgres_user":
+		return "database.postgres.user"
+	case "database_postgres_password":
+		return "database.postgres.password"
+	case "database_postgres_database":
+		return "database.postgres.database"
+	case "database_postgres_sslmode":
+		return "database.postgres.sslmode"
+	case "database_postgres_max_open_conns":
+		return "database.postgres.max_open_conns"
+	case "database_postgres_max_idle_conns":
+		return "database.postgres.max_idle_conns"
 	case "database_dqlite_addrs":
 		return "database.dqlite.addrs"
 	case "database_dqlite_discovery_srv":

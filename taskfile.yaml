@@ -27,7 +27,6 @@ vars:
   GO_VERSION: 1.26.6
   NODE_VERSION: 24.19.0
   TEMPL_VERSION: v0.3.1020
-  SQLC_VERSION: v1.31.1
   GOLANGCI_VERSION: v2.12.2
   GOVULN_VERSION: v1.1.4
 tasks:
@@ -46,31 +45,62 @@ tasks:
     desc: Install the pinned Go tools into .tools/bin
     cmds:
       - 'GOBIN={{.ROOT_DIR}}/.tools/bin go install github.com/a-h/templ/cmd/templ@{{.TEMPL_VERSION}}'
-      - 'GOBIN={{.ROOT_DIR}}/.tools/bin go install github.com/sqlc-dev/sqlc/cmd/sqlc@{{.SQLC_VERSION}}'
       - 'GOBIN={{.ROOT_DIR}}/.tools/bin go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@{{.GOLANGCI_VERSION}}'
       - 'GOBIN={{.ROOT_DIR}}/.tools/bin go install golang.org/x/vuln/cmd/govulncheck@{{.GOVULN_VERSION}}'
     sources:
       - taskfile.yaml
     generates:
       - .tools/bin/templ
-      - .tools/bin/sqlc
       - .tools/bin/golangci-lint
       - .tools/bin/govulncheck
+  # Generated Ent entities and versioned migration helpers.
+  gen-ent:
+    desc: Regenerate Ent client, entities, and migration helpers
+    cmds:
+      - go generate ./internal/database/schema
+    sources:
+      - internal/database/schema/**/*.go
+    generates:
+      - ent/client.go
+      - ent/ent.go
+      - ent/mutation.go
+      - ent/patient.go
+      - ent/runtime.go
+      - ent/tx.go
+      - ent/migrate/migrate.go
+      - ent/migrate/schema.go
+  # Generate a new versioned Goose migration using Atlas from Ent schema diffs for SQLite and PostgreSQL.
+  db-diff:
+    desc: 'Generate versioned Goose migrations from Ent schema for SQLite and PostgreSQL (usage: task db-diff -- name=add_patient_model)'
+    deps:
+      - gen-ent
+    cmds:
+      - go run ./cmd/migrate --dialect=sqlite --dir=internal/database/migrations/sqlite --name={{.name}}
+      - cmd: go run ./cmd/migrate --dialect=postgres --dir=internal/database/migrations/postgres --name={{.name}}
+        ignore_error: true
+    vars:
+      name: '{{.name | default "changes"}}'
+
+  db-diff-sqlite:
+    desc: 'Generate versioned Goose migration for SQLite (usage: task db-diff-sqlite -- name=add_patient_model)'
+    deps:
+      - gen-ent
+    cmds:
+      - go run ./cmd/migrate --dialect=sqlite --dir=internal/database/migrations/sqlite --name={{.name}}
+    vars:
+      name: '{{.name | default "changes"}}'
+
+  db-diff-postgres:
+    desc: 'Generate versioned Goose migration for PostgreSQL (usage: task db-diff-postgres -- name=add_patient_model)'
+    deps:
+      - gen-ent
+    cmds:
+      - go run ./cmd/migrate --dialect=postgres --dir=internal/database/migrations/postgres --name={{.name}}
+    vars:
+      name: '{{.name | default "changes"}}'
   # Consolidated schema for sqlc, derived from the Goose migrations (the
   # single source of truth). Only the packages on the schemagen import
   # chain are watched, so changes elsewhere do not regenerate the schema.
-  gen-schema:
-    desc: Regenerate db/schema/schema.sql from the migrations
-    cmds:
-      - go run ./cmd/schemagen --out {{.ROOT_DIR}}/db/schema/schema.sql
-    sources:
-      - cmd/schemagen/**/*.go
-      - internal/core/database/**/*.go
-      - internal/core/config/**/*.go
-      - db/embed.go
-      - db/migrations/**/*.sql
-    generates:
-      - db/schema/schema.sql
   # Generated templ views, exported to the workspace for editor support.
   gen-templ:
     desc: Generate the templ views
@@ -82,29 +112,11 @@ tasks:
       - '**/*.templ'
     generates:
       - '**/*_templ.go'
-  # Generated sqlc repositories, from the consolidated schema and the
-  # queries; anything else never re-runs this stage.
-  gen-sqlc:
-    desc: Generate the sqlc repositories
-    deps:
-      - tools
-      - gen-schema
-    cmds:
-      - 'PATH={{.ROOT_DIR}}/.tools/bin:$PATH sqlc generate'
-    sources:
-      - sqlc.yaml
-      - db/query/**/*.sql
-      - db/schema/schema.sql
-    generates:
-      - '**/repository/*.sql.go'
-      - '**/repository/db.go'
-      - '**/repository/models.go'
   gen:
-    desc: Regenerate schema, templ views and sqlc repositories
+    desc: Regenerate Ent models, schema, and templ views
     deps:
-      - gen-schema
+      - gen-ent
       - gen-templ
-      - gen-sqlc
   # ------------------------------------------------------------------------
   # Frontend (Node)
   # ------------------------------------------------------------------------
@@ -285,6 +297,7 @@ tasks:
       - 'internal/**/*.templ'
       - 'internal/ui/static/**'
       - 'pkg/**/*.go'
+      - 'ent/**/*.go'
       - 'db/**'
       - go.mod
       - go.sum
@@ -307,6 +320,7 @@ tasks:
       - 'internal/**/*.templ'
       - 'internal/ui/static/**'
       - 'pkg/**/*.go'
+      - 'ent/**/*.go'
       - 'db/**'
       - go.mod
       - go.sum

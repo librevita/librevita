@@ -1,7 +1,7 @@
 package views
 
 import (
-	"librevita.org/internal/domain/clinic"
+	clinicmodel "librevita.org/internal/domain/clinic/model"
 	"librevita.org/internal/types"
 	"librevita.org/internal/ui/layouts"
 )
@@ -74,10 +74,10 @@ templ Setup(token string, errMsg string) {
 						<div>
 							<label class="label" for="clinic_timezone">Timezone</label>
 							<select class="input" id="clinic_timezone" name="clinic_timezone">
-								for _, g := range clinic.TimeZones {
+								for _, g := range clinicmodel.TimeZones {
 									<optgroup label={ g.Label }>
 										for _, zone := range g.Zones {
-											if zone == clinic.DefaultTimezone {
+											if zone == clinicmodel.DefaultTimezone {
 												<option value={ zone } selected>{ zone }</option>
 											} else {
 												<option value={ zone }>{ zone }</option>

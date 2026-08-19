@@ -23,6 +23,7 @@ const (
 // a misconfigured backend fails fast.
 var Module = fx.Module("storage",
 	fx.Provide(NewStore),
+	fx.Provide(NewIndexRepository),
 	fx.Provide(NewFileManager),
 	fx.Invoke(registerLifecycle, registerReconciler),
 )

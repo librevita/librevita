@@ -36,6 +36,3 @@ linters:
 issues:
   exclude-files:
     - "**/*_templ.go"
-    - "**/repository/*.sql.go"
-    - "**/repository/db.go"
-    - "**/repository/models.go"

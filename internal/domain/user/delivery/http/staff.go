@@ -14,7 +14,6 @@ import (
 	"librevita.org/internal/core/auth"
 	"librevita.org/internal/core/server"
 	"librevita.org/internal/domain/user/delivery/views"
-	"librevita.org/internal/domain/user/repository"
 	"librevita.org/internal/domain/user/usecase"
 	"librevita.org/internal/types"
 	"librevita.org/internal/ui/components"
@@ -45,18 +44,18 @@ func (h *Handler) StaffPage(c echo.Context) error {
 
 const staffPageSize = 20
 
-func (h *Handler) physicianRows(rows []repository.ListPhysiciansPageRow) []views.PhysicianRow {
+func (h *Handler) physicianRows(rows []usecase.ListPhysiciansPageRow) []views.PhysicianRow {
 	out := make([]views.PhysicianRow, 0, len(rows))
 	for _, r := range rows {
 		out = append(out, views.PhysicianRow{
 			ID: r.ID.String(), Name: r.DisplayName, Email: r.Email,
-			Active: r.Active, Specialties: asString(r.Specialties),
+			Active: r.Active, Specialties: r.Specialties,
 		})
 	}
 	return out
 }
 
-// asString flattens the sqlc GROUP_CONCAT column, which is typed
+// asString flattens the GROUP_CONCAT column, which is typed
 // interface{} and may hold a NULL-derived empty value.
 func asString(v interface{}) string {
 	if s, ok := v.(string); ok {
@@ -188,23 +187,31 @@ func (h *Handler) MyStaffRequestsPage(c echo.Context) error {
 
 // staffRequestViews builds the change request rows with readable
 // summaries and decision details.
-func (h *Handler) staffRequestViews(ctx context.Context, rows []repository.ListStaffChangeRequestsFilteredRow) ([]views.StaffRequestRow, error) {
+func (h *Handler) staffRequestViews(ctx context.Context, rows []usecase.ListStaffChangeRequestsFilteredRow) ([]views.StaffRequestRow, error) {
 	clock, err := h.userClock(ctx)
 	if err != nil {
 		return nil, err
 	}
 	out := make([]views.StaffRequestRow, 0, len(rows))
 	for _, r := range rows {
-		view, err := h.staffRequestView(ctx, r.UserID.String(), r.Changes, r.Status, r.RequesterEmail)
+		view, err := h.staffRequestView(ctx, r.UserID.String(), r.Changes, r.Status, r.RequesterName)
 		if err != nil {
 			return nil, err
 		}
+		decisionNote := ""
+		if r.DecisionNote != nil {
+			decisionNote = *r.DecisionNote
+		}
+		decidedBy := ""
+		if r.DeciderName != nil {
+			decidedBy = *r.DeciderName
+		}
 		view.ID = r.ID.String()
-		view.UserName = r.UserName
-		view.UserEmail = r.UserEmail
+		view.UserName = r.StaffName
+		view.UserEmail = r.StaffEmail
 		view.CreatedAt = clock.FormatStored(r.CreatedAt)
-		view.DecisionNote = r.DecisionNote.String
-		view.DecidedByEmail = r.DecidedByEmail.String
+		view.DecisionNote = decisionNote
+		view.DecidedByEmail = decidedBy
 		out = append(out, view)
 	}
 	return out, nil

@@ -16,10 +16,10 @@ import (
 	"librevita.org/internal/core/policy"
 	"librevita.org/internal/core/server"
 	"librevita.org/internal/core/storage"
-	"librevita.org/internal/domain/clinic"
+	clinicmodel "librevita.org/internal/domain/clinic/model"
+	clinicusecase "librevita.org/internal/domain/clinic/usecase"
 	patientusecase "librevita.org/internal/domain/patient/usecase"
 	"librevita.org/internal/domain/user/delivery/views"
-	"librevita.org/internal/domain/user/repository"
 	"librevita.org/internal/domain/user/usecase"
 	"librevita.org/internal/types"
 	"librevita.org/internal/ui/components"
@@ -33,7 +33,7 @@ type Handler struct {
 	sessions *auth.SessionManager
 	policies *policy.PolicyEngine
 	audit    *audit.Logger
-	clocks   *clinic.ClockProvider
+	clocks   *clinicusecase.ClockProvider
 	files    *storage.FileManager
 	log      *slog.Logger
 }
@@ -41,7 +41,7 @@ type Handler struct {
 // NewHandler is the Fx provider.
 func NewHandler(svc *usecase.Service, patients *patientusecase.Service,
 	csrf *auth.CSRF, sessions *auth.SessionManager,
-	policies *policy.PolicyEngine, auditLogger *audit.Logger, clocks *clinic.ClockProvider,
+	policies *policy.PolicyEngine, auditLogger *audit.Logger, clocks *clinicusecase.ClockProvider,
 	files *storage.FileManager, log *slog.Logger) *Handler {
 	return &Handler{svc: svc, patients: patients, csrf: csrf, sessions: sessions,
 		policies: policies, audit: auditLogger, clocks: clocks, files: files, log: log}
@@ -243,11 +243,11 @@ func (h *Handler) Home(c echo.Context) error {
 		Clinic: views.ClinicInfo{
 			Name:     clinicRow.Name,
 			Timezone: clinicRow.Timezone,
-			City:     orEmpty(clinicRow.City),
-			State:    orEmpty(clinicRow.State),
-			TaxID:    orEmpty(clinicRow.TaxID),
-			Phone:    orEmpty(clinicRow.Phone),
-			Email:    orEmpty(clinicRow.Email),
+			City:     clinicRow.City,
+			State:    clinicRow.State,
+			TaxID:    clinicRow.TaxID,
+			Phone:    clinicRow.Phone,
+			Email:    clinicRow.Email,
 		},
 	}
 	for _, u := range users {
@@ -306,7 +306,7 @@ func (h *Handler) HomeActivity(c echo.Context) error {
 	return server.Render(c, http.StatusOK, views.ActivityFeed(rows, cursor))
 }
 
-func (h *Handler) activityRows(ctx context.Context, activity []audit.EventRow, clock *clinic.Clock) []views.ActivityRow {
+func (h *Handler) activityRows(ctx context.Context, activity []audit.EventRow, clock *clinicmodel.Clock) []views.ActivityRow {
 	out := make([]views.ActivityRow, 0, len(activity))
 	for _, ev := range activity {
 		row := views.ActivityRow{
@@ -338,7 +338,7 @@ func orEmpty(s *string) string {
 // preference.
 // userClock resolves the display clock: the user's personal timezone
 // when set, otherwise the clinic timezone.
-func (h *Handler) userClock(ctx context.Context) (*clinic.Clock, error) {
+func (h *Handler) userClock(ctx context.Context) (*clinicmodel.Clock, error) {
 	tz := ""
 	if p := server.PrincipalCtx(ctx); p != nil {
 		tz = p.Timezone
@@ -556,7 +556,7 @@ func createFormValues(in usecase.CreateUserInput) views.UserFormValues {
 }
 
 // userRows renders the list rows with the clinic timezone.
-func (h *Handler) userRows(rows []repository.ListUsersRow, clock *clinic.Clock) []views.UserListRow {
+func (h *Handler) userRows(rows []usecase.ListUsersRow, clock *clinicmodel.Clock) []views.UserListRow {
 	out := make([]views.UserListRow, 0, len(rows))
 	for _, r := range rows {
 		out = append(out, views.UserListRow{
@@ -673,7 +673,7 @@ func (h *Handler) UserUpdate(c echo.Context) error {
 // userChanges renders the changed fields for the audit detail. The
 // before row carries the role name; the submitted input carries the new
 // role name.
-func (h *Handler) userChanges(before *repository.GetUserByIDRow, after *repository.User, in usecase.UpdateUserInput) string {
+func (h *Handler) userChanges(before *usecase.GetUserByIDRow, after *usecase.User, in usecase.UpdateUserInput) string {
 	parts := make([]string, 0, 4)
 	if before.DisplayName != after.DisplayName {
 		parts = append(parts, "name: "+before.DisplayName+" -> "+after.DisplayName)
@@ -745,7 +745,7 @@ func (h *Handler) UserStatus(c echo.Context) error {
 }
 
 // specialtyViews joins the catalog with the user's selection.
-func (h *Handler) specialtyViews(all, selected []repository.Specialty) []views.SpecialtyView {
+func (h *Handler) specialtyViews(all, selected []usecase.Specialty) []views.SpecialtyView {
 	sel := make(map[string]bool, len(selected))
 	for _, sp := range selected {
 		sel[sp.ID.String()] = true
@@ -757,8 +757,7 @@ func (h *Handler) specialtyViews(all, selected []repository.Specialty) []views.S
 	return out
 }
 
-// SpecialtiesPage lists the clinic's specialty catalog, paginated like
-// the other registries.
+// SpecialtiesPage lists the clinic's specialty catalog, paginated like the other registries.
 func (h *Handler) SpecialtiesPage(c echo.Context) error {
 	ctx := c.Request().Context()
 	clinicID, err := h.clocks.ClinicID(ctx)
@@ -787,7 +786,7 @@ func (h *Handler) SpecialtiesPage(c echo.Context) error {
 
 const specialtyPageSize = 20
 
-func (h *Handler) specialtyRows(rows []repository.Specialty) []views.SpecialtyRow {
+func (h *Handler) specialtyRows(rows []usecase.Specialty) []views.SpecialtyRow {
 	out := make([]views.SpecialtyRow, 0, len(rows))
 	for _, sp := range rows {
 		out = append(out, views.SpecialtyRow{ID: sp.ID.String(), Name: sp.Name})
@@ -849,7 +848,7 @@ func (h *Handler) RolesPage(c echo.Context) error {
 		server.CSRFToken(c, h.csrf), server.Principal(c), h.roleViews(rows), ""))
 }
 
-func (h *Handler) roleViews(rows []repository.Role) []views.RoleView {
+func (h *Handler) roleViews(rows []usecase.Role) []views.RoleView {
 	out := make([]views.RoleView, 0, len(rows))
 	for _, r := range rows {
 		out = append(out, views.RoleView{ID: r.ID.String(), Name: r.Name, System: r.System, IsClinical: r.IsClinical})

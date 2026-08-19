@@ -9,17 +9,19 @@ import (
 
 	"github.com/pressly/goose/v3"
 
-	dbassets "librevita.org/db"
+	"librevita.org/internal/core/config"
+	"librevita.org/internal/database/migrations"
 )
-
-// migrationsDir is the directory inside the embedded filesystem.
-const migrationsDir = "migrations"
 
 // Migrate applies all pending Goose migrations to SQLite.
 // Migrations are embedded in the binary and are safe to run on every boot.
-
 func Migrate(ctx context.Context, db *sql.DB, log *slog.Logger) error {
-	provider, err := newProvider(db, log)
+	return MigrateWithDriver(ctx, db, config.DriverSQLite, log)
+}
+
+// MigrateWithDriver applies all pending Goose migrations for the specified database driver.
+func MigrateWithDriver(ctx context.Context, db *sql.DB, driver string, log *slog.Logger) error {
+	provider, err := newProvider(db, driver, log)
 	if err != nil {
 		return err
 	}
@@ -29,15 +31,24 @@ func Migrate(ctx context.Context, db *sql.DB, log *slog.Logger) error {
 	return nil
 }
 
-func newProvider(db *sql.DB, log *slog.Logger) (*goose.Provider, error) {
-	migrations, err := fs.Sub(dbassets.Migrations, migrationsDir)
-	if err != nil {
-		return nil, fmt.Errorf("migrate: embedded filesystem: %w", err)
+func newProvider(db *sql.DB, driver string, log *slog.Logger) (*goose.Provider, error) {
+	subPath := "sqlite"
+	dialect := goose.DialectSQLite3
+
+	if driver == config.DriverPostgres {
+		subPath = "postgres"
+		dialect = goose.DialectPostgres
 	}
+
+	subFS, err := fs.Sub(migrations.FS, subPath)
+	if err != nil {
+		return nil, fmt.Errorf("migrate: embedded filesystem for %q: %w", subPath, err)
+	}
+
 	return goose.NewProvider(
-		goose.DialectSQLite3,
+		dialect,
 		db,
-		migrations,
+		subFS,
 		goose.WithSlog(log),
 		goose.WithVerbose(true),
 	)

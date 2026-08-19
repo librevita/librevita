@@ -1,10 +1,11 @@
+// Package auth implements session-based authentication using PASETO v4.local
+// tokens with server-side revocation in the database.
 package auth
 
 import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
-	"database/sql"
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
@@ -15,58 +16,68 @@ import (
 
 	"aidanwoods.dev/go-paseto"
 	"github.com/google/uuid"
-	"librevita.org/internal/core/auth/repository"
+
 	"librevita.org/internal/core/config"
 	"librevita.org/internal/types"
 )
 
-const (
-	// SessionCookieName is the browser cookie holding the session token.
-	SessionCookieName = "lv_session"
+// SessionCookieName is the name of the session cookie.
+const SessionCookieName = "session"
 
-	// sessionTTL is the lifetime of a session.
-	sessionTTL = 7 * 24 * time.Hour
-)
+// sessionTTL is the validity period of a session token.
+const sessionTTL = 24 * time.Hour
 
-// ErrNoSession indicates an unknown, expired, revoked, or tampered token.
-var ErrNoSession = errors.New("auth: no valid session")
-
-// Principal is the authenticated identity carried by a session.
+// Principal is the authenticated user identity carried through the request.
 type Principal struct {
-	ID    string // UUIDv7 of the user account.
-	Email string
-	Name  string
-	Role  Role
-	// Timezone is the user's personal IANA zone; empty inherits the
-	// clinic timezone.
+	ID       string
+	Email    string
+	Name     string
+	Role     Role
 	Timezone string
-	// UITheme is the user's color scheme preference.
-	UITheme types.UITheme
+	UITheme  types.UITheme
+}
+
+// SessionUser holds the user information joined in active session queries.
+type SessionUser struct {
+	ID       uuid.UUID
+	Email    string
+	Name     string
+	Role     Role
+	Active   bool
+	Timezone string
+	UITheme  types.UITheme
+}
+
+// SessionRecord holds the session storage row.
+type SessionRecord struct {
+	ID        string
+	UserID    uuid.UUID
+	ExpiresAt time.Time
+	User      *SessionUser
+}
+
+// SessionRepository defines the storage contract for sessions.
+type SessionRepository interface {
+	CleanupExpired(ctx context.Context, now time.Time) error
+	Create(ctx context.Context, id string, userID uuid.UUID, expiresAt time.Time) error
+	GetActive(ctx context.Context, id string, now time.Time) (*SessionRecord, error)
+	Delete(ctx context.Context, id string) error
 }
 
 // SessionManager issues PASETO v4.local session tokens and keeps a
-// revocation index in SQLite. The token itself carries the user id and
-// expiration date, validated cryptographically on every request; the
-// sessions table exists only to support logout and account deactivation.
+// revocation index in the database.
 type SessionManager struct {
-	db      *sql.DB
-	queries *repository.Queries
-	key     paseto.V4SymmetricKey
-	ttl     time.Duration
-	secure  bool
-	log     *slog.Logger
+	repo   SessionRepository
+	key    paseto.V4SymmetricKey
+	ttl    time.Duration
+	secure bool
+	log    *slog.Logger
 }
 
-// NewSessionManager is the Fx provider. The SQLite backend is required
-// because session revocation lives in the embedded database.
-//
-// The PASETO key comes from config.PasetoKey (base64, 32 bytes). Every
-// environment except the explicit "development" requires the key; in
-// development an ephemeral key is generated, which invalidates sessions on
-// restart.
-func NewSessionManager(db *sql.DB, cfg *config.Config, log *slog.Logger) (*SessionManager, error) {
-	if db == nil {
-		return nil, errors.New("auth: sessions require the SQLite backend")
+// NewSessionManager is the Fx provider.
+func NewSessionManager(repo SessionRepository, cfg *config.Config, log *slog.Logger) (*SessionManager, error) {
+	if repo == nil {
+		return nil, errors.New("auth: session repository is nil")
 	}
 
 	raw, err := decodeKey(cfg.PasetoKey)
@@ -90,12 +101,11 @@ func NewSessionManager(db *sql.DB, cfg *config.Config, log *slog.Logger) (*Sessi
 	}
 
 	return &SessionManager{
-		db:      db,
-		queries: repository.New(db),
-		key:     key,
-		ttl:     sessionTTL,
-		secure:  !cfg.IsDevelopment(),
-		log:     log,
+		repo:   repo,
+		key:    key,
+		ttl:    sessionTTL,
+		secure: !cfg.IsDevelopment(),
+		log:    log,
 	}, nil
 }
 
@@ -105,9 +115,8 @@ func (m *SessionManager) Create(ctx context.Context, p Principal) (string, error
 	now := time.Now().UTC()
 	expires := now.Add(m.ttl)
 
-	if err := m.queries.DeleteExpiredSessions(ctx, formatTime(now)); err != nil {
-		return "", fmt.Errorf("auth: expire sessions: %w", err)
-	}
+	// Best-effort cleanup of expired sessions
+	_ = m.repo.CleanupExpired(ctx, now)
 
 	jti := make([]byte, 32)
 	if _, err := rand.Read(jti); err != nil {
@@ -122,9 +131,12 @@ func (m *SessionManager) Create(ctx context.Context, p Principal) (string, error
 	token.SetExpiration(expires)
 	rawToken := token.V4Encrypt(m.key, nil)
 
-	if err := m.queries.CreateSession(ctx, repository.CreateSessionParams{
-		TokenHash: hashToken(jtiHex), UserID: uuid.MustParse(p.ID), ExpiresAt: formatTime(expires),
-	}); err != nil {
+	userUUID, err := uuid.Parse(p.ID)
+	if err != nil {
+		return "", fmt.Errorf("auth: invalid user id: %w", err)
+	}
+
+	if err := m.repo.Create(ctx, hashToken(jtiHex), userUUID, expires); err != nil {
 		return "", fmt.Errorf("auth: store session: %w", err)
 	}
 	return rawToken, nil
@@ -143,18 +155,20 @@ func (m *SessionManager) Authenticate(ctx context.Context, token string) (*Princ
 		return nil, ErrNoSession
 	}
 
-	row, err := m.queries.GetSessionUser(ctx, hashToken(jti))
-	if errors.Is(err, sql.ErrNoRows) {
+	sess, err := m.repo.GetActive(ctx, hashToken(jti), time.Now().UTC())
+	if err != nil || sess == nil || sess.User == nil || !sess.User.Active {
 		return nil, ErrNoSession
 	}
-	if err != nil {
-		return nil, fmt.Errorf("auth: resolve session: %w", err)
-	}
 
-	// Roles are relational rows the administrator can extend, so the
-	// name is used as-is; validity is defined by the database.
-	return &Principal{ID: row.ID, Email: row.Email, Name: row.DisplayName,
-		Role: Role(row.RoleName), Timezone: row.Timezone, UITheme: row.UiTheme}, nil
+	u := sess.User
+	return &Principal{
+		ID:       u.ID.String(),
+		Email:    u.Email,
+		Name:     u.Name,
+		Role:     u.Role,
+		Timezone: u.Timezone,
+		UITheme:  u.UITheme,
+	}, nil
 }
 
 // Destroy revokes the session behind token.
@@ -164,17 +178,18 @@ func (m *SessionManager) Destroy(ctx context.Context, token string) error {
 	}
 	parsed, err := paseto.NewParser().ParseV4Local(m.key, token, nil)
 	if err != nil {
-		// Expired or tampered tokens have no revocable row.
 		return nil
 	}
 	jti, err := parsed.GetJti()
 	if err != nil {
 		return nil
 	}
-	if err := m.queries.DeleteSession(ctx, hashToken(jti)); err != nil {
-		return fmt.Errorf("auth: delete session: %w", err)
-	}
-	return nil
+	return m.repo.Delete(ctx, hashToken(jti))
+}
+
+// CleanupExpired removes expired sessions from the database.
+func (m *SessionManager) CleanupExpired(ctx context.Context) error {
+	return m.repo.CleanupExpired(ctx, time.Now().UTC())
 }
 
 // Cookie builds the session cookie for token.
@@ -207,17 +222,24 @@ func (m *SessionManager) ClearCookie() *http.Cookie {
 	}
 }
 
+// PrincipalFromContext retrieves the authenticated Principal from ctx.
+func PrincipalFromContext(ctx context.Context) (*Principal, bool) {
+	p, ok := ctx.Value(principalContextKey{}).(*Principal)
+	return p, ok && p != nil
+}
+
+// ContextWithPrincipal returns a child context carrying p.
+func ContextWithPrincipal(ctx context.Context, p *Principal) context.Context {
+	return context.WithValue(ctx, principalContextKey{}, p)
+}
+
+type principalContextKey struct{}
+
 func hashToken(token string) string {
 	sum := sha256.Sum256([]byte(token))
 	return hex.EncodeToString(sum[:])
 }
 
-func formatTime(t time.Time) types.DateTime {
-	return types.DateTimeFromTime(t)
-}
-
-// decodeKey parses the base64 PASETO key. It returns nil, nil when the
-// configuration value is empty.
 func decodeKey(encoded string) ([]byte, error) {
 	if encoded == "" {
 		return nil, nil
@@ -231,3 +253,9 @@ func decodeKey(encoded string) ([]byte, error) {
 	}
 	return raw, nil
 }
+
+// Common auth errors.
+var (
+	ErrNoSession = errors.New("auth: no valid session")
+	ErrInactive  = errors.New("auth: account is inactive")
+)

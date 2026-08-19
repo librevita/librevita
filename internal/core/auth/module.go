@@ -1,18 +1,41 @@
 package auth
 
 import (
+	"context"
+	"log/slog"
+	"time"
+
 	"go.uber.org/fx"
-
-	"librevita.org/internal/core/config"
 )
 
-// Module provides session management and CSRF protection.
+// Module provides session management, password hashing, and authentication services.
 var Module = fx.Module("auth",
-	fx.Provide(NewSessionManager),
-	fx.Provide(NewCSRF),
-	fx.Invoke(configureConcurrency),
+	fx.Provide(
+		NewSessionRepository,
+		NewSessionManager,
+		NewCSRF,
+	),
+	fx.Invoke(registerSessionCleaner),
 )
 
-func configureConcurrency(cfg *config.Config) {
-	SetMaxConcurrentHashes(cfg.Auth.MaxConcurrentHashes)
+func registerSessionCleaner(lc fx.Lifecycle, sessions *SessionManager, log *slog.Logger) {
+	lc.Append(fx.Hook{
+		OnStart: func(ctx context.Context) error {
+			go func() {
+				ticker := time.NewTicker(time.Hour)
+				defer ticker.Stop()
+				for {
+					if err := sessions.CleanupExpired(ctx); err != nil {
+						log.Warn("auth: cleanup expired sessions", "error", err)
+					}
+					select {
+					case <-ticker.C:
+					case <-ctx.Done():
+						return
+					}
+				}
+			}()
+			return nil
+		},
+	})
 }

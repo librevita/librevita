@@ -3,7 +3,6 @@ package usecase
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -14,17 +13,8 @@ import (
 
 	"librevita.org/internal/core/audit"
 	"librevita.org/internal/core/auth"
-	clinicdomain "librevita.org/internal/domain/clinic"
-	clinicrepo "librevita.org/internal/domain/clinic/repository"
-	"librevita.org/internal/domain/user/repository"
+	clinicmodel "librevita.org/internal/domain/clinic/model"
 	"librevita.org/internal/types"
-)
-
-// Domain errors. Handlers translate these into user-facing messages.
-var (
-	ErrEmailTaken         = errors.New("usecase: email is already registered")
-	ErrInvalidCredentials = errors.New("usecase: invalid email or password")
-	ErrAlreadyOnboarded   = errors.New("usecase: system is already onboarded")
 )
 
 // Input field limits.
@@ -77,42 +67,48 @@ type Credentials struct {
 	Password string
 }
 
-// Service implements authentication workflows. Public registration always
-// creates patient accounts; the admin and clinic profile are created
-// together by Onboard, which is only possible on an empty system.
+// Service implements authentication workflows and user domain orchestration.
 type Service struct {
-	db        *sql.DB
-	users     *repository.Queries
-	clinics   *clinicrepo.Queries
-	sessions  *auth.SessionManager
-	audit     *audit.Logger
-	log       *slog.Logger
-	dummyHash string
+	userRepo      UserRepository
+	roleRepo      RoleRepository
+	specialtyRepo SpecialtyRepository
+	staffReqRepo  StaffRequestRepository
+	setupRepo     SetupRepository
+	sessions      *auth.SessionManager
+	audit         *audit.Logger
+	log           *slog.Logger
+	dummyHash     string
 }
 
 // NewService is the Fx provider.
-func NewService(db *sql.DB, sessions *auth.SessionManager, auditLogger *audit.Logger, log *slog.Logger) *Service {
-	// Precomputed hash used to equalize the cost of login attempts for
-	// unknown or deactivated accounts, preventing email enumeration by
-	// response timing.
+func NewService(
+	userRepo UserRepository,
+	roleRepo RoleRepository,
+	specialtyRepo SpecialtyRepository,
+	staffReqRepo StaffRequestRepository,
+	setupRepo SetupRepository,
+	sessions *auth.SessionManager,
+	auditLogger *audit.Logger,
+	log *slog.Logger,
+) *Service {
 	dummyHash, err := auth.HashPassword("dummy-password-for-timing")
 	if err != nil {
-		// Unreachable: parameters are constant.
 		log.Error("failed to precompute dummy password hash", "error", err)
 	}
 	return &Service{
-		db:        db,
-		users:     repository.New(db),
-		clinics:   clinicrepo.New(db),
-		sessions:  sessions,
-		audit:     auditLogger,
-		log:       log,
-		dummyHash: dummyHash,
+		userRepo:      userRepo,
+		roleRepo:      roleRepo,
+		specialtyRepo: specialtyRepo,
+		staffReqRepo:  staffReqRepo,
+		setupRepo:     setupRepo,
+		sessions:      sessions,
+		audit:         auditLogger,
+		log:           log,
+		dummyHash:     dummyHash,
 	}
 }
 
 // Register validates the input, creates the account, and starts a session.
-// It returns the principal and the raw session token.
 func (s *Service) Register(ctx context.Context, in RegisterInput) (*auth.Principal, string, error) {
 	name := strings.TrimSpace(in.Name)
 	email := normalizeEmail(in.Email)
@@ -126,8 +122,6 @@ func (s *Service) Register(ctx context.Context, in RegisterInput) (*auth.Princip
 		return nil, "", err
 	}
 
-	// Public registration always creates a patient account. The admin
-	// account is created exclusively by Onboard.
 	hash, err := auth.HashPassword(password)
 	if err != nil {
 		return nil, "", err
@@ -138,23 +132,24 @@ func (s *Service) Register(ctx context.Context, in RegisterInput) (*auth.Princip
 		return nil, "", fmt.Errorf("usecase: generate user id: %w", err)
 	}
 
-	patientRole, err := s.roleID(ctx, auth.RolePatient.String())
+	patientRole, err := s.roleRepo.GetByName(ctx, auth.RolePatient.String())
 	if err != nil {
-		return nil, "", err
+		return nil, "", fmt.Errorf("usecase: resolve patient role: %w", err)
 	}
-	user, err := s.users.CreateUser(ctx, repository.CreateUserParams{
+
+	u, err := s.userRepo.Create(ctx, &User{
 		ID:           userID,
 		Email:        email,
 		PasswordHash: hash,
 		DisplayName:  name,
-		RoleID:       patientRole,
+		RoleID:       patientRole.ID,
+		Active:       true,
 	})
 	if err != nil {
-		// The UNIQUE COLLATE NOCASE constraint maps to a duplicate email.
 		return nil, "", ErrEmailTaken
 	}
 
-	principal, token, err := s.startSession(ctx, user.ID.String(), user.Email, user.DisplayName, auth.RolePatient.String())
+	principal, token, err := s.startSession(ctx, u.ID.String(), u.Email, u.DisplayName, auth.RolePatient.String())
 	result := types.AuditResultSuccess
 	detail := ""
 	if err != nil {
@@ -162,77 +157,43 @@ func (s *Service) Register(ctx context.Context, in RegisterInput) (*auth.Princip
 		detail = err.Error()
 	}
 	s.audit.Record(ctx, audit.Event{
-		ActorID: user.ID.String(), ActorMail: user.Email,
+		ActorID: u.ID.String(), ActorMail: u.Email,
 		Action: "register", Resource: "user", Result: result, Detail: detail,
 	})
 	return principal, token, err
 }
 
-// setupMetaKey marks a completed onboarding. The marker is written in the
-// same transaction as the admin account, so setup can run exactly once even
-// if every account and the clinic are later removed.
-const setupMetaKey = "setup_completed"
-
-// IsOnboarded reports whether the system has already been set up. The
-// persisted marker is authoritative; the user count is a second guard
-// against a deleted marker.
+// IsOnboarded reports whether the system has already been set up.
 func (s *Service) IsOnboarded(ctx context.Context) (bool, error) {
-	_, err := s.users.GetMetaValue(ctx, setupMetaKey)
-	if err == nil {
-		return true, nil
-	}
-	if !errors.Is(err, sql.ErrNoRows) {
-		return false, fmt.Errorf("usecase: read setup marker: %w", err)
-	}
-	count, err := s.users.CountUsers(ctx)
-	if err != nil {
-		return false, fmt.Errorf("usecase: count users: %w", err)
-	}
-	return count > 0, nil
+	return s.setupRepo.IsOnboarded(ctx)
 }
 
-// UserCountByRole counts accounts with the given role (e.g. "patient").
-func (s *Service) UserCountByRole(ctx context.Context, role string) (int64, error) {
-	count, err := s.users.CountUsersByRole(ctx, role)
-	if err != nil {
-		return 0, fmt.Errorf("usecase: count users by role: %w", err)
-	}
-	return count, nil
+// UserCountByRole counts accounts with the given role.
+func (s *Service) UserCountByRole(ctx context.Context, roleName string) (int64, error) {
+	return s.userRepo.CountByRole(ctx, roleName)
 }
 
 // UserCount counts all accounts.
 func (s *Service) UserCount(ctx context.Context) (int64, error) {
-	count, err := s.users.CountUsers(ctx)
-	if err != nil {
-		return 0, fmt.Errorf("usecase: count users: %w", err)
-	}
-	return count, nil
+	return s.userRepo.Count(ctx)
 }
 
 // ListRecentUsers returns the newest accounts, newest first.
-func (s *Service) ListRecentUsers(ctx context.Context, limit int) ([]repository.ListRecentUsersRow, error) {
-	rows, err := s.users.ListRecentUsers(ctx, int64(limit))
-	if err != nil {
-		return nil, fmt.Errorf("usecase: list recent users: %w", err)
-	}
-	return rows, nil
+func (s *Service) ListRecentUsers(ctx context.Context, limit int) ([]ListRecentUsersRow, error) {
+	return s.userRepo.ListRecent(ctx, limit)
 }
 
 // UserByID returns the account with the given id.
-func (s *Service) UserByID(ctx context.Context, id string) (*repository.GetUserByIDRow, error) {
-	user, err := s.users.GetUserByID(ctx, uuid.MustParse(id))
+func (s *Service) UserByID(ctx context.Context, id string) (*GetUserByIDRow, error) {
+	uUUID, err := uuid.Parse(id)
 	if err != nil {
-		return nil, fmt.Errorf("usecase: get user: %w", err)
+		return nil, fmt.Errorf("usecase: invalid user id: %w", err)
 	}
-	return &user, nil
+	return s.userRepo.GetByID(ctx, uUUID)
 }
 
-// Onboard creates the initial admin account and the clinic profile in one
-// transaction. It succeeds only on a system that has never been set up;
-// concurrent setup attempts are serialized by the single SQLite connection,
-// so exactly one can win. It returns the principal and the raw session
-// token.
-func (s *Service) Onboard(ctx context.Context, admin RegisterInput, clinic ClinicInput) (*auth.Principal, string, error) {
+// Onboard creates the initial admin account and the clinic profile in one transaction.
+func (s *Service) Onboard(ctx context.Context, admin RegisterInput, c ClinicInput) (*auth.Principal, string, error) {
 	name := strings.TrimSpace(admin.Name)
 	email := normalizeEmail(admin.Email)
 
@@ -240,51 +201,9 @@ func (s *Service) Onboard(ctx context.Context, admin RegisterInput, clinic Clini
 		s.auditOnboard(ctx, err.Error())
 		return nil, "", err
 	}
-	if err := validateClinic(clinic); err != nil {
+	if err := validateClinic(c); err != nil {
 		s.auditOnboard(ctx, err.Error())
 		return nil, "", err
-	}
-
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return nil, "", fmt.Errorf("usecase: begin onboard: %w", err)
-	}
-	defer tx.Rollback()
-
-	qtx := s.users.WithTx(tx)
-
-	if _, err := qtx.GetMetaValue(ctx, setupMetaKey); err == nil {
-		return nil, "", ErrAlreadyOnboarded
-	} else if !errors.Is(err, sql.ErrNoRows) {
-		return nil, "", fmt.Errorf("usecase: read setup marker: %w", err)
-	}
-
-	count, err := qtx.CountUsers(ctx)
-	if err != nil {
-		return nil, "", fmt.Errorf("usecase: count users: %w", err)
-	}
-	if count > 0 {
-		return nil, "", ErrAlreadyOnboarded
-	}
-
-	clinicID, err := uuid.NewV7()
-	if err != nil {
-		return nil, "", fmt.Errorf("usecase: generate clinic id: %w", err)
-	}
-	if _, err := s.clinics.WithTx(tx).CreateClinic(ctx, clinicrepo.CreateClinicParams{
-		ID:         clinicID,
-		Name:       strings.TrimSpace(clinic.Name),
-		TaxID:      strPtr(clinic.TaxID),
-		Phone:      strPtr(clinic.Phone),
-		Email:      strPtr(normalizeEmail(clinic.Email)),
-		Street:     strPtr(strings.TrimSpace(clinic.Street)),
-		City:       strPtr(strings.TrimSpace(clinic.City)),
-		State:      strPtr(strings.TrimSpace(clinic.State)),
-		PostalCode: strPtr(strings.TrimSpace(clinic.PostalCode)),
-		Country:    strings.ToUpper(strings.TrimSpace(orDefault(clinic.Country, "BR"))),
-		Timezone:   strings.TrimSpace(orDefault(clinic.Timezone, clinicdomain.DefaultTimezone)),
-	}); err != nil {
-		return nil, "", fmt.Errorf("usecase: create clinic: %w", err)
 	}
 
 	hash, err := auth.HashPassword(admin.Password)
@@ -297,31 +216,42 @@ func (s *Service) Onboard(ctx context.Context, admin RegisterInput, clinic Clini
 		return nil, "", fmt.Errorf("usecase: generate admin id: %w", err)
 	}
 
-	adminRole, err := qtx.GetRoleByName(ctx, auth.RoleAdmin.String())
+	clinicID, err := uuid.NewV7()
+	if err != nil {
+		return nil, "", fmt.Errorf("usecase: generate clinic id: %w", err)
+	}
+
+	adminRole, err := s.roleRepo.GetByName(ctx, auth.RoleAdmin.String())
 	if err != nil {
 		return nil, "", fmt.Errorf("usecase: resolve admin role: %w", err)
 	}
-	user, err := qtx.CreateUser(ctx, repository.CreateUserParams{
+
+	adminUser := &User{
 		ID:           adminID,
 		Email:        email,
 		PasswordHash: hash,
 		DisplayName:  name,
 		RoleID:       adminRole.ID,
-	})
+		Active:       true,
+	}
+
+	clinicProfile := &clinicmodel.Clinic{
+		ID:       clinicID,
+		Name:     strings.TrimSpace(c.Name),
+		TaxID:    c.TaxID,
+		Country:  strings.ToUpper(strings.TrimSpace(orDefault(c.Country, "BR"))),
+		Timezone: strings.TrimSpace(orDefault(c.Timezone, clinicmodel.DefaultTimezone)),
+	}
+
+	createdUser, err := s.setupRepo.Onboard(ctx, adminUser, clinicProfile)
 	if err != nil {
-		// Unreachable on an empty system, but keep the mapping honest.
-		return nil, "", ErrEmailTaken
+		if errors.Is(err, ErrAlreadyOnboarded) {
+			return nil, "", ErrAlreadyOnboarded
+		}
+		return nil, "", err
 	}
 
-	if err := qtx.SetMeta(ctx, repository.SetMetaParams{Key: setupMetaKey, Value: "1"}); err != nil {
-		return nil, "", fmt.Errorf("usecase: mark setup complete: %w", err)
-	}
-
-	if err := tx.Commit(); err != nil {
-		return nil, "", fmt.Errorf("usecase: commit onboard: %w", err)
-	}
-
-	principal, token, err := s.startSession(ctx, user.ID.String(), user.Email, user.DisplayName, auth.RoleAdmin.String())
+	principal, token, err := s.startSession(ctx, createdUser.ID.String(), createdUser.Email, createdUser.DisplayName, auth.RoleAdmin.String())
 	result := types.AuditResultSuccess
 	detail := ""
 	if err != nil {
@@ -329,19 +259,17 @@ func (s *Service) Onboard(ctx context.Context, admin RegisterInput, clinic Clini
 		detail = err.Error()
 	}
 	s.audit.Record(ctx, audit.Event{
-		ActorID: user.ID.String(), ActorMail: user.Email,
+		ActorID: createdUser.ID.String(), ActorMail: createdUser.Email,
 		Action: "onboard", Resource: "setup", Result: result, Detail: detail,
 	})
 	return principal, token, err
 }
 
-// Login verifies credentials and starts a session. All failure paths run an
-// Argon2id verification so that response timing does not reveal whether an
-// email exists; failures return ErrInvalidCredentials.
+// Login verifies credentials and starts a session.
 func (s *Service) Login(ctx context.Context, c Credentials) (*auth.Principal, string, error) {
 	email := normalizeEmail(c.Email)
-	user, err := s.users.GetUserByEmail(ctx, email)
-	if errors.Is(err, sql.ErrNoRows) {
+	u, err := s.userRepo.GetByEmail(ctx, email)
+	if errors.Is(err, ErrUserNotFound) {
 		s.timingDummy(c.Password)
 		s.auditLogin(ctx, "", email, "unknown email")
 		return nil, "", ErrInvalidCredentials
@@ -349,30 +277,30 @@ func (s *Service) Login(ctx context.Context, c Credentials) (*auth.Principal, st
 	if err != nil {
 		return nil, "", fmt.Errorf("usecase: lookup email: %w", err)
 	}
-	if !user.Active {
+	if !u.Active {
 		s.timingDummy(c.Password)
-		s.auditLogin(ctx, user.ID.String(), email, "account deactivated")
+		s.auditLogin(ctx, u.ID.String(), email, "account deactivated")
 		return nil, "", ErrInvalidCredentials
 	}
 
-	ok, err := auth.VerifyPassword(user.PasswordHash, c.Password)
+	ok, err := auth.VerifyPassword(u.PasswordHash, c.Password)
 	if err != nil {
-		s.log.Warn("stored password hash rejected", "user_id", user.ID)
+		s.log.Warn("stored password hash rejected", "user_id", u.ID)
 		s.timingDummy(c.Password)
-		s.auditLogin(ctx, user.ID.String(), email, "malformed stored hash")
+		s.auditLogin(ctx, u.ID.String(), email, "malformed stored hash")
 		return nil, "", ErrInvalidCredentials
 	}
 	if !ok {
-		s.auditLogin(ctx, user.ID.String(), email, "wrong password")
+		s.auditLogin(ctx, u.ID.String(), email, "wrong password")
 		return nil, "", ErrInvalidCredentials
 	}
 
-	principal, token, err := s.startSession(ctx, user.ID.String(), user.Email, user.DisplayName, user.RoleName)
+	principal, token, err := s.startSession(ctx, u.ID.String(), u.Email, u.DisplayName, u.RoleName)
 	if err != nil {
-		s.auditLogin(ctx, user.ID.String(), email, err.Error())
+		s.auditLogin(ctx, u.ID.String(), email, err.Error())
 		return nil, "", err
 	}
-	s.auditLogin(ctx, user.ID.String(), email, "")
+	s.auditLogin(ctx, u.ID.String(), email, "")
 	return principal, token, nil
 }
 
@@ -406,7 +334,6 @@ func (s *Service) startSession(ctx context.Context, id, email, name, roleName st
 	return principal, token, nil
 }
 
-// timingDummy spends the same Argon2id cost as a real password check.
 func (s *Service) timingDummy(password string) {
 	if s.dummyHash != "" {
 		_, _ = auth.VerifyPassword(s.dummyHash, password)
@@ -489,7 +416,7 @@ func validateClinic(c ClinicInput) error {
 	if len(c.Timezone) > maxTimezoneLen {
 		return &ValidationError{Msg: "timezone is too long"}
 	}
-	if tz := strings.TrimSpace(c.Timezone); tz != "" && !clinicdomain.ValidTimezone(tz) {
+	if tz := strings.TrimSpace(c.Timezone); tz != "" && !clinicmodel.ValidTimezone(tz) {
 		return &ValidationError{Msg: "pick a timezone from the list"}
 	}
 	return nil
@@ -500,20 +427,4 @@ func orDefault(value, fallback string) string {
 		return fallback
 	}
 	return value
-}
-
-func strPtr(s string) *string {
-	if s == "" {
-		return nil
-	}
-	return &s
-}
-
-// roleID resolves a role name to its relational id.
-func (s *Service) roleID(ctx context.Context, name string) (uuid.UUID, error) {
-	role, err := s.users.GetRoleByName(ctx, name)
-	if err != nil {
-		return uuid.Nil, fmt.Errorf("usecase: resolve role %q: %w", name, err)
-	}
-	return role.ID, nil
 }

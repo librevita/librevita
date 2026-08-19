@@ -1,4 +1,4 @@
-package identifier
+package identifier_test
 
 import (
 	"context"
@@ -8,13 +8,17 @@ import (
 	"path/filepath"
 	"testing"
 
+	"entgo.io/ent/dialect"
+	entsql "entgo.io/ent/dialect/sql"
 	"github.com/google/uuid"
 
 	_ "modernc.org/sqlite"
 
+	"librevita.org/ent"
 	"librevita.org/internal/core/crypto"
 	"librevita.org/internal/core/database"
 	"librevita.org/internal/core/vault"
+	"librevita.org/internal/domain/patient/identifier"
 	"librevita.org/internal/domain/patient/repository"
 )
 
@@ -23,9 +27,10 @@ var (
 	testUserID   = uuid.MustParse("00000000-0000-0000-0000-000000000002")
 )
 
-func openTestDB(t *testing.T) *sql.DB {
+func openTestDB(t *testing.T) *ent.Client {
 	t.Helper()
-	db, err := sql.Open("sqlite", "file:identifier-test?mode=memory&cache=shared")
+	name := "identifier-test-" + uuid.NewString()
+	db, err := sql.Open("sqlite", "file:"+name+"?mode=memory&cache=shared")
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
@@ -35,10 +40,14 @@ func openTestDB(t *testing.T) *sql.DB {
 	if err := database.Migrate(context.Background(), db, slog.New(slog.DiscardHandler)); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
-	return db
+
+	drv := entsql.OpenDB(dialect.SQLite, db)
+	client := ent.NewClient(ent.Driver(drv))
+	t.Cleanup(func() { client.Close() })
+	return client
 }
 
-func newTestServices(t *testing.T, db *sql.DB) (*Service, *SystemsService, *Registry) {
+func newTestServices(t *testing.T, client *ent.Client) (*identifier.Service, *identifier.SystemsService, *identifier.Registry) {
 	t.Helper()
 	v, err := vault.NewBBoltVault(filepath.Join(t.TempDir(), "keys.db"))
 	if err != nil {
@@ -50,8 +59,9 @@ func newTestServices(t *testing.T, db *sql.DB) (*Service, *SystemsService, *Regi
 	if err != nil {
 		t.Fatalf("master key: %v", err)
 	}
-	reg := NewRegistry()
-	rows, err := LoadActiveSystems(context.Background(), db)
+	sysRepo := repository.NewSystemRepository(client)
+	reg := identifier.NewRegistry()
+	rows, err := sysRepo.ListActive(context.Background())
 	if err != nil {
 		t.Fatalf("load systems: %v", err)
 	}
@@ -59,22 +69,27 @@ func newTestServices(t *testing.T, db *sql.DB) (*Service, *SystemsService, *Regi
 		t.Fatalf("reload: %v", err)
 	}
 	log := slog.New(slog.DiscardHandler)
-	return NewService(db, key, reg, log), NewSystemsService(db, reg, log), reg
+	idRepo := repository.NewIdentifierRepository(client)
+	return identifier.NewService(idRepo, key, reg, log), identifier.NewSystemsService(sysRepo, reg, log), reg
 }
 
-func seedPatient(t *testing.T, db *sql.DB, clinicID uuid.UUID) uuid.UUID {
+func seedPatient(t *testing.T, client *ent.Client, clinicID uuid.UUID) uuid.UUID {
 	t.Helper()
 	id, err := uuid.NewV7()
 	if err != nil {
 		t.Fatal(err)
 	}
-	patient, err := repository.New(db).CreatePatient(context.Background(), repository.CreatePatientParams{
-		ID: id, ClinicID: clinicID, DisplayName: "Test Patient", Sex: "unknown",
-	})
+	p, err := client.Patient.Create().
+		SetID(id).
+		SetClinicID(clinicID).
+		SetBlindIndex("idx-" + id.String()).
+		SetEncryptedPayload([]byte("payload")).
+		SetNonce([]byte("123456789012345678901234")).
+		Save(context.Background())
 	if err != nil {
 		t.Fatalf("create patient: %v", err)
 	}
-	return patient.ID
+	return p.ID
 }
 
 func TestAddAndFindByValue(t *testing.T) {
@@ -82,14 +97,14 @@ func TestAddAndFindByValue(t *testing.T) {
 	svc, _, _ := newTestServices(t, db)
 	patientID := seedPatient(t, db, testClinicID)
 
-	got, err := svc.AddIdentifier(context.Background(), testClinicID.String(), testUserID.String(), Input{
+	got, err := svc.AddIdentifier(context.Background(), testClinicID.String(), testUserID.String(), identifier.Input{
 		PatientID: patientID.String(), Value: "123.456.789-09",
 	})
 	if err != nil {
 		t.Fatalf("AddIdentifier: %v", err)
 	}
-	if got.System != CPFSystem {
-		t.Fatalf("system = %s, want %s (detected)", got.System, CPFSystem)
+	if got.System != identifier.CPFSystem {
+		t.Fatalf("system = %s, want %s (detected)", got.System, identifier.CPFSystem)
 	}
 	if got.Value != "12345678909" {
 		t.Fatalf("value = %q, want normalized %q", got.Value, "12345678909")
@@ -136,14 +151,14 @@ func TestAddIdentifierExplicitSystem(t *testing.T) {
 	svc, _, _ := newTestServices(t, db)
 	patientID := seedPatient(t, db, testClinicID)
 
-	got, err := svc.AddIdentifier(context.Background(), testClinicID.String(), testUserID.String(), Input{
-		PatientID: patientID.String(), System: NIFSystem, Value: "999 999 990",
+	got, err := svc.AddIdentifier(context.Background(), testClinicID.String(), testUserID.String(), identifier.Input{
+		PatientID: patientID.String(), System: identifier.NIFSystem, Value: "999 999 990",
 	})
 	if err != nil {
 		t.Fatalf("AddIdentifier: %v", err)
 	}
-	if got.System != NIFSystem {
-		t.Fatalf("system = %s, want %s", got.System, NIFSystem)
+	if got.System != identifier.NIFSystem {
+		t.Fatalf("system = %s, want %s", got.System, identifier.NIFSystem)
 	}
 	if got.Value != "999999990" {
 		t.Fatalf("value = %q, want %q", got.Value, "999999990")
@@ -155,13 +170,13 @@ func TestAddIdentifierRejectsInvalidValue(t *testing.T) {
 	svc, _, _ := newTestServices(t, db)
 	patientID := seedPatient(t, db, testClinicID)
 
-	_, err := svc.AddIdentifier(context.Background(), testClinicID.String(), testUserID.String(), Input{
+	_, err := svc.AddIdentifier(context.Background(), testClinicID.String(), testUserID.String(), identifier.Input{
 		PatientID: patientID.String(), Value: "12345678901",
 	})
 	if err == nil {
 		t.Fatal("AddIdentifier with a bad check digit must fail")
 	}
-	var validation *ValidationError
+	var validation *identifier.ValidationError
 	if !errors.As(err, &validation) {
 		t.Fatalf("error = %T %v, want ValidationError", err, err)
 	}
@@ -173,21 +188,21 @@ func TestAddIdentifierDuplicate(t *testing.T) {
 	patientA := seedPatient(t, db, testClinicID)
 	patientB := seedPatient(t, db, testClinicID)
 
-	in := Input{PatientID: patientA.String(), Value: "52998224725"}
+	in := identifier.Input{PatientID: patientA.String(), Value: "52998224725"}
 	if _, err := svc.AddIdentifier(context.Background(), testClinicID.String(), testUserID.String(), in); err != nil {
 		t.Fatalf("first AddIdentifier: %v", err)
 	}
 	// Same value, same patient: allowed? No -- UNIQUE(blind_index)
 	// forbids even the same patient registering twice.
 	_, err := svc.AddIdentifier(context.Background(), testClinicID.String(), testUserID.String(), in)
-	if !errors.Is(err, ErrDuplicate) {
+	if !errors.Is(err, identifier.ErrDuplicate) {
 		t.Fatalf("second AddIdentifier = %v, want ErrDuplicate", err)
 	}
 
 	// Same value, other patient: the CPF already exists.
-	inB := Input{PatientID: patientB.String(), Value: "52998224725"}
+	inB := identifier.Input{PatientID: patientB.String(), Value: "52998224725"}
 	_, err = svc.AddIdentifier(context.Background(), testClinicID.String(), testUserID.String(), inB)
-	if !errors.Is(err, ErrDuplicate) {
+	if !errors.Is(err, identifier.ErrDuplicate) {
 		t.Fatalf("AddIdentifier on other patient = %v, want ErrDuplicate", err)
 	}
 }
@@ -198,7 +213,7 @@ func TestListAndRemove(t *testing.T) {
 	patientID := seedPatient(t, db, testClinicID)
 
 	for _, value := range []string{"52998224725", "ab1234567"} {
-		if _, err := svc.AddIdentifier(context.Background(), testClinicID.String(), testUserID.String(), Input{
+		if _, err := svc.AddIdentifier(context.Background(), testClinicID.String(), testUserID.String(), identifier.Input{
 			PatientID: patientID.String(), Value: value,
 		}); err != nil {
 			t.Fatalf("AddIdentifier(%s): %v", value, err)
@@ -239,7 +254,7 @@ func TestFindByValueScopedToClinic(t *testing.T) {
 	otherClinic := uuid.MustParse("00000000-0000-0000-0000-00000000000a")
 	patientID := seedPatient(t, db, testClinicID)
 
-	if _, err := svc.AddIdentifier(context.Background(), testClinicID.String(), testUserID.String(), Input{
+	if _, err := svc.AddIdentifier(context.Background(), testClinicID.String(), testUserID.String(), identifier.Input{
 		PatientID: patientID.String(), Value: "52998224725",
 	}); err != nil {
 		t.Fatalf("AddIdentifier: %v", err)
@@ -261,12 +276,12 @@ func TestAdministratorRegistersNewSystem(t *testing.T) {
 	patientID := seedPatient(t, db, testClinicID)
 
 	// A Paraguayan cédula: 8 digits with the standard scheme.
-	created, err := systems.Create(context.Background(), testUserID.String(), SystemInput{
+	created, err := systems.Create(context.Background(), testUserID.String(), identifier.SystemInput{
 		System:           "urn:librevita:id:py:cedula",
 		DisplayName:      "Cédula de Identidad (Paraguay)",
 		Pattern:          "[0-9]{8}",
-		Transform:        TransformDigits,
-		CheckAlgorithm:   CheckMod11Desc,
+		Transform:        identifier.TransformDigits,
+		CheckAlgorithm:   identifier.CheckMod11Desc,
 		CheckBaseLen:     7,
 		CheckDVCount:     1,
 		CheckStartWeight: 8,
@@ -279,7 +294,7 @@ func TestAdministratorRegistersNewSystem(t *testing.T) {
 	}
 
 	// 1.234.567-9 is the cédula with its check digit.
-	got, err := svc.AddIdentifier(context.Background(), testClinicID.String(), testUserID.String(), Input{
+	got, err := svc.AddIdentifier(context.Background(), testClinicID.String(), testUserID.String(), identifier.Input{
 		PatientID: patientID.String(), Value: "12345679",
 	})
 	if err != nil {
@@ -303,13 +318,13 @@ func TestAdministratorRegistersNewSystem(t *testing.T) {
 	if err := systems.SetActive(context.Background(), created.ID.String(), false); err != nil {
 		t.Fatalf("SetActive: %v", err)
 	}
-	got, err = svc.AddIdentifier(context.Background(), testClinicID.String(), testUserID.String(), Input{
+	got, err = svc.AddIdentifier(context.Background(), testClinicID.String(), testUserID.String(), identifier.Input{
 		PatientID: seedPatient(t, db, testClinicID).String(), Value: "12345678",
 	})
 	if err != nil {
 		t.Fatalf("AddIdentifier after deactivation: %v", err)
 	}
-	if got.System != RawSystem {
+	if got.System != identifier.RawSystem {
 		t.Fatalf("system after deactivation = %s, want raw", got.System)
 	}
 }
@@ -321,9 +336,9 @@ func TestUpdateSystemPreservesActiveState(t *testing.T) {
 	_, systems, _ := newTestServices(t, db)
 	ctx := context.Background()
 
-	created, err := systems.Create(ctx, testUserID.String(), SystemInput{
+	created, err := systems.Create(ctx, testUserID.String(), identifier.SystemInput{
 		System: "urn:librevita:id:py:cedula", DisplayName: "Cedula", Pattern: `^\d{6,8}-\d$`,
-		Transform: TransformNone, CheckAlgorithm: CheckNone, CheckDVCount: 1, CheckStartWeight: 2,
+		Transform: identifier.TransformNone, CheckAlgorithm: identifier.CheckNone, CheckDVCount: 1, CheckStartWeight: 2,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -331,28 +346,33 @@ func TestUpdateSystemPreservesActiveState(t *testing.T) {
 	if err := systems.SetActive(ctx, created.ID.String(), false); err != nil {
 		t.Fatal(err)
 	}
-	updated, err := systems.Update(ctx, created.ID.String(), SystemInput{
+	updated, err := systems.Update(ctx, created.ID.String(), identifier.SystemInput{
 		System: "urn:librevita:id:py:cedula", DisplayName: "Cedula de Identidad", Pattern: `^\d{6,8}-\d$`,
-		Transform: TransformNone, CheckAlgorithm: CheckNone, CheckDVCount: 1, CheckStartWeight: 2,
+		Transform: identifier.TransformNone, CheckAlgorithm: identifier.CheckNone, CheckDVCount: 1, CheckStartWeight: 2,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if updated.Active != 0 {
-		t.Errorf("updated system active = %d, want 0 (editing a deactivated system must not reactivate it)", updated.Active)
+	if updated.Active {
+		t.Errorf("updated system active = %v, want false (editing a deactivated system must not reactivate it)", updated.Active)
 	}
 }
 
 func TestListSkipsUndecryptableIdentifiers(t *testing.T) {
-	db := openTestDB(t)
-	svc, _, _ := newTestServices(t, db)
-	patientID := seedPatient(t, db, testClinicID)
+	client := openTestDB(t)
+	svc, _, _ := newTestServices(t, client)
+	patientID := seedPatient(t, client, testClinicID)
 
 	badID := uuid.Must(uuid.NewV7())
-	_, err := db.Exec(`
-		INSERT INTO patient_identifiers (id, patient_id, system, value_ciphertext, nonce, blind_index, created_by)
-		VALUES (?, ?, ?, ?, ?, ?, ?)
-	`, badID.String(), patientID.String(), CPFSystem, []byte("invalid-ciphertext"), []byte("invalid-nonce-24-bytes--"), "0000000000000000000000000000000000000000000000000000000000000000", testUserID.String())
+	_, err := client.PatientIdentifier.Create().
+		SetID(badID).
+		SetPatientID(patientID).
+		SetSystem(identifier.CPFSystem).
+		SetValueCiphertext([]byte("invalid-ciphertext")).
+		SetNonce([]byte("invalid-nonce-24-bytes--")).
+		SetBlindIndex("0000000000000000000000000000000000000000000000000000000000000000").
+		SetCreatedBy(testUserID).
+		Save(context.Background())
 	if err != nil {
 		t.Fatalf("insert bad identifier: %v", err)
 	}

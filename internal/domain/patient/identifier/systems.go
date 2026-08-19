@@ -2,15 +2,12 @@ package identifier
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
 
 	"github.com/google/uuid"
-
-	"librevita.org/internal/domain/patient/repository"
 )
 
 // ErrSystemNotFound is returned when the system does not exist.
@@ -29,56 +26,34 @@ type SystemInput struct {
 	CheckStartWeight int
 }
 
-// SystemsService administers identifier_systems. Every change is
-// validated, persisted, and applied to the shared Registry, so the new
-// or updated document type is usable immediately.
+// SystemsService administers identifier_systems.
 type SystemsService struct {
-	q   *repository.Queries
-	reg *Registry
-	log *slog.Logger
+	repo SystemRepository
+	reg  *Registry
+	log  *slog.Logger
 }
 
 // NewSystemsService is the Fx provider.
-func NewSystemsService(db *sql.DB, reg *Registry, log *slog.Logger) *SystemsService {
-	return &SystemsService{q: repository.New(db), reg: reg, log: log}
-}
-
-// LoadActiveSystems returns the active systems in detection order.
-// It is used at boot to fill the registry.
-func LoadActiveSystems(ctx context.Context, db *sql.DB) ([]repository.IdentifierSystem, error) {
-	rows, err := repository.New(db).ListActiveIdentifierSystems(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("identifier: load active systems: %w", err)
-	}
-	return rows, nil
+func NewSystemsService(repo SystemRepository, reg *Registry, log *slog.Logger) *SystemsService {
+	return &SystemsService{repo: repo, reg: reg, log: log}
 }
 
 // List returns every system, active and inactive, ordered by URN.
-func (s *SystemsService) List(ctx context.Context) ([]repository.IdentifierSystem, error) {
-	rows, err := s.q.ListIdentifierSystems(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("identifier: list systems: %w", err)
-	}
-	return rows, nil
+func (s *SystemsService) List(ctx context.Context) ([]*IdentifierSystem, error) {
+	return s.repo.ListAll(ctx)
 }
 
 // SystemByID returns one system, active or inactive.
-func (s *SystemsService) SystemByID(ctx context.Context, id string) (*repository.IdentifierSystem, error) {
-	row, err := s.q.GetIdentifierSystemByID(ctx, uuid.MustParse(id))
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, ErrSystemNotFound
-	}
+func (s *SystemsService) SystemByID(ctx context.Context, id string) (*IdentifierSystem, error) {
+	uUUID, err := uuid.Parse(id)
 	if err != nil {
-		return nil, fmt.Errorf("identifier: get system: %w", err)
+		return nil, fmt.Errorf("identifier: invalid system id: %w", err)
 	}
-	return &row, nil
+	return s.repo.GetByID(ctx, uUUID)
 }
 
-// Create registers a new document system. The URN must be unique and
-// in the application namespace, the pattern must compile, and the
-// check-digit fields must be consistent. The registry is reloaded on
-// success.
-func (s *SystemsService) Create(ctx context.Context, createdBy string, in SystemInput) (*repository.IdentifierSystem, error) {
+// Create registers a new document system.
+func (s *SystemsService) Create(ctx context.Context, createdBy string, in SystemInput) (*IdentifierSystem, error) {
 	cfg, err := validateInput(in)
 	if err != nil {
 		return nil, err
@@ -87,100 +62,87 @@ func (s *SystemsService) Create(ctx context.Context, createdBy string, in System
 	if err != nil {
 		return nil, fmt.Errorf("identifier: generate system id: %w", err)
 	}
-	row, err := s.q.CreateIdentifierSystem(ctx, repository.CreateIdentifierSystemParams{
+
+	var cb *uuid.UUID
+	if createdBy != "" {
+		parsed := uuid.MustParse(createdBy)
+		cb = &parsed
+	}
+
+	sys := &IdentifierSystem{
 		ID:               id,
 		System:           cfg.System,
 		DisplayName:      cfg.DisplayName,
 		Pattern:          cfg.Pattern,
 		Mask:             cfg.Mask,
-		Transform:        string(cfg.Transform),
-		CheckAlgorithm:   string(cfg.CheckAlgorithm),
-		CheckBaseLen:     int64(cfg.CheckBaseLen),
-		CheckDvCount:     int64(cfg.CheckDVCount),
-		CheckStartWeight: int64(cfg.CheckStartWeight),
-		CreatedBy:        uuidOrNil(createdBy),
-	})
+		Transform:        cfg.Transform,
+		CheckAlgorithm:   cfg.CheckAlgorithm,
+		CheckBaseLen:     cfg.CheckBaseLen,
+		CheckDVCount:     cfg.CheckDVCount,
+		CheckStartWeight: cfg.CheckStartWeight,
+		Active:           true,
+		CreatedBy:        cb,
+	}
+
+	saved, err := s.repo.Create(ctx, sys)
 	if err != nil {
-		return nil, fmt.Errorf("identifier: create system: %w", err)
+		return nil, err
 	}
 	if err := s.reload(ctx); err != nil {
 		return nil, err
 	}
-	return &row, nil
+	return saved, nil
 }
 
-// Update replaces the definition of an existing system. The URN itself
-// is immutable: it is the FHIR system of stored identifiers, so
-// renaming it would orphan them. The active flag is preserved: editing
-// a deactivated system must not silently reactivate it.
-func (s *SystemsService) Update(ctx context.Context, id string, in SystemInput) (*repository.IdentifierSystem, error) {
+// Update replaces the definition of an existing system.
+func (s *SystemsService) Update(ctx context.Context, id string, in SystemInput) (*IdentifierSystem, error) {
 	cfg, err := validateInput(in)
 	if err != nil {
 		return nil, err
 	}
-	existing, err := s.SystemByID(ctx, id)
+	uUUID, err := uuid.Parse(id)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("identifier: invalid system id: %w", err)
 	}
-	row, err := s.q.UpdateIdentifierSystem(ctx, repository.UpdateIdentifierSystemParams{
+
+	sys := &IdentifierSystem{
+		ID:               uUUID,
+		System:           cfg.System,
 		DisplayName:      cfg.DisplayName,
 		Pattern:          cfg.Pattern,
 		Mask:             cfg.Mask,
-		Transform:        string(cfg.Transform),
-		CheckAlgorithm:   string(cfg.CheckAlgorithm),
-		CheckBaseLen:     int64(cfg.CheckBaseLen),
-		CheckDvCount:     int64(cfg.CheckDVCount),
-		CheckStartWeight: int64(cfg.CheckStartWeight),
-		Active:           existing.Active,
-		ID:               uuid.MustParse(id),
-	})
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, ErrSystemNotFound
+		Transform:        cfg.Transform,
+		CheckAlgorithm:   cfg.CheckAlgorithm,
+		CheckBaseLen:     cfg.CheckBaseLen,
+		CheckDVCount:     cfg.CheckDVCount,
+		CheckStartWeight: cfg.CheckStartWeight,
 	}
+
+	updated, err := s.repo.Update(ctx, sys)
 	if err != nil {
-		return nil, fmt.Errorf("identifier: update system: %w", err)
+		return nil, err
 	}
 	if err := s.reload(ctx); err != nil {
 		return nil, err
 	}
-	return &row, nil
+	return updated, nil
 }
 
-// SetActive activates or deactivates a system. Deactivated systems
-// keep their stored identifiers (they remain readable and removable)
-// but no longer participate in detection or exact lookup.
+// SetActive activates or deactivates a system.
 func (s *SystemsService) SetActive(ctx context.Context, id string, active bool) error {
-	value := int64(0)
-	if active {
-		value = 1
-	}
-	existing, err := s.q.GetIdentifierSystemByID(ctx, uuid.MustParse(id))
-	if errors.Is(err, sql.ErrNoRows) {
-		return ErrSystemNotFound
-	}
+	uUUID, err := uuid.Parse(id)
 	if err != nil {
-		return fmt.Errorf("identifier: get system: %w", err)
+		return fmt.Errorf("identifier: invalid system id: %w", err)
 	}
-	_, err = s.q.UpdateIdentifierSystem(ctx, repository.UpdateIdentifierSystemParams{
-		DisplayName:      existing.DisplayName,
-		Pattern:          existing.Pattern,
-		Transform:        existing.Transform,
-		CheckAlgorithm:   existing.CheckAlgorithm,
-		CheckBaseLen:     existing.CheckBaseLen,
-		CheckDvCount:     existing.CheckDvCount,
-		CheckStartWeight: existing.CheckStartWeight,
-		Active:           value,
-		ID:               existing.ID,
-	})
-	if err != nil {
-		return fmt.Errorf("identifier: set system active: %w", err)
+	if err := s.repo.SetActive(ctx, uUUID, active); err != nil {
+		return err
 	}
 	return s.reload(ctx)
 }
 
 // reload refreshes the shared registry from the database.
 func (s *SystemsService) reload(ctx context.Context) error {
-	rows, err := s.q.ListActiveIdentifierSystems(ctx)
+	rows, err := s.repo.ListActive(ctx)
 	if err != nil {
 		return fmt.Errorf("identifier: reload systems: %w", err)
 	}
@@ -214,11 +176,4 @@ func validateInput(in SystemInput) (SystemConfig, error) {
 		return SystemConfig{}, &ValidationError{Msg: "pattern is not a valid regex: " + err.Error()}
 	}
 	return cfg, nil
-}
-
-func uuidOrNil(s string) uuid.UUID {
-	if s == "" {
-		return uuid.Nil
-	}
-	return uuid.MustParse(s)
 }

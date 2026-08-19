@@ -2,6 +2,7 @@
 package user
 
 import (
+	"context"
 	"log/slog"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 	"librevita.org/internal/core/policy"
 	"librevita.org/internal/core/server"
 	httphandler "librevita.org/internal/domain/user/delivery/http"
+	"librevita.org/internal/domain/user/repository"
 	"librevita.org/internal/domain/user/usecase"
 )
 
@@ -26,8 +28,13 @@ const (
 	limitWindow   = time.Minute
 )
 
-// Module provides the authentication service, handlers, and routes.
+// Module provides the authentication service, repositories, handlers, and routes.
 var Module = fx.Module("user",
+	fx.Provide(repository.NewUserRepository),
+	fx.Provide(repository.NewRoleRepository),
+	fx.Provide(repository.NewSpecialtyRepository),
+	fx.Provide(repository.NewStaffRequestRepository),
+	fx.Provide(repository.NewSetupRepository),
 	fx.Provide(usecase.NewService),
 	fx.Provide(httphandler.NewHandler),
 	// Share the setup gate with other modules so every route is gated
@@ -36,7 +43,20 @@ var Module = fx.Module("user",
 		return h.SetupGate
 	}),
 	fx.Invoke(registerRoutes),
+	fx.Invoke(seedRoles),
 )
+
+func seedRoles(lc fx.Lifecycle, roleRepo usecase.RoleRepository, log *slog.Logger) {
+	lc.Append(fx.Hook{
+		OnStart: func(ctx context.Context) error {
+			if err := roleRepo.SeedDefaults(ctx); err != nil {
+				log.Error("failed to seed default roles", "error", err)
+				return err
+			}
+			return nil
+		},
+	})
+}
 
 func registerRoutes(e *echo.Echo, h *httphandler.Handler, sessions *auth.SessionManager,
 	policies *policy.PolicyEngine, auditLogger *audit.Logger, log *slog.Logger) {

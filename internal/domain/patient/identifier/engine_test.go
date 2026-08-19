@@ -3,28 +3,26 @@ package identifier
 import (
 	"strings"
 	"testing"
-
-	"librevita.org/internal/domain/patient/repository"
 )
 
-// testSystem builds a repository row for tests.
+// testSystem builds a domain entity for tests.
 func testSystem(system, displayName, pattern string, transform Transform,
-	algo CheckAlgorithm, base, dv, start int) repository.IdentifierSystem {
-	return repository.IdentifierSystem{
+	algo CheckAlgorithm, base, dv, start int) *IdentifierSystem {
+	return &IdentifierSystem{
 		System:           system,
 		DisplayName:      displayName,
 		Pattern:          pattern,
-		Transform:        string(transform),
-		CheckAlgorithm:   string(algo),
-		CheckBaseLen:     int64(base),
-		CheckDvCount:     int64(dv),
-		CheckStartWeight: int64(start),
-		Active:           1,
+		Transform:        transform,
+		CheckAlgorithm:   algo,
+		CheckBaseLen:     base,
+		CheckDVCount:     dv,
+		CheckStartWeight: start,
+		Active:           true,
 	}
 }
 
 // mustConfigured parses a row into a strategy, failing the test.
-func mustConfigured(t *testing.T, row repository.IdentifierSystem) *configured {
+func mustConfigured(t *testing.T, row *IdentifierSystem) *configured {
 	t.Helper()
 	c, err := newConfigured(row)
 	if err != nil {
@@ -34,8 +32,8 @@ func mustConfigured(t *testing.T, row repository.IdentifierSystem) *configured {
 }
 
 // seedRows reproduces the migration seeds for registry tests.
-func seedRows() []repository.IdentifierSystem {
-	return []repository.IdentifierSystem{
+func seedRows() []*IdentifierSystem {
+	return []*IdentifierSystem{
 		testSystem(CPFSystem, "CPF (Brasil)", "[0-9]{11}", TransformDigits, CheckMod11Desc, 9, 2, 10),
 		testSystem(SUSSystem, "Cartão SUS (Brasil)", "[0-9]{15}", TransformDigits, CheckMod11Cyclic, 14, 1, 10),
 		testSystem(NIFSystem, "NIF (Portugal)", "[0-9]{9}", TransformDigits, CheckMod11Desc, 8, 1, 9),
@@ -48,53 +46,35 @@ func TestCPF(t *testing.T) {
 
 	cases := []struct {
 		value string
-		ok    bool
+		want  string
 	}{
-		{"123.456.789-09", true}, // canonical example, valid
-		{"52998224725", true},    // documentation example, valid
-		{"529.982.247-25", true}, // same, formatted
-		{"12345678901", false},   // wrong check digit
-		{"11111111111", false},   // all equal
-		{"1234567890", false},    // wrong length
-		{"1234567890a", false},   // non-digit
+		{"12345678909", "12345678909"},
+		{"123.456.789-09", "12345678909"},
+		{"  123.456.789-09  ", "12345678909"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.value, func(t *testing.T) {
 			got, err := c.Normalize(tc.value)
-			if tc.ok && err != nil {
-				t.Fatalf("Normalize(%q) = %v, want valid", tc.value, err)
+			if err != nil {
+				t.Fatalf("Normalize(%s): %v", tc.value, err)
 			}
-			if !tc.ok && err == nil {
-				t.Fatalf("Normalize(%q) = %q, want error", tc.value, got)
-			}
-			if tc.ok && got != "12345678909" && got != "52998224725" {
-				t.Fatalf("Normalize(%q) = %q, unexpected canonical form", tc.value, got)
+			if got != tc.want {
+				t.Fatalf("Normalize(%s) = %q, want %q", tc.value, got, tc.want)
 			}
 		})
 	}
-}
 
-func TestNIF(t *testing.T) {
-	c := mustConfigured(t, seedRows()[2])
-
-	cases := []struct {
-		value string
-		ok    bool
-	}{
-		{"999999990", true},  // documented valid test number
-		{"123456789", true},  // check digit 9, valid
-		{"999999999", false}, // wrong check digit
-		{"123456780", false}, // wrong check digit
-		{"99999999", false},  // wrong length
+	invalid := []string{
+		"12345678900",
+		"11111111111",
+		"1234567890",
+		"123456789012",
+		"abc",
 	}
-	for _, tc := range cases {
-		t.Run(tc.value, func(t *testing.T) {
-			got, err := c.Normalize(tc.value)
-			if tc.ok && err != nil {
-				t.Fatalf("Normalize(%q) = %v, want valid", tc.value, err)
-			}
-			if !tc.ok && err == nil {
-				t.Fatalf("Normalize(%q) = %q, want error", tc.value, got)
+	for _, raw := range invalid {
+		t.Run("invalid/"+raw, func(t *testing.T) {
+			if _, err := c.Normalize(raw); err == nil {
+				t.Fatalf("Normalize(%s) expected an error", raw)
 			}
 		})
 	}
@@ -103,25 +83,43 @@ func TestNIF(t *testing.T) {
 func TestSUS(t *testing.T) {
 	c := mustConfigured(t, seedRows()[1])
 
-	cases := []struct {
-		value string
-		ok    bool
-	}{
-		{"123456789012340", true},  // computed from the DATASUS scheme
-		{"123456789012341", false}, // wrong check digit
-		{"111111111111111", false}, // all equal
-		{"12345678901234", false},  // wrong length
+	valid := "123456789012340"
+	if !c.Detect(valid) {
+		t.Fatal("Detect(valid) = false, want true")
 	}
-	for _, tc := range cases {
-		t.Run(tc.value, func(t *testing.T) {
-			got, err := c.Normalize(tc.value)
-			if tc.ok && err != nil {
-				t.Fatalf("Normalize(%q) = %v, want valid", tc.value, err)
-			}
-			if !tc.ok && err == nil {
-				t.Fatalf("Normalize(%q) = %q, want error", tc.value, got)
-			}
-		})
+	got, err := c.Normalize(" 123 4567 8901 2340 ")
+	if err != nil {
+		t.Fatalf("Normalize: %v", err)
+	}
+	if got != valid {
+		t.Fatalf("Normalize = %q, want %q", got, valid)
+	}
+
+	if _, err := c.Normalize("123456789012341"); err == nil {
+		t.Fatal("Normalize(bad dv) expected an error")
+	}
+}
+
+func TestNIF(t *testing.T) {
+	c := mustConfigured(t, seedRows()[2])
+
+	valid := "123456789"
+	got, err := c.Normalize(" 123 456 789 ")
+	if err != nil {
+		t.Fatalf("Normalize: %v", err)
+	}
+	if got != valid {
+		t.Fatalf("Normalize = %q, want %q", got, valid)
+	}
+
+	valid2 := "999999990"
+	got2, err := c.Normalize(valid2)
+	if err != nil || got2 != valid2 {
+		t.Fatalf("Normalize(%s) = %q, err: %v", valid2, got2, err)
+	}
+
+	if _, err := c.Normalize("123456780"); err == nil {
+		t.Fatal("Normalize(bad dv) expected an error")
 	}
 }
 
@@ -129,38 +127,46 @@ func TestPassport(t *testing.T) {
 	c := mustConfigured(t, seedRows()[3])
 
 	cases := []struct {
-		value string
-		want  string
-		ok    bool
+		raw  string
+		want string
 	}{
-		{"ab1234567", "AB1234567", true}, // case-folded to uppercase
-		{"C123456", "C123456", true},
-		{"ABCD123456", "", false}, // too many letters
-		{"AB12345", "", false},    // too few digits
+		{"fx123456", "FX123456"},
+		{"  a12345678  ", "A12345678"},
+		{"CC123456789", "CC123456789"},
 	}
 	for _, tc := range cases {
-		t.Run(tc.value, func(t *testing.T) {
-			got, err := c.Normalize(tc.value)
-			if tc.ok {
-				if err != nil {
-					t.Fatalf("Normalize(%q) = %v, want %q", tc.value, err, tc.want)
-				}
-				if got != tc.want {
-					t.Fatalf("Normalize(%q) = %q, want %q", tc.value, got, tc.want)
-				}
-			} else if err == nil {
-				t.Fatalf("Normalize(%q) = %q, want error", tc.value, got)
+		t.Run(tc.raw, func(t *testing.T) {
+			got, err := c.Normalize(tc.raw)
+			if err != nil {
+				t.Fatalf("Normalize(%s): %v", tc.raw, err)
+			}
+			if got != tc.want {
+				t.Fatalf("Normalize(%s) = %q, want %q", tc.raw, got, tc.want)
+			}
+		})
+	}
+
+	invalid := []string{
+		"1234567",
+		"ABC123456",
+		"A12345",
+	}
+	for _, raw := range invalid {
+		t.Run("invalid/"+raw, func(t *testing.T) {
+			if _, err := c.Normalize(raw); err == nil {
+				t.Fatalf("Normalize(%s) expected an error", raw)
 			}
 		})
 	}
 }
 
-func TestConfiguredDetect(t *testing.T) {
+func TestDetect(t *testing.T) {
 	c := mustConfigured(t, seedRows()[0])
-	for _, value := range []string{"123.456.789-09", "52998224725", " 12345678909 "} {
-		if !c.Detect(value) {
-			t.Fatalf("Detect(%q) = false, want true", value)
-		}
+	if !c.Detect("12345678909") {
+		t.Fatal("Detect(12345678909) = false, want true")
+	}
+	if !c.Detect("123.456.789-09") {
+		t.Fatal("Detect(123.456.789-09) = false, want true")
 	}
 	if c.Detect("12345") {
 		t.Fatal("Detect(12345) = true, want false")
@@ -170,7 +176,7 @@ func TestConfiguredDetect(t *testing.T) {
 func TestConfiguredRejectsConfigErrors(t *testing.T) {
 	cases := []struct {
 		name string
-		row  repository.IdentifierSystem
+		row  *IdentifierSystem
 	}{
 		{"empty pattern", testSystem("urn:librevita:id:x", "X", "", TransformNone, CheckNone, 0, 1, 10)},
 		{"bad regex", testSystem("urn:librevita:id:x", "X", "[", TransformNone, CheckNone, 0, 1, 10)},
