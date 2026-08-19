@@ -18,8 +18,6 @@ import (
 	"sort"
 	"strings"
 	"sync"
-
-	"librevita.org/internal/domain/patient/repository"
 )
 
 // RawSystem is the reserved URN of the built-in fallback strategy. It
@@ -117,8 +115,8 @@ func NewRegistry() *Registry {
 // called at boot and after every administrative change. Detection
 // order is deterministic regardless of the query's own ordering:
 // longest pattern first, then by URN.
-func (r *Registry) Reload(systems []repository.IdentifierSystem) error {
-	sorted := append([]repository.IdentifierSystem(nil), systems...)
+func (r *Registry) Reload(systems []*IdentifierSystem) error {
+	sorted := append([]*IdentifierSystem(nil), systems...)
 	sort.SliceStable(sorted, func(i, j int) bool {
 		if len(sorted[i].Pattern) != len(sorted[j].Pattern) {
 			return len(sorted[i].Pattern) > len(sorted[j].Pattern)
@@ -207,7 +205,7 @@ type configured struct {
 	re  *regexp.Regexp
 }
 
-func newConfigured(row repository.IdentifierSystem) (*configured, error) {
+func newConfigured(row *IdentifierSystem) (*configured, error) {
 	cfg, err := ParseSystemConfig(row)
 	if err != nil {
 		return nil, err

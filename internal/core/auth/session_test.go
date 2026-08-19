@@ -11,20 +11,22 @@ import (
 	"testing"
 	"time"
 
+	"entgo.io/ent/dialect"
+	entsql "entgo.io/ent/dialect/sql"
+	"github.com/google/uuid"
 	_ "modernc.org/sqlite"
 
-	"librevita.org/internal/core/auth/repository"
+	"librevita.org/ent"
 	"librevita.org/internal/core/config"
 	"librevita.org/internal/core/database"
-	userrepo "librevita.org/internal/domain/user/repository"
 	"librevita.org/internal/testutil"
 )
 
 const testUserID = "01990000-0000-7000-8000-000000000001"
 
-func openTestDB(t *testing.T) *sql.DB {
+func openSessionTest(t *testing.T) *ent.Client {
 	t.Helper()
-	db, err := sql.Open("sqlite", "file:session-test?mode=memory&cache=shared")
+	db, err := sql.Open("sqlite", "file:session-test-"+uuid.NewString()+"?mode=memory&cache=shared")
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
@@ -35,36 +37,40 @@ func openTestDB(t *testing.T) *sql.DB {
 	if err := database.Migrate(context.Background(), db, log); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
-	return db
+
+	drv := entsql.OpenDB(dialect.SQLite, db)
+	client := ent.NewClient(ent.Driver(drv))
+	t.Cleanup(func() { client.Close() })
+
+	return client
 }
 
-func seedUser(t *testing.T, db *sql.DB, id string) {
+func seedUser(t *testing.T, client *ent.Client, id string) {
 	t.Helper()
 	hash, err := HashPassword("test-password")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := testutil.User(context.Background(), db, id, "user@example.org", "admin", hash); err != nil {
+	if err := testutil.User(context.Background(), client, id, "user@example.org", "admin", hash); err != nil {
 		t.Fatalf("seed user: %v", err)
 	}
 }
 
-func newManager(t *testing.T, db *sql.DB, ttl time.Duration) *SessionManager {
+func newManager(t *testing.T, client *ent.Client, ttl time.Duration) *SessionManager {
 	t.Helper()
 	m := &SessionManager{
-		db:      db,
-		queries: repository.New(db),
-		ttl:     ttl,
-		secure:  false,
-		log:     slog.New(slog.DiscardHandler),
+		repo:   NewSessionRepository(client),
+		ttl:    ttl,
+		secure: false,
+		log:    slog.New(slog.DiscardHandler),
 	}
 	return m
 }
 
 func TestSessionLifecycle(t *testing.T) {
-	db := openTestDB(t)
-	seedUser(t, db, testUserID)
-	m := newManager(t, db, time.Hour)
+	client := openSessionTest(t)
+	seedUser(t, client, testUserID)
+	m := newManager(t, client, time.Hour)
 
 	token, err := m.Create(context.Background(), Principal{ID: testUserID, Email: "user@example.org", Name: "Test User", Role: RoleAdmin})
 	if err != nil {
@@ -91,9 +97,9 @@ func TestSessionLifecycle(t *testing.T) {
 }
 
 func TestSessionUnknownToken(t *testing.T) {
-	db := openTestDB(t)
-	seedUser(t, db, testUserID)
-	m := newManager(t, db, time.Hour)
+	client := openSessionTest(t)
+	seedUser(t, client, testUserID)
+	m := newManager(t, client, time.Hour)
 
 	if _, err := m.Authenticate(context.Background(), "bogus"); err != ErrNoSession {
 		t.Fatalf("Authenticate = %v, want ErrNoSession", err)
@@ -101,9 +107,9 @@ func TestSessionUnknownToken(t *testing.T) {
 }
 
 func TestSessionExpiry(t *testing.T) {
-	db := openTestDB(t)
-	seedUser(t, db, testUserID)
-	m := newManager(t, db, -time.Hour) // Already expired.
+	client := openSessionTest(t)
+	seedUser(t, client, testUserID)
+	m := newManager(t, client, -time.Hour) // Already expired.
 
 	token, err := m.Create(context.Background(), Principal{ID: testUserID, Email: "user@example.org", Name: "Test User", Role: RoleAdmin})
 	if err != nil {
@@ -115,18 +121,14 @@ func TestSessionExpiry(t *testing.T) {
 }
 
 func TestSessionRejectsDeactivatedUser(t *testing.T) {
-	db := openTestDB(t)
-	seedUser(t, db, testUserID)
-	u, err := userrepo.New(db).GetUserByEmail(context.Background(), "user@example.org")
-	if err != nil {
+	client := openSessionTest(t)
+	seedUser(t, client, testUserID)
+
+	userUUID := uuid.MustParse(testUserID)
+	if err := client.User.UpdateOneID(userUUID).SetActive(false).Exec(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := userrepo.New(db).UpdateUser(context.Background(), userrepo.UpdateUserParams{
-		ID: u.ID, Email: u.Email, DisplayName: u.DisplayName, RoleID: u.RoleID, Active: false,
-	}); err != nil {
-		t.Fatal(err)
-	}
-	m := newManager(t, db, time.Hour)
+	m := newManager(t, client, time.Hour)
 
 	token, err := m.Create(context.Background(), Principal{ID: testUserID, Email: "user@example.org", Name: "Test User", Role: RoleAdmin})
 	if err != nil {
@@ -137,38 +139,38 @@ func TestSessionRejectsDeactivatedUser(t *testing.T) {
 	}
 }
 
-func TestSessionManagerRequiresSQLite(t *testing.T) {
+func TestSessionManagerRequiresClient(t *testing.T) {
 	if _, err := NewSessionManager(nil, &config.Config{Mode: "development"}, slog.New(slog.DiscardHandler)); err == nil {
 		t.Fatal("NewSessionManager(nil) should fail")
 	}
 }
 
 func TestSessionManagerRequiresKeyInProduction(t *testing.T) {
-	db := openTestDB(t)
+	client := openSessionTest(t)
 	cfg := &config.Config{Mode: "production"}
-	if _, err := NewSessionManager(db, cfg, slog.New(slog.DiscardHandler)); err == nil {
+	if _, err := NewSessionManager(NewSessionRepository(client), cfg, slog.New(slog.DiscardHandler)); err == nil {
 		t.Fatal("NewSessionManager without a key in production should fail")
 	}
 }
 
 func TestSessionManagerRejectsMalformedKey(t *testing.T) {
-	db := openTestDB(t)
+	client := openSessionTest(t)
 	for _, key := range []string{"not-base64!!", base64.StdEncoding.EncodeToString([]byte("short"))} {
 		cfg := &config.Config{Mode: "production", PasetoKey: key}
-		if _, err := NewSessionManager(db, cfg, slog.New(slog.DiscardHandler)); err == nil {
+		if _, err := NewSessionManager(NewSessionRepository(client), cfg, slog.New(slog.DiscardHandler)); err == nil {
 			t.Fatalf("NewSessionManager with key %q should fail", key)
 		}
 	}
 }
 
 func TestSessionManagerAcceptsConfiguredKey(t *testing.T) {
-	db := openTestDB(t)
+	client := openSessionTest(t)
 	key := base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{0x42}, 32))
-	m, err := NewSessionManager(db, &config.Config{Mode: "production", PasetoKey: key}, slog.New(slog.DiscardHandler))
+	m, err := NewSessionManager(NewSessionRepository(client), &config.Config{Mode: "production", PasetoKey: key}, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatalf("NewSessionManager: %v", err)
 	}
-	seedUser(t, db, testUserID)
+	seedUser(t, client, testUserID)
 	token, err := m.Create(context.Background(), Principal{ID: testUserID, Email: "user@example.org", Name: "Test User", Role: RoleAdmin})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
@@ -179,16 +181,15 @@ func TestSessionManagerAcceptsConfiguredKey(t *testing.T) {
 }
 
 func TestSessionRejectsTamperedToken(t *testing.T) {
-	db := openTestDB(t)
-	seedUser(t, db, testUserID)
-	m := newManager(t, db, time.Hour)
+	client := openSessionTest(t)
+	seedUser(t, client, testUserID)
+	m := newManager(t, client, time.Hour)
 
 	token, err := m.Create(context.Background(), Principal{ID: testUserID, Email: "user@example.org", Name: "Test User", Role: RoleAdmin})
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 
-	// Flip the final character; the MAC must fail.
 	tampered := token[:len(token)-1] + string(flipByte(token[len(token)-1]))
 	if _, err := m.Authenticate(context.Background(), tampered); err != ErrNoSession {
 		t.Fatalf("Authenticate of tampered token = %v, want ErrNoSession", err)
@@ -196,9 +197,9 @@ func TestSessionRejectsTamperedToken(t *testing.T) {
 }
 
 func TestSessionTokenIsPaseto(t *testing.T) {
-	db := openTestDB(t)
-	seedUser(t, db, testUserID)
-	m := newManager(t, db, time.Hour)
+	client := openSessionTest(t)
+	seedUser(t, client, testUserID)
+	m := newManager(t, client, time.Hour)
 
 	token, err := m.Create(context.Background(), Principal{ID: testUserID, Email: "user@example.org", Name: "Test User", Role: RoleAdmin})
 	if err != nil {
@@ -217,17 +218,16 @@ func flipByte(b byte) byte {
 }
 
 func TestSessionManagerKeyBoundary(t *testing.T) {
-	db := openTestDB(t)
+	client := openSessionTest(t)
 	log := slog.New(slog.DiscardHandler)
 
-	// Only the explicit development environment may run without a key.
 	for _, env := range []string{"production", "staging", "prod", "test"} {
-		if _, err := NewSessionManager(db, &config.Config{Mode: env}, log); err == nil {
+		if _, err := NewSessionManager(NewSessionRepository(client), &config.Config{Mode: env}, log); err == nil {
 			t.Fatalf("env %q must require a paseto key", env)
 		}
 	}
 
-	m, err := NewSessionManager(db, &config.Config{Mode: "development"}, log)
+	m, err := NewSessionManager(NewSessionRepository(client), &config.Config{Mode: "development"}, log)
 	if err != nil {
 		t.Fatalf("development env must allow an ephemeral key: %v", err)
 	}
@@ -235,7 +235,7 @@ func TestSessionManagerKeyBoundary(t *testing.T) {
 		t.Fatal("development cookies must not use Secure")
 	}
 
-	m, err = NewSessionManager(db, &config.Config{Mode: "staging", PasetoKey: base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{0x42}, 32))}, log)
+	m, err = NewSessionManager(NewSessionRepository(client), &config.Config{Mode: "staging", PasetoKey: base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{0x42}, 32))}, log)
 	if err != nil {
 		t.Fatalf("staging with a key must work: %v", err)
 	}
@@ -244,18 +244,15 @@ func TestSessionManagerKeyBoundary(t *testing.T) {
 	}
 }
 
-// TestSessionCookieAttributes pins the cookie security contract that
-// gosec G124 cannot see: HttpOnly and SameSite are always on, and
-// Secure follows the environment (dev runs without TLS).
 func TestSessionCookieAttributes(t *testing.T) {
-	db := openTestDB(t)
+	client := openSessionTest(t)
 	log := slog.New(slog.DiscardHandler)
 
-	dev, err := NewSessionManager(db, &config.Config{Mode: "development"}, log)
+	dev, err := NewSessionManager(NewSessionRepository(client), &config.Config{Mode: "development"}, log)
 	if err != nil {
 		t.Fatal(err)
 	}
-	prod, err := NewSessionManager(db, &config.Config{
+	prod, err := NewSessionManager(NewSessionRepository(client), &config.Config{
 		Mode: "production", PasetoKey: base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{0x42}, 32)),
 	}, log)
 	if err != nil {

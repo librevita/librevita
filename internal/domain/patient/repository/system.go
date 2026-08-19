@@ -1,0 +1,247 @@
+package repository
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"github.com/google/uuid"
+
+	"librevita.org/ent"
+	"librevita.org/ent/identifiersystem"
+	patientmodel "librevita.org/internal/domain/patient/model"
+)
+
+type systemRepository struct {
+	client *ent.Client
+}
+
+// NewSystemRepository creates an identifier system repository adapter.
+func NewSystemRepository(client *ent.Client) patientmodel.SystemRepository {
+	return &systemRepository{client: client}
+}
+
+func (r *systemRepository) ListAll(ctx context.Context) ([]*patientmodel.IdentifierSystem, error) {
+	rows, err := r.client.IdentifierSystem.Query().
+		Order(ent.Asc(identifiersystem.FieldDisplayName)).
+		All(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("system repository: list all: %w", err)
+	}
+	out := make([]*patientmodel.IdentifierSystem, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, toSystemDomain(row))
+	}
+	return out, nil
+}
+
+func (r *systemRepository) ListActive(ctx context.Context) ([]*patientmodel.IdentifierSystem, error) {
+	rows, err := r.client.IdentifierSystem.Query().
+		Where(identifiersystem.ActiveEQ(true)).
+		All(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("system repository: list active: %w", err)
+	}
+	out := make([]*patientmodel.IdentifierSystem, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, toSystemDomain(row))
+	}
+	return out, nil
+}
+
+func (r *systemRepository) GetByID(ctx context.Context, id uuid.UUID) (*patientmodel.IdentifierSystem, error) {
+	row, err := r.client.IdentifierSystem.Get(ctx, id)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			return nil, patientmodel.ErrSystemNotFound
+		}
+		return nil, fmt.Errorf("system repository: get by id: %w", err)
+	}
+	return toSystemDomain(row), nil
+}
+
+func (r *systemRepository) GetBySystem(ctx context.Context, system string) (*patientmodel.IdentifierSystem, error) {
+	row, err := r.client.IdentifierSystem.Query().
+		Where(identifiersystem.SystemEQ(system)).
+		Only(ctx)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			return nil, patientmodel.ErrSystemNotFound
+		}
+		return nil, fmt.Errorf("system repository: get by system: %w", err)
+	}
+	return toSystemDomain(row), nil
+}
+
+func (r *systemRepository) Create(ctx context.Context, s *patientmodel.IdentifierSystem) (*patientmodel.IdentifierSystem, error) {
+	create := r.client.IdentifierSystem.Create().
+		SetID(s.ID).
+		SetSystem(s.System).
+		SetDisplayName(s.DisplayName).
+		SetPattern(s.Pattern).
+		SetMask(s.Mask).
+		SetTransform(string(s.Transform)).
+		SetCheckAlgorithm(string(s.CheckAlgorithm)).
+		SetCheckBaseLen(s.CheckBaseLen).
+		SetCheckDvCount(s.CheckDVCount).
+		SetCheckStartWeight(s.CheckStartWeight).
+		SetActive(s.Active)
+	if s.CreatedBy != nil {
+		create.SetCreatedBy(*s.CreatedBy)
+	}
+
+	saved, err := create.Save(ctx)
+	if err != nil {
+		if ent.IsConstraintError(err) {
+			return nil, patientmodel.ErrDuplicate
+		}
+		return nil, fmt.Errorf("system repository: create: %w", err)
+	}
+	return toSystemDomain(saved), nil
+}
+
+func (r *systemRepository) Update(ctx context.Context, s *patientmodel.IdentifierSystem) (*patientmodel.IdentifierSystem, error) {
+	update := r.client.IdentifierSystem.UpdateOneID(s.ID).
+		SetDisplayName(s.DisplayName).
+		SetPattern(s.Pattern).
+		SetMask(s.Mask).
+		SetTransform(string(s.Transform)).
+		SetCheckAlgorithm(string(s.CheckAlgorithm)).
+		SetCheckBaseLen(s.CheckBaseLen).
+		SetCheckDvCount(s.CheckDVCount).
+		SetCheckStartWeight(s.CheckStartWeight).
+		SetUpdatedAt(time.Now())
+
+	if s.System != "" {
+		update.SetSystem(s.System)
+	}
+
+	updated, err := update.Save(ctx)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			return nil, patientmodel.ErrSystemNotFound
+		}
+		if ent.IsConstraintError(err) {
+			return nil, patientmodel.ErrDuplicate
+		}
+		return nil, fmt.Errorf("system repository: update: %w", err)
+	}
+	return toSystemDomain(updated), nil
+}
+
+func (r *systemRepository) SetActive(ctx context.Context, id uuid.UUID, active bool) error {
+	err := r.client.IdentifierSystem.UpdateOneID(id).
+		SetActive(active).
+		SetUpdatedAt(time.Now()).
+		Exec(ctx)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			return patientmodel.ErrSystemNotFound
+		}
+		return fmt.Errorf("system repository: set active: %w", err)
+	}
+	return nil
+}
+
+func (r *systemRepository) SeedDefaults(ctx context.Context) error {
+	defaultSystems := []*patientmodel.IdentifierSystem{
+		{
+			System:           "urn:librevita:id:br:cpf",
+			DisplayName:      "CPF (Brasil)",
+			Pattern:          `[0-9]{11}`,
+			Transform:        patientmodel.TransformDigits,
+			CheckAlgorithm:   patientmodel.CheckMod11Desc,
+			CheckBaseLen:     9,
+			CheckDVCount:     2,
+			CheckStartWeight: 10,
+			Active:           true,
+			Mask:             "000.000.000-00",
+		},
+		{
+			System:           "urn:librevita:id:br:sus",
+			DisplayName:      "Cartão SUS (Brasil)",
+			Pattern:          `[0-9]{15}`,
+			Transform:        patientmodel.TransformDigits,
+			CheckAlgorithm:   patientmodel.CheckMod11Cyclic,
+			CheckBaseLen:     14,
+			CheckDVCount:     1,
+			CheckStartWeight: 10,
+			Active:           true,
+			Mask:             "000 0000 0000 0000",
+		},
+		{
+			System:           "urn:librevita:id:pt:nif",
+			DisplayName:      "NIF (Portugal)",
+			Pattern:          `[0-9]{9}`,
+			Transform:        patientmodel.TransformDigits,
+			CheckAlgorithm:   patientmodel.CheckMod11Desc,
+			CheckBaseLen:     8,
+			CheckDVCount:     1,
+			CheckStartWeight: 9,
+			Active:           true,
+			Mask:             "000 000 000",
+		},
+		{
+			System:           "urn:librevita:id:passport",
+			DisplayName:      "Passaporte",
+			Pattern:          `[A-Z]{1,2}[0-9]{6,9}`,
+			Transform:        patientmodel.TransformUpper,
+			CheckAlgorithm:   patientmodel.CheckNone,
+			CheckBaseLen:     0,
+			CheckDVCount:     1,
+			CheckStartWeight: 10,
+			Active:           true,
+			Mask:             "",
+		},
+	}
+	for _, sys := range defaultSystems {
+		exists, err := r.client.IdentifierSystem.Query().Where(identifiersystem.SystemEQ(sys.System)).Exist(ctx)
+		if err != nil {
+			return fmt.Errorf("system repository: check seed %q: %w", sys.System, err)
+		}
+		if exists {
+			continue
+		}
+		sID, err := uuid.NewV7()
+		if err != nil {
+			return err
+		}
+		if err := r.client.IdentifierSystem.Create().
+			SetID(sID).
+			SetSystem(sys.System).
+			SetDisplayName(sys.DisplayName).
+			SetPattern(sys.Pattern).
+			SetTransform(string(sys.Transform)).
+			SetCheckAlgorithm(string(sys.CheckAlgorithm)).
+			SetCheckBaseLen(sys.CheckBaseLen).
+			SetCheckDvCount(sys.CheckDVCount).
+			SetCheckStartWeight(sys.CheckStartWeight).
+			SetActive(sys.Active).
+			SetMask(sys.Mask).
+			Exec(ctx); err != nil && !ent.IsConstraintError(err) {
+			return fmt.Errorf("system repository: seed insert %q: %w", sys.System, err)
+		}
+	}
+	return nil
+}
+
+func toSystemDomain(row *ent.IdentifierSystem) *patientmodel.IdentifierSystem {
+	if row == nil {
+		return nil
+	}
+	return &patientmodel.IdentifierSystem{
+		ID:               row.ID,
+		System:           row.System,
+		DisplayName:      row.DisplayName,
+		Pattern:          row.Pattern,
+		Transform:        patientmodel.Transform(row.Transform),
+		CheckAlgorithm:   patientmodel.CheckAlgorithm(row.CheckAlgorithm),
+		CheckBaseLen:     row.CheckBaseLen,
+		CheckDVCount:     row.CheckDvCount,
+		CheckStartWeight: row.CheckStartWeight,
+		Active:           row.Active,
+		CreatedBy:        row.CreatedBy,
+		CreatedAt:        row.CreatedAt,
+		UpdatedAt:        row.UpdatedAt,
+	}
+}

@@ -13,10 +13,14 @@ import (
 	"strings"
 	"testing"
 
+	"entgo.io/ent/dialect"
+	entsql "entgo.io/ent/dialect/sql"
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 	_ "modernc.org/sqlite"
 
+	"librevita.org/ent"
+	"librevita.org/ent/auditlog"
 	"librevita.org/internal/core/audit"
 	"librevita.org/internal/core/auth"
 	"librevita.org/internal/core/config"
@@ -26,8 +30,10 @@ import (
 	"librevita.org/internal/core/server"
 	"librevita.org/internal/core/storage"
 	"librevita.org/internal/core/vault"
-	"librevita.org/internal/domain/clinic"
+	clinicrepo "librevita.org/internal/domain/clinic/repository"
+	clinicusecase "librevita.org/internal/domain/clinic/usecase"
 	"librevita.org/internal/domain/patient/identifier"
+	patientrepo "librevita.org/internal/domain/patient/repository"
 	"librevita.org/internal/domain/patient/usecase"
 	"librevita.org/internal/testutil"
 )
@@ -37,27 +43,19 @@ var testAdminID = uuid.MustParse("01990000-0000-7000-8000-00000000000a")
 // newIdentifierServices wires the identifier subsystem against a
 // migrated database: a fixed master key, the registry seeded from the
 // migration rows, and the two services the handlers use.
-func newIdentifierServices(t *testing.T, db *sql.DB, log *slog.Logger) (*identifier.Service, *identifier.SystemsService) {
+func newIdentifierServices(t *testing.T, client *ent.Client, key *crypto.MasterKey, log *slog.Logger) (*identifier.Service, *identifier.SystemsService) {
 	t.Helper()
-	v, err := vault.NewBBoltVault(filepath.Join(t.TempDir(), "keys.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = v.Close() })
-
-	key, err := crypto.NewMasterKey("nAmIvOXVc0vb6M9G7P9q2j2yK1WxP3sJ8q5dR4tU6wA=", v)
-	if err != nil {
-		t.Fatal(err)
-	}
 	reg := identifier.NewRegistry()
-	rows, err := identifier.LoadActiveSystems(context.Background(), db)
+	sysRepo := patientrepo.NewSystemRepository(client)
+	rows, err := sysRepo.ListActive(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := reg.Reload(rows); err != nil {
 		t.Fatal(err)
 	}
-	return identifier.NewService(db, key, reg, log), identifier.NewSystemsService(db, reg, log)
+	idRepo := patientrepo.NewIdentifierRepository(client)
+	return identifier.NewService(idRepo, key, reg, log), identifier.NewSystemsService(sysRepo, reg, log)
 }
 
 func newDocEnv(t *testing.T) (*echo.Echo, *auth.SessionManager, *usecase.Service, *storage.FileManager) {
@@ -68,43 +66,59 @@ func newDocEnv(t *testing.T) (*echo.Echo, *auth.SessionManager, *usecase.Service
 // newDocEnvFull is newDocEnv with the blob directory and the database
 // exposed, so the tests can tamper with stored objects and inspect the
 // audit trail.
-func newDocEnvFull(t *testing.T, dir string) (*echo.Echo, *auth.SessionManager, *usecase.Service, *storage.FileManager, *sql.DB) {
+func newDocEnvFull(t *testing.T, dir string) (*echo.Echo, *auth.SessionManager, *usecase.Service, *storage.FileManager, *ent.Client) {
 	t.Helper()
-	db := openDocDB(t)
+	client := openDocDB(t)
 	log := slog.New(slog.DiscardHandler)
-	sessions, err := auth.NewSessionManager(db, &config.Config{Mode: "development"}, log)
+	sessions, err := auth.NewSessionManager(auth.NewSessionRepository(client), &config.Config{Mode: "development"}, log)
 	if err != nil {
 		t.Fatal(err)
 	}
-	auditLogger, err := audit.NewLogger(db, log)
+	auditLogger, err := audit.NewLogger(audit.NewAuditRepository(client), log)
 	if err != nil {
 		t.Fatal(err)
 	}
-	policies, err := policy.NewPolicyEngine(db, log)
+	policies, err := policy.NewPolicyEngine(policy.NewPolicyRepository(client), log)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := policies.Load(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	svc := usecase.NewService(db, log, policies)
+
+	v, err := vault.NewBBoltVault(filepath.Join(t.TempDir(), "keys.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = v.Close() })
+
+	engine, err := crypto.NewEngine("nAmIvOXVc0vb6M9G7P9q2j2yK1WxP3sJ8q5dR4tU6wA=", v)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	svc := usecase.NewService(patientrepo.NewPatientRepository(client), engine, log, policies)
 	store, err := storage.NewLocal(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	files, err := storage.NewFileManager(db, store, log)
+	files, err := storage.NewFileManager(storage.NewIndexRepository(client), store, log)
 	if err != nil {
 		t.Fatal(err)
 	}
 	csrf := auth.NewCSRF(&config.Config{Mode: "development"})
-	if err := testutil.Clinic(context.Background(), db, "01990000-0000-7000-8000-0000000000d0", "Test Clinic", "000.000.000-00"); err != nil {
+	if err := testutil.Clinic(context.Background(), client, "01990000-0000-7000-8000-0000000000d0", "Test Clinic", "000.000.000-00"); err != nil {
 		t.Fatalf("seed clinic: %v", err)
 	}
-	if err := testutil.User(context.Background(), db, "01990000-0000-7000-8000-00000000000a", "admin@example.org", "admin", "x"); err != nil {
+	if err := testutil.User(context.Background(), client, "01990000-0000-7000-8000-00000000000a", "admin@example.org", "admin", "x"); err != nil {
 		t.Fatalf("seed admin: %v", err)
 	}
-	ids, systems := newIdentifierServices(t, db, log)
-	h := NewHandler(svc, clinic.NewClockProvider(db), csrf, auditLogger, files, ids, systems)
+	masterKey, err := crypto.NewMasterKey("nAmIvOXVc0vb6M9G7P9q2j2yK1WxP3sJ8q5dR4tU6wA=", v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids, systems := newIdentifierServices(t, client, masterKey, log)
+	h := NewHandler(svc, clinicusecase.NewClockProvider(clinicrepo.NewClinicRepository(client)), csrf, auditLogger, files, ids, systems)
 
 	e := echo.New()
 	e.POST("/patients/:id/documents", h.UploadDocument,
@@ -113,10 +127,10 @@ func newDocEnvFull(t *testing.T, dir string) (*echo.Echo, *auth.SessionManager, 
 	e.GET("/patients/:id/documents/:fileID", h.DownloadDocument,
 		server.RequireAuth(sessions, log),
 		server.RequirePolicy(policies, auditLogger, log, "patient.document.read"))
-	return e, sessions, svc, files, db
+	return e, sessions, svc, files, client
 }
 
-func openDocDB(t *testing.T) *sql.DB {
+func openDocDB(t *testing.T) *ent.Client {
 	t.Helper()
 	name := "patient-docs-" + uuid.NewString()
 	db, err := sql.Open("sqlite", "file:"+name+"?mode=memory&cache=shared")
@@ -128,7 +142,11 @@ func openDocDB(t *testing.T) *sql.DB {
 	if err := database.Migrate(context.Background(), db, slog.New(slog.DiscardHandler)); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
-	return db
+
+	drv := entsql.OpenDB(dialect.SQLite, db)
+	client := ent.NewClient(ent.Driver(drv))
+	t.Cleanup(func() { client.Close() })
+	return client
 }
 
 func mustLocalStore(t *testing.T) storage.Store {
@@ -286,14 +304,15 @@ func TestDocumentsDownloadDetectsTampering(t *testing.T) {
 		t.Errorf("download body = %q, want the tampered payload", got)
 	}
 
-	var detail string
-	err = db.QueryRowContext(context.Background(),
-		`SELECT detail FROM audit_log WHERE action = 'file.read' AND result = 'failure' ORDER BY id DESC LIMIT 1`).Scan(&detail)
+	lastAudit, err := db.AuditLog.Query().
+		Where(auditlog.ActionEQ("file.read"), auditlog.ResultEQ("failure")).
+		Order(ent.Desc(auditlog.FieldID)).
+		First(context.Background())
 	if err != nil {
 		t.Fatalf("query audit trail: %v", err)
 	}
-	if !strings.Contains(detail, "checksum mismatch") {
-		t.Errorf("audit detail = %q, want checksum mismatch", detail)
+	if lastAudit.Detail == nil || !strings.Contains(*lastAudit.Detail, "checksum mismatch") {
+		t.Errorf("audit detail = %v, want checksum mismatch", lastAudit.Detail)
 	}
 }
 

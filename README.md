@@ -19,7 +19,7 @@ Self-hosted medical clinic management software built in Go. The module path is `
 ## Task Targets
 
 ```sh
-task gen                    # regenerate schema, templ views and sqlc repositories
+task gen                    # regenerate Ent models, schema, and templ views
 task dev                    # fast unoptimized binary (bin/librevita-dev)
 task build                  # optimized production binary (bin/librevita)
 task image                  # OCI image (podman by default, task image -- IMG=docker)
@@ -37,7 +37,7 @@ task cross -- os=linux arch=mips64
 `bin/librevita-dev`. Cross builds write files such as `bin/librevita-linux-riscv64`. Every Go command runs on the
 pinned `GO_VERSION` toolchain (Taskfile `vars`) with `CGO_ENABLED=0`, so the binaries are static.
 
-SQLC and templ output is not committed. The generation task (`task gen`) writes them to the workspace for editor
+Ent ORM and templ output is not committed. The generation task (`task gen`) writes them to the workspace for editor
 support; build, test, and vet tasks generate them as dependencies. Incremental behaviour comes from the Go build
 cache, the npm cache and the Taskfile `sources`/`generates` gates: a task only re-runs when its inputs changed.
 
@@ -126,9 +126,9 @@ binaries statically linkable across supported architectures.
 Build caching is incremental: the Go build cache, the npm cache and the Taskfile gates mean a change re-runs only the
 affected tasks:
 
-- `task gen` — schema (from the migrations), templ views and sqlc repositories, regenerated only when their inputs change
+- `task gen` — Ent entities and migration helpers, templ views, regenerated only when their inputs change
 - `task frontend` — npm `ci`, type-check, Tailwind CSS and the esbuild bundle, each gated on its own inputs
-- `task tools` — the pinned generators and analyzers (templ, sqlc, golangci-lint, govulncheck) installed into
+- `task tools` — the pinned generators and analyzers (templ, golangci-lint, govulncheck) installed into
   `.tools/bin` from the bare Go toolchain, independent of the application modules
 - `task build`/`task test`/`task vet`/`task lint`/`task audit` — the Go gate, on the pinned toolchain
 
@@ -150,9 +150,19 @@ http_bind: "0.0.0.0"
 http_port: 8080
 data_dir: ./data
 database:
-  driver: sqlite # sqlite or dqlite
+  driver: sqlite # sqlite, postgres, or dqlite
   sqlite:
     path: ./librevita.db
+  # For driver: postgres, configure the connection.
+  postgres:
+    host: 127.0.0.1
+    port: 5432
+    user: librevita
+    password: secret
+    database: librevita
+    sslmode: disable
+    max_open_conns: 25
+    max_idle_conns: 5
   # For driver: dqlite, give the node candidates as static addresses
   # and/or a discovery SRV record whose targets seed the cluster.
   dqlite:
@@ -193,41 +203,50 @@ vault:
 
 All configuration flags are:
 
-| Flag                           | Environment variable                      | Purpose                                                                                                                                                      |
-| ------------------------------ | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `--config`                     | `LIBREVITA_CONFIG`                        | Configuration file path                                                                                                                                      |
-| `--mode`                       | `LIBREVITA_MODE`                          | Runtime mode: `development` or `production`                                                                                                                  |
-| `--http-bind`                  | `LIBREVITA_HTTP_BIND`                     | HTTP bind address (`0.0.0.0`, `127.0.0.1`, ...)                                                                                                              |
-| `--http-port`                  | `LIBREVITA_HTTP_PORT`                     | HTTP listen port (default `8080`)                                                                                                                            |
-| `--trusted-proxies`            | `LIBREVITA_TRUSTED_PROXIES`               | Comma-separated proxy IPs allowed to set `X-Forwarded-For`                                                                                                   |
-| `--hsts-max-age`               | `LIBREVITA_HSTS_MAX_AGE`                  | `Strict-Transport-Security` max-age in seconds (0 disables; HTTPS only)                                                                                      |
-| `--data-dir`                   | `LIBREVITA_DATA_DIR`                      | Base directory for default database and logs                                                                                                                 |
-| `--db-driver`                  | `LIBREVITA_DATABASE_DRIVER`               | Database backend: `sqlite` or `dqlite`                                                                                                                       |
-| `--db-sqlite-path`             | `LIBREVITA_DATABASE_SQLITE_PATH`          | SQLite file path                                                                                                                                             |
-| `--db-dqlite-addrs`            | `LIBREVITA_DATABASE_DQLITE_ADDRS`         | Comma-separated dqlite node addresses (wire protocol)                                                                                                        |
-| `--db-dqlite-discovery-srv`    | `LIBREVITA_DATABASE_DQLITE_DISCOVERY_SRV` | DNS SRV record seeding the dqlite node candidates (e.g. `_dqlite._tcp.librevita.svc.cluster.local`); at least one of this or `--db-dqlite-addrs` is required |
-| `--db-dqlite-database`         | `LIBREVITA_DATABASE_DQLITE_DATABASE`      | dqlite database name (default `librevita`)                                                                                                                   |
-| `--log-mode`                   | `LIBREVITA_LOGGING_MODE`                  | `console`, `file`, or `rotating`                                                                                                                             |
-| `--log-file-path`              | `LIBREVITA_LOGGING_FILE_PATH`             | File destination (file mode)                                                                                                                                 |
-| `--log-rotating-path`          | `LIBREVITA_LOGGING_ROTATING_PATH`         | Rotating log file destination                                                                                                                                |
-| `--log-rotating-max-size`      | `LIBREVITA_LOGGING_ROTATING_MAX_SIZE_MB`  | Rotating file size in MB                                                                                                                                     |
-| `--log-rotating-max-backups`   | `LIBREVITA_LOGGING_ROTATING_MAX_BACKUPS`  | Number of rotated files                                                                                                                                      |
-| `--log-rotating-max-age`       | `LIBREVITA_LOGGING_ROTATING_MAX_AGE_DAYS` | Maximum rotated file age                                                                                                                                     |
-| `--log-rotating-compress`      | `LIBREVITA_LOGGING_ROTATING_COMPRESS`     | Compress rotated files                                                                                                                                       |
-| `--paseto-key`                 | `LIBREVITA_PASETO_KEY`                    | Session key (base64, 32 bytes; required outside development)                                                                                                 |
-| `--master-key`                 | `LIBREVITA_MASTER_KEY`                    | Field-encryption key (base64, 32 bytes; required outside development)                                                                                        |
-| `--auth-max-concurrent-hashes` | `LIBREVITA_AUTH_MAX_CONCURRENT_HASHES`    | Bound on concurrent Argon2id operations                                                                                                                      |
-| `--storage-backend`            | `LIBREVITA_STORAGE_BACKEND`               | File storage backend: `local` or `s3`                                                                                                                        |
-| `--storage-local-dir`          | `LIBREVITA_STORAGE_LOCAL_DIR`             | Local file storage directory (default `<data-dir>/files`)                                                                                                    |
-| `--storage-s3-endpoint`        | `LIBREVITA_STORAGE_S3_ENDPOINT`           | S3-compatible API endpoint                                                                                                                                   |
-| `--storage-s3-bucket`          | `LIBREVITA_STORAGE_S3_BUCKET`             | S3 bucket for stored files                                                                                                                                   |
-| `--storage-s3-access-key`      | `LIBREVITA_STORAGE_S3_ACCESS_KEY`         | S3 access key                                                                                                                                                |
-| `--storage-s3-secret-key`      | `LIBREVITA_STORAGE_S3_SECRET_KEY`         | S3 secret key                                                                                                                                                |
-| `--storage-s3-region`          | `LIBREVITA_STORAGE_S3_REGION`             | S3 region (may be empty outside AWS)                                                                                                                         |
-| `--storage-s3-secure`          | `LIBREVITA_STORAGE_S3_SECURE`             | Use HTTPS for the S3 endpoint                                                                                                                                |
-| `--storage-s3-path-style`      | `LIBREVITA_STORAGE_S3_PATH_STYLE`         | Use path-style S3 addressing                                                                                                                                 |
-| `--vault-backend`              | `LIBREVITA_VAULT_BACKEND`                 | Key vault storage backend: `bbolt`                                                                                                                           |
-| `--vault-bbolt-path`           | `LIBREVITA_VAULT_BBOLT_PATH`              | Embedded bbolt key vault database path (default `<data-dir>/keys.db`)                                                                                        |
+| Flag                           | Environment variable                         | Purpose                                                                                                                                                      |
+| ------------------------------ | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `--config`                     | `LIBREVITA_CONFIG`                           | Configuration file path                                                                                                                                      |
+| `--mode`                       | `LIBREVITA_MODE`                             | Runtime mode: `development` or `production`                                                                                                                  |
+| `--http-bind`                  | `LIBREVITA_HTTP_BIND`                        | HTTP bind address (`0.0.0.0`, `127.0.0.1`, ...)                                                                                                              |
+| `--http-port`                  | `LIBREVITA_HTTP_PORT`                        | HTTP listen port (default `8080`)                                                                                                                            |
+| `--trusted-proxies`            | `LIBREVITA_TRUSTED_PROXIES`                  | Comma-separated proxy IPs allowed to set `X-Forwarded-For`                                                                                                   |
+| `--hsts-max-age`               | `LIBREVITA_HSTS_MAX_AGE`                     | `Strict-Transport-Security` max-age in seconds (0 disables; HTTPS only)                                                                                      |
+| `--data-dir`                   | `LIBREVITA_DATA_DIR`                         | Base directory for default database and logs                                                                                                                 |
+| `--db-driver`                  | `LIBREVITA_DATABASE_DRIVER`                  | Database backend: `sqlite`, `postgres`, or `dqlite`                                                                                                          |
+| `--db-sqlite-path`             | `LIBREVITA_DATABASE_SQLITE_PATH`             | SQLite file path                                                                                                                                             |
+| `--db-postgres-url`            | `LIBREVITA_DATABASE_POSTGRES_URL`            | PostgreSQL connection string (DSN)                                                                                                                           |
+| `--db-postgres-host`           | `LIBREVITA_DATABASE_POSTGRES_HOST`           | PostgreSQL host                                                                                                                                              |
+| `--db-postgres-port`           | `LIBREVITA_DATABASE_POSTGRES_PORT`           | PostgreSQL port (default `5432`)                                                                                                                             |
+| `--db-postgres-user`           | `LIBREVITA_DATABASE_POSTGRES_USER`           | PostgreSQL user                                                                                                                                              |
+| `--db-postgres-password`       | `LIBREVITA_DATABASE_POSTGRES_PASSWORD`       | PostgreSQL password                                                                                                                                          |
+| `--db-postgres-database`       | `LIBREVITA_DATABASE_POSTGRES_DATABASE`       | PostgreSQL database name                                                                                                                                     |
+| `--db-postgres-sslmode`        | `LIBREVITA_DATABASE_POSTGRES_SSLMODE`        | PostgreSQL SSL mode (`disable`, `require`, `verify-ca`, `verify-full`; default `disable`)                                                                    |
+| `--db-postgres-max-open-conns` | `LIBREVITA_DATABASE_POSTGRES_MAX_OPEN_CONNS` | PostgreSQL max open connections (default `25`)                                                                                                               |
+| `--db-postgres-max-idle-conns` | `LIBREVITA_DATABASE_POSTGRES_MAX_IDLE_CONNS` | PostgreSQL max idle connections (default `5`)                                                                                                                |
+| `--db-dqlite-addrs`            | `LIBREVITA_DATABASE_DQLITE_ADDRS`            | Comma-separated dqlite node addresses (wire protocol)                                                                                                        |
+| `--db-dqlite-discovery-srv`    | `LIBREVITA_DATABASE_DQLITE_DISCOVERY_SRV`    | DNS SRV record seeding the dqlite node candidates (e.g. `_dqlite._tcp.librevita.svc.cluster.local`); at least one of this or `--db-dqlite-addrs` is required |
+| `--db-dqlite-database`         | `LIBREVITA_DATABASE_DQLITE_DATABASE`         | dqlite database name (default `librevita`)                                                                                                                   |
+| `--log-mode`                   | `LIBREVITA_LOGGING_MODE`                     | `console`, `file`, or `rotating`                                                                                                                             |
+| `--log-file-path`              | `LIBREVITA_LOGGING_FILE_PATH`                | File destination (file mode)                                                                                                                                 |
+| `--log-rotating-path`          | `LIBREVITA_LOGGING_ROTATING_PATH`            | Rotating log file destination                                                                                                                                |
+| `--log-rotating-max-size`      | `LIBREVITA_LOGGING_ROTATING_MAX_SIZE_MB`     | Rotating file size in MB                                                                                                                                     |
+| `--log-rotating-max-backups`   | `LIBREVITA_LOGGING_ROTATING_MAX_BACKUPS`     | Number of rotated files                                                                                                                                      |
+| `--log-rotating-max-age`       | `LIBREVITA_LOGGING_ROTATING_MAX_AGE_DAYS`    | Maximum rotated file age                                                                                                                                     |
+| `--log-rotating-compress`      | `LIBREVITA_LOGGING_ROTATING_COMPRESS`        | Compress rotated files                                                                                                                                       |
+| `--paseto-key`                 | `LIBREVITA_PASETO_KEY`                       | Session key (base64, 32 bytes; required outside development)                                                                                                 |
+| `--master-key`                 | `LIBREVITA_MASTER_KEY`                       | Field-encryption key (base64, 32 bytes; required outside development)                                                                                        |
+| `--auth-max-concurrent-hashes` | `LIBREVITA_AUTH_MAX_CONCURRENT_HASHES`       | Bound on concurrent Argon2id operations                                                                                                                      |
+| `--storage-backend`            | `LIBREVITA_STORAGE_BACKEND`                  | File storage backend: `local` or `s3`                                                                                                                        |
+| `--storage-local-dir`          | `LIBREVITA_STORAGE_LOCAL_DIR`                | Local file storage directory (default `<data-dir>/files`)                                                                                                    |
+| `--storage-s3-endpoint`        | `LIBREVITA_STORAGE_S3_ENDPOINT`              | S3-compatible API endpoint                                                                                                                                   |
+| `--storage-s3-bucket`          | `LIBREVITA_STORAGE_S3_BUCKET`                | S3 bucket for stored files                                                                                                                                   |
+| `--storage-s3-access-key`      | `LIBREVITA_STORAGE_S3_ACCESS_KEY`            | S3 access key                                                                                                                                                |
+| `--storage-s3-secret-key`      | `LIBREVITA_STORAGE_S3_SECRET_KEY`            | S3 secret key                                                                                                                                                |
+| `--storage-s3-region`          | `LIBREVITA_STORAGE_S3_REGION`                | S3 region (may be empty outside AWS)                                                                                                                         |
+| `--storage-s3-secure`          | `LIBREVITA_STORAGE_S3_SECURE`                | Use HTTPS for the S3 endpoint                                                                                                                                |
+| `--storage-s3-path-style`      | `LIBREVITA_STORAGE_S3_PATH_STYLE`            | Use path-style S3 addressing                                                                                                                                 |
+| `--vault-backend`              | `LIBREVITA_VAULT_BACKEND`                    | Key vault storage backend: `bbolt`                                                                                                                           |
+| `--vault-bbolt-path`           | `LIBREVITA_VAULT_BBOLT_PATH`                 | Embedded bbolt key vault database path (default `<data-dir>/keys.db`)                                                                                        |
 
 Environment variables are the config keys with `_` separators, always in the full section form (`LIBREVITA_DATABASE_*`, `LIBREVITA_LOGGING_*`, `LIBREVITA_STORAGE_*`, `LIBREVITA_VAULT_*`); no short aliases are accepted.
 
@@ -295,51 +314,71 @@ LIBREVITA_LOGGING_ROTATING_COMPRESS=true \
 
 ## Database
 
-SQLite uses `modernc.org/sqlite`, so it does not require CGO. The connection factory enables WAL mode, a busy timeout,
-foreign keys, and synchronous mode. The SQL pool is limited to one open connection because SQLite has a single writer.
+The persistence layer uses Ent ORM (`entgo.io/ent`). Schema definitions live in `internal/database/schema` as Go
+structs, and the Ent code generator produces the typed client, entities, and mutation API in the `ent/` package. The
+generated code is not committed; `task gen` regenerates it from the schema sources.
 
-Primary keys are UUIDv7 (`TEXT`), generated by the application through `github.com/google/uuid` and stored in canonical
-lowercase form. UUIDv7 is temporally sortable, non-enumerable (a patient id never reveals "patient
-#42"), and stable across independent databases, which matters for importing
-or merging clinical records. IDs are generated in the application, never by SQLite defaults, so the code never depends
+SQLite uses `modernc.org/sqlite`, so it does not require CGO. PostgreSQL uses `github.com/jackc/pgx/v5` as the
+driver. The connection factory enables WAL mode (SQLite), foreign keys, and appropriate pool settings for each backend.
+
+Primary keys are UUIDv7 (`TEXT` in SQLite, `UUID` in PostgreSQL), generated by the application through
+`github.com/google/uuid` and stored in canonical lowercase form. UUIDv7 is temporally sortable, non-enumerable (a
+patient id never reveals "patient #42"), and stable across independent databases, which matters for importing or
+merging clinical records. IDs are generated in the application, never by database defaults, so the code never depends
 on `last_insert_rowid`; the `id` column is passed explicitly to inserts. Display identifiers such as an MRN remain
 separate columns.
 
 Go creates `data_dir` at startup. If database or log paths are not set explicitly, they are created as
 `data_dir/librevita.db` and `data_dir/librevita.log`.
 
-The `database` section mirrors the `storage` layout: a `driver` switch plus a per-backend `sqlite`/`dqlite` subsection.
-The default driver is embedded SQLite (`database.sqlite.path`). Set `LIBREVITA_DATABASE_DRIVER=dqlite` to use the pure-Go wire
-protocol client
-(`github.com/canonical/go-dqlite/v3`) against a dqlite cluster: real transactions (BEGIN/COMMIT replicated through
-Raft), prepared statements, and strong consistency, with the same embedded Goose migrations. The cluster itself is
-operated as a separate server process (a dqlite node binary built with CGO, outside the CGO-disabled application
-build); the integration test behind the `dqlite` build tag (`go test -tags dqlite ./internal/core/database/`) skips
-when no cluster is reachable.
+The `database` section mirrors the `storage` layout: a `driver` switch plus a per-backend `sqlite`/`postgres`/`dqlite`
+subsection. The default driver is embedded SQLite (`database.sqlite.path`). Set `LIBREVITA_DATABASE_DRIVER=postgres` to
+use PostgreSQL with connection pooling (`max_open_conns`, `max_idle_conns`). Set `LIBREVITA_DATABASE_DRIVER=dqlite` to
+use the pure-Go wire protocol client (`github.com/canonical/go-dqlite/v3`) against a dqlite cluster: real transactions
+(BEGIN/COMMIT replicated through Raft), prepared statements, and strong consistency, with the same embedded Goose
+migrations. The cluster itself is operated as a separate server process (a dqlite node binary built with CGO, outside
+the CGO-disabled application build); the integration test behind the `dqlite` build tag
+(`go test -tags dqlite ./internal/core/database/`) skips when no cluster is reachable.
 
 Node candidates come from `database.dqlite.addrs` (static) and/or `database.dqlite.discovery_srv` (a DNS SRV record,
 resolved live on every attempt); at least one is required. The driver only needs the candidates to find the cluster
 leader — once connected, the cluster syncs the full membership — so SRV discovery just bootstraps the list and tracks
 membership changes without restarts; static addresses remain the fallback when a record is empty or the lookup fails.
 
-Tables are `STRICT` and every closed value set is enforced twice: by a `CHECK` constraint in SQLite and by a typed enum
+Every closed value set is enforced twice: by a `CHECK` constraint in the database and by a typed enum
 in `internal/types` (`AuditResult`, `PatientStatus`, `Sex`, `StaffRequestStatus`, `PolicyOrigin`, `UITheme`). Timestamp
-columns (`created_at`, `updated_at`, `expires_at`, `decided_at`) map to `types.DateTime` — an ISO-8601 UTC millis string
-that parses the database `strftime` and legacy RFC3339Nano forms — and the generated repositories type `0/1` flags as
-`bool` and UUID columns as `uuid.UUID`, so id mixing and magic-number comparisons are compile errors.
+columns (`created_at`, `updated_at`, `expires_at`, `decided_at`) map natively to Go's `time.Time` via Ent ORM,
+and the generated entities type UUID columns as `uuid.UUID`, so id mixing and magic-number comparisons are compile
+errors.
 
-Migrations are organized by domain (`db/migrations/00001`..`00012`) and are the single source of truth for the
-schema: `cmd/schemagen` applies them to an in-memory SQLite and exports the consolidated DDL that sqlc consumes
-(`db/schema/schema.sql`). The schema file is a build artifact, not versioned; it is regenerated by the generation stages
-after any migration change.
+### Domain Architecture
+
+Each domain (`clinic`, `user`, `patient`) follows Clean Architecture with these layers:
+
+- **`model/`** — pure domain core: structs, value types, domain errors, and repository interfaces. Zero dependencies
+  on `usecase/`, `repository/`, or `ent/`.
+- **`repository/`** — infrastructure adapters implementing the `model/` interfaces using `ent.Client`.
+- **`usecase/`** — application services coordinating business logic, importing `model/`.
+- **`delivery/http/`** — HTTP handlers consuming `usecase/` services and `model/` types.
+- **`module.go`** — Fx composition root wiring the layers together.
 
 ## Migrations
 
-Migration files live in `db/migrations` and are embedded into the binary. The Fx database lifecycle applies pending
-Goose migrations before the HTTP server starts. Goose logs use the same structured logger as the rest of the process.
+Migration files live in `internal/database/migrations/{sqlite,postgres}` and are embedded into the binary. Each dialect
+has its own directory with Goose-formatted `.sql` files. The Fx database lifecycle applies pending Goose migrations
+before the HTTP server starts. Goose logs use the same structured logger as the rest of the process.
 
-Generated repository code and the consolidated schema are not source artifacts. Edit the migrations under
-`db/migrations` and the queries under `db/query`, then run the generation stages when local generated files are needed.
+New migrations are generated by diffing the Ent schema against the current migration state using the Atlas engine:
+
+```sh
+task db-diff -- name=add_patient_model   # generates for both SQLite and PostgreSQL
+task db-diff-sqlite -- name=changes      # SQLite only
+task db-diff-postgres -- name=changes    # PostgreSQL only
+```
+
+The `cmd/migrate` tool reads the Ent schema, compares it to the existing migrations using Atlas's `ModeReplay`, and
+writes a pretty-printed Goose migration file with the diff. The SQL formatter ensures human-readable output with
+proper indentation for CREATE TABLE statements.
 
 ## HTTP Server
 
@@ -428,7 +467,7 @@ The clinical and administrative features are organized in `internal/domain`:
 - **Clinic** — the installation profile (name, tax id, contact, timezone), created once by onboarding and resolved
   per request through the clock provider. The tenant model is single-clinic per installation (ADR-0001,
   `docs/adr/0001-single-clinic-tenant.md`): `clinic_id` on clinical tables is future-proofing, with the scope
-  convention enforced by a test guard over the sqlc queries.
+  convention enforced by the Ent repository queries.
 - **Staff & specialties** — the clinic specialty catalog and the physician directory. Receptionists propose profile
   changes (name, email, specialties) that an administrator approves or rejects; the request snapshots the previous
   profile so the diff stays readable, and the whole flow (list, history, filters, pagination) is audited.

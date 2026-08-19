@@ -13,10 +13,13 @@ import (
 	"strings"
 	"testing"
 
+	"entgo.io/ent/dialect"
+	entsql "entgo.io/ent/dialect/sql"
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 	_ "modernc.org/sqlite"
 
+	"librevita.org/ent"
 	"librevita.org/internal/core/audit"
 	"librevita.org/internal/core/auth"
 	"librevita.org/internal/core/config"
@@ -24,7 +27,9 @@ import (
 	"librevita.org/internal/core/policy"
 	"librevita.org/internal/core/server"
 	"librevita.org/internal/core/storage"
-	"librevita.org/internal/domain/clinic"
+	clinicrepo "librevita.org/internal/domain/clinic/repository"
+	clinicusecase "librevita.org/internal/domain/clinic/usecase"
+	userrepo "librevita.org/internal/domain/user/repository"
 	"librevita.org/internal/domain/user/usecase"
 	"librevita.org/internal/testutil"
 )
@@ -33,45 +38,52 @@ import (
 var testAdminID = uuid.MustParse("01990000-0000-7000-8000-00000000000a")
 
 // mustFileManager builds a FileManager over a temp local store.
-func mustFileManager(t *testing.T, db *sql.DB) *storage.FileManager {
+func mustFileManager(t *testing.T, client *ent.Client) *storage.FileManager {
 	t.Helper()
 	s, err := storage.NewLocal(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
 	}
-	fm, err := storage.NewFileManager(db, s, slog.New(slog.DiscardHandler))
+	fm, err := storage.NewFileManager(storage.NewIndexRepository(client), s, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
 	}
 	return fm
 }
 
-func newAvatarEnv(t *testing.T) (*echo.Echo, *auth.SessionManager, *storage.FileManager, *sql.DB) {
+func newAvatarEnv(t *testing.T) (*echo.Echo, *auth.SessionManager, *storage.FileManager, *ent.Client) {
 	t.Helper()
-	db := openAvatarDB(t)
+	client := openAvatarDB(t)
 	log := slog.New(slog.DiscardHandler)
-	sessions, err := auth.NewSessionManager(db, &config.Config{Mode: "development"}, log)
+	sessions, err := auth.NewSessionManager(auth.NewSessionRepository(client), &config.Config{Mode: "development"}, log)
 	if err != nil {
 		t.Fatal(err)
 	}
-	auditLogger, err := audit.NewLogger(db, log)
+	auditLogger, err := audit.NewLogger(audit.NewAuditRepository(client), log)
 	if err != nil {
 		t.Fatal(err)
 	}
-	policies, err := policy.NewPolicyEngine(db, log)
+	policies, err := policy.NewPolicyEngine(policy.NewPolicyRepository(client), log)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := policies.Load(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	svc := usecase.NewService(db, sessions, auditLogger, log)
-	if err := testutil.User(context.Background(), db, "01990000-0000-7000-8000-00000000000a", "admin@example.org", "admin", "x"); err != nil {
+
+	userRepo := userrepo.NewUserRepository(client)
+	roleRepo := userrepo.NewRoleRepository(client)
+	specialtyRepo := userrepo.NewSpecialtyRepository(client)
+	staffReqRepo := userrepo.NewStaffRequestRepository(client)
+	setupRepo := userrepo.NewSetupRepository(client)
+
+	svc := usecase.NewService(userRepo, roleRepo, specialtyRepo, staffReqRepo, setupRepo, sessions, auditLogger, log)
+	if err := testutil.User(context.Background(), client, "01990000-0000-7000-8000-00000000000a", "admin@example.org", "admin", "x"); err != nil {
 		t.Fatalf("seed admin: %v", err)
 	}
-	files := mustFileManager(t, db)
+	files := mustFileManager(t, client)
 	csrf := auth.NewCSRF(&config.Config{Mode: "development"})
-	h := NewHandler(svc, nil, csrf, sessions, policies, auditLogger, clinic.NewClockProvider(db), files, log)
+	h := NewHandler(svc, nil, csrf, sessions, policies, auditLogger, clinicusecase.NewClockProvider(clinicrepo.NewClinicRepository(client)), files, log)
 
 	e := echo.New()
 	e.GET("/profile/avatar", h.Avatar, server.RequireAuth(sessions, log))
@@ -81,10 +93,10 @@ func newAvatarEnv(t *testing.T) (*echo.Echo, *auth.SessionManager, *storage.File
 	e.POST("/profile/avatar/remove", h.AvatarRemove,
 		server.RequireAuth(sessions, log),
 		server.RequirePolicy(policies, auditLogger, log, "profile.update"))
-	return e, sessions, files, db
+	return e, sessions, files, client
 }
 
-func openAvatarDB(t *testing.T) *sql.DB {
+func openAvatarDB(t *testing.T) *ent.Client {
 	t.Helper()
 	db, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "avatar.db"))
 	if err != nil {
@@ -95,7 +107,11 @@ func openAvatarDB(t *testing.T) *sql.DB {
 	if err := database.Migrate(context.Background(), db, slog.New(slog.DiscardHandler)); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
-	return db
+
+	drv := entsql.OpenDB(dialect.SQLite, db)
+	client := ent.NewClient(ent.Driver(drv))
+	t.Cleanup(func() { client.Close() })
+	return client
 }
 
 // a tiny valid PNG (1x1) and its sniffed content type.
@@ -159,8 +175,8 @@ func TestAvatarUploadServeRemove(t *testing.T) {
 		t.Fatalf("second upload status = %d, want 302", rec2.Code)
 	}
 
-	var cnt int
-	if err := db.QueryRow(`SELECT COUNT(*) FROM storage_objects`).Scan(&cnt); err != nil {
+	cnt, err := db.StorageObject.Query().Count(ctx)
+	if err != nil {
 		t.Fatalf("count: %v", err)
 	}
 	if cnt != 1 {

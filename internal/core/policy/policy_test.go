@@ -7,10 +7,13 @@ import (
 	"log/slog"
 	"testing"
 
+	"entgo.io/ent/dialect"
+	entsql "entgo.io/ent/dialect/sql"
 	"github.com/google/cel-go/cel"
 	"github.com/google/uuid"
 	_ "modernc.org/sqlite"
 
+	"librevita.org/ent"
 	"librevita.org/internal/core/auth"
 	"librevita.org/internal/core/database"
 	"librevita.org/internal/types"
@@ -28,7 +31,7 @@ func testPolicyEngine(t *testing.T) *PolicyEngine {
 	return pe
 }
 
-func openPolicyDB(t *testing.T) *sql.DB {
+func openPolicyDB(t *testing.T) Repository {
 	t.Helper()
 	name := "policy-test-" + uuid.NewString()
 	db, err := sql.Open("sqlite", "file:"+name+"?mode=memory&cache=shared")
@@ -41,7 +44,12 @@ func openPolicyDB(t *testing.T) *sql.DB {
 	if err := database.Migrate(context.Background(), db, slog.New(slog.DiscardHandler)); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
-	return db
+
+	drv := entsql.OpenDB(dialect.SQLite, db)
+	client := ent.NewClient(ent.Driver(drv))
+	t.Cleanup(func() { client.Close() })
+
+	return NewPolicyRepository(client)
 }
 
 func TestPolicyCompilesAtStartup(t *testing.T) {
@@ -147,12 +155,14 @@ func TestPoliciesSeededFromDefaults(t *testing.T) {
 	}
 
 	// Every seeded policy must have exactly one seed version.
-	var versions int
-	if err := db.QueryRow(`SELECT COUNT(*) FROM policy_versions WHERE origin = 'seed'`).Scan(&versions); err != nil {
-		t.Fatal(err)
-	}
-	if versions != len(DefaultPolicies) {
-		t.Fatalf("seed versions = %d, want %d", versions, len(DefaultPolicies))
+	for _, row := range rows {
+		history, err := pe.History(context.Background(), row.Name, 10)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(history) != 1 || history[0].Origin != "seed" {
+			t.Fatalf("policy %s history = %+v, want 1 seed version", row.Name, history)
+		}
 	}
 }
 
@@ -350,7 +360,7 @@ func TestPolicyIDIsStableUUIDv7(t *testing.T) {
 	var firstID string
 	for _, row := range rows {
 		if row.Name == "admin.view" {
-			firstID = row.ID.String()
+			firstID = row.ID
 			break
 		}
 	}
@@ -375,7 +385,7 @@ func TestPolicyIDIsStableUUIDv7(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, row := range rows {
-		if row.Name == "admin.view" && row.ID.String() != firstID {
+		if row.Name == "admin.view" && row.ID != firstID {
 			t.Fatalf("policy id changed across updates: %q -> %q", firstID, row.ID)
 		}
 	}

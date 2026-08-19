@@ -12,8 +12,8 @@ import (
 )
 
 func TestSetupGateRedirectsWhenNotOnboarded(t *testing.T) {
-	db := openHandlerDB(t)
-	h, _, _ := newHandler(t, db)
+	_, client := openHandlerDB(t)
+	h, _, _ := newHandler(t, client)
 
 	e := echo.New()
 	e.GET("/", func(c echo.Context) error { return c.String(http.StatusOK, "home") }, h.SetupGate())
@@ -28,8 +28,8 @@ func TestSetupGateRedirectsWhenNotOnboarded(t *testing.T) {
 }
 
 func TestSetupGatePassesWhenOnboarded(t *testing.T) {
-	db := openHandlerDB(t)
-	h, _, svc := newHandler(t, db)
+	_, client := openHandlerDB(t)
+	h, _, svc := newHandler(t, client)
 
 	if _, _, err := svc.Onboard(context.Background(),
 		validRegisterInput(), validClinicInput()); err != nil {
@@ -49,8 +49,8 @@ func TestSetupGatePassesWhenOnboarded(t *testing.T) {
 }
 
 func TestSetupGateExemptsSetupPath(t *testing.T) {
-	db := openHandlerDB(t)
-	h, _, _ := newHandler(t, db)
+	_, client := openHandlerDB(t)
+	h, _, _ := newHandler(t, client)
 
 	e := echo.New()
 	e.GET("/setup", func(c echo.Context) error { return c.String(http.StatusOK, "setup") }, h.SetupGate())

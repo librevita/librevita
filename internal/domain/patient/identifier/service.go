@@ -2,68 +2,56 @@ package identifier
 
 import (
 	"context"
-	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 
 	"librevita.org/internal/core/crypto"
-	"librevita.org/internal/domain/patient/repository"
-	"librevita.org/internal/types"
+	patientmodel "librevita.org/internal/domain/patient/model"
 )
 
-// ErrDuplicate reports that the same (system, value) already exists
-// for another patient.
-var ErrDuplicate = errors.New("identifier: duplicate value for system")
+// ErrDuplicate reports that the same (system, value) already exists for another patient.
+var ErrDuplicate = patientmodel.ErrDuplicate
 
 // ErrNotFound is returned when the identifier does not exist.
-var ErrNotFound = errors.New("identifier: not found")
+var ErrNotFound = patientmodel.ErrNotFound
 
-// Input is a document as typed at reception. System is optional: when
-// empty the registry detects it from the value's shape. The detected
-// system is what gets persisted, so search and registration are
-// symmetric.
+// Input is a document as typed at reception.
 type Input struct {
 	PatientID string
 	System    string
 	Value     string
 }
 
-// Identifier is a decrypted identifier. Value is the plaintext and
-// must never be persisted, logged, or audited.
+// Identifier is a decrypted identifier.
 type Identifier struct {
 	ID        string
 	PatientID string
 	System    string
 	Value     string
 	CreatedBy string
-	CreatedAt types.DateTime
-	UpdatedAt types.DateTime
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
-// Service stores, searches, lists, and removes patient identifiers
-// with field-level encryption and blind indexing.
+// Service stores, searches, lists, and removes patient identifiers with field-level encryption and blind indexing.
 type Service struct {
-	db  *sql.DB
-	q   *repository.Queries
-	key *crypto.MasterKey
-	reg *Registry
-	log *slog.Logger
+	repo IdentifierRepository
+	key  *crypto.MasterKey
+	reg  *Registry
+	log  *slog.Logger
 }
 
 // NewService is the Fx provider.
-func NewService(db *sql.DB, key *crypto.MasterKey, reg *Registry, log *slog.Logger) *Service {
-	return &Service{db: db, q: repository.New(db), key: key, reg: reg, log: log}
+func NewService(repo IdentifierRepository, key *crypto.MasterKey, reg *Registry, log *slog.Logger) *Service {
+	return &Service{repo: repo, key: key, reg: reg, log: log}
 }
 
-// AddIdentifier normalizes, validates, encrypts, and stores in. The
-// same (system, value) registered twice for different patients is
-// rejected with ErrDuplicate: a CPF belongs to exactly one patient
-// anywhere in the deployment.
+// AddIdentifier normalizes, validates, encrypts, and stores in.
 func (s *Service) AddIdentifier(ctx context.Context, clinicID, createdBy string, in Input) (*Identifier, error) {
 	strategy := s.resolve(in)
 	normalized, err := strategy.Normalize(in.Value)
@@ -85,19 +73,25 @@ func (s *Service) AddIdentifier(ctx context.Context, clinicID, createdBy string,
 	if err != nil {
 		return nil, fmt.Errorf("identifier: generate id: %w", err)
 	}
-	if err := s.q.CreatePatientIdentifier(ctx, repository.CreatePatientIdentifierParams{
+
+	var cb *uuid.UUID
+	if createdBy != "" {
+		parsed := uuid.MustParse(createdBy)
+		cb = &parsed
+	}
+
+	rec := IdentifierRecord{
 		ID:              id,
 		PatientID:       uuid.MustParse(in.PatientID),
 		System:          strategy.System(),
 		ValueCiphertext: ciphertext,
 		Nonce:           nonce,
 		BlindIndex:      blind,
-		CreatedBy:       uuidOrNil(createdBy),
-	}); err != nil {
-		if isUniqueViolation(err) {
-			return nil, ErrDuplicate
-		}
-		return nil, fmt.Errorf("identifier: create: %w", err)
+		CreatedBy:       cb,
+	}
+
+	if _, err := s.repo.Add(ctx, rec); err != nil {
+		return nil, err
 	}
 	return &Identifier{
 		ID:        id.String(),
@@ -107,31 +101,27 @@ func (s *Service) AddIdentifier(ctx context.Context, clinicID, createdBy string,
 	}, nil
 }
 
-// FindByValue searches for the patient holding raw in clinicID. Every
-// active system whose shape matches raw is tried, most specific first;
-// the raw fallback runs last, so a value that matches no configured
-// system still finds its document. Each candidate decrypts and
-// verifies the plaintext before accepting the match.
+// FindByValue searches for the patient holding raw in clinicID.
 func (s *Service) FindByValue(ctx context.Context, clinicID, raw string) ([]*Identifier, error) {
 	if strings.TrimSpace(raw) == "" {
 		return nil, ErrValueRequired
+	}
+	cUUID, err := uuid.Parse(clinicID)
+	if err != nil {
+		return nil, fmt.Errorf("identifier: invalid clinic id: %w", err)
 	}
 	var found []*Identifier
 	for _, strategy := range s.reg.DetectCandidates(raw) {
 		normalized, err := strategy.Normalize(raw)
 		if err != nil {
-			// The shape matched but the value failed the system's own
-			// rules; the value may still belong to another system.
 			continue
 		}
 		blind, err := s.key.BlindIndex(strategy.System(), normalized)
 		if err != nil {
 			return nil, err
 		}
-		row, err := s.q.FindPatientByBlindIndex(ctx, repository.FindPatientByBlindIndexParams{
-			BlindIndex: blind, ClinicID: uuid.MustParse(clinicID),
-		})
-		if errors.Is(err, sql.ErrNoRows) {
+		row, err := s.repo.FindByBlindIndex(ctx, cUUID, blind)
+		if errors.Is(err, ErrNotFound) {
 			continue
 		}
 		if err != nil {
@@ -140,8 +130,6 @@ func (s *Service) FindByValue(ctx context.Context, clinicID, raw string) ([]*Ide
 		pURN := patientURN(row.PatientID.String())
 		value, err := s.key.DecryptPatientData(ctx, pURN, []byte(row.System), row.ValueCiphertext, row.Nonce)
 		if err != nil {
-			// Defense in depth: a blind index hit must decrypt back to
-			// the expected value, otherwise the row is corrupted.
 			s.log.Error("identifier: blind index hit failed to decrypt", "system", row.System)
 			continue
 		}
@@ -160,18 +148,26 @@ func (s *Service) FindByValue(ctx context.Context, clinicID, raw string) ([]*Ide
 	return found, nil
 }
 
-// List returns the decrypted identifiers of a patient, ordered by
-// system. The patient is scoped to the clinic.
+// List returns the decrypted identifiers of a patient.
 func (s *Service) List(ctx context.Context, clinicID, patientID string) ([]*Identifier, error) {
-	if _, err := s.q.GetPatientByID(ctx, repository.GetPatientByIDParams{
-		ID: uuid.MustParse(patientID), ClinicID: uuid.MustParse(clinicID),
-	}); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, ErrNotFound
-		}
-		return nil, fmt.Errorf("identifier: patient: %w", err)
+	pUUID, err := uuid.Parse(patientID)
+	if err != nil {
+		return nil, fmt.Errorf("identifier: invalid patient id: %w", err)
 	}
-	rows, err := s.q.FindIdentifiersByPatient(ctx, uuid.MustParse(patientID))
+	cUUID, err := uuid.Parse(clinicID)
+	if err != nil {
+		return nil, fmt.Errorf("identifier: invalid clinic id: %w", err)
+	}
+
+	exists, err := s.repo.PatientExists(ctx, cUUID, pUUID)
+	if err != nil {
+		return nil, fmt.Errorf("identifier: patient check: %w", err)
+	}
+	if !exists {
+		return nil, ErrNotFound
+	}
+
+	rows, err := s.repo.ListByPatient(ctx, pUUID)
 	if err != nil {
 		return nil, fmt.Errorf("identifier: list: %w", err)
 	}
@@ -195,21 +191,23 @@ func (s *Service) List(ctx context.Context, clinicID, patientID string) ([]*Iden
 	return out, nil
 }
 
-// ListByPatients returns the decrypted values of a page of patients,
-// keyed by patient id, in a single query (see
-// ListIdentifiersByPatients). Used by the registry list to render the
-// documents column (masked) without per-row round trips. The patient
-// ids come from the already clinic-scoped page query.
+// ListByPatients returns the decrypted values of a page of patients.
 func (s *Service) ListByPatients(ctx context.Context, patientIDs []string) (map[string][]string, error) {
 	out := make(map[string][]string, len(patientIDs))
 	if len(patientIDs) == 0 {
 		return out, nil
 	}
-	idsJSON, err := json.Marshal(patientIDs)
-	if err != nil {
-		return nil, fmt.Errorf("identifier: list by patients: %w", err)
+	var pUUIDs []uuid.UUID
+	for _, pid := range patientIDs {
+		if u, err := uuid.Parse(pid); err == nil {
+			pUUIDs = append(pUUIDs, u)
+		}
 	}
-	rows, err := s.q.ListIdentifiersByPatients(ctx, string(idsJSON))
+	if len(pUUIDs) == 0 {
+		return out, nil
+	}
+
+	rows, err := s.repo.ListByPatients(ctx, pUUIDs)
 	if err != nil {
 		return nil, fmt.Errorf("identifier: list by patients: %w", err)
 	}
@@ -220,8 +218,8 @@ func (s *Service) ListByPatients(ctx context.Context, patientIDs []string) (map[
 			s.log.Error("identifier: failed to decrypt", "patient_id", row.PatientID, "system", row.System, "error", err)
 			continue
 		}
-		patient := row.PatientID.String()
-		out[patient] = append(out[patient], string(value))
+		patientKey := row.PatientID.String()
+		out[patientKey] = append(out[patientKey], string(value))
 	}
 	return out, nil
 }
@@ -231,31 +229,31 @@ func patientURN(patientID string) string {
 }
 
 // Remove deletes one identifier of the patient, scoped to the clinic.
-// An id that does not belong to the patient is ErrNotFound, never a
-// silent no-op.
 func (s *Service) Remove(ctx context.Context, clinicID, patientID, identifierID string) error {
-	if _, err := s.q.GetPatientByID(ctx, repository.GetPatientByIDParams{
-		ID: uuid.MustParse(patientID), ClinicID: uuid.MustParse(clinicID),
-	}); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return ErrNotFound
-		}
-		return fmt.Errorf("identifier: patient: %w", err)
-	}
-	res, err := s.q.DeletePatientIdentifier(ctx, repository.DeletePatientIdentifierParams{
-		ID: uuid.MustParse(identifierID), PatientID: uuid.MustParse(patientID),
-	})
+	pUUID, err := uuid.Parse(patientID)
 	if err != nil {
-		return fmt.Errorf("identifier: delete: %w", err)
+		return fmt.Errorf("identifier: invalid patient id: %w", err)
 	}
-	if affected, err := res.RowsAffected(); err != nil || affected == 0 {
+	cUUID, err := uuid.Parse(clinicID)
+	if err != nil {
+		return fmt.Errorf("identifier: invalid clinic id: %w", err)
+	}
+	idUUID, err := uuid.Parse(identifierID)
+	if err != nil {
+		return fmt.Errorf("identifier: invalid identifier id: %w", err)
+	}
+
+	exists, err := s.repo.PatientExists(ctx, cUUID, pUUID)
+	if err != nil {
+		return fmt.Errorf("identifier: patient check: %w", err)
+	}
+	if !exists {
 		return ErrNotFound
 	}
-	return nil
+
+	return s.repo.Remove(ctx, pUUID, idUUID)
 }
 
-// resolve picks the strategy for in: the configured system when given
-// (unknown systems fall back to raw), otherwise the detected one.
 func (s *Service) resolve(in Input) Strategy {
 	if in.System != "" {
 		return s.reg.ForSystem(in.System)
@@ -263,35 +261,11 @@ func (s *Service) resolve(in Input) Strategy {
 	return s.reg.Detect(in.Value)
 }
 
-// ValidateValue normalizes raw under the given system (empty detects
-// it by shape) and returns the system URN actually used. It does not
-// touch the database; callers use it to validate a document before
-// creating the patient that will hold it.
+// ValidateValue normalizes raw under the given system and returns the system URN actually used.
 func (s *Service) ValidateValue(system, raw string) (string, error) {
 	strategy := s.resolve(Input{System: system, Value: raw})
 	if _, err := strategy.Normalize(raw); err != nil {
 		return "", err
 	}
 	return strategy.System(), nil
-}
-
-// isUniqueViolation reports whether err is a UNIQUE constraint
-// failure (the blind_index collision that maps to ErrDuplicate). It
-// recognizes the backends the application can run on:
-//
-//   - the SQLite driver (modernc) returns an error with Code() 2067
-//     (SQLITE_CONSTRAINT_UNIQUE);
-//   - the dqlite driver reports the extended code 2067 on the write
-//     path and a plain "UNIQUE constraint failed" message otherwise;
-//   - the rqlite driver normalizes to the same Code() interface.
-func isUniqueViolation(err error) bool {
-	if err == nil {
-		return false
-	}
-	type coded interface{ Code() int }
-	var withCode coded
-	if errors.As(err, &withCode) {
-		return withCode.Code() == 2067
-	}
-	return strings.Contains(err.Error(), "UNIQUE constraint failed")
 }

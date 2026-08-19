@@ -31,7 +31,7 @@ jobs:
       # installed through the Go toolchain so setup-go's cache covers it.
       - name: Install Task
         run: go install github.com/go-task/task/v3/cmd/task@v3.52.0
-      # The pinned tools (templ, sqlc, golangci-lint, govulncheck) live
+      # The pinned tools (templ, golangci-lint, govulncheck) live
       # in .tools/bin; the key changes whenever the Taskfile's version
       # pins change. PRs from forks read the base branch's cache only.
       - name: Cache pinned Go tools

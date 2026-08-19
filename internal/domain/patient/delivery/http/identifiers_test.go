@@ -2,24 +2,31 @@ package http
 
 import (
 	"context"
-	"database/sql"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/labstack/echo/v4"
 
+	"librevita.org/ent"
+	"librevita.org/ent/identifiersystem"
+	"librevita.org/ent/patientidentifier"
 	"librevita.org/internal/core/audit"
 	"librevita.org/internal/core/auth"
 	"librevita.org/internal/core/config"
+	"librevita.org/internal/core/crypto"
 	"librevita.org/internal/core/policy"
 	"librevita.org/internal/core/server"
 	"librevita.org/internal/core/storage"
-	"librevita.org/internal/domain/clinic"
+	"librevita.org/internal/core/vault"
+	clinicrepo "librevita.org/internal/domain/clinic/repository"
+	clinicusecase "librevita.org/internal/domain/clinic/usecase"
 	"librevita.org/internal/domain/patient/identifier"
+	patientrepo "librevita.org/internal/domain/patient/repository"
 	"librevita.org/internal/domain/patient/usecase"
 	"librevita.org/internal/testutil"
 )
@@ -28,39 +35,55 @@ var testClinic = "01990000-0000-7000-8000-0000000000d0"
 
 // newIdentEnv mounts the identifier routes with real middlewares and a
 // migrated database.
-func newIdentEnv(t *testing.T) (*echo.Echo, *auth.SessionManager, *usecase.Service, *audit.Logger, *sql.DB) {
+func newIdentEnv(t *testing.T) (*echo.Echo, *auth.SessionManager, *usecase.Service, *audit.Logger, *ent.Client) {
 	t.Helper()
-	db := openDocDB(t)
+	client := openDocDB(t)
 	log := slog.New(slog.DiscardHandler)
-	sessions, err := auth.NewSessionManager(db, &config.Config{Mode: "development"}, log)
+	sessions, err := auth.NewSessionManager(auth.NewSessionRepository(client), &config.Config{Mode: "development"}, log)
 	if err != nil {
 		t.Fatal(err)
 	}
-	auditLogger, err := audit.NewLogger(db, log)
+	auditLogger, err := audit.NewLogger(audit.NewAuditRepository(client), log)
 	if err != nil {
 		t.Fatal(err)
 	}
-	policies, err := policy.NewPolicyEngine(db, log)
+	policies, err := policy.NewPolicyEngine(policy.NewPolicyRepository(client), log)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := policies.Load(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	svc := usecase.NewService(db, log, policies)
-	files, err := storage.NewFileManager(db, mustLocalStore(t), log)
+
+	v, err := vault.NewBBoltVault(filepath.Join(t.TempDir(), "keys.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = v.Close() })
+
+	engine, err := crypto.NewEngine("nAmIvOXVc0vb6M9G7P9q2j2yK1WxP3sJ8q5dR4tU6wA=", v)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	svc := usecase.NewService(patientrepo.NewPatientRepository(client), engine, log, policies)
+	files, err := storage.NewFileManager(storage.NewIndexRepository(client), mustLocalStore(t), log)
 	if err != nil {
 		t.Fatal(err)
 	}
 	csrf := auth.NewCSRF(&config.Config{Mode: "development"})
-	if err := testutil.Clinic(context.Background(), db, "01990000-0000-7000-8000-0000000000d0", "Test Clinic", "000.000.000-00"); err != nil {
+	if err := testutil.Clinic(context.Background(), client, "01990000-0000-7000-8000-0000000000d0", "Test Clinic", "000.000.000-00"); err != nil {
 		t.Fatalf("seed clinic: %v", err)
 	}
-	if err := testutil.User(context.Background(), db, "01990000-0000-7000-8000-00000000000a", "admin@example.org", "admin", "x"); err != nil {
+	if err := testutil.User(context.Background(), client, "01990000-0000-7000-8000-00000000000a", "admin@example.org", "admin", "x"); err != nil {
 		t.Fatalf("seed admin: %v", err)
 	}
-	ids, systems := newIdentifierServices(t, db, log)
-	h := NewHandler(svc, clinic.NewClockProvider(db), csrf, auditLogger, files, ids, systems)
+	masterKey, err := crypto.NewMasterKey("nAmIvOXVc0vb6M9G7P9q2j2yK1WxP3sJ8q5dR4tU6wA=", v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids, systems := newIdentifierServices(t, client, masterKey, log)
+	h := NewHandler(svc, clinicusecase.NewClockProvider(clinicrepo.NewClinicRepository(client)), csrf, auditLogger, files, ids, systems)
 
 	e := echo.New()
 	view := []echo.MiddlewareFunc{
@@ -83,7 +106,7 @@ func newIdentEnv(t *testing.T) (*echo.Echo, *auth.SessionManager, *usecase.Servi
 	e.POST("/identifier-systems/:id", h.IdentifierSystemUpdate, admin...)
 	e.POST("/identifier-systems/:id/active", h.IdentifierSystemSetActive, admin...)
 	e.GET("/identifier-systems/check-fields", h.SystemCheckFields, admin...)
-	return e, sessions, svc, auditLogger, db
+	return e, sessions, svc, auditLogger, client
 }
 
 func postForm(t *testing.T, e *echo.Echo, path string, cookie *http.Cookie, form url.Values) *httptest.ResponseRecorder {
@@ -208,7 +231,7 @@ func TestIdentifierAddValidation(t *testing.T) {
 // add must load the patient through the clinic-scoped service, so a
 // patient id of another clinic is a 404, not a write.
 func TestIdentifierAddRejectsCrossClinicPatient(t *testing.T) {
-	e, sessions, _, _, db := newIdentEnv(t)
+	e, sessions, svc, _, db := newIdentEnv(t)
 	cookie := adminSession(t, sessions)
 
 	// A patient in another clinic.
@@ -216,11 +239,13 @@ func TestIdentifierAddRejectsCrossClinicPatient(t *testing.T) {
 	if err := testutil.Clinic(context.Background(), db, otherClinic, "Other", "111.111.111-11"); err != nil {
 		t.Fatal(err)
 	}
-	var otherPatient string
-	if err := db.QueryRow(`INSERT INTO patients (id, clinic_id, display_name) VALUES (?, ?, 'Other Patient') RETURNING id`,
-		"01990000-0000-7000-8000-0000000000d2", otherClinic).Scan(&otherPatient); err != nil {
+	otherPt, err := svc.Create(context.Background(), otherClinic, testAdminID.String(), usecase.PatientInput{
+		DisplayName: "Other Patient",
+	})
+	if err != nil {
 		t.Fatal(err)
 	}
+	otherPatient := otherPt.ID.String()
 
 	rec := postForm(t, e, "/patients/"+otherPatient+"/identifiers", cookie, url.Values{
 		"value": {"52998224725"},
@@ -240,10 +265,13 @@ func TestIdentifierRemoveAndIdempotency(t *testing.T) {
 	postForm(t, e, "/patients/"+patientID.String()+"/identifiers", cookie, url.Values{
 		"value": {"52998224725"},
 	})
-	var identifierID string
-	if err := db.QueryRow(`SELECT id FROM patient_identifiers WHERE patient_id = ?`, patientID.String()).Scan(&identifierID); err != nil {
+	identRow, err := db.PatientIdentifier.Query().
+		Where(patientidentifier.PatientIDEQ(patientID)).
+		First(context.Background())
+	if err != nil {
 		t.Fatalf("load identifier: %v", err)
 	}
+	identifierID := identRow.ID.String()
 
 	rec := postForm(t, e, "/patients/"+patientID.String()+"/identifiers/"+identifierID+"/remove", cookie, url.Values{})
 	if rec.Code != http.StatusOK {
@@ -357,10 +385,13 @@ func TestIdentifierSystemsAdmin(t *testing.T) {
 
 	// Toggle the cédula inactive: the registry reloads and the value
 	// falls back to raw detection.
-	var systemID string
-	if err := db.QueryRow(`SELECT id FROM identifier_systems WHERE system = 'urn:librevita:id:py:cedula'`).Scan(&systemID); err != nil {
+	sysRow, err := db.IdentifierSystem.Query().
+		Where(identifiersystem.SystemEQ("urn:librevita:id:py:cedula")).
+		First(context.Background())
+	if err != nil {
 		t.Fatal(err)
 	}
+	systemID := sysRow.ID.String()
 	toggle := postForm(t, e, "/identifier-systems/"+systemID+"/active", cookie, url.Values{})
 	if toggle.Code != http.StatusOK || !strings.Contains(toggle.Body.String(), "Inactive") {
 		t.Fatalf("toggle status = %d body = %q, want the inactive row", toggle.Code, toggle.Body.String())
@@ -451,8 +482,8 @@ func TestCreatePatientRejectsBadDocument(t *testing.T) {
 	if !strings.Contains(rec.Body.String(), "invalid check digit") {
 		t.Fatalf("body = %q, want the check digit message", rec.Body.String())
 	}
-	var count int
-	if err := db.QueryRow(`SELECT count(*) FROM patients`).Scan(&count); err != nil {
+	count, err := db.Patient.Query().Count(context.Background())
+	if err != nil {
 		t.Fatal(err)
 	}
 	if count != 0 {
@@ -482,12 +513,12 @@ func TestCreatePatientRejectsDuplicateDocument(t *testing.T) {
 	if second.Code != http.StatusOK || !strings.Contains(second.Body.String(), "already registered") {
 		t.Fatalf("second create status = %d body = %q, want the duplicate message", second.Code, second.Body.String())
 	}
-	var count int
-	if err := db.QueryRow(`SELECT count(*) FROM patients`).Scan(&count); err != nil {
+	count2, err := db.Patient.Query().Count(context.Background())
+	if err != nil {
 		t.Fatal(err)
 	}
-	if count != 1 {
-		t.Fatalf("patients = %d, want 1", count)
+	if count2 != 1 {
+		t.Fatalf("patients = %d, want 1", count2)
 	}
 }
 

@@ -15,10 +15,10 @@ import (
 	"librevita.org/internal/core/auth"
 	"librevita.org/internal/core/server"
 	"librevita.org/internal/core/storage"
-	"librevita.org/internal/domain/clinic"
+	clinicmodel "librevita.org/internal/domain/clinic/model"
+	clinicusecase "librevita.org/internal/domain/clinic/usecase"
 	"librevita.org/internal/domain/patient/delivery/views"
 	"librevita.org/internal/domain/patient/identifier"
-	"librevita.org/internal/domain/patient/repository"
 	"librevita.org/internal/domain/patient/usecase"
 	"librevita.org/internal/types"
 	"librevita.org/internal/ui/components"
@@ -44,7 +44,7 @@ func searchField(s string) string {
 // Handler renders the patient pages and processes submissions.
 type Handler struct {
 	svc     *usecase.Service
-	clocks  *clinic.ClockProvider
+	clocks  *clinicusecase.ClockProvider
 	csrf    *auth.CSRF
 	audit   *audit.Logger
 	files   *storage.FileManager
@@ -53,7 +53,7 @@ type Handler struct {
 }
 
 // NewHandler is the Fx provider.
-func NewHandler(svc *usecase.Service, clocks *clinic.ClockProvider,
+func NewHandler(svc *usecase.Service, clocks *clinicusecase.ClockProvider,
 	csrf *auth.CSRF, auditLogger *audit.Logger, files *storage.FileManager,
 	ids *identifier.Service, systems *identifier.SystemsService) *Handler {
 	return &Handler{svc: svc, clocks: clocks, csrf: csrf, audit: auditLogger,
@@ -134,7 +134,7 @@ func (h *Handler) isSystemField(ctx context.Context, s string) bool {
 		return false
 	}
 	for _, sys := range systems {
-		if sys.Active == 1 && sys.System == s {
+		if sys.Active && sys.System == s {
 			return true
 		}
 	}
@@ -168,7 +168,7 @@ func (h *Handler) documentLookup(c echo.Context, system, q string) error {
 			if err != nil {
 				continue
 			}
-			rows = append(rows, h.rows(ctx, []repository.Patient{*pt})...)
+			rows = append(rows, h.rows(ctx, []usecase.Patient{*pt})...)
 			matched++
 		}
 		total = int64(matched)
@@ -249,7 +249,7 @@ func (h *Handler) Detail(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-	createdBy := orEmpty(row.CreatedByEmail)
+	createdBy := orEmpty(row.CreatorEmail)
 	events, err := h.audit.ForResource(ctx, "patient:"+row.ID.String(), 50)
 	if err != nil {
 		return err
@@ -270,7 +270,7 @@ func (h *Handler) Detail(c echo.Context) error {
 
 // historyView turns audit events into display rows, newest first, with
 // the timestamp rendered in the clinic's timezone.
-func (h *Handler) historyView(events []audit.EventRow, clock *clinic.Clock) []views.HistoryRow {
+func (h *Handler) historyView(events []audit.EventRow, clock *clinicmodel.Clock) []views.HistoryRow {
 	out := make([]views.HistoryRow, 0, len(events))
 	for _, ev := range events {
 		out = append(out, views.HistoryRow{
@@ -416,7 +416,7 @@ func (h *Handler) createIdentifier(ctx context.Context, clinicID, patientID, act
 
 // patientChanges renders the changed fields as "name: old -> new"
 // pairs, listing only fields whose stored value differs from the input.
-func patientChanges(before *repository.GetPatientWithCreatorRow, input usecase.PatientInput) string {
+func patientChanges(before *usecase.GetPatientWithCreatorRow, input usecase.PatientInput) string {
 	type field struct {
 		name string
 		old  string
@@ -425,7 +425,7 @@ func patientChanges(before *repository.GetPatientWithCreatorRow, input usecase.P
 	fields := []field{
 		{"display name", before.DisplayName, input.DisplayName},
 		{"birth date", orEmpty(before.BirthDate), input.BirthDate},
-		{"sex", before.Sex, input.Sex.String()},
+		{"sex", before.Sex.String(), input.Sex.String()},
 		{"phone", orEmpty(before.Phone), input.Phone},
 		{"email", orEmpty(before.Email), input.Email},
 		{"street", orEmpty(before.Street), input.Street},
@@ -569,7 +569,7 @@ func (h *Handler) setStatus(c echo.Context, status types.PatientStatus, successM
 		}
 		// The refreshed row carries the documents column too, so the
 		// mask survives the archive/restore swap.
-		refreshed := h.rows(ctx, []repository.Patient{*patient})
+		refreshed := h.rows(ctx, []usecase.Patient{*patient})
 		return server.Render(c, http.StatusOK, views.PatientRowOnly(refreshed))
 	}
 	if err != nil {
@@ -588,7 +588,7 @@ func (h *Handler) clinicID(ctx context.Context) (string, error) {
 
 // userClock resolves the display clock: the user's personal timezone
 // when set, otherwise the clinic timezone.
-func (h *Handler) userClock(ctx context.Context) (*clinic.Clock, error) {
+func (h *Handler) userClock(ctx context.Context) (*clinicmodel.Clock, error) {
 	tz := ""
 	if p := server.PrincipalCtx(ctx); p != nil {
 		tz = p.Timezone
@@ -625,10 +625,10 @@ func patientID(c echo.Context) (uuid.UUID, error) {
 
 // formError renders the form fragment for htmx submissions and the full
 // page otherwise.
-func (h *Handler) rows(ctx context.Context, patients []repository.Patient) []views.PatientRow {
+func (h *Handler) rows(ctx context.Context, patients []usecase.Patient) []views.PatientRow {
 	clock, err := h.userClock(ctx)
 	if err != nil {
-		clock = clinic.NewClock(clinic.DefaultTimezone)
+		clock = clinicmodel.NewClock(clinicmodel.DefaultTimezone)
 	}
 	// The documents column comes from the encrypted identifiers: every
 	// patient of the page is decrypted in one query, then masked for
@@ -657,17 +657,17 @@ func (h *Handler) rows(ctx context.Context, patients []repository.Patient) []vie
 	return out
 }
 
-func (h *Handler) rowOf(pt *repository.Patient, clock *clinic.Clock) views.PatientRow {
+func (h *Handler) rowOf(pt *usecase.Patient, clock *clinicmodel.Clock) views.PatientRow {
 	return views.PatientRow{
 		ID:          pt.ID.String(),
 		DisplayName: pt.DisplayName,
 		BirthDate:   orEmpty(pt.BirthDate),
-		Sex:         pt.Sex,
+		Sex:         pt.Sex.String(),
 		Document:    "",
 		Phone:       orEmpty(pt.Phone),
 		Email:       orEmpty(pt.Email),
 		City:        orEmpty(pt.City),
-		Status:      pt.Status,
+		Status:      pt.Status.String(),
 		CreatedAt:   clock.FormatStored(pt.CreatedAt),
 	}
 }
@@ -689,11 +689,11 @@ func values(in usecase.PatientInput) views.PatientFormValues {
 	}
 }
 
-func patientInput(pt *repository.GetPatientWithCreatorRow) usecase.PatientInput {
+func patientInput(pt *usecase.GetPatientWithCreatorRow) usecase.PatientInput {
 	return usecase.PatientInput{
 		DisplayName: pt.DisplayName,
 		BirthDate:   orEmpty(pt.BirthDate),
-		Sex:         types.Sex(pt.Sex),
+		Sex:         pt.Sex,
 		Phone:       orEmpty(pt.Phone),
 		Email:       orEmpty(pt.Email),
 		Street:      orEmpty(pt.Street),
@@ -706,8 +706,8 @@ func patientInput(pt *repository.GetPatientWithCreatorRow) usecase.PatientInput 
 
 // uuidStrPtr maps a stored uuid to the nullable string form the policy
 // checks use; a Nil uuid (no registrar recorded) becomes nil.
-func uuidStrPtr(u uuid.UUID) *string {
-	if u == uuid.Nil {
+func uuidStrPtr(u *uuid.UUID) *string {
+	if u == nil || *u == uuid.Nil {
 		return nil
 	}
 	s := u.String()

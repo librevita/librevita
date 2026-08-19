@@ -1,0 +1,75 @@
+package schema
+
+import (
+	"time"
+
+	"entgo.io/ent"
+	"entgo.io/ent/schema/edge"
+	"entgo.io/ent/schema/field"
+	"entgo.io/ent/schema/index"
+	"github.com/google/uuid"
+)
+
+// StaffChangeRequest holds the schema definition for the StaffChangeRequest entity.
+type StaffChangeRequest struct {
+	ent.Schema
+}
+
+// Fields of the StaffChangeRequest.
+func (StaffChangeRequest) Fields() []ent.Field {
+	return []ent.Field{
+		field.UUID("id", uuid.UUID{}).
+			Default(uuid.New).
+			Immutable(),
+		field.UUID("user_id", uuid.UUID{}).
+			Comment("Target staff user account ID"),
+		field.UUID("requested_by", uuid.UUID{}).
+			Comment("User ID who created the request"),
+		field.String("status").
+			Default("pending").
+			Comment("Request status: pending, approved, rejected"),
+		field.String("changes").
+			NotEmpty().
+			Comment("JSON payload describing requested attribute changes"),
+		field.String("decision_note").
+			Optional().
+			Nillable().
+			Comment("Note justifying the approval or rejection"),
+		field.Time("created_at").
+			Default(time.Now).
+			Immutable(),
+		field.Time("decided_at").
+			Optional().
+			Nillable(),
+		field.UUID("decided_by", uuid.UUID{}).
+			Optional().
+			Nillable(),
+	}
+}
+
+// Edges of the StaffChangeRequest.
+func (StaffChangeRequest) Edges() []ent.Edge {
+	return []ent.Edge{
+		edge.From("user", User.Type).
+			Ref("staff_requests").
+			Field("user_id").
+			Unique().
+			Required(),
+		edge.To("requester", User.Type).
+			Field("requested_by").
+			Unique().
+			Required(),
+		edge.To("decider", User.Type).
+			Field("decided_by").
+			Unique(),
+	}
+}
+
+// Indexes of the StaffChangeRequest.
+func (StaffChangeRequest) Indexes() []ent.Index {
+	return []ent.Index{
+		index.Fields("status", "created_at"),
+		index.Fields("user_id"),
+		index.Fields("requested_by", "created_at"),
+	}
+}

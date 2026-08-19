@@ -13,7 +13,7 @@ import (
 	"librevita.org/internal/core/server"
 	"librevita.org/internal/domain/patient/delivery/views"
 	"librevita.org/internal/domain/patient/identifier"
-	"librevita.org/internal/domain/patient/repository"
+	"librevita.org/internal/domain/patient/usecase"
 	"librevita.org/internal/types"
 	"librevita.org/internal/ui/components"
 )
@@ -111,7 +111,7 @@ func (h *Handler) IdentifierAdd(c echo.Context) error {
 // the owner is looked up in the clinic (the global unique index may
 // hold a document from another clinic, in which case only a generic
 // message is shown).
-func (h *Handler) identifierDuplicate(c echo.Context, pt *repository.Patient, in identifier.Input) error {
+func (h *Handler) identifierDuplicate(c echo.Context, pt *usecase.Patient, in identifier.Input) error {
 	ctx := c.Request().Context()
 	clinicID, err := h.clinicID(ctx)
 	if err != nil {
@@ -261,7 +261,7 @@ func (h *Handler) IdentifierSystemSetActive(c echo.Context) error {
 		}
 		return err
 	}
-	if err := h.systems.SetActive(ctx, id.String(), row.Active != 1); err != nil {
+	if err := h.systems.SetActive(ctx, id.String(), !row.Active); err != nil {
 		return err
 	}
 	row, err = h.systems.SystemByID(ctx, id.String())
@@ -316,7 +316,7 @@ func (h *Handler) systemOptions(ctx context.Context) []views.SystemOption {
 	}
 	out := make([]views.SystemOption, 0, len(systems))
 	for _, s := range systems {
-		if s.Active == 1 {
+		if s.Active {
 			out = append(out, views.SystemOption{System: s.System, DisplayName: s.DisplayName, Mask: s.Mask})
 		}
 	}
@@ -331,31 +331,31 @@ func (h *Handler) systemRows(ctx context.Context) ([]views.SystemRow, error) {
 	}
 	out := make([]views.SystemRow, 0, len(systems))
 	for _, s := range systems {
-		out = append(out, systemRowView(&s))
+		out = append(out, systemRowView(s))
 	}
 	return out, nil
 }
 
 // systemRowView decorates one stored system for the catalog.
-func systemRowView(s *repository.IdentifierSystem) views.SystemRow {
+func systemRowView(s *identifier.IdentifierSystem) views.SystemRow {
 	return views.SystemRow{
 		ID:          s.ID.String(),
 		System:      s.System,
 		DisplayName: s.DisplayName,
 		Pattern:     s.Pattern,
-		Transform:   s.Transform,
+		Transform:   string(s.Transform),
 		Check:       checkLabel(s),
-		Active:      s.Active == 1,
+		Active:      s.Active,
 	}
 }
 
 // checkLabel renders the configured check digit as a short label.
-func checkLabel(s *repository.IdentifierSystem) string {
+func checkLabel(s *identifier.IdentifierSystem) string {
 	switch s.CheckAlgorithm {
-	case "mod11_desc":
-		return "mod11 (" + strconv.FormatInt(s.CheckBaseLen, 10) + "+" + strconv.FormatInt(s.CheckDvCount, 10) + " dv)"
-	case "mod11_cyclic":
-		return "mod11 cyclic (" + strconv.FormatInt(s.CheckBaseLen, 10) + "+1 dv)"
+	case identifier.CheckMod11Desc:
+		return "mod11 (" + strconv.Itoa(s.CheckBaseLen) + "+" + strconv.Itoa(s.CheckDVCount) + " dv)"
+	case identifier.CheckMod11Cyclic:
+		return "mod11 cyclic (" + strconv.Itoa(s.CheckBaseLen) + "+1 dv)"
 	default:
 		return "none"
 	}

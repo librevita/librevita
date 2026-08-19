@@ -2,8 +2,6 @@ package identifier
 
 import (
 	"testing"
-
-	"librevita.org/internal/domain/patient/repository"
 )
 
 func TestRegistryLoadAndDetect(t *testing.T) {
@@ -38,8 +36,6 @@ func TestRegistryDetectCandidatesIncludesFallback(t *testing.T) {
 		t.Fatalf("Reload: %v", err)
 	}
 
-	// A bare 9-digit number matches NIF (digits) and raw; the
-	// passport shape must not match.
 	candidates := reg.DetectCandidates("999999990")
 	saw := map[string]bool{}
 	for _, c := range candidates {
@@ -66,7 +62,6 @@ func TestRegistryForSystemFallsBack(t *testing.T) {
 	if got := reg.ForSystem(unknown); got.System() != RawSystem {
 		t.Fatalf("ForSystem(%s) = %s, want raw", unknown, got.System())
 	}
-	// Deactivated systems fall back too.
 	reg.mu.Lock()
 	delete(reg.systems, NIFSystem)
 	reg.mu.Unlock()
@@ -80,7 +75,7 @@ func TestRegistryReloadRejectsBadRows(t *testing.T) {
 	if err := reg.Reload(seedRows()); err != nil {
 		t.Fatalf("Reload: %v", err)
 	}
-	if err := reg.Reload([]repository.IdentifierSystem{
+	if err := reg.Reload([]*IdentifierSystem{
 		testSystem("urn:librevita:id:bad", "Bad", "[", TransformNone, CheckNone, 0, 1, 10),
 	}); err == nil {
 		t.Fatal("Reload with a bad pattern must fail")
@@ -92,9 +87,7 @@ func TestRegistryReloadRejectsBadRows(t *testing.T) {
 
 func TestRegistryDetectionOrderLongestPatternStringFirst(t *testing.T) {
 	reg := NewRegistry()
-	// Both systems match a 12-digit value; the longer pattern string
-	// wins (documented order), then the URN breaks ties.
-	rows := []repository.IdentifierSystem{
+	rows := []*IdentifierSystem{
 		testSystem("urn:librevita:id:x:short", "Short", "[0-9]{12}", TransformDigits, CheckNone, 0, 1, 10),
 		testSystem("urn:librevita:id:x:long", "Long", "[0-9]{10,12}", TransformDigits, CheckNone, 0, 1, 10),
 	}
@@ -112,7 +105,7 @@ func TestRegistryReloadKeepsPreviousStateOnFailure(t *testing.T) {
 		t.Fatalf("Reload: %v", err)
 	}
 	before := reg.Systems()
-	if err := reg.Reload([]repository.IdentifierSystem{
+	if err := reg.Reload([]*IdentifierSystem{
 		testSystem("urn:librevita:id:bad", "Bad", ")", TransformNone, CheckNone, 0, 1, 10),
 	}); err == nil {
 		t.Fatal("Reload with a bad pattern must fail")

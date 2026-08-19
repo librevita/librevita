@@ -3,62 +3,29 @@ package identifier
 import (
 	"fmt"
 
-	"librevita.org/internal/domain/patient/repository"
+	patientmodel "librevita.org/internal/domain/patient/model"
 )
 
-// Transform is the canonicalization mode applied to raw input before
-// the pattern match and before encryption/indexing.
-type Transform string
+// Re-export identifier models, constants, and repository contracts from patient/model.
+type (
+	Transform            = patientmodel.Transform
+	CheckAlgorithm       = patientmodel.CheckAlgorithm
+	IdentifierSystem     = patientmodel.IdentifierSystem
+	IdentifierRecord     = patientmodel.IdentifierRecord
+	SystemRepository     = patientmodel.SystemRepository
+	IdentifierRepository = patientmodel.IdentifierRepository
+)
 
 const (
-	// TransformNone trims and collapses internal whitespace, keeping
-	// the case as typed.
-	TransformNone Transform = "none"
-	// TransformDigits keeps only the digits, stripping punctuation and
-	// letters (the usual mode for numeric documents such as CPF).
-	TransformDigits Transform = "digits"
-	// TransformUpper trims, collapses, and uppercases (passports and
-	// alphanumeric numbers that are case-insensitive).
-	TransformUpper Transform = "upper"
-	// TransformLower trims, collapses, and lowercases.
-	TransformLower Transform = "lower"
+	TransformNone   = patientmodel.TransformNone
+	TransformDigits = patientmodel.TransformDigits
+	TransformUpper  = patientmodel.TransformUpper
+	TransformLower  = patientmodel.TransformLower
+
+	CheckNone        = patientmodel.CheckNone
+	CheckMod11Desc   = patientmodel.CheckMod11Desc
+	CheckMod11Cyclic = patientmodel.CheckMod11Cyclic
 )
-
-// Valid reports whether t is one of the transform modes the database
-// CHECK constraint accepts.
-func (t Transform) Valid() bool {
-	switch t {
-	case TransformNone, TransformDigits, TransformUpper, TransformLower:
-		return true
-	}
-	return false
-}
-
-// CheckAlgorithm is the check-digit scheme of a document system.
-type CheckAlgorithm string
-
-const (
-	// CheckNone disables check-digit validation.
-	CheckNone CheckAlgorithm = "none"
-	// CheckMod11Desc is the modulo-11 scheme with descending weights
-	// (10..2 over the base digits, CPF and NIF style). Residues 0 and
-	// 1 map to check digit 0.
-	CheckMod11Desc CheckAlgorithm = "mod11_desc"
-	// CheckMod11Cyclic is the modulo-11 scheme with weights 2..9
-	// cycling right-to-left over the base digits (SUS card style).
-	// Check digits 10 and 11 map to 0.
-	CheckMod11Cyclic CheckAlgorithm = "mod11_cyclic"
-)
-
-// Valid reports whether a is one of the algorithms the database CHECK
-// constraint accepts.
-func (a CheckAlgorithm) Valid() bool {
-	switch a {
-	case CheckNone, CheckMod11Desc, CheckMod11Cyclic:
-		return true
-	}
-	return false
-}
 
 // SystemConfig is the validated view of one identifier_systems row.
 type SystemConfig struct {
@@ -73,21 +40,18 @@ type SystemConfig struct {
 	CheckStartWeight int
 }
 
-// ParseSystemConfig converts a stored row to its validated form. It
-// fails when the stored values cannot build a working strategy, which
-// must never happen through SystemsService but guards against hand
-// edited rows.
-func ParseSystemConfig(row repository.IdentifierSystem) (SystemConfig, error) {
+// ParseSystemConfig converts a stored row to its validated form.
+func ParseSystemConfig(row *IdentifierSystem) (SystemConfig, error) {
 	cfg := SystemConfig{
 		System:           row.System,
 		DisplayName:      row.DisplayName,
 		Pattern:          row.Pattern,
 		Mask:             row.Mask,
-		Transform:        Transform(row.Transform),
-		CheckAlgorithm:   CheckAlgorithm(row.CheckAlgorithm),
-		CheckBaseLen:     int(row.CheckBaseLen),
-		CheckDVCount:     int(row.CheckDvCount),
-		CheckStartWeight: int(row.CheckStartWeight),
+		Transform:        row.Transform,
+		CheckAlgorithm:   row.CheckAlgorithm,
+		CheckBaseLen:     row.CheckBaseLen,
+		CheckDVCount:     row.CheckDVCount,
+		CheckStartWeight: row.CheckStartWeight,
 	}
 	if err := cfg.validateShape(); err != nil {
 		return SystemConfig{}, err

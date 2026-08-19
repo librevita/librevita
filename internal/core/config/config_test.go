@@ -284,3 +284,80 @@ func TestVaultConfigDefaultsAndValidation(t *testing.T) {
 		t.Fatal("validate(invalid) = nil, want error")
 	}
 }
+
+func TestPostgresConfigDefaultsAndValidation(t *testing.T) {
+	cfg := &Config{
+		Database: DatabaseConfig{
+			Driver: DriverPostgres,
+			Postgres: PostgresConfig{
+				Host:     "db.example.com",
+				Port:     5432,
+				User:     "app",
+				Password: "secret",
+				Database: "librevita_prod",
+				SSLMode:  "require",
+			},
+		},
+		Logging: LoggingConfig{Mode: LogModeConsole},
+	}
+	cfg.normalize()
+
+	if cfg.Database.Driver != DriverPostgres {
+		t.Errorf("Database.Driver = %q, want postgres", cfg.Database.Driver)
+	}
+	if cfg.Database.Postgres.MaxOpenConns != 25 {
+		t.Errorf("MaxOpenConns = %d, want 25", cfg.Database.Postgres.MaxOpenConns)
+	}
+	if cfg.Database.Postgres.MaxIdleConns != 5 {
+		t.Errorf("MaxIdleConns = %d, want 5", cfg.Database.Postgres.MaxIdleConns)
+	}
+	if err := cfg.validate(); err != nil {
+		t.Fatalf("validate() = %v, want nil", err)
+	}
+
+	dsn := cfg.Database.Postgres.DSN()
+	wantDSN := "postgres://app:secret@db.example.com:5432/librevita_prod?sslmode=require"
+	if dsn != wantDSN {
+		t.Errorf("DSN() = %q, want %q", dsn, wantDSN)
+	}
+}
+
+func TestPostgresFlagsAndEnvMapping(t *testing.T) {
+	flags := pflag.NewFlagSet("postgres-test", pflag.ContinueOnError)
+	RegisterFlags(flags)
+
+	flagNames := []string{
+		"db-postgres-url",
+		"db-postgres-host",
+		"db-postgres-port",
+		"db-postgres-user",
+		"db-postgres-password",
+		"db-postgres-database",
+		"db-postgres-sslmode",
+		"db-postgres-max-open-conns",
+		"db-postgres-max-idle-conns",
+	}
+	for _, name := range flagNames {
+		if got := mapFlagKey(name); got == "" {
+			t.Errorf("flag %s -> empty, want nested key", name)
+		}
+	}
+
+	envKeys := []string{
+		"database_postgres_url",
+		"database_postgres_host",
+		"database_postgres_port",
+		"database_postgres_user",
+		"database_postgres_password",
+		"database_postgres_database",
+		"database_postgres_sslmode",
+		"database_postgres_max_open_conns",
+		"database_postgres_max_idle_conns",
+	}
+	for _, k := range envKeys {
+		if got := mapEnvironmentKey(k); got == "" {
+			t.Errorf("env %s -> empty, want nested key", k)
+		}
+	}
+}
+

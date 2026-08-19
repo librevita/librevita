@@ -455,12 +455,13 @@ func TestMalformedSpecialtyIDsFailValidation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.Exec(
-		`INSERT INTO staff_change_requests (id, user_id, requested_by, status, changes)
-		 VALUES (?, ?, ?, 'pending', ?)`,
-		id.String(), phys.ID.String(), receptionist.ID.String(),
-		`{"name":"Dr. Lima","email":"dr.lima@example.org","specialties":["not-a-uuid"]}`,
-	); err != nil {
+	if _, err := db.StaffChangeRequest.Create().
+		SetID(id).
+		SetUserID(phys.ID).
+		SetRequestedBy(receptionist.ID).
+		SetStatus("pending").
+		SetChanges(`{"name":"Dr. Lima","email":"dr.lima@example.org","specialties":["not-a-uuid"]}`).
+		Save(ctx); err != nil {
 		t.Fatal(err)
 	}
 	if err := svc.ApproveStaffChangeRequest(ctx, id.String(), testAdminID.String()); err == nil {
@@ -564,8 +565,8 @@ func TestUpdatePreferences(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if loaded.Timezone != "Asia/Tokyo" || loaded.UiTheme != types.UIThemeDark {
-		t.Errorf("preferences = %q/%q, want Asia/Tokyo/dark", loaded.Timezone, loaded.UiTheme)
+	if loaded.Timezone != "Asia/Tokyo" || loaded.UITheme != string(types.UIThemeDark) {
+		t.Errorf("preferences = %q/%q, want Asia/Tokyo/dark", loaded.Timezone, loaded.UITheme)
 	}
 
 	// Empty timezone means "inherit the clinic timezone".
@@ -576,8 +577,8 @@ func TestUpdatePreferences(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if loaded.Timezone != "" || loaded.UiTheme != types.UIThemeSystem {
-		t.Errorf("reset preferences = %q/%q, want empty/system", loaded.Timezone, loaded.UiTheme)
+	if loaded.Timezone != "" || loaded.UITheme != string(types.UIThemeSystem) {
+		t.Errorf("reset preferences = %q/%q, want empty/system", loaded.Timezone, loaded.UITheme)
 	}
 }
 

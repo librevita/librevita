@@ -12,8 +12,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-
-	"librevita.org/internal/core/storage/repository"
 )
 
 // ageBlob rewinds the file mtime of a locally stored blob, so the
@@ -29,8 +27,8 @@ func ageBlob(t *testing.T, store *Local, key string, back time.Duration) {
 func testManager(t *testing.T) (*FileManager, *Local) {
 	t.Helper()
 	store := newTestLocal(t)
-	db := openIndexDB(t)
-	m, err := NewFileManager(db, store, testLogger(t))
+	_, client := openIndexDB(t)
+	m, err := NewFileManager(NewIndexRepository(client), store, testLogger(t))
 	if err != nil {
 		t.Fatalf("NewFileManager: %v", err)
 	}
@@ -131,11 +129,17 @@ func TestFileManagerUploadCompensation(t *testing.T) {
 	fixed := uuid.MustParse("01990000-0000-7000-8000-0000000000c1")
 	m.newID = func() (uuid.UUID, error) { return fixed, nil }
 	key := privateKey("patient_document", testResource, fixed)
-	_, err := m.q.CreateStorageObject(ctx, repository.CreateStorageObjectParams{
-		ID:  uuid.MustParse("01990000-0000-7000-8000-0000000000c2"),
-		Key: key, Domain: "patient_document", ResourceID: testResource,
-		OriginalName: "other.pdf", ContentType: "application/pdf",
-		Size: 1, Etag: "x", CreatedBy: testOwner,
+	_, err := m.repo.Insert(ctx, StoredFile{
+		ID:           uuid.MustParse("01990000-0000-7000-8000-0000000000c2"),
+		Key:          key,
+		Domain:       "patient_document",
+		ResourceID:   testResource,
+		OriginalName: "other.pdf",
+		ContentType:  "application/pdf",
+		Size:         1,
+		ETag:         "x",
+		Checksum:     "c",
+		CreatedBy:    testOwner,
 	})
 	if err != nil {
 		t.Fatalf("seed duplicate row: %v", err)

@@ -3,7 +3,7 @@
 // recursion, or side effects, which makes authorization rules bounded, safe
 // to evaluate, and auditable.
 //
-// Policies are stored in SQLite and seeded from DefaultPolicies on startup.
+// Policies are stored in the database and seeded from DefaultPolicies on startup.
 // Administrators edit them at runtime through the admin panel; every change
 // is validated (compilation plus boolean output) before it becomes active.
 //
@@ -13,18 +13,16 @@ package policy
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
+	"time"
 
 	"github.com/google/cel-go/cel"
 	"github.com/google/cel-go/common/types"
-	"github.com/google/uuid"
 
 	"librevita.org/internal/core/auth"
-	"librevita.org/internal/core/policy/repository"
 	lvtypes "librevita.org/internal/types"
 )
 
@@ -98,24 +96,40 @@ type RequestInfo struct {
 	Path   string
 }
 
-// criticalPolicies guard their own management: if an admin saved an
-// expression that denies the admin role, the admin panel would become
-// unreachable with no recovery path. Set validates changes to these
-// policies against an admin fixture and rejects self-lockout.
-var criticalPolicies = map[string]bool{
-	"admin.view": true,
+// PolicyRow represents a policy for listing and admin views.
+type PolicyRow struct {
+	ID         string
+	Name       string
+	Expression string
+	UpdatedAt  time.Time
 }
 
-// adminFixture is the representative principal used to reject self-lockout.
-var adminFixture = auth.Principal{
-	ID:    "00000000-0000-7000-8000-000000000000",
-	Email: "admin@librevita.example",
-	Name:  "Administrator",
-	Role:  auth.RoleAdmin,
+// PolicyVersionRow represents a historical version of a policy.
+type PolicyVersionRow struct {
+	ID             int64
+	PolicyID       string
+	Expression     string
+	Origin         string
+	CreatedAt      time.Time
+	ChangedBy      *string
+	ChangedByEmail *string
 }
 
-// ErrPolicyNotFound is returned when a route references an unknown policy.
-var ErrPolicyNotFound = errors.New("policy: policy not found")
+// Actor identifies who changed a policy. The zero value means the system
+// (for example, startup seeding).
+type Actor struct {
+	ID    string // User UUIDv7.
+	Email string
+}
+
+// Repository defines the storage contract for policies.
+type Repository interface {
+	SeedDefaults(ctx context.Context, defaults map[string]string) error
+	List(ctx context.Context) ([]PolicyRow, error)
+	Set(ctx context.Context, name, expression string, actor Actor, origin string) error
+	History(ctx context.Context, name string, limit int) ([]PolicyVersionRow, error)
+	Count(ctx context.Context) (int64, error)
+}
 
 // PolicyEngine compiles policies once and keeps them in memory. Writes
 // (startup seeding and admin updates) validate the expression first, so a
@@ -124,17 +138,11 @@ type PolicyEngine struct {
 	env   *cel.Env
 	mu    sync.RWMutex
 	progs map[string]cel.Program
-	db    *sql.DB
+	repo  Repository
 	log   *slog.Logger
 
-	// clinicID resolves the installation's clinic for the context
-	// variable. The interface keeps this core package free of domain
-	// imports; the fx module wires the real provider at boot.
 	clinicID clinicIDResolver
-
-	// setMu serializes Set so that the in-memory program always matches the
-	// last committed database version, even under concurrent edits.
-	setMu sync.Mutex
+	setMu    sync.Mutex
 }
 
 // clinicIDResolver is the minimal surface of the clinic profile the
@@ -152,12 +160,10 @@ func (pe *PolicyEngine) SetClockProvider(clocks clinicIDResolver) {
 	pe.clinicID = clocks
 }
 
-// NewPolicyEngine is the Fx provider. It only validates the environment;
-// Load, called from the Fx OnStart hook after migrations run, seeds and
-// compiles the policies. It requires the SQLite backend.
-func NewPolicyEngine(db *sql.DB, log *slog.Logger) (*PolicyEngine, error) {
-	if db == nil {
-		return nil, errors.New("policy: requires the SQLite backend")
+// NewPolicyEngine is the Fx provider.
+func NewPolicyEngine(repo Repository, log *slog.Logger) (*PolicyEngine, error) {
+	if repo == nil {
+		return nil, errors.New("policy: requires the policy repository")
 	}
 
 	env, err := cel.NewEnv(
@@ -173,42 +179,19 @@ func NewPolicyEngine(db *sql.DB, log *slog.Logger) (*PolicyEngine, error) {
 	return &PolicyEngine{
 		env:   env,
 		progs: make(map[string]cel.Program),
-		db:    db,
+		repo:  repo,
 		log:   log,
 	}, nil
 }
 
 // Load seeds DefaultPolicies that are missing from the database and compiles
-// every stored policy. Compilation failures are returned so that a broken
-// policy is a startup failure, not a runtime outage. Every seeded policy
-// receives an initial version with origin "seed" so the creation is
-// traceable.
+// every stored policy.
 func (pe *PolicyEngine) Load(ctx context.Context) error {
-	queries := repository.New(pe.db)
-	for name, expr := range DefaultPolicies {
-		_, err := queries.GetPolicyByName(ctx, name)
-		if errors.Is(err, sql.ErrNoRows) {
-			id, err := uuid.NewV7()
-			if err != nil {
-				return fmt.Errorf("policy: seed id for %q: %w", name, err)
-			}
-			created, err := queries.CreatePolicy(ctx, repository.CreatePolicyParams{
-				ID: id, Name: name, Expression: expr,
-			})
-			if err != nil {
-				return fmt.Errorf("policy: seed %q: %w", name, err)
-			}
-			if err := queries.CreatePolicyVersion(ctx, repository.CreatePolicyVersionParams{
-				PolicyID: created.ID.String(), Expression: expr, Origin: lvtypes.PolicyOriginSeed.String(),
-			}); err != nil {
-				return fmt.Errorf("policy: seed version %q: %w", name, err)
-			}
-		} else if err != nil {
-			return fmt.Errorf("policy: read %q: %w", name, err)
-		}
+	if err := pe.repo.SeedDefaults(ctx, DefaultPolicies); err != nil {
+		return err
 	}
 
-	rows, err := queries.ListPolicies(ctx)
+	rows, err := pe.repo.List(ctx)
 	if err != nil {
 		return fmt.Errorf("policy: list: %w", err)
 	}
@@ -224,27 +207,14 @@ func (pe *PolicyEngine) Load(ctx context.Context) error {
 	return nil
 }
 
-// Actor identifies who changed a policy. The zero value means the system
-// (for example, startup seeding).
-type Actor struct {
-	ID    string // User UUIDv7.
-	Email string
-}
-
 // Set validates and activates a new expression for name, persisting it and
-// recording a versioned change history entry with the actor. The policy
-// update and its history row commit atomically; an invalid expression leaves
-// both the previous program and the history untouched. Concurrent calls are
-// serialized so the in-memory program always matches the last committed
-// version.
+// recording a versioned change history entry with the actor.
 func (pe *PolicyEngine) Set(ctx context.Context, name, expression string, actor Actor) error {
 	prog, err := pe.compile(name, expression)
 	if err != nil {
 		return err
 	}
 
-	// Critical policies must never deny the admin role; the admin panel
-	// is the only place that could restore them.
 	if criticalPolicies[name] {
 		allowed, err := evaluate(prog, &adminFixture, RequestInfo{Method: "GET", Path: "/admin"}, nil, nil)
 		if err != nil {
@@ -263,53 +233,8 @@ func (pe *PolicyEngine) Set(ctx context.Context, name, expression string, actor 
 		origin = lvtypes.PolicyOriginAdmin
 	}
 
-	tx, err := pe.db.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("policy: begin update %q: %w", name, err)
-	}
-	defer tx.Rollback()
-
-	qtx := repository.New(pe.db).WithTx(tx)
-
-	// Policies are referenced by name; the id is assigned once at creation
-	// and preserved across updates.
-	policy, err := qtx.GetPolicyByName(ctx, name)
-	if errors.Is(err, sql.ErrNoRows) {
-		id, err := uuid.NewV7()
-		if err != nil {
-			return fmt.Errorf("policy: generate id for %q: %w", name, err)
-		}
-		created, err := qtx.CreatePolicy(ctx, repository.CreatePolicyParams{
-			ID: id, Name: name, Expression: expression,
-		})
-		if err != nil {
-			return fmt.Errorf("policy: create %q: %w", name, err)
-		}
-		policy = repository.GetPolicyByNameRow(created)
-	} else if err != nil {
-		return fmt.Errorf("policy: read %q: %w", name, err)
-	} else {
-		if err := qtx.UpdatePolicyExpression(ctx, repository.UpdatePolicyExpressionParams{
-			ID: policy.ID, Expression: expression,
-		}); err != nil {
-			return fmt.Errorf("policy: store %q: %w", name, err)
-		}
-	}
-
-	var actorID, actorMail *string
-	if actor.ID != "" {
-		id, mail := actor.ID, actor.Email
-		actorID, actorMail = &id, &mail
-	}
-	if err := qtx.CreatePolicyVersion(ctx, repository.CreatePolicyVersionParams{
-		PolicyID: policy.ID.String(), Expression: expression, Origin: origin.String(),
-		ChangedBy: actorID, ChangedByEmail: actorMail,
-	}); err != nil {
-		return fmt.Errorf("policy: version %q: %w", name, err)
-	}
-
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("policy: commit update %q: %w", name, err)
+	if err := pe.repo.Set(ctx, name, expression, actor, origin.String()); err != nil {
+		return err
 	}
 
 	pe.mu.Lock()
@@ -319,32 +244,18 @@ func (pe *PolicyEngine) Set(ctx context.Context, name, expression string, actor 
 }
 
 // History returns the most recent limit changes of name, newest first.
-func (pe *PolicyEngine) History(ctx context.Context, name string, limit int) ([]repository.ListPolicyVersionsRow, error) {
-	rows, err := repository.New(pe.db).ListPolicyVersions(ctx, repository.ListPolicyVersionsParams{
-		Name: name, Limit: int64(limit),
-	})
-	if err != nil {
-		return nil, fmt.Errorf("policy: history %q: %w", name, err)
-	}
-	return rows, nil
+func (pe *PolicyEngine) History(ctx context.Context, name string, limit int) ([]PolicyVersionRow, error) {
+	return pe.repo.History(ctx, name, limit)
 }
 
 // List returns the stored policies sorted by name.
-func (pe *PolicyEngine) List(ctx context.Context) ([]repository.ListPoliciesRow, error) {
-	rows, err := repository.New(pe.db).ListPolicies(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("policy: list: %w", err)
-	}
-	return rows, nil
+func (pe *PolicyEngine) List(ctx context.Context) ([]PolicyRow, error) {
+	return pe.repo.List(ctx)
 }
 
 // Count returns the number of stored policies.
 func (pe *PolicyEngine) Count(ctx context.Context) (int64, error) {
-	count, err := repository.New(pe.db).CountPolicies(ctx)
-	if err != nil {
-		return 0, fmt.Errorf("policy: count: %w", err)
-	}
-	return count, nil
+	return pe.repo.Count(ctx)
 }
 
 // Allowed evaluates the named policy for p and req.
@@ -355,107 +266,117 @@ func (pe *PolicyEngine) Allowed(ctx context.Context, name string, p *auth.Princi
 	if !ok {
 		return false, fmt.Errorf("%w: %q", ErrPolicyNotFound, name)
 	}
-
-	ambient := map[string]any{}
-	pe.fillAmbient(ctx, ambient)
-	allowed, err := evaluate(prog, p, req, nil, ambient)
-	if err != nil {
-		return false, fmt.Errorf("policy: %q evaluation: %w", name, err)
-	}
-	return allowed, nil
+	ctxMap := pe.contextMap(ctx)
+	return evaluate(prog, p, req, nil, ctxMap)
 }
 
-// AllowedResource evaluates a resource-level policy (e.g. patient.edit)
-// against the object attributes and ambient context. Route policies
-// without resource/context can be evaluated here too: the variables are
-// simply empty maps. The use cases audit denials themselves.
-func (pe *PolicyEngine) AllowedResource(ctx context.Context, name string, p *auth.Principal, req RequestInfo, resource, ambient map[string]any) (bool, error) {
+// AllowedResource evaluates the named policy with an object payload in
+// resource (e.g. `created_by`, `patient_id`) and optional explicit context.
+func (pe *PolicyEngine) AllowedResource(ctx context.Context, name string, p *auth.Principal, req RequestInfo, resource, explicitCtx map[string]any) (bool, error) {
 	pe.mu.RLock()
 	prog, ok := pe.progs[name]
 	pe.mu.RUnlock()
 	if !ok {
 		return false, fmt.Errorf("%w: %q", ErrPolicyNotFound, name)
 	}
-	if resource == nil {
-		resource = map[string]any{}
+	ctxMap := pe.contextMap(ctx)
+	for k, v := range explicitCtx {
+		ctxMap[k] = v
 	}
-	if ambient == nil {
-		ambient = map[string]any{}
-	}
-	pe.fillAmbient(ctx, ambient)
-	allowed, err := evaluate(prog, p, req, resource, ambient)
-	if err != nil {
-		return false, fmt.Errorf("policy: %q evaluation: %w", name, err)
-	}
-	return allowed, nil
+	return evaluate(prog, p, req, resource, ctxMap)
 }
 
-// fillAmbient adds the clinic id to the context variable unless the
-// caller already provided it. The key is always present: without a
-// resolver (or before onboarding) it is the empty string, so
-// expressions comparing it evaluate to false instead of failing with a
-// missing-key error.
-func (pe *PolicyEngine) fillAmbient(ctx context.Context, ambient map[string]any) {
-	if _, present := ambient["clinic_id"]; present {
-		return
-	}
+func (pe *PolicyEngine) contextMap(ctx context.Context) map[string]any {
 	pe.mu.RLock()
-	resolver := pe.clinicID
+	clocks := pe.clinicID
 	pe.mu.RUnlock()
-	ambient["clinic_id"] = ""
-	if resolver == nil {
-		return
+
+	out := map[string]any{
+		"clinic_id": "",
 	}
-	if id, err := resolver.ClinicID(ctx); err == nil {
-		ambient["clinic_id"] = id
+	if clocks != nil {
+		if cid, err := clocks.ClinicID(ctx); err == nil && cid != "" {
+			out["clinic_id"] = cid
+		}
 	}
+	return out
 }
 
-// evaluate runs prog against the full activation and requires a boolean
-// result.
-func evaluate(prog cel.Program, p *auth.Principal, req RequestInfo, resource, ambient map[string]any) (bool, error) {
-	out, _, err := prog.Eval(map[string]any{
-		"principal": map[string]any{
-			"id":    p.ID,
-			"email": p.Email,
-			"name":  p.Name,
-			"role":  p.Role.String(),
-		},
-		"request": map[string]any{
-			"method": req.Method,
-			"path":   req.Path,
-		},
-		"resource": resource,
-		"context":  ambient,
-	})
-	if err != nil {
-		return false, err
-	}
-
-	switch out {
-	case types.True:
-		return true, nil
-	case types.False:
-		return false, nil
-	default:
-		return false, fmt.Errorf("did not evaluate to bool")
-	}
-}
-
-// compile validates and compiles an expression. It requires a successful
-// compilation and a boolean output type, so a typo or a non-boolean policy
-// is rejected before it can ever affect a request.
 func (pe *PolicyEngine) compile(name, expression string) (cel.Program, error) {
-	ast, iss := pe.env.Compile(expression)
-	if iss != nil && iss.Err() != nil {
-		return nil, fmt.Errorf("policy: %q does not compile: %w", name, iss.Err())
+	ast, issues := pe.env.Compile(expression)
+	if issues != nil && issues.Err() != nil {
+		return nil, fmt.Errorf("policy: %q compile error: %w", name, issues.Err())
 	}
 	if ast.OutputType() != cel.BoolType {
-		return nil, fmt.Errorf("policy: %q must evaluate to a boolean", name)
+		return nil, fmt.Errorf("policy: %q expression must evaluate to a boolean, got %s", name, ast.OutputType().TypeName())
 	}
 	prog, err := pe.env.Program(ast)
 	if err != nil {
-		return nil, fmt.Errorf("policy: %q program: %w", name, err)
+		return nil, fmt.Errorf("policy: %q program error: %w", name, err)
 	}
 	return prog, nil
 }
+
+// ValidateSyntax compiles expression and checks that it produces a boolean,
+// returning a human-readable error or nil. Used by the admin form before
+// submission.
+func (pe *PolicyEngine) ValidateSyntax(expression string) error {
+	_, err := pe.compile("validate", expression)
+	return err
+}
+
+func evaluate(prog cel.Program, p *auth.Principal, req RequestInfo, resource, ctx map[string]any) (bool, error) {
+	principalMap := map[string]any{
+		"id":    "",
+		"email": "",
+		"name":  "",
+		"role":  "",
+	}
+	if p != nil {
+		principalMap["id"] = p.ID
+		principalMap["email"] = p.Email
+		principalMap["name"] = p.Name
+		principalMap["role"] = string(p.Role)
+	}
+
+	requestMap := map[string]any{
+		"method": req.Method,
+		"path":   req.Path,
+	}
+
+	if resource == nil {
+		resource = map[string]any{}
+	}
+	if ctx == nil {
+		ctx = map[string]any{}
+	}
+
+	out, _, err := prog.Eval(map[string]any{
+		"principal": principalMap,
+		"request":   requestMap,
+		"resource":  resource,
+		"context":   ctx,
+	})
+	if err != nil {
+		return false, fmt.Errorf("eval: %w", err)
+	}
+	b, ok := out.(types.Bool)
+	if !ok {
+		return false, fmt.Errorf("policy evaluated to non-bool %T", out)
+	}
+	return bool(b), nil
+}
+
+var adminFixture = auth.Principal{
+	ID:    "01990000-0000-7000-8000-000000000001",
+	Email: "admin@example.org",
+	Name:  "Admin",
+	Role:  auth.RoleAdmin,
+}
+
+var criticalPolicies = map[string]bool{
+	"admin.view":   true,
+	"users.manage": true,
+}
+
+var ErrPolicyNotFound = errors.New("policy: not found")

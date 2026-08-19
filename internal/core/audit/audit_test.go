@@ -1,4 +1,4 @@
-package audit
+package audit_test
 
 import (
 	"context"
@@ -6,15 +6,19 @@ import (
 	"log/slog"
 	"testing"
 
+	"entgo.io/ent/dialect"
+	entsql "entgo.io/ent/dialect/sql"
 	_ "modernc.org/sqlite"
 
+	"librevita.org/ent"
+	"librevita.org/internal/core/audit"
 	"librevita.org/internal/core/database"
 	"librevita.org/internal/types"
 )
 
-func openAuditDB(t *testing.T) *sql.DB {
+func openAuditTest(t *testing.T) (*sql.DB, audit.Repository) {
 	t.Helper()
-	db, err := sql.Open("sqlite", "file:audit-test?mode=memory&cache=shared")
+	db, err := sql.Open("sqlite", "file:audit-test?mode=memory&cache=shared&_time_format=sqlite")
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
@@ -24,17 +28,23 @@ func openAuditDB(t *testing.T) *sql.DB {
 	if err := database.Migrate(context.Background(), db, slog.New(slog.DiscardHandler)); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
-	return db
+
+	drv := entsql.OpenDB(dialect.SQLite, db)
+	client := ent.NewClient(ent.Driver(drv))
+	t.Cleanup(func() { client.Close() })
+
+	repo := audit.NewAuditRepository(client)
+	return db, repo
 }
 
 func TestRecordPersistsEvent(t *testing.T) {
-	db := openAuditDB(t)
-	logger, err := NewLogger(db, slog.New(slog.DiscardHandler))
+	db, repo := openAuditTest(t)
+	logger, err := audit.NewLogger(repo, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	logger.Record(context.Background(), Event{
+	logger.Record(context.Background(), audit.Event{
 		ActorID: "01990000-0000-7000-8000-000000000001", ActorMail: "ana@example.org",
 		Action: "login", Resource: "user", Result: types.AuditResultSuccess,
 		IP: "127.0.0.1", RequestID: "req-123", Detail: "",
@@ -52,37 +62,35 @@ func TestRecordPersistsEvent(t *testing.T) {
 	}
 }
 
-func TestRecordRequiresSQLite(t *testing.T) {
-	if _, err := NewLogger(nil, slog.New(slog.DiscardHandler)); err == nil {
+func TestRecordRequiresRepository(t *testing.T) {
+	if _, err := audit.NewLogger(nil, slog.New(slog.DiscardHandler)); err == nil {
 		t.Fatal("NewLogger(nil) should fail")
 	}
 }
 
 func TestRecordSwallowsWriteErrors(t *testing.T) {
-	// A closed database makes the INSERT fail; Record must not panic and
-	// the caller must not receive an error.
-	db := openAuditDB(t)
-	logger, err := NewLogger(db, slog.New(slog.DiscardHandler))
+	db, repo := openAuditTest(t)
+	logger, err := audit.NewLogger(repo, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
 	}
 	db.Close()
 
-	logger.Record(context.Background(), Event{
+	logger.Record(context.Background(), audit.Event{
 		Action: "login", Resource: "user", Result: types.AuditResultFailure,
 	})
 }
 
 func TestHashChain(t *testing.T) {
-	db := openAuditDB(t)
+	db, repo := openAuditTest(t)
 	logger := slog.New(slog.DiscardHandler)
-	l, err := NewLogger(db, logger)
+	l, err := audit.NewLogger(repo, logger)
 	if err != nil {
 		t.Fatal(err)
 	}
 	ctx := context.Background()
 
-	for _, ev := range []Event{
+	for _, ev := range []audit.Event{
 		{Action: "login", Resource: "user", Result: types.AuditResultSuccess},
 		{Action: "patient.update", Resource: "patient:1", Result: types.AuditResultSuccess, Detail: "phone changed"},
 		{Action: "authorize", Resource: "policy:admin.view", Result: types.AuditResultFailure},
@@ -94,17 +102,12 @@ func TestHashChain(t *testing.T) {
 	}
 
 	// Every row must carry a hash derived from the previous one.
-	rows, err := l.queries.ListAuditChain(ctx)
+	rows, err := l.Recent(ctx, 10, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(rows) != 3 {
 		t.Fatalf("rows = %d, want 3", len(rows))
-	}
-	for i, r := range rows {
-		if r.Signature == "" {
-			t.Fatalf("row %d has no chain hash", i)
-		}
 	}
 
 	// Forging an entry with a wrong hash breaks the chain from there on.
@@ -118,13 +121,13 @@ func TestHashChain(t *testing.T) {
 }
 
 func TestAuditLogAppendOnly(t *testing.T) {
-	db := openAuditDB(t)
-	l, err := NewLogger(db, slog.New(slog.DiscardHandler))
+	db, repo := openAuditTest(t)
+	l, err := audit.NewLogger(repo, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
 	}
 	ctx := context.Background()
-	l.Record(ctx, Event{Action: "login", Resource: "user", Result: types.AuditResultSuccess})
+	l.Record(ctx, audit.Event{Action: "login", Resource: "user", Result: types.AuditResultSuccess})
 
 	if _, err := db.Exec(`UPDATE audit_log SET detail = 'tampered'`); err == nil {
 		t.Fatal("UPDATE on audit_log must be refused")

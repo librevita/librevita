@@ -5,7 +5,7 @@ import (
 
 	"librevita.org/internal/ui/shared"
 	"librevita.org/internal/core/auth"
-	"librevita.org/internal/domain/patient/repository"
+	"librevita.org/internal/domain/patient/usecase"
 	"librevita.org/internal/ui/components"
 	"librevita.org/internal/ui/layouts"
 )
@@ -193,7 +193,7 @@ type HistoryRow struct {
 
 // PatientDetailPage renders the patient record with the registrar and
 // the change history.
-templ PatientDetailPage(token string, p *auth.Principal, pt *repository.GetPatientWithCreatorRow, createdAt, updatedAt, createdBy string, history []HistoryRow, docs []DocumentRow, ids []IdentifierRow, systems []SystemOption, errMsg string) {
+templ PatientDetailPage(token string, p *auth.Principal, pt *usecase.GetPatientWithCreatorRow, createdAt, updatedAt, createdBy string, history []HistoryRow, docs []DocumentRow, ids []IdentifierRow, systems []SystemOption, errMsg string) {
 	@layouts.App("Patient", token, p, "patients") {
 		<div class="mx-auto max-w-4xl p-4 lg:p-6">
 			@components.Card() {
@@ -212,11 +212,11 @@ templ PatientDetailPage(token string, p *auth.Principal, pt *repository.GetPatie
 						}
 						<p class="mt-1 text-xs text-gray-400 dark:text-gray-400">Updated { updatedAt }</p>
 					</div>
-					<div class="ml-auto">@patientStatusBadge(pt.Status)</div>
+					<div class="ml-auto">@patientStatusBadge(pt.Status.String())</div>
 				</div>
 				<dl class="mt-6 flex flex-col space-y-4 text-sm sm:flex-row sm:flex-wrap sm:space-y-0 sm:-mx-2">
 					@detailField("Birth date", orEmpty(pt.BirthDate))
-					@detailField("Sex", pt.Sex)
+					@detailField("Sex", pt.Sex.String())
 					@detailField("Phone", orEmpty(pt.Phone))
 					@detailField("Email", orEmpty(pt.Email))
 					@detailField("Address", addressLine(pt))
@@ -321,7 +321,7 @@ templ patientStatusBadge(status string) {
 	</div>
 }
 
-func addressLine(pt *repository.GetPatientWithCreatorRow) string {
+func addressLine(pt *usecase.GetPatientWithCreatorRow) string {
 	parts := []string{orEmpty(pt.Street), orEmpty(pt.City), orEmpty(pt.State), orEmpty(pt.PostalCode)}
 	out := ""
 	for _, part := range parts {

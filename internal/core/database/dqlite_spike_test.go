@@ -9,13 +9,18 @@ import (
 	"path/filepath"
 	"testing"
 
+	"entgo.io/ent/dialect"
+	entsql "entgo.io/ent/dialect/sql"
 	"github.com/google/uuid"
 
+	"librevita.org/ent"
+	"librevita.org/ent/clinic"
+	"librevita.org/ent/role"
 	"librevita.org/internal/core/crypto"
 	"librevita.org/internal/core/vault"
-	patientrepo "librevita.org/internal/domain/patient/repository"
 	"librevita.org/internal/domain/patient/identifier"
-	userrepo "librevita.org/internal/domain/user/repository"
+	"librevita.org/internal/domain/patient/usecase"
+	"librevita.org/internal/testutil"
 )
 
 func strPtrT(s string) *string { return &s }
@@ -41,35 +46,47 @@ func TestDqliteSpike(t *testing.T) {
 		}
 	}
 
-	// A real transaction: BEGIN/COMMIT through the wire protocol, using
-	// the typed sqlc repository methods.
-	tx, err := db.BeginTx(context.Background(), nil)
+	drv := entsql.OpenDB(dialect.SQLite, db)
+	client := ent.NewClient(ent.Driver(drv))
+	defer client.Close()
+
+	// A real transaction: BEGIN/COMMIT through Ent.
+	tx, err := client.Tx(context.Background())
 	if err != nil {
 		t.Fatalf("begin: %v", err)
 	}
-	if _, err := clinicrepo.New(tx).CreateClinic(context.Background(), clinicrepo.CreateClinicParams{
-		ID: uuid.MustParse("00000000-0000-0000-0000-0000000000d1"), Name: "Dqlite", TaxID: strPtrT("1"), Country: "BR", Timezone: "UTC",
-	}); err != nil {
+	if _, err := tx.Clinic.Create().
+		SetID(uuid.MustParse("00000000-0000-0000-0000-0000000000d1")).
+		SetName("Dqlite").
+		SetTaxID("1").
+		SetCountry("BR").
+		SetTimezone("UTC").
+		Save(context.Background()); err != nil {
 		t.Fatalf("tx insert: %v", err)
 	}
 	if err := tx.Commit(); err != nil {
 		t.Fatalf("commit: %v", err)
 	}
+
 	// Rollback must not persist.
-	tx, err = db.BeginTx(context.Background(), nil)
+	tx, err = client.Tx(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := clinicrepo.New(tx).CreateClinic(context.Background(), clinicrepo.CreateClinicParams{
-		ID: uuid.MustParse("00000000-0000-0000-0000-0000000000d2"), Name: "Rolled", TaxID: strPtrT("2"), Country: "BR", Timezone: "UTC",
-	}); err != nil {
+	if _, err := tx.Clinic.Create().
+		SetID(uuid.MustParse("00000000-0000-0000-0000-0000000000d2")).
+		SetName("Rolled").
+		SetTaxID("2").
+		SetCountry("BR").
+		SetTimezone("UTC").
+		Save(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	if err := tx.Rollback(); err != nil {
 		t.Fatalf("rollback: %v", err)
 	}
-	var count int
-	if err := db.QueryRow(`SELECT count(*) FROM clinics WHERE id = '00000000-0000-0000-0000-0000000000d2'`).Scan(&count); err != nil {
+	count, err := client.Clinic.Query().Where(clinic.IDEQ(uuid.MustParse("00000000-0000-0000-0000-0000000000d2"))).Count(context.Background())
+	if err != nil {
 		t.Fatal(err)
 	}
 	if count != 0 {
@@ -79,41 +96,50 @@ func TestDqliteSpike(t *testing.T) {
 	// FLE round trip: encrypted identifier + blind index + duplicate.
 	clinicID := "00000000-0000-0000-0000-0000000000d1"
 	adminID := "00000000-0000-0000-0000-0000000000d5"
-	adminRole, err := userrepo.New(db).GetRoleByName(context.Background(), "admin")
+	adminRole, err := client.Role.Query().Where(role.NameEQ("admin")).Only(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := userrepo.New(db).CreateUser(context.Background(), userrepo.CreateUserParams{
-		ID: uuid.MustParse(adminID), Email: "admin@dqlite.test", PasswordHash: "x", DisplayName: "Admin", RoleID: adminRole.ID,
-	}); err != nil {
+	if _, err := client.User.Create().
+		SetID(uuid.MustParse(adminID)).
+		SetEmail("admin@dqlite.test").
+		SetPasswordHash("x").
+		SetDisplayName("Admin").
+		SetRoleID(adminRole.ID).
+		Save(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	patientID := uuid.MustParse("00000000-0000-0000-0000-0000000000d3")
-	if _, err := patientrepo.New(db).CreatePatient(context.Background(), patientrepo.CreatePatientParams{
-		ID: patientID, ClinicID: uuid.MustParse(clinicID), DisplayName: "P", Sex: "unknown",
-		CreatedBy: uuid.MustParse(adminID),
-	}); err != nil {
-		t.Fatal(err)
-	}
+
 	v, err := vault.NewBBoltVault(filepath.Join(t.TempDir(), "keys.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = v.Close() })
 
-	key, err := crypto.NewMasterKey("nAmIvOXVc0vb6M9G7P9q2j2yK1WxP3sJ8q5dR4tU6wA=", v)
+	engine, err := crypto.NewEngine("nAmIvOXVc0vb6M9G7P9q2j2yK1WxP3sJ8q5dR4tU6wA=", v)
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	patientSvc := usecase.NewService(client, engine, slog.New(slog.DiscardHandler), nil)
+	createdPt, err := patientSvc.Create(context.Background(), clinicID, adminID, usecase.PatientInput{
+		DisplayName: "P",
+		Sex:         "unknown",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	patientID := createdPt.ID
+
 	reg := identifier.NewRegistry()
-	rows, err := identifier.LoadActiveSystems(context.Background(), db)
+	rows, err := identifier.LoadActiveSystems(context.Background(), client)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := reg.Reload(rows); err != nil {
 		t.Fatal(err)
 	}
-	svc := identifier.NewService(db, key, reg, slog.New(slog.DiscardHandler))
+	svc := identifier.NewService(client, engine, reg, slog.New(slog.DiscardHandler))
 	if _, err := svc.AddIdentifier(context.Background(), clinicID, adminID, identifier.Input{
 		PatientID: patientID.String(), Value: "123.456.789-09",
 	}); err != nil {
@@ -123,13 +149,15 @@ func TestDqliteSpike(t *testing.T) {
 	if err != nil || len(found) != 1 {
 		t.Fatalf("find by value: %v %+v", err, found)
 	}
-	other := uuid.MustParse("00000000-0000-0000-0000-0000000000d4")
-	if _, err := patientrepo.New(db).CreatePatient(context.Background(), patientrepo.CreatePatientParams{
-		ID: other, ClinicID: uuid.MustParse(clinicID), DisplayName: "O", Sex: "unknown",
-		CreatedBy: uuid.MustParse(adminID),
-	}); err != nil {
+
+	otherPt, err := patientSvc.Create(context.Background(), clinicID, adminID, usecase.PatientInput{
+		DisplayName: "O",
+		Sex:         "unknown",
+	})
+	if err != nil {
 		t.Fatal(err)
 	}
+	other := otherPt.ID
 	if _, err := svc.AddIdentifier(context.Background(), clinicID, adminID, identifier.Input{
 		PatientID: other.String(), Value: "12345678909",
 	}); !errors.Is(err, identifier.ErrDuplicate) {

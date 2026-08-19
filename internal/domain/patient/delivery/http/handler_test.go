@@ -4,12 +4,11 @@ import (
 	"testing"
 
 	"librevita.org/internal/core/audit"
-	"librevita.org/internal/domain/patient/repository"
 	"librevita.org/internal/domain/patient/usecase"
 )
 
 func TestPatientChanges(t *testing.T) {
-	before := &repository.GetPatientWithCreatorRow{
+	before := &usecase.GetPatientWithCreatorRow{
 		DisplayName: "Ana Souza",
 		Sex:         "female",
 		Phone:       strPtr("11"),

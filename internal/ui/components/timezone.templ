@@ -1,7 +1,7 @@
 package components
 
 import (
-	"librevita.org/internal/domain/clinic"
+	clinicmodel "librevita.org/internal/domain/clinic/model"
 )
 
 // TimezoneSelect renders the IANA zone picker used in onboarding and in
@@ -14,7 +14,7 @@ templ TimezoneSelect(selected string) {
 		} else {
 			<option value="">Default (clinic timezone)</option>
 		}
-		for _, g := range clinic.TimeZones {
+		for _, g := range clinicmodel.TimeZones {
 			<optgroup label={ g.Label }>
 				for _, zone := range g.Zones {
 					if zone == selected {

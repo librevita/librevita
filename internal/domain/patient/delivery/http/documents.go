@@ -16,7 +16,6 @@ import (
 	"librevita.org/internal/core/server"
 	"librevita.org/internal/core/storage"
 	"librevita.org/internal/domain/patient/delivery/views"
-	"librevita.org/internal/domain/patient/repository"
 	"librevita.org/internal/domain/patient/usecase"
 	"librevita.org/internal/types"
 )
@@ -144,7 +143,7 @@ func (h *Handler) documentRows(ctx context.Context, patientID uuid.UUID) ([]view
 }
 
 // patientOr404 loads the patient behind :id or returns 404.
-func (h *Handler) patientOr404(c echo.Context) (*repository.Patient, error) {
+func (h *Handler) patientOr404(c echo.Context) (*usecase.Patient, error) {
 	ctx := c.Request().Context()
 	id, err := uuid.Parse(c.Param("id"))
 	if err != nil {
