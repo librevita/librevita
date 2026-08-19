@@ -259,3 +259,28 @@ func TestValidateHTTPPort(t *testing.T) {
 		t.Fatalf("validate(443) = %v, want nil", err)
 	}
 }
+
+func TestVaultConfigDefaultsAndValidation(t *testing.T) {
+	cfg := &Config{
+		DataDir:  "/tmp/librevita",
+		Database: DatabaseConfig{Driver: DriverSQLite},
+		Logging:  LoggingConfig{Mode: LogModeConsole},
+	}
+	cfg.normalize()
+
+	if cfg.Vault.Backend != "bbolt" {
+		t.Errorf("Vault.Backend = %q, want bbolt", cfg.Vault.Backend)
+	}
+	wantPath := filepath.Join("/tmp/librevita", "keys.db")
+	if cfg.Vault.BBolt.Path != wantPath {
+		t.Errorf("Vault.BBolt.Path = %q, want %q", cfg.Vault.BBolt.Path, wantPath)
+	}
+	if err := cfg.validate(); err != nil {
+		t.Fatalf("validate() = %v, want nil", err)
+	}
+
+	cfg.Vault.Backend = "invalid"
+	if err := cfg.validate(); err == nil {
+		t.Fatal("validate(invalid) = nil, want error")
+	}
+}

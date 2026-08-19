@@ -38,7 +38,13 @@ var testAdminID = uuid.MustParse("01990000-0000-7000-8000-00000000000a")
 // migration rows, and the two services the handlers use.
 func newIdentifierServices(t *testing.T, db *sql.DB, log *slog.Logger) (*identifier.Service, *identifier.SystemsService) {
 	t.Helper()
-	key, err := crypto.NewMasterKey("nAmIvOXVc0vb6M9G7P9q2j2yK1WxP3sJ8q5dR4tU6wA=")
+	vault, err := crypto.NewBBoltVault(filepath.Join(t.TempDir(), "keys.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = vault.Close() })
+
+	key, err := crypto.NewMasterKey("nAmIvOXVc0vb6M9G7P9q2j2yK1WxP3sJ8q5dR4tU6wA=", vault)
 	if err != nil {
 		t.Fatal(err)
 	}

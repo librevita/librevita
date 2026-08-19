@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"log/slog"
+	"path/filepath"
 	"testing"
 
 	"github.com/google/uuid"
@@ -38,7 +39,13 @@ func openTestDB(t *testing.T) *sql.DB {
 
 func newTestServices(t *testing.T, db *sql.DB) (*Service, *SystemsService, *Registry) {
 	t.Helper()
-	key, err := crypto.NewMasterKey("nAmIvOXVc0vb6M9G7P9q2j2yK1WxP3sJ8q5dR4tU6wA=")
+	vault, err := crypto.NewBBoltVault(filepath.Join(t.TempDir(), "keys.db"))
+	if err != nil {
+		t.Fatalf("bbolt vault: %v", err)
+	}
+	t.Cleanup(func() { _ = vault.Close() })
+
+	key, err := crypto.NewMasterKey("nAmIvOXVc0vb6M9G7P9q2j2yK1WxP3sJ8q5dR4tU6wA=", vault)
 	if err != nil {
 		t.Fatalf("master key: %v", err)
 	}

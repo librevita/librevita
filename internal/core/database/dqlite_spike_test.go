@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"path/filepath"
 	"testing"
 
 	"github.com/google/uuid"
@@ -94,7 +95,13 @@ func TestDqliteSpike(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	key, err := crypto.NewMasterKey("nAmIvOXVc0vb6M9G7P9q2j2yK1WxP3sJ8q5dR4tU6wA=")
+	vault, err := crypto.NewBBoltVault(filepath.Join(t.TempDir(), "keys.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { vault.Close() })
+
+	key, err := crypto.NewMasterKey("nAmIvOXVc0vb6M9G7P9q2j2yK1WxP3sJ8q5dR4tU6wA=", vault)
 	if err != nil {
 		t.Fatal(err)
 	}

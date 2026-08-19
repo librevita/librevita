@@ -98,6 +98,9 @@ type Config struct {
 	// S3-compatible API).
 	Storage StorageConfig `koanf:"storage"`
 
+	// Vault selects the key vault storage backend (embedded bbolt or memory).
+	Vault VaultConfig `koanf:"vault"`
+
 	// PasetoKey is the base64-encoded 32-byte key for PASETO v4.local
 	// session tokens. Required outside development; generated at startup
 	// otherwise.
@@ -109,6 +112,23 @@ type Config struct {
 	// otherwise (previously encrypted values become undecryptable on
 	// restart).
 	MasterKey string `koanf:"master_key"`
+}
+
+// VaultConfig defines the active key vault backend. The backend-specific
+// settings live in their own section (bbolt), mirroring DatabaseConfig
+// and StorageConfig.
+type VaultConfig struct {
+	// Backend is "bbolt" (default).
+	Backend string `koanf:"backend"`
+
+	// BBolt configures the embedded bbolt key vault.
+	BBolt BBoltConfig `koanf:"bbolt"`
+}
+
+// BBoltConfig configures the embedded bbolt key vault.
+type BBoltConfig struct {
+	// Path is the bbolt key vault database file path.
+	Path string `koanf:"path"`
 }
 
 // AuthConfig controls authentication behavior.
@@ -268,6 +288,8 @@ func RegisterFlags(fs *pflag.FlagSet) {
 	stringFlag(fs, "storage-s3-region", "", "S3 region (may be empty outside AWS)")
 	boolFlag(fs, "storage-s3-secure", true, "use HTTPS for the S3 endpoint")
 	boolFlag(fs, "storage-s3-path-style", true, "use path-style S3 addressing")
+	stringFlag(fs, "vault-backend", "bbolt", "key vault storage backend: bbolt")
+	stringFlag(fs, "vault-bbolt-path", "", "bbolt key vault path (default <data-dir>/keys.db)")
 }
 
 // IsProduction reports whether the application runs in production.
@@ -417,9 +439,23 @@ func (c *Config) normalize() {
 	if c.Auth.MaxConcurrentHashes <= 0 {
 		c.Auth.MaxConcurrentHashes = defaultMaxConcurrentHashes
 	}
+
+	c.Vault.Backend = strings.ToLower(strings.TrimSpace(c.Vault.Backend))
+	if c.Vault.Backend == "" {
+		c.Vault.Backend = "bbolt"
+	}
+	if strings.TrimSpace(c.Vault.BBolt.Path) == "" {
+		c.Vault.BBolt.Path = filepath.Join(c.DataDir, "keys.db")
+	}
 }
 
 func (c *Config) validate() error {
+	switch c.Vault.Backend {
+	case "", "bbolt":
+	default:
+		return fmt.Errorf("config: invalid vault.backend %q (use \"bbolt\")", c.Vault.Backend)
+	}
+
 	switch c.Database.Driver {
 	case DriverSQLite, DriverDqlite:
 	default:
@@ -546,6 +582,10 @@ func mapFlagKey(name string) string {
 		return "storage.s3.secure"
 	case "storage-s3-path-style", "storage_s3_path_style":
 		return "storage.s3.path_style"
+	case "vault-backend", "vault_backend":
+		return "vault.backend"
+	case "vault-bbolt-path", "vault_bbolt_path":
+		return "vault.bbolt.path"
 	default:
 		return ""
 	}
@@ -612,6 +652,10 @@ func mapEnvironmentKey(key string) string {
 		return "storage.s3.secure"
 	case "storage_s3_path_style":
 		return "storage.s3.path_style"
+	case "vault_backend":
+		return "vault.backend"
+	case "vault_bbolt_path":
+		return "vault.bbolt.path"
 	default:
 		return ""
 	}

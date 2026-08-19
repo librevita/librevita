@@ -75,7 +75,8 @@ func (s *Service) AddIdentifier(ctx context.Context, clinicID, createdBy string,
 	if err != nil {
 		return nil, err
 	}
-	ciphertext, nonce, err := s.key.Seal([]byte(strategy.System()), []byte(normalized))
+	pURN := patientURN(in.PatientID)
+	ciphertext, nonce, err := s.key.EncryptPatientData(ctx, pURN, []byte(strategy.System()), []byte(normalized))
 	if err != nil {
 		return nil, err
 	}
@@ -136,7 +137,8 @@ func (s *Service) FindByValue(ctx context.Context, clinicID, raw string) ([]*Ide
 		if err != nil {
 			return nil, fmt.Errorf("identifier: find by value: %w", err)
 		}
-		value, err := s.key.Open([]byte(row.System), row.ValueCiphertext, row.Nonce)
+		pURN := patientURN(row.PatientID.String())
+		value, err := s.key.DecryptPatientData(ctx, pURN, []byte(row.System), row.ValueCiphertext, row.Nonce)
 		if err != nil {
 			// Defense in depth: a blind index hit must decrypt back to
 			// the expected value, otherwise the row is corrupted.
@@ -173,9 +175,10 @@ func (s *Service) List(ctx context.Context, clinicID, patientID string) ([]*Iden
 	if err != nil {
 		return nil, fmt.Errorf("identifier: list: %w", err)
 	}
+	pURN := patientURN(patientID)
 	out := make([]*Identifier, 0, len(rows))
 	for _, row := range rows {
-		value, err := s.key.Open([]byte(row.System), row.ValueCiphertext, row.Nonce)
+		value, err := s.key.DecryptPatientData(ctx, pURN, []byte(row.System), row.ValueCiphertext, row.Nonce)
 		if err != nil {
 			s.log.Error("identifier: failed to decrypt", "id", row.ID, "system", row.System, "error", err)
 			continue
@@ -211,7 +214,8 @@ func (s *Service) ListByPatients(ctx context.Context, patientIDs []string) (map[
 		return nil, fmt.Errorf("identifier: list by patients: %w", err)
 	}
 	for _, row := range rows {
-		value, err := s.key.Open([]byte(row.System), row.ValueCiphertext, row.Nonce)
+		pURN := patientURN(row.PatientID.String())
+		value, err := s.key.DecryptPatientData(ctx, pURN, []byte(row.System), row.ValueCiphertext, row.Nonce)
 		if err != nil {
 			s.log.Error("identifier: failed to decrypt", "patient_id", row.PatientID, "system", row.System, "error", err)
 			continue
@@ -220,6 +224,10 @@ func (s *Service) ListByPatients(ctx context.Context, patientIDs []string) (map[
 		out[patient] = append(out[patient], string(value))
 	}
 	return out, nil
+}
+
+func patientURN(patientID string) string {
+	return "urn:librevita:patient:" + patientID
 }
 
 // Remove deletes one identifier of the patient, scoped to the clinic.
