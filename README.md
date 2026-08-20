@@ -173,6 +173,9 @@ auth:
   max_concurrent_hashes: 4
 paseto_key: ... # base64, 32 bytes; required outside development
 master_key: ... # base64, 32 bytes; required outside development
+crypto:
+  hash_algorithm: blake2s # blake2s (default) or blake2b
+  encryption_cipher: xchacha20-poly1305 # xchacha20-poly1305 (default)
 logging:
   mode: console # console, file or rotating
   file: # used when mode: file
@@ -226,6 +229,8 @@ All configuration flags are:
 | `--db-dqlite-addrs`            | `LIBREVITA_DATABASE_DQLITE_ADDRS`            | Comma-separated dqlite node addresses (wire protocol)                                                                                                        |
 | `--db-dqlite-discovery-srv`    | `LIBREVITA_DATABASE_DQLITE_DISCOVERY_SRV`    | DNS SRV record seeding the dqlite node candidates (e.g. `_dqlite._tcp.librevita.svc.cluster.local`); at least one of this or `--db-dqlite-addrs` is required |
 | `--db-dqlite-database`         | `LIBREVITA_DATABASE_DQLITE_DATABASE`         | dqlite database name (default `librevita`)                                                                                                                   |
+| `--crypto-hash-algorithm`      | `LIBREVITA_CRYPTO_HASH_ALGORITHM`            | Default cryptographic hash engine (`blake2s`, `blake2b`; default `blake2s`)                                                                                  |
+| `--crypto-encryption-cipher`   | `LIBREVITA_CRYPTO_ENCRYPTION_CIPHER`         | Default symmetric encryption cipher (`xchacha20-poly1305`; default `xchacha20-poly1305`)                                                                     |
 | `--log-mode`                   | `LIBREVITA_LOGGING_MODE`                     | `console`, `file`, or `rotating`                                                                                                                             |
 | `--log-file-path`              | `LIBREVITA_LOGGING_FILE_PATH`                | File destination (file mode)                                                                                                                                 |
 | `--log-rotating-path`          | `LIBREVITA_LOGGING_ROTATING_PATH`            | Rotating log file destination                                                                                                                                |
@@ -248,7 +253,7 @@ All configuration flags are:
 | `--vault-backend`              | `LIBREVITA_VAULT_BACKEND`                    | Key vault storage backend: `bbolt`                                                                                                                           |
 | `--vault-bbolt-path`           | `LIBREVITA_VAULT_BBOLT_PATH`                 | Embedded bbolt key vault database path (default `<data-dir>/keys.db`)                                                                                        |
 
-Environment variables are the config keys with `_` separators, always in the full section form (`LIBREVITA_DATABASE_*`, `LIBREVITA_LOGGING_*`, `LIBREVITA_STORAGE_*`, `LIBREVITA_VAULT_*`); no short aliases are accepted.
+Environment variables are the config keys with `_` separators, always in the full section form (`LIBREVITA_CRYPTO_*`, `LIBREVITA_DATABASE_*`, `LIBREVITA_LOGGING_*`, `LIBREVITA_STORAGE_*`, `LIBREVITA_VAULT_*`); no short aliases are accepted.
 
 ## File Storage
 
@@ -265,19 +270,28 @@ implement it, selected with `storage.backend`:
 The backend is wired through the Fx module and injected as the `Store` interface, so domains never depend on the
 concrete implementation.
 
-## Key Vault & Envelope Encryption
+## Cryptographic Core, Key Vault & Envelope Encryption
 
-Sensitive patient data (such as FHIR identification documents) is protected using Envelope Encryption with physical state separation in `internal/core/crypto`:
+LibreVita features an isolated, parametrizable cryptographic core in `internal/core/crypto` providing independent contracts for keyed hashing, symmetric AEAD encryption, and envelope encryption with zero database dependency:
 
-- **KEK (Key Encryption Key)** — derived via HKDF-BLAKE2b-256 from `LIBREVITA_MASTER_KEY` (`master_key`) using info string `librevita:kek:v1`. The KEK is kept strictly in memory and never written to disk.
-- **DEK (Data Encryption Key)** — a cryptographically random 32-byte key generated per patient (`urn:librevita:patient:<id>`). Patient data fields (e.g. `value_ciphertext` in `patient_identifiers`) are encrypted using XChaCha20-Poly1305 with random 24-byte nonces under the patient's DEK.
-- **KeyVault Port & Adapters** — patient DEKs are encrypted under the KEK and stored outside SQLite in a dedicated key vault in `internal/core/vault`. The active implementation is configured with `vault.backend`:
+- **Keyed Hasher (`crypto.Hasher`)** — provides keyed cryptographic hashing for blind indexing and session token verification with cryptographic agility:
+  - Formatted prefixed output: `<algorithm>$<hex_hash>` (e.g. `blake2s$3f4a...`).
+  - Active native-keyed engines: `blake2s` (default) and `blake2b`.
+  - Constant-time verification (`subtle.ConstantTimeCompare`) with legacy raw-hex fallback.
+  - Deterministic blind index computation (`system || '\x00' || value`) ensuring domain separation.
+- **Symmetric AEAD Encryptor (`crypto.Encryptor`)** — provides authenticated payload encryption for medical records:
+  - Magic Byte versioning at `ciphertext[0]`: `0x01` (`MagicByteXChaCha20Poly1305`) using 24-byte random nonces (`XChaCha20-Poly1305`). Short-nonce ciphers (such as standard 12-byte ChaCha20-Poly1305) are rejected in Fail-Fast.
+  - Self-directed dynamic decryption routing by inspecting the Magic Byte at byte `[0]`.
+  - Memory security: transient plaintext buffers are securely zeroized with `ZeroBytes`.
+- **Envelope Encryption (`*crypto.Engine`)** — protects sensitive patient data (such as FHIR identification documents) with physical state separation:
+  - **KEK (Key Encryption Key)** — derived via HKDF-BLAKE2b-256 from `LIBREVITA_MASTER_KEY` (`master_key`) using info string `librevita:kek:v1`. The KEK is kept strictly in memory and never written to disk.
+  - **DEK (Data Encryption Key)** — a cryptographically random 32-byte key generated per patient (`urn:librevita:patient:<id>`). Patient data fields (e.g. `value_ciphertext` in `patient_identifiers`) are encrypted using XChaCha20-Poly1305 with random 24-byte nonces under the patient's DEK.
+- **KeyVault Port & Adapters** — patient DEKs are encrypted under the KEK and stored outside the primary database in a dedicated key vault in `internal/core/vault`. The active implementation is configured with `vault.backend`:
   - **`bbolt`** — embedded Key-Value database (default `<data-dir>/keys.db`).
   - **`nats`** — high-performance NATS JetStream KeyValue store (`--vault-nats-url`, `--vault-nats-bucket`).
   - **`etcd`** — cloud-native Raft consensus KV store (`--vault-etcd-endpoints`, `--vault-etcd-prefix`).
   - **`hashicorp`**, **`hashicorp_vault`**, or **`openbao`** — enterprise HashiCorp Vault / OpenBao secret manager (`--vault-hashicorp-address`, `--vault-hashicorp-token`, `--vault-hashicorp-mount`). Hard-delete metadata purges enforce physical Crypto-Shredding.
 - **Crypto-Shredding** — calling `DeletePatientDEK` permanently deletes the patient's DEK from the vault. All database records belonging to that patient instantly become unreadable cryptographic noise, fulfilling GDPR / LGPD Right to be Forgotten compliance without requiring database wipes.
-- **Blind Index Engine** — exact match queries (`WHERE blind_index = ?`) use a global Blind Index Key derived via HKDF-BLAKE2b-256 (`librevita:blind-index:v1`) to compute a deterministic BLAKE2b-256 hex digest (`system || '\x00' || value`), keeping queries fast without compromising per-patient encryption isolation.
 
 ## Logging
 
