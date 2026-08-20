@@ -5,6 +5,9 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestApptsAt(t *testing.T) {
@@ -30,9 +33,7 @@ func TestApptsAt(t *testing.T) {
 		{8, 0, 0},
 	}
 	for _, tc := range cases {
-		if got := len(apptsAt(day, tc.hour, tc.half)); got != tc.want {
-			t.Fatalf("apptsAt(%d:%02d) = %d, want %d", tc.hour, tc.half*30, got, tc.want)
-		}
+		assert.Len(t, apptsAt(day, tc.hour, tc.half), tc.want)
 	}
 }
 
@@ -43,46 +44,28 @@ func TestBuildMonthGrid(t *testing.T) {
 		15: {{"Dr. Rafael Almeida", "09:00", "09:00", "Ana Souza", StatusConfirmed}},
 	})
 
-	if grid.Title != "August 2026" {
-		t.Fatalf("title = %q, want %q", grid.Title, "August 2026")
-	}
-	if len(grid.Days) != 42 {
-		t.Fatalf("cells = %d, want 42", len(grid.Days))
-	}
-	if len(grid.Weekdays) != 7 {
-		t.Fatalf("weekdays = %d, want 7", len(grid.Weekdays))
-	}
+	assert.Equal(t, "August 2026", grid.Title)
+	assert.Len(t, grid.Days, 42)
+	assert.Len(t, grid.Weekdays, 7)
 
 	// Saturday first: six cells with the previous month's last days
 	// (July 2026 has 31 days -> 26..31), greyed out, then day 1.
 	for i, d := range []int{26, 27, 28, 29, 30, 31, 1, 2} {
-		if got := grid.Days[i].Day; got != d {
-			t.Fatalf("cell %d = %d, want %d", i, got, d)
-		}
-		if grid.Days[i].OutOfMonth != (i < 6) {
-			t.Fatalf("cell %d OutOfMonth = %v", i, grid.Days[i].OutOfMonth)
-		}
+		assert.Equal(t, d, grid.Days[i].Day)
+		assert.Equal(t, i < 6, grid.Days[i].OutOfMonth)
 	}
 	// Day 31 sits at index 36 (6 + 30); the trailing five cells carry
 	// the next month's days 1..5, greyed out.
-	if got := grid.Days[36].Day; got != 31 || grid.Days[36].OutOfMonth {
-		t.Fatalf("cell 36 = %d (out=%v), want 31 in-month", got, grid.Days[36].OutOfMonth)
-	}
-	for i := 37; i <= 41; i++ {
-		if !grid.Days[i].OutOfMonth {
-			t.Fatalf("cell %d is not marked out-of-month", i)
-		}
-	}
-	if got := grid.Days[41].Day; got != 5 {
-		t.Fatalf("cell 41 = %d, want 5 (next month)", got)
-	}
+	assert.Equal(t, 31, grid.Days[36].Day)
+	assert.False(t, grid.Days[36].OutOfMonth)
 
-	if !grid.Days[20].IsToday { // day 15
-		t.Fatalf("day 15 is not marked as today")
+	for i := 37; i <= 41; i++ {
+		assert.True(t, grid.Days[i].OutOfMonth)
 	}
-	if got := len(grid.Days[20].Appointments); got != 1 {
-		t.Fatalf("day 15 appointments = %d, want 1", got)
-	}
+	assert.Equal(t, 5, grid.Days[41].Day)
+
+	assert.True(t, grid.Days[20].IsToday) // day 15
+	assert.Len(t, grid.Days[20].Appointments, 1)
 }
 
 func TestBuildWeekGrid(t *testing.T) {
@@ -93,27 +76,16 @@ func TestBuildWeekGrid(t *testing.T) {
 		15: {{"Dr. Rafael Almeida", "08:00", "08:00", "Bruno Lima", StatusConfirmed}},
 	})
 
-	if grid.Title != "Aug 9 — Aug 15, 2026" {
-		t.Fatalf("title = %q", grid.Title)
-	}
-	if len(grid.Days) != 7 {
-		t.Fatalf("days = %d, want 7", len(grid.Days))
-	}
-	if grid.Days[0].Name != "Sun" || grid.Days[6].Name != "Sat" {
-		t.Fatalf("week must start on Sunday: %s..%s", grid.Days[0].Name, grid.Days[6].Name)
-	}
-	if grid.Days[0].Day != 9 || grid.Days[6].Day != 15 {
-		t.Fatalf("week days = %d..%d, want 9..15", grid.Days[0].Day, grid.Days[6].Day)
-	}
-	if !grid.Days[6].IsToday {
-		t.Fatalf("Saturday (day 15) is not marked as today")
-	}
-	if got := len(grid.Days[0].Appointments); got != 1 {
-		t.Fatalf("Sunday appointments = %d, want 1", got)
-	}
-	if grid.StartHour != 8 || grid.EndHour != 18 {
-		t.Fatalf("grid range = %d..%d, want 8..18 (clinic hours default)", grid.StartHour, grid.EndHour)
-	}
+	assert.Equal(t, "Aug 9 — Aug 15, 2026", grid.Title)
+	assert.Len(t, grid.Days, 7)
+	assert.Equal(t, "Sun", grid.Days[0].Name)
+	assert.Equal(t, "Sat", grid.Days[6].Name)
+	assert.Equal(t, 9, grid.Days[0].Day)
+	assert.Equal(t, 15, grid.Days[6].Day)
+	assert.True(t, grid.Days[6].IsToday)
+	assert.Len(t, grid.Days[0].Appointments, 1)
+	assert.Equal(t, 8, grid.StartHour)
+	assert.Equal(t, 18, grid.EndHour)
 }
 
 func TestGridRangeFollowsAppointments(t *testing.T) {
@@ -122,9 +94,8 @@ func TestGridRangeFollowsAppointments(t *testing.T) {
 	grid := BuildWeekGrid(time.Date(2026, 8, 15, 12, 0, 0, 0, time.UTC), map[int][]Appointment{
 		15: {{"Dr. Rafael Almeida", "09:00", "09:30", "Ana Souza", StatusConfirmed}, {"Dr. Rafael Almeida", "20:30", "21:30", "Sofia Rezende", StatusPending}},
 	})
-	if grid.StartHour != 8 || grid.EndHour != 21 {
-		t.Fatalf("grid range = %d..%d, want 8..21 (clinic + after-hours slot incl. end)", grid.StartHour, grid.EndHour)
-	}
+	assert.Equal(t, 8, grid.StartHour)
+	assert.Equal(t, 21, grid.EndHour)
 }
 
 func TestBuildMonthGridAddsTodayFixture(t *testing.T) {
@@ -133,15 +104,15 @@ func TestBuildMonthGridAddsTodayFixture(t *testing.T) {
 	now := time.Date(2026, 8, 3, 12, 0, 0, 0, time.UTC)
 	grid := BuildMonthGrid(now, map[int][]Appointment{})
 
+	foundToday := false
 	for _, day := range grid.Days {
 		if day.IsToday {
-			if len(day.Appointments) != 1 {
-				t.Fatalf("today has %d appointments, want the placeholder", len(day.Appointments))
-			}
-			return
+			foundToday = true
+			assert.Len(t, day.Appointments, 1)
+			break
 		}
 	}
-	t.Fatalf("no cell marked as today")
+	require.True(t, foundToday, "no cell marked as today")
 }
 
 func TestNowLineOffset(t *testing.T) {
@@ -161,9 +132,7 @@ func TestNowLineOffset(t *testing.T) {
 		h, _ := strconv.Atoi(parts[0])
 		m, _ := strconv.Atoi(parts[1])
 		now := time.Date(2026, 8, 15, h, m, 0, 0, time.UTC)
-		if got := nowLineOffset(now, 8, 20); got != tc.want {
-			t.Fatalf("nowLineOffset(%s) = %d, want %d", tc.time, got, tc.want)
-		}
+		assert.Equal(t, tc.want, nowLineOffset(now, 8, 20), "time: %s", tc.time)
 	}
 }
 
@@ -180,11 +149,7 @@ func TestApptGeometry(t *testing.T) {
 		{Appointment{"Dr. Rafael Almeida", "08:00", "08:15", "Larissa Gomes", StatusConfirmed}, 8, 0, 16},
 	}
 	for _, tc := range cases {
-		if got := apptTop(tc.appt, tc.startH); got != tc.top {
-			t.Fatalf("apptTop(%s) = %d, want %d", tc.appt.Start, got, tc.top)
-		}
-		if got := apptHeight(tc.appt); got != tc.height {
-			t.Fatalf("apptHeight(%s-%s) = %d, want %d", tc.appt.Start, tc.appt.End, got, tc.height)
-		}
+		assert.Equal(t, tc.top, apptTop(tc.appt, tc.startH), "apptTop(%s)", tc.appt.Start)
+		assert.Equal(t, tc.height, apptHeight(tc.appt), "apptHeight(%s-%s)", tc.appt.Start, tc.appt.End)
 	}
 }

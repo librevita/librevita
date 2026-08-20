@@ -1,11 +1,12 @@
 package vault
 
 import (
-	"bytes"
 	"context"
-	"errors"
 	"path/filepath"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"librevita.org/internal/core/crypto"
 )
@@ -15,9 +16,7 @@ func TestBBoltVaultDirectOperations(t *testing.T) {
 	dbPath := filepath.Join(dir, "keys.db")
 
 	v, err := NewBBoltVault(dbPath)
-	if err != nil {
-		t.Fatalf("NewBBoltVault: %v", err)
-	}
+	require.NoError(t, err)
 	t.Cleanup(func() { _ = v.Close() })
 
 	ctx := context.Background()
@@ -25,31 +24,23 @@ func TestBBoltVaultDirectOperations(t *testing.T) {
 	encDEK := []byte("encrypted-dek-payload-32-bytes!!")
 
 	// Get before Put should return crypto.ErrKeyNotFound
-	if _, err := v.GetDEK(ctx, patientURN); !errors.Is(err, crypto.ErrKeyNotFound) {
-		t.Fatalf("GetDEK before Put = %v, want %v", err, crypto.ErrKeyNotFound)
-	}
+	_, err = v.GetDEK(ctx, patientURN)
+	assert.ErrorIs(t, err, crypto.ErrKeyNotFound)
 
 	// Put DEK
-	if err := v.PutDEK(ctx, patientURN, encDEK); err != nil {
-		t.Fatalf("PutDEK: %v", err)
-	}
+	err = v.PutDEK(ctx, patientURN, encDEK)
+	require.NoError(t, err)
 
 	// Get DEK
 	got, err := v.GetDEK(ctx, patientURN)
-	if err != nil {
-		t.Fatalf("GetDEK: %v", err)
-	}
-	if !bytes.Equal(got, encDEK) {
-		t.Fatalf("GetDEK = %q, want %q", got, encDEK)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, encDEK, got)
 
 	// Delete DEK (Crypto-Shredding)
-	if err := v.DeleteDEK(ctx, patientURN); err != nil {
-		t.Fatalf("DeleteDEK: %v", err)
-	}
+	err = v.DeleteDEK(ctx, patientURN)
+	require.NoError(t, err)
 
 	// Get after Delete should return crypto.ErrKeyNotFound
-	if _, err := v.GetDEK(ctx, patientURN); !errors.Is(err, crypto.ErrKeyNotFound) {
-		t.Fatalf("GetDEK after Delete = %v, want %v", err, crypto.ErrKeyNotFound)
-	}
+	_, err = v.GetDEK(ctx, patientURN)
+	assert.ErrorIs(t, err, crypto.ErrKeyNotFound)
 }

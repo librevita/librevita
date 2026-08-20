@@ -4,7 +4,6 @@ package database
 
 import (
 	"context"
-	"errors"
 	"log/slog"
 	"path/filepath"
 	"testing"
@@ -12,6 +11,8 @@ import (
 	"entgo.io/ent/dialect"
 	entsql "entgo.io/ent/dialect/sql"
 	"github.com/google/uuid"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"librevita.org/ent"
 	"librevita.org/ent/clinic"
@@ -21,11 +22,9 @@ import (
 	identifiermodel "librevita.org/internal/domain/identifier/model"
 	identifierrepo "librevita.org/internal/domain/identifier/repository"
 	identifierusecase "librevita.org/internal/domain/identifier/usecase"
+	patientrepo "librevita.org/internal/domain/patient/repository"
 	"librevita.org/internal/domain/patient/usecase"
-	"librevita.org/internal/testutil"
 )
-
-func strPtrT(s string) *string { return &s }
 
 // TestDqliteSpike connects to the local dqlite cluster (see
 // /tmp/opencode/dqlite-node) through the pure-Go driver and exercises
@@ -38,14 +37,12 @@ func TestDqliteSpike(t *testing.T) {
 	}
 	defer db.Close()
 
-	if err := Migrate(context.Background(), db, slog.New(slog.DiscardHandler)); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
-	// #nosec G202 -- table names come from the fixed list below.
+	err = Migrate(context.Background(), db, slog.New(slog.DiscardHandler))
+	require.NoError(t, err)
+
 	for _, table := range []string{"patient_identifiers", "patients", "users", "clinics"} {
-		if _, err := db.Exec("DELETE FROM " + table); err != nil {
-			t.Fatalf("clean %s: %v", table, err)
-		}
+		_, err := db.Exec("DELETE FROM " + table)
+		require.NoError(t, err)
 	}
 
 	drv := entsql.OpenDB(dialect.SQLite, db)
@@ -54,118 +51,96 @@ func TestDqliteSpike(t *testing.T) {
 
 	// A real transaction: BEGIN/COMMIT through Ent.
 	tx, err := client.Tx(context.Background())
-	if err != nil {
-		t.Fatalf("begin: %v", err)
-	}
-	if _, err := tx.Clinic.Create().
+	require.NoError(t, err)
+
+	_, err = tx.Clinic.Create().
 		SetID(uuid.MustParse("00000000-0000-0000-0000-0000000000d1")).
 		SetName("Dqlite").
 		SetTaxID("1").
 		SetCountry("BR").
 		SetTimezone("UTC").
-		Save(context.Background()); err != nil {
-		t.Fatalf("tx insert: %v", err)
-	}
-	if err := tx.Commit(); err != nil {
-		t.Fatalf("commit: %v", err)
-	}
+		Save(context.Background())
+	require.NoError(t, err)
+	require.NoError(t, tx.Commit())
 
 	// Rollback must not persist.
 	tx, err = client.Tx(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := tx.Clinic.Create().
+	require.NoError(t, err)
+
+	_, err = tx.Clinic.Create().
 		SetID(uuid.MustParse("00000000-0000-0000-0000-0000000000d2")).
 		SetName("Rolled").
 		SetTaxID("2").
 		SetCountry("BR").
 		SetTimezone("UTC").
-		Save(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	if err := tx.Rollback(); err != nil {
-		t.Fatalf("rollback: %v", err)
-	}
+		Save(context.Background())
+	require.NoError(t, err)
+	require.NoError(t, tx.Rollback())
+
 	count, err := client.Clinic.Query().Where(clinic.IDEQ(uuid.MustParse("00000000-0000-0000-0000-0000000000d2"))).Count(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if count != 0 {
-		t.Fatalf("rolled-back clinic persisted: %d", count)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, 0, count)
 
 	// FLE round trip: encrypted identifier + blind index + duplicate.
 	clinicID := "00000000-0000-0000-0000-0000000000d1"
 	adminID := "00000000-0000-0000-0000-0000000000d5"
 	adminRole, err := client.Role.Query().Where(role.NameEQ("admin")).Only(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := client.User.Create().
+	require.NoError(t, err)
+
+	_, err = client.User.Create().
 		SetID(uuid.MustParse(adminID)).
 		SetEmail("admin@dqlite.test").
 		SetPasswordHash("x").
 		SetDisplayName("Admin").
 		SetRoleID(adminRole.ID).
-		Save(context.Background()); err != nil {
-		t.Fatal(err)
-	}
+		Save(context.Background())
+	require.NoError(t, err)
 
 	v, err := vault.NewBBoltVault(filepath.Join(t.TempDir(), "keys.db"))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	t.Cleanup(func() { _ = v.Close() })
 
 	engine, err := crypto.NewEngine("nAmIvOXVc0vb6M9G7P9q2j2yK1WxP3sJ8q5dR4tU6wA=", v)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
-	patientSvc := usecase.NewService(client, engine, slog.New(slog.DiscardHandler), nil)
+	patientSvc := usecase.NewService(patientrepo.NewPatientRepository(client), engine, slog.New(slog.DiscardHandler), nil)
 	createdPt, err := patientSvc.Create(context.Background(), clinicID, adminID, usecase.PatientInput{
 		DisplayName: "P",
 		Sex:         "unknown",
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	patientID := createdPt.ID
 
 	reg := identifiermodel.NewRegistry()
 	sysRepo := identifierrepo.NewSystemRepository(client)
 	rows, err := sysRepo.ListActive(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := reg.Reload(rows); err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+	require.NoError(t, reg.Reload(rows))
+
+	masterKey, err := crypto.NewMasterKey("nAmIvOXVc0vb6M9G7P9q2j2yK1WxP3sJ8q5dR4tU6wA=", v)
+	require.NoError(t, err)
+
 	idRepo := identifierrepo.NewIdentifierRepository(client)
-	svc := identifierusecase.NewService(idRepo, engine, reg, slog.New(slog.DiscardHandler))
-	if _, err := svc.AddIdentifier(context.Background(), clinicID, adminID, identifierusecase.Input{
+	svc := identifierusecase.NewService(idRepo, masterKey, reg, slog.New(slog.DiscardHandler))
+	_, err = svc.AddIdentifier(context.Background(), clinicID, adminID, identifierusecase.Input{
 		PatientID: patientID.String(), Value: "123.456.789-09",
-	}); err != nil {
-		t.Fatalf("add identifier: %v", err)
-	}
+	})
+	require.NoError(t, err)
+
 	found, err := svc.FindByValue(context.Background(), clinicID, "12345678909")
-	if err != nil || len(found) != 1 {
-		t.Fatalf("find by value: %v %+v", err, found)
-	}
+	require.NoError(t, err)
+	assert.Len(t, found, 1)
 
 	otherPt, err := patientSvc.Create(context.Background(), clinicID, adminID, usecase.PatientInput{
 		DisplayName: "O",
 		Sex:         "unknown",
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	other := otherPt.ID
-	if _, err := svc.AddIdentifier(context.Background(), clinicID, adminID, identifierusecase.Input{
+
+	_, err = svc.AddIdentifier(context.Background(), clinicID, adminID, identifierusecase.Input{
 		PatientID: other.String(), Value: "12345678909",
-	}); !errors.Is(err, identifierusecase.ErrDuplicate) {
-		t.Fatalf("duplicate = %v, want ErrDuplicate", err)
-	}
+	})
+	assert.ErrorIs(t, err, identifierusecase.ErrDuplicate)
 	t.Log("dqlite spike OK: migrations, transactions, FLE")
 }

@@ -3,6 +3,8 @@ package model_test
 import (
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+
 	"librevita.org/internal/domain/patient/model"
 )
 
@@ -11,32 +13,22 @@ import (
 // representation round-trips.
 func TestPatientEnums(t *testing.T) {
 	for _, sex := range []model.Sex{model.SexFemale, model.SexMale, model.SexOther, model.SexUnknown} {
-		if !sex.Valid() {
-			t.Fatalf("%q must be valid", sex)
-		}
-		if got, ok := model.ParseSex(sex.String()); !ok || got != sex {
-			t.Fatalf("ParseSex(%q) = %q, %v; want %q, true", sex.String(), got, ok, sex)
-		}
+		assert.True(t, sex.Valid(), "%q must be valid", sex)
+		got, ok := model.ParseSex(sex.String())
+		assert.True(t, ok)
+		assert.Equal(t, sex, got)
 	}
-	if model.Sex("nonbinary").Valid() {
-		t.Fatal("sex outside the CHECK set must not be valid")
-	}
-	if _, ok := model.ParseSex("nonbinary"); ok {
-		t.Fatal("ParseSex must reject values outside the CHECK set")
-	}
+	assert.False(t, model.Sex("nonbinary").Valid())
+	_, ok := model.ParseSex("nonbinary")
+	assert.False(t, ok)
 
 	for _, status := range []model.PatientStatus{model.PatientStatusActive, model.PatientStatusInactive, model.PatientStatusArchived} {
-		if !status.Valid() {
-			t.Fatalf("%q must be valid", status)
-		}
-		if got, ok := model.ParsePatientStatus(status.String()); !ok || got != status {
-			t.Fatalf("ParsePatientStatus(%q) = %q, %v; want %q, true", status.String(), got, ok, status)
-		}
+		assert.True(t, status.Valid(), "%q must be valid", status)
+		got, ok := model.ParsePatientStatus(status.String())
+		assert.True(t, ok)
+		assert.Equal(t, status, got)
 	}
-	if model.PatientStatus("suspended").Valid() {
-		t.Fatal("status outside the CHECK set must not be valid")
-	}
-	if _, ok := model.ParsePatientStatus("suspended"); ok {
-		t.Fatal("ParsePatientStatus must reject values outside the CHECK set")
-	}
+	assert.False(t, model.PatientStatus("suspended").Valid())
+	_, ok = model.ParsePatientStatus("suspended")
+	assert.False(t, ok)
 }

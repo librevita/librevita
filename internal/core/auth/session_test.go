@@ -14,6 +14,8 @@ import (
 	"entgo.io/ent/dialect"
 	entsql "entgo.io/ent/dialect/sql"
 	"github.com/google/uuid"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	_ "modernc.org/sqlite"
 
 	"librevita.org/ent"
@@ -27,16 +29,13 @@ const testUserID = "01990000-0000-7000-8000-000000000001"
 func openSessionTest(t *testing.T) *ent.Client {
 	t.Helper()
 	db, err := sql.Open("sqlite", "file:session-test-"+uuid.NewString()+"?mode=memory&cache=shared")
-	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
-	}
+	require.NoError(t, err)
 	db.SetMaxOpenConns(1)
 	t.Cleanup(func() { db.Close() })
 
 	log := slog.New(slog.DiscardHandler)
-	if err := database.Migrate(context.Background(), db, log); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
+	err = database.Migrate(context.Background(), db, log)
+	require.NoError(t, err)
 
 	drv := entsql.OpenDB(dialect.SQLite, db)
 	client := ent.NewClient(ent.Driver(drv))
@@ -48,23 +47,19 @@ func openSessionTest(t *testing.T) *ent.Client {
 func seedUser(t *testing.T, client *ent.Client, id string) {
 	t.Helper()
 	hash, err := HashPassword("test-password")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := testutil.User(context.Background(), client, id, "user@example.org", "admin", hash); err != nil {
-		t.Fatalf("seed user: %v", err)
-	}
+	require.NoError(t, err)
+	err = testutil.User(context.Background(), client, id, "user@example.org", "admin", hash)
+	require.NoError(t, err)
 }
 
 func newManager(t *testing.T, client *ent.Client, ttl time.Duration) *SessionManager {
 	t.Helper()
-	m := &SessionManager{
+	return &SessionManager{
 		repo:   NewSessionRepository(client),
 		ttl:    ttl,
 		secure: false,
 		log:    slog.New(slog.DiscardHandler),
 	}
-	return m
 }
 
 func TestSessionLifecycle(t *testing.T) {
@@ -73,27 +68,20 @@ func TestSessionLifecycle(t *testing.T) {
 	m := newManager(t, client, time.Hour)
 
 	token, err := m.Create(context.Background(), Principal{ID: testUserID, Email: "user@example.org", Name: "Test User", Role: RoleAdmin})
-	if err != nil {
-		t.Fatalf("Create: %v", err)
-	}
-	if token == "" {
-		t.Fatal("Create returned an empty token")
-	}
+	require.NoError(t, err)
+	assert.NotEmpty(t, token)
 
 	p, err := m.Authenticate(context.Background(), token)
-	if err != nil {
-		t.Fatalf("Authenticate: %v", err)
-	}
-	if p.ID != testUserID || p.Role != RoleAdmin || p.Email != "user@example.org" {
-		t.Fatalf("unexpected principal: %+v", p)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, testUserID, p.ID)
+	assert.Equal(t, RoleAdmin, p.Role)
+	assert.Equal(t, "user@example.org", p.Email)
 
-	if err := m.Destroy(context.Background(), token); err != nil {
-		t.Fatalf("Destroy: %v", err)
-	}
-	if _, err := m.Authenticate(context.Background(), token); err != ErrNoSession {
-		t.Fatalf("Authenticate after destroy = %v, want ErrNoSession", err)
-	}
+	err = m.Destroy(context.Background(), token)
+	require.NoError(t, err)
+
+	_, err = m.Authenticate(context.Background(), token)
+	assert.Equal(t, ErrNoSession, err)
 }
 
 func TestSessionUnknownToken(t *testing.T) {
@@ -101,9 +89,8 @@ func TestSessionUnknownToken(t *testing.T) {
 	seedUser(t, client, testUserID)
 	m := newManager(t, client, time.Hour)
 
-	if _, err := m.Authenticate(context.Background(), "bogus"); err != ErrNoSession {
-		t.Fatalf("Authenticate = %v, want ErrNoSession", err)
-	}
+	_, err := m.Authenticate(context.Background(), "bogus")
+	assert.Equal(t, ErrNoSession, err)
 }
 
 func TestSessionExpiry(t *testing.T) {
@@ -112,12 +99,10 @@ func TestSessionExpiry(t *testing.T) {
 	m := newManager(t, client, -time.Hour) // Already expired.
 
 	token, err := m.Create(context.Background(), Principal{ID: testUserID, Email: "user@example.org", Name: "Test User", Role: RoleAdmin})
-	if err != nil {
-		t.Fatalf("Create: %v", err)
-	}
-	if _, err := m.Authenticate(context.Background(), token); err != ErrNoSession {
-		t.Fatalf("Authenticate of expired session = %v, want ErrNoSession", err)
-	}
+	require.NoError(t, err)
+
+	_, err = m.Authenticate(context.Background(), token)
+	assert.Equal(t, ErrNoSession, err)
 }
 
 func TestSessionRejectsDeactivatedUser(t *testing.T) {
@@ -125,41 +110,35 @@ func TestSessionRejectsDeactivatedUser(t *testing.T) {
 	seedUser(t, client, testUserID)
 
 	userUUID := uuid.MustParse(testUserID)
-	if err := client.User.UpdateOneID(userUUID).SetActive(false).Exec(context.Background()); err != nil {
-		t.Fatal(err)
-	}
+	err := client.User.UpdateOneID(userUUID).SetActive(false).Exec(context.Background())
+	require.NoError(t, err)
 	m := newManager(t, client, time.Hour)
 
 	token, err := m.Create(context.Background(), Principal{ID: testUserID, Email: "user@example.org", Name: "Test User", Role: RoleAdmin})
-	if err != nil {
-		t.Fatalf("Create: %v", err)
-	}
-	if _, err := m.Authenticate(context.Background(), token); err != ErrNoSession {
-		t.Fatalf("Authenticate of deactivated user = %v, want ErrNoSession", err)
-	}
+	require.NoError(t, err)
+
+	_, err = m.Authenticate(context.Background(), token)
+	assert.Equal(t, ErrNoSession, err)
 }
 
 func TestSessionManagerRequiresClient(t *testing.T) {
-	if _, err := NewSessionManager(nil, &config.Config{Mode: "development"}, slog.New(slog.DiscardHandler)); err == nil {
-		t.Fatal("NewSessionManager(nil) should fail")
-	}
+	_, err := NewSessionManager(nil, &config.Config{Mode: "development"}, slog.New(slog.DiscardHandler))
+	assert.Error(t, err)
 }
 
 func TestSessionManagerRequiresKeyInProduction(t *testing.T) {
 	client := openSessionTest(t)
 	cfg := &config.Config{Mode: "production"}
-	if _, err := NewSessionManager(NewSessionRepository(client), cfg, slog.New(slog.DiscardHandler)); err == nil {
-		t.Fatal("NewSessionManager without a key in production should fail")
-	}
+	_, err := NewSessionManager(NewSessionRepository(client), cfg, slog.New(slog.DiscardHandler))
+	assert.Error(t, err)
 }
 
 func TestSessionManagerRejectsMalformedKey(t *testing.T) {
 	client := openSessionTest(t)
 	for _, key := range []string{"not-base64!!", base64.StdEncoding.EncodeToString([]byte("short"))} {
 		cfg := &config.Config{Mode: "production", PasetoKey: key}
-		if _, err := NewSessionManager(NewSessionRepository(client), cfg, slog.New(slog.DiscardHandler)); err == nil {
-			t.Fatalf("NewSessionManager with key %q should fail", key)
-		}
+		_, err := NewSessionManager(NewSessionRepository(client), cfg, slog.New(slog.DiscardHandler))
+		assert.Error(t, err, "NewSessionManager with key %q should fail", key)
 	}
 }
 
@@ -167,17 +146,14 @@ func TestSessionManagerAcceptsConfiguredKey(t *testing.T) {
 	client := openSessionTest(t)
 	key := base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{0x42}, 32))
 	m, err := NewSessionManager(NewSessionRepository(client), &config.Config{Mode: "production", PasetoKey: key}, slog.New(slog.DiscardHandler))
-	if err != nil {
-		t.Fatalf("NewSessionManager: %v", err)
-	}
+	require.NoError(t, err)
+
 	seedUser(t, client, testUserID)
 	token, err := m.Create(context.Background(), Principal{ID: testUserID, Email: "user@example.org", Name: "Test User", Role: RoleAdmin})
-	if err != nil {
-		t.Fatalf("Create: %v", err)
-	}
-	if _, err := m.Authenticate(context.Background(), token); err != nil {
-		t.Fatalf("Authenticate: %v", err)
-	}
+	require.NoError(t, err)
+
+	_, err = m.Authenticate(context.Background(), token)
+	assert.NoError(t, err)
 }
 
 func TestSessionRejectsTamperedToken(t *testing.T) {
@@ -186,14 +162,11 @@ func TestSessionRejectsTamperedToken(t *testing.T) {
 	m := newManager(t, client, time.Hour)
 
 	token, err := m.Create(context.Background(), Principal{ID: testUserID, Email: "user@example.org", Name: "Test User", Role: RoleAdmin})
-	if err != nil {
-		t.Fatalf("Create: %v", err)
-	}
+	require.NoError(t, err)
 
 	tampered := token[:len(token)-1] + string(flipByte(token[len(token)-1]))
-	if _, err := m.Authenticate(context.Background(), tampered); err != ErrNoSession {
-		t.Fatalf("Authenticate of tampered token = %v, want ErrNoSession", err)
-	}
+	_, err = m.Authenticate(context.Background(), tampered)
+	assert.Equal(t, ErrNoSession, err)
 }
 
 func TestSessionTokenIsPaseto(t *testing.T) {
@@ -202,12 +175,8 @@ func TestSessionTokenIsPaseto(t *testing.T) {
 	m := newManager(t, client, time.Hour)
 
 	token, err := m.Create(context.Background(), Principal{ID: testUserID, Email: "user@example.org", Name: "Test User", Role: RoleAdmin})
-	if err != nil {
-		t.Fatalf("Create: %v", err)
-	}
-	if !strings.HasPrefix(token, "v4.local.") {
-		t.Fatalf("token %q does not use PASETO v4.local", token)
-	}
+	require.NoError(t, err)
+	assert.True(t, strings.HasPrefix(token, "v4.local."), "token %q does not use PASETO v4.local", token)
 }
 
 func flipByte(b byte) byte {
@@ -222,26 +191,17 @@ func TestSessionManagerKeyBoundary(t *testing.T) {
 	log := slog.New(slog.DiscardHandler)
 
 	for _, env := range []string{"production", "staging", "prod", "test"} {
-		if _, err := NewSessionManager(NewSessionRepository(client), &config.Config{Mode: env}, log); err == nil {
-			t.Fatalf("env %q must require a paseto key", env)
-		}
+		_, err := NewSessionManager(NewSessionRepository(client), &config.Config{Mode: env}, log)
+		assert.Error(t, err, "env %q must require a paseto key", env)
 	}
 
 	m, err := NewSessionManager(NewSessionRepository(client), &config.Config{Mode: "development"}, log)
-	if err != nil {
-		t.Fatalf("development env must allow an ephemeral key: %v", err)
-	}
-	if m.secure {
-		t.Fatal("development cookies must not use Secure")
-	}
+	require.NoError(t, err)
+	assert.False(t, m.secure, "development cookies must not use Secure")
 
 	m, err = NewSessionManager(NewSessionRepository(client), &config.Config{Mode: "staging", PasetoKey: base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{0x42}, 32))}, log)
-	if err != nil {
-		t.Fatalf("staging with a key must work: %v", err)
-	}
-	if !m.secure {
-		t.Fatal("non-development cookies must use Secure")
-	}
+	require.NoError(t, err)
+	assert.True(t, m.secure, "non-development cookies must use Secure")
 }
 
 func TestSessionCookieAttributes(t *testing.T) {
@@ -249,28 +209,18 @@ func TestSessionCookieAttributes(t *testing.T) {
 	log := slog.New(slog.DiscardHandler)
 
 	dev, err := NewSessionManager(NewSessionRepository(client), &config.Config{Mode: "development"}, log)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	prod, err := NewSessionManager(NewSessionRepository(client), &config.Config{
 		Mode: "production", PasetoKey: base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{0x42}, 32)),
 	}, log)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	for name, m := range map[string]*SessionManager{"development": dev, "production": prod} {
 		for _, c := range []*http.Cookie{m.Cookie("token"), m.ClearCookie()} {
-			if !c.HttpOnly {
-				t.Fatalf("%s: session cookie must be HttpOnly", name)
-			}
-			if c.SameSite != http.SameSiteLaxMode {
-				t.Fatalf("%s: session cookie must be SameSite=Lax", name)
-			}
+			assert.True(t, c.HttpOnly, "%s: session cookie must be HttpOnly", name)
+			assert.Equal(t, http.SameSiteLaxMode, c.SameSite, "%s: session cookie must be SameSite=Lax", name)
 			wantSecure := name == "production"
-			if c.Secure != wantSecure {
-				t.Fatalf("%s: Secure = %v, want %v", name, c.Secure, wantSecure)
-			}
+			assert.Equal(t, wantSecure, c.Secure, "%s: Secure mismatch", name)
 		}
 	}
 }

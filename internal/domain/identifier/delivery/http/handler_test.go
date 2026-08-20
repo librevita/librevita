@@ -2,101 +2,85 @@ package http_test
 
 import (
 	"context"
-	"database/sql"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
-	"entgo.io/ent/dialect"
-	entsql "entgo.io/ent/dialect/sql"
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
-	_ "modernc.org/sqlite"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 
-	"librevita.org/ent"
-	"librevita.org/ent/identifiersystem"
 	"librevita.org/internal/core/audit"
 	"librevita.org/internal/core/auth"
 	"librevita.org/internal/core/config"
-	"librevita.org/internal/core/database"
 	"librevita.org/internal/core/policy"
 	"librevita.org/internal/core/server"
-	"librevita.org/internal/core/vault"
 	deliveryhttp "librevita.org/internal/domain/identifier/delivery/http"
 	identifiermodel "librevita.org/internal/domain/identifier/model"
-	identifierrepo "librevita.org/internal/domain/identifier/repository"
 	"librevita.org/internal/domain/identifier/usecase"
-	"librevita.org/internal/testutil"
+	auditmocks "librevita.org/tests/mocks/core/audit"
+	authmocks "librevita.org/tests/mocks/core/auth"
+	policymocks "librevita.org/tests/mocks/core/policy"
+	usecasemocks "librevita.org/tests/mocks/domain/identifier/usecase"
 )
 
-func openTestDB(t *testing.T) *ent.Client {
-	t.Helper()
-	name := "identifier-http-test-" + uuid.NewString()
-	db, err := sql.Open("sqlite", "file:"+name+"?mode=memory&cache=shared")
-	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
-	}
-	db.SetMaxOpenConns(1)
-	t.Cleanup(func() { db.Close() })
+var testAdminID = uuid.MustParse("01990000-0000-7000-8000-00000000000a")
 
-	if err := database.Migrate(context.Background(), db, slog.New(slog.DiscardHandler)); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
-
-	drv := entsql.OpenDB(dialect.SQLite, db)
-	client := ent.NewClient(ent.Driver(drv))
-	t.Cleanup(func() { client.Close() })
-	return client
+type httpTestEnv struct {
+	echo       *echo.Echo
+	sessions   *auth.SessionManager
+	systemsSvc *usecasemocks.MockSystemsService
 }
 
-func newHTTPEnv(t *testing.T) (*echo.Echo, *auth.SessionManager, *ent.Client) {
+func newHTTPEnv(t *testing.T) *httpTestEnv {
 	t.Helper()
-	client := openTestDB(t)
 	log := slog.New(slog.DiscardHandler)
-	sessions, err := auth.NewSessionManager(auth.NewSessionRepository(client), &config.Config{Mode: "development"}, log)
-	if err != nil {
-		t.Fatal(err)
-	}
-	auditLogger, err := audit.NewLogger(audit.NewAuditRepository(client), log)
-	if err != nil {
-		t.Fatal(err)
-	}
-	policies, err := policy.NewPolicyEngine(policy.NewPolicyRepository(client), log)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := policies.Load(context.Background()); err != nil {
-		t.Fatal(err)
-	}
 
-	v, err := vault.NewBBoltVault(filepath.Join(t.TempDir(), "keys.db"))
-	if err != nil {
-		t.Fatal(err)
+	sessionRepoMock := authmocks.NewMockSessionRepository(t)
+	sessionRepoMock.EXPECT().CleanupExpired(mock.Anything, mock.Anything).Return(nil).Maybe()
+	sessionRepoMock.EXPECT().Create(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
+	sessionRepoMock.EXPECT().GetActive(mock.Anything, mock.Anything, mock.Anything).Return(&auth.SessionRecord{
+		User: &auth.SessionUser{
+			ID:     testAdminID,
+			Email:  "admin@example.org",
+			Name:   "Admin",
+			Role:   auth.RoleAdmin,
+			Active: true,
+		},
+	}, nil).Maybe()
+
+	sessions, err := auth.NewSessionManager(sessionRepoMock, &config.Config{Mode: "development"}, log)
+	require.NoError(t, err)
+
+	auditRepoMock := auditmocks.NewMockRepository(t)
+	auditRepoMock.EXPECT().LastSignature(mock.Anything).Return("", nil).Maybe()
+	auditRepoMock.EXPECT().Record(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
+	auditLogger, err := audit.NewLogger(auditRepoMock, log)
+	require.NoError(t, err)
+
+	policyRepoMock := policymocks.NewMockRepository(t)
+	policyRepoMock.EXPECT().SeedDefaults(mock.Anything, mock.Anything).Return(nil).Maybe()
+	var defaultRows []policy.PolicyRow
+	for name, expr := range policy.DefaultPolicies {
+		defaultRows = append(defaultRows, policy.PolicyRow{
+			Name:       name,
+			Expression: expr,
+		})
 	}
-	t.Cleanup(func() { _ = v.Close() })
+	policyRepoMock.EXPECT().List(mock.Anything).Return(defaultRows, nil).Maybe()
+
+	policies, err := policy.NewPolicyEngine(policyRepoMock, log)
+	require.NoError(t, err)
+	require.NoError(t, policies.Load(context.Background()))
 
 	csrf := auth.NewCSRF(&config.Config{Mode: "development"})
-	if err := testutil.Clinic(context.Background(), client, "01990000-0000-7000-8000-0000000000d0", "Test Clinic", "000.000.000-00"); err != nil {
-		t.Fatalf("seed clinic: %v", err)
-	}
-	if err := testutil.User(context.Background(), client, "01990000-0000-7000-8000-00000000000a", "admin@example.org", "admin", "x"); err != nil {
-		t.Fatalf("seed admin: %v", err)
-	}
-
-	sysRepo := identifierrepo.NewSystemRepository(client)
-	reg := identifiermodel.NewRegistry()
-	rows, err := sysRepo.ListActive(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := reg.Reload(rows); err != nil {
-		t.Fatal(err)
-	}
-	systemsSvc := usecase.NewSystemsService(sysRepo, reg, log)
+	systemsSvc := usecasemocks.NewMockSystemsService(t)
 	h := deliveryhttp.NewHandler(systemsSvc, csrf, auditLogger)
 
 	e := echo.New()
@@ -109,19 +93,20 @@ func newHTTPEnv(t *testing.T) (*echo.Echo, *auth.SessionManager, *ent.Client) {
 	e.POST("/identifier-systems/:id", h.IdentifierSystemUpdate, admin...)
 	e.POST("/identifier-systems/:id/active", h.IdentifierSystemSetActive, admin...)
 	e.GET("/identifier-systems/check-fields", h.SystemCheckFields, admin...)
-	return e, sessions, client
-}
 
-var testAdminID = uuid.MustParse("01990000-0000-7000-8000-00000000000a")
+	return &httpTestEnv{
+		echo:       e,
+		sessions:   sessions,
+		systemsSvc: systemsSvc,
+	}
+}
 
 func adminSession(t *testing.T, sessions *auth.SessionManager) *http.Cookie {
 	t.Helper()
 	token, err := sessions.Create(context.Background(), auth.Principal{
 		ID: testAdminID.String(), Email: "admin@example.org", Name: "Admin", Role: auth.RoleAdmin,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	return sessions.Cookie(token)
 }
 
@@ -147,11 +132,31 @@ func getWithCookie(t *testing.T, e *echo.Echo, path string, cookie *http.Cookie)
 }
 
 func TestIdentifierSystemsAdmin(t *testing.T) {
-	e, sessions, db := newHTTPEnv(t)
-	cookie := adminSession(t, sessions)
+	env := newHTTPEnv(t)
+	cookie := adminSession(t, env.sessions)
 
-	// Create a Paraguayan cédula.
-	rec := postForm(t, e, "/identifier-systems", cookie, url.Values{
+	systemID := uuid.MustParse("01990000-0000-7000-8000-000000000055")
+	cedulaSystem := &identifiermodel.IdentifierSystem{
+		ID:               systemID,
+		System:           "urn:librevita:id:py:cedula",
+		DisplayName:      "Cédula de Identidad (Paraguay)",
+		Pattern:          "[0-9]{8}",
+		Transform:        identifiermodel.TransformDigits,
+		CheckAlgorithm:   identifiermodel.CheckMod11Desc,
+		CheckBaseLen:     7,
+		CheckDVCount:     1,
+		CheckStartWeight: 8,
+		Active:           true,
+		CreatedAt:        time.Now(),
+		UpdatedAt:        time.Now(),
+	}
+
+	// Create Paraguayan cédula
+	env.systemsSvc.EXPECT().Create(mock.Anything, testAdminID.String(), mock.MatchedBy(func(in usecase.SystemInput) bool {
+		return in.System == "urn:librevita:id:py:cedula"
+	})).Return(cedulaSystem, nil).Once()
+
+	rec := postForm(t, env.echo, "/identifier-systems", cookie, url.Values{
 		"system":             {"urn:librevita:id:py:cedula"},
 		"display_name":       {"Cédula de Identidad (Paraguay)"},
 		"pattern":            {"[0-9]{8}"},
@@ -161,60 +166,61 @@ func TestIdentifierSystemsAdmin(t *testing.T) {
 		"check_dv_count":     {"1"},
 		"check_start_weight": {"8"},
 	})
-	if rec.Code != http.StatusFound {
-		t.Fatalf("create status = %d, want 302 (%s)", rec.Code, rec.Body.String())
-	}
+	assert.Equal(t, http.StatusFound, rec.Code)
 
-	// The catalog lists it.
-	page := getWithCookie(t, e, "/identifier-systems", cookie)
-	if !strings.Contains(page.Body.String(), "Cédula de Identidad") {
-		t.Fatalf("catalog page = %q, want the new system", page.Body.String())
-	}
+	// The catalog lists it
+	env.systemsSvc.EXPECT().List(mock.Anything).Return([]*identifiermodel.IdentifierSystem{cedulaSystem}, nil).Once()
+	page := getWithCookie(t, env.echo, "/identifier-systems", cookie)
+	assert.Equal(t, http.StatusOK, page.Code)
+	assert.Contains(t, page.Body.String(), "Cédula de Identidad")
 
-	// Invalid regex is rejected inline.
-	bad := postForm(t, e, "/identifier-systems", cookie, url.Values{
+	// Invalid regex is rejected inline
+	env.systemsSvc.EXPECT().Create(mock.Anything, testAdminID.String(), mock.MatchedBy(func(in usecase.SystemInput) bool {
+		return in.Pattern == "["
+	})).Return(nil, &usecase.ValidationError{Msg: "not a valid regex: error parsing regexp"}).Once()
+
+	bad := postForm(t, env.echo, "/identifier-systems", cookie, url.Values{
 		"system":          {"urn:librevita:id:x:bad"},
 		"display_name":    {"Bad"},
 		"pattern":         {"["},
 		"transform":       {"none"},
 		"check_algorithm": {"none"},
 	})
-	if bad.Code != http.StatusOK || !strings.Contains(bad.Body.String(), "not a valid regex") {
-		t.Fatalf("bad regex status = %d body = %q, want inline error", bad.Code, bad.Body.String())
-	}
+	assert.Equal(t, http.StatusOK, bad.Code)
+	assert.Contains(t, bad.Body.String(), "not a valid regex")
 
-	// URN outside the namespace is rejected.
-	outside := postForm(t, e, "/identifier-systems", cookie, url.Values{
+	// URN outside namespace is rejected
+	env.systemsSvc.EXPECT().Create(mock.Anything, testAdminID.String(), mock.MatchedBy(func(in usecase.SystemInput) bool {
+		return in.System == "com.example:doc"
+	})).Return(nil, &usecase.ValidationError{Msg: "system URI must start with \"urn:librevita:id:\""}).Once()
+
+	outside := postForm(t, env.echo, "/identifier-systems", cookie, url.Values{
 		"system":          {"com.example:doc"},
 		"display_name":    {"Outside"},
 		"pattern":         {"[0-9]{8}"},
 		"transform":       {"none"},
 		"check_algorithm": {"none"},
 	})
-	if outside.Code != http.StatusOK || !strings.Contains(outside.Body.String(), "urn:librevita:id:") {
-		t.Fatalf("outside status = %d body = %q, want namespace error", outside.Code, outside.Body.String())
-	}
+	assert.Equal(t, http.StatusOK, outside.Code)
+	assert.Contains(t, outside.Body.String(), "urn:librevita:id:")
 
-	// Toggle the cédula inactive: the registry reloads.
-	sysRow, err := db.IdentifierSystem.Query().
-		Where(identifiersystem.SystemEQ("urn:librevita:id:py:cedula")).
-		First(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	systemID := sysRow.ID.String()
-	toggle := postForm(t, e, "/identifier-systems/"+systemID+"/active", cookie, url.Values{})
-	if toggle.Code != http.StatusOK || !strings.Contains(toggle.Body.String(), "Inactive") {
-		t.Fatalf("toggle status = %d body = %q, want the inactive row", toggle.Code, toggle.Body.String())
-	}
+	// Toggle cédula inactive
+	inactiveCedula := *cedulaSystem
+	inactiveCedula.Active = false
+	env.systemsSvc.EXPECT().SystemByID(mock.Anything, systemID.String()).Return(cedulaSystem, nil).Once()
+	env.systemsSvc.EXPECT().SetActive(mock.Anything, systemID.String(), false).Return(nil).Once()
+	env.systemsSvc.EXPECT().SystemByID(mock.Anything, systemID.String()).Return(&inactiveCedula, nil).Once()
 
-	// Check fields partial renders only for a chosen algorithm.
-	fields := getWithCookie(t, e, "/identifier-systems/check-fields?check_algorithm=mod11_desc", cookie)
-	if !strings.Contains(fields.Body.String(), "Start weight") {
-		t.Fatalf("fields partial = %q, want the start weight input", fields.Body.String())
-	}
-	none := getWithCookie(t, e, "/identifier-systems/check-fields?check_algorithm=none", cookie)
-	if strings.Contains(none.Body.String(), "Start weight") {
-		t.Fatalf("none partial = %q, must not render the check fields", none.Body.String())
-	}
+	toggle := postForm(t, env.echo, "/identifier-systems/"+systemID.String()+"/active", cookie, url.Values{})
+	assert.Equal(t, http.StatusOK, toggle.Code)
+	assert.Contains(t, toggle.Body.String(), "Inactive")
+
+	// Check fields partial renders only for chosen algorithm
+	fields := getWithCookie(t, env.echo, "/identifier-systems/check-fields?check_algorithm=mod11_desc", cookie)
+	assert.Equal(t, http.StatusOK, fields.Code)
+	assert.Contains(t, fields.Body.String(), "Start weight")
+
+	none := getWithCookie(t, env.echo, "/identifier-systems/check-fields?check_algorithm=none", cookie)
+	assert.Equal(t, http.StatusOK, none.Code)
+	assert.NotContains(t, none.Body.String(), "Start weight")
 }

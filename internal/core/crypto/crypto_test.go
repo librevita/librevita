@@ -4,12 +4,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
-	"errors"
 	"log/slog"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/fx"
 	"go.uber.org/fx/fxtest"
 
@@ -23,9 +24,7 @@ const testKey = "nAmIvOXVc0vb6M9G7P9q2j2yK1WxP3sJ8q5dR4tU6wA="
 func mustVault(t *testing.T) crypto.KeyVault {
 	t.Helper()
 	v, err := vault.NewBBoltVault(filepath.Join(t.TempDir(), "keys.db"))
-	if err != nil {
-		t.Fatalf("NewBBoltVault: %v", err)
-	}
+	require.NoError(t, err)
 	t.Cleanup(func() { _ = v.Close() })
 	return v
 }
@@ -34,9 +33,7 @@ func mustEngine(t *testing.T) *crypto.Engine {
 	t.Helper()
 	v := mustVault(t)
 	eng, err := crypto.NewEngine(testKey, v)
-	if err != nil {
-		t.Fatalf("NewEngine: %v", err)
-	}
+	require.NoError(t, err)
 	return eng
 }
 
@@ -52,32 +49,26 @@ func TestNewEngineRejectsInvalidInput(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if _, err := crypto.NewEngine(tc.encoded, v); err == nil {
-				t.Fatal("expected an error")
-			}
+			_, err := crypto.NewEngine(tc.encoded, v)
+			assert.Error(t, err)
 		})
 	}
 }
 
 func TestNewEngineRequiresVault(t *testing.T) {
-	if _, err := crypto.NewEngine(testKey, nil); err == nil {
-		t.Fatal("expected error when vault is nil")
-	}
+	_, err := crypto.NewEngine(testKey, nil)
+	assert.Error(t, err)
 }
 
 func TestKEKDEKPatientDataEncryptionAndCryptoShredding(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
 	v, err := vault.NewBBoltVault(filepath.Join(dir, "keys.db"))
-	if err != nil {
-		t.Fatalf("NewBBoltVault: %v", err)
-	}
+	require.NoError(t, err)
 	defer func() { _ = v.Close() }()
 
 	eng, err := crypto.NewEngine(testKey, v)
-	if err != nil {
-		t.Fatalf("NewEngine: %v", err)
-	}
+	require.NoError(t, err)
 
 	patientURN := "urn:librevita:patient:018f1234-5678-7000-8000-000000000099"
 	aad := []byte("urn:librevita:id:br:cpf")
@@ -85,50 +76,31 @@ func TestKEKDEKPatientDataEncryptionAndCryptoShredding(t *testing.T) {
 
 	// 1. Setup Patient DEK
 	dek, err := eng.SetupPatientDEK(ctx, patientURN)
-	if err != nil {
-		t.Fatalf("SetupPatientDEK: %v", err)
-	}
-	if len(dek) != 32 {
-		t.Fatalf("DEK length = %d, want 32", len(dek))
-	}
+	require.NoError(t, err)
+	assert.Len(t, dek, 32)
 
 	// Verify DEK is stored encrypted in vault and can be retrieved
 	retrievedDEK, err := eng.GetPatientDEK(ctx, patientURN)
-	if err != nil {
-		t.Fatalf("GetPatientDEK: %v", err)
-	}
-	if !bytes.Equal(dek, retrievedDEK) {
-		t.Fatal("retrieved DEK does not match setup DEK")
-	}
+	require.NoError(t, err)
+	assert.True(t, bytes.Equal(dek, retrievedDEK))
 
 	// 2. Encrypt Patient Data using DEK
 	ct, nonce, err := eng.EncryptPatientData(ctx, patientURN, aad, plaintext)
-	if err != nil {
-		t.Fatalf("EncryptPatientData: %v", err)
-	}
-	if len(nonce) != 24 {
-		t.Fatalf("nonce length = %d, want 24", len(nonce))
-	}
+	require.NoError(t, err)
+	assert.Len(t, nonce, 24)
 
 	// 3. Decrypt Patient Data using DEK
 	got, err := eng.DecryptPatientData(ctx, patientURN, aad, ct, nonce)
-	if err != nil {
-		t.Fatalf("DecryptPatientData: %v", err)
-	}
-	if !bytes.Equal(got, plaintext) {
-		t.Fatalf("decrypted = %q, want %q", got, plaintext)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, plaintext, got)
 
 	// 4. Crypto-Shredding (Delete Patient DEK)
-	if err := eng.DeletePatientDEK(ctx, patientURN); err != nil {
-		t.Fatalf("DeletePatientDEK: %v", err)
-	}
+	err = eng.DeletePatientDEK(ctx, patientURN)
+	require.NoError(t, err)
 
 	// 5. Decryption must fail after Crypto-Shredding with ErrKeyNotFound
 	_, err = eng.DecryptPatientData(ctx, patientURN, aad, ct, nonce)
-	if !errors.Is(err, crypto.ErrKeyNotFound) {
-		t.Fatalf("DecryptPatientData after shredding = %v, want %v", err, crypto.ErrKeyNotFound)
-	}
+	assert.ErrorIs(t, err, crypto.ErrKeyNotFound)
 }
 
 func TestSealOpenDirectKEKRoundtrip(t *testing.T) {
@@ -136,47 +108,27 @@ func TestSealOpenDirectKEKRoundtrip(t *testing.T) {
 	aad := []byte("urn:librevita:system:config")
 
 	ct, nonce, err := eng.Seal(aad, []byte("secret-payload"))
-	if err != nil {
-		t.Fatalf("Seal: %v", err)
-	}
+	require.NoError(t, err)
 
 	got, err := eng.Open(aad, ct, nonce)
-	if err != nil {
-		t.Fatalf("Open: %v", err)
-	}
-	if string(got) != "secret-payload" {
-		t.Fatalf("plaintext = %q, want %q", got, "secret-payload")
-	}
+	require.NoError(t, err)
+	assert.Equal(t, "secret-payload", string(got))
 }
 
 func TestBlindIndexDeterministicAndSeparated(t *testing.T) {
 	eng := mustEngine(t)
 	index, err := eng.BlindIndex("urn:librevita:id:br:cpf", "12345678900")
-	if err != nil {
-		t.Fatalf("BlindIndex: %v", err)
-	}
-	if len(index) != 64 {
-		t.Fatalf("index length = %d, want 64", len(index))
-	}
-	if !isHex(index) {
-		t.Fatalf("index is not hex: %q", index)
-	}
+	require.NoError(t, err)
+	assert.Len(t, index, 64)
+	assert.True(t, isHex(index))
 
 	again, err := eng.BlindIndex("urn:librevita:id:br:cpf", "12345678900")
-	if err != nil {
-		t.Fatalf("BlindIndex: %v", err)
-	}
-	if index != again {
-		t.Fatalf("index is not deterministic: %q != %q", index, again)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, index, again)
 
 	otherSystem, err := eng.BlindIndex("urn:librevita:id:br:sus", "12345678900")
-	if err != nil {
-		t.Fatalf("BlindIndex: %v", err)
-	}
-	if otherSystem == index {
-		t.Fatal("different systems produced the same index")
-	}
+	require.NoError(t, err)
+	assert.NotEqual(t, index, otherSystem)
 }
 
 func TestNewFromConfigKeyPolicy(t *testing.T) {
@@ -185,28 +137,23 @@ func TestNewFromConfigKeyPolicy(t *testing.T) {
 
 	for _, env := range []string{"production", "staging"} {
 		cfg := &config.Config{Mode: env}
-		if _, err := crypto.NewFromConfig(cfg, v, log); err == nil {
-			t.Fatalf("NewFromConfig(%s) without key = nil error, want error", env)
-		}
+		_, err := crypto.NewFromConfig(cfg, v, log)
+		assert.Error(t, err, "NewFromConfig(%s) without key should fail", env)
 	}
 
 	cfg := &config.Config{Mode: "production", MasterKey: testKey}
-	if _, err := crypto.NewFromConfig(cfg, v, log); err != nil {
-		t.Fatalf("NewFromConfig with key: %v", err)
-	}
+	_, err := crypto.NewFromConfig(cfg, v, log)
+	require.NoError(t, err)
 
 	dev := &config.Config{Mode: "development"}
 	eng, err := crypto.NewFromConfig(dev, v, log)
-	if err != nil {
-		t.Fatalf("NewFromConfig(development): %v", err)
-	}
+	require.NoError(t, err)
+
 	ct, nonce, err := eng.Seal(nil, []byte("value"))
-	if err != nil {
-		t.Fatalf("Seal: %v", err)
-	}
-	if _, err := eng.Open(nil, ct, nonce); err != nil {
-		t.Fatalf("Open: %v", err)
-	}
+	require.NoError(t, err)
+	got, err := eng.Open(nil, ct, nonce)
+	require.NoError(t, err)
+	assert.Equal(t, []byte("value"), got)
 }
 
 func TestFxModuleIntegration(t *testing.T) {
@@ -232,15 +179,13 @@ func TestFxModuleIntegration(t *testing.T) {
 	app.RequireStart()
 	defer app.RequireStop()
 
-	if keyVault == nil || eng == nil {
-		t.Fatal("Fx population failed")
-	}
+	require.NotNil(t, keyVault)
+	require.NotNil(t, eng)
 
 	ctx := context.Background()
 	pURN := "urn:librevita:patient:fx-test"
-	if _, err := eng.SetupPatientDEK(ctx, pURN); err != nil {
-		t.Fatalf("SetupPatientDEK in Fx module test: %v", err)
-	}
+	_, err := eng.SetupPatientDEK(ctx, pURN)
+	require.NoError(t, err)
 }
 
 func isHex(s string) bool {

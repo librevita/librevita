@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	_ "modernc.org/sqlite"
 
 	"librevita.org/internal/core/config"
@@ -14,29 +16,24 @@ import (
 
 func TestMigrateSQLite(t *testing.T) {
 	db, err := sql.Open("sqlite", "file:migrate-sqlite-test?mode=memory&cache=shared")
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	db.SetMaxOpenConns(1)
 	t.Cleanup(func() { db.Close() })
 	ctx := context.Background()
 
-	if err := Migrate(ctx, db, slog.New(slog.DiscardHandler)); err != nil {
-		t.Fatalf("migrate sqlite: %v", err)
-	}
+	err = Migrate(ctx, db, slog.New(slog.DiscardHandler))
+	require.NoError(t, err)
 
 	// Verify all expected business tables are created by SQLite migrations.
 	rows, err := db.Query(`SELECT name FROM pragma_table_list WHERE type = 'table'`)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	defer rows.Close()
+
 	tables := map[string]bool{}
 	for rows.Next() {
 		var name string
-		if err := rows.Scan(&name); err != nil {
-			t.Fatal(err)
-		}
+		err := rows.Scan(&name)
+		require.NoError(t, err)
 		tables[name] = true
 	}
 	expected := []string{
@@ -46,9 +43,7 @@ func TestMigrateSQLite(t *testing.T) {
 		"identifier_systems", "patient_identifiers", "appointments", "episodes",
 	}
 	for _, name := range expected {
-		if !tables[name] {
-			t.Errorf("sqlite table %q was not created by migrations", name)
-		}
+		assert.True(t, tables[name], "sqlite table %q was not created by migrations", name)
 	}
 }
 
@@ -65,22 +60,19 @@ func TestMigratePostgres(t *testing.T) {
 		t.Skipf("skipping postgres migration test (database not reachable): %v", err)
 	}
 
-	if err := MigrateWithDriver(ctx, db, config.DriverPostgres, slog.New(slog.DiscardHandler)); err != nil {
-		t.Fatalf("migrate postgres: %v", err)
-	}
+	err = MigrateWithDriver(ctx, db, config.DriverPostgres, slog.New(slog.DiscardHandler))
+	require.NoError(t, err)
 
 	// Verify all expected business tables are created in PostgreSQL
 	rows, err := db.Query(`SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'`)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	defer rows.Close()
+
 	tables := map[string]bool{}
 	for rows.Next() {
 		var name string
-		if err := rows.Scan(&name); err != nil {
-			t.Fatal(err)
-		}
+		err := rows.Scan(&name)
+		require.NoError(t, err)
 		tables[name] = true
 	}
 	expected := []string{
@@ -90,8 +82,6 @@ func TestMigratePostgres(t *testing.T) {
 		"identifier_systems", "patient_identifiers", "appointments", "episodes",
 	}
 	for _, name := range expected {
-		if !tables[name] {
-			t.Errorf("postgres table %q was not created by migrations", name)
-		}
+		assert.True(t, tables[name], "postgres table %q was not created by migrations", name)
 	}
 }

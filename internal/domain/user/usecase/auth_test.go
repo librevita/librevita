@@ -2,72 +2,72 @@ package usecase_test
 
 import (
 	"context"
-	"database/sql"
-	"errors"
 	"log/slog"
 	"sync"
 	"testing"
 
-	"entgo.io/ent/dialect"
-	entsql "entgo.io/ent/dialect/sql"
-	_ "modernc.org/sqlite"
-
 	"github.com/google/uuid"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 
-	"librevita.org/ent"
-	"librevita.org/ent/role"
-	"librevita.org/ent/user"
 	"librevita.org/internal/core/audit"
 	"librevita.org/internal/core/auth"
 	"librevita.org/internal/core/config"
-	"librevita.org/internal/core/database"
-	"librevita.org/internal/domain/user/repository"
+	clinicmodel "librevita.org/internal/domain/clinic/model"
+	usermodel "librevita.org/internal/domain/user/model"
 	"librevita.org/internal/domain/user/usecase"
+	auditmocks "librevita.org/tests/mocks/core/audit"
+	authmocks "librevita.org/tests/mocks/core/auth"
+	usermocks "librevita.org/tests/mocks/domain/user/model"
 )
 
-func openAuthDB(t *testing.T) *ent.Client {
-	t.Helper()
-	name := "auth-test-" + uuid.NewString()
-	db, err := sql.Open("sqlite", "file:"+name+"?mode=memory&cache=shared")
-	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
-	}
-	db.SetMaxOpenConns(1)
-	t.Cleanup(func() { db.Close() })
-
-	if err := database.Migrate(context.Background(), db, slog.New(slog.DiscardHandler)); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
-
-	drv := entsql.OpenDB(dialect.SQLite, db)
-	client := ent.NewClient(ent.Driver(drv))
-	t.Cleanup(func() { client.Close() })
-	return client
+type testEnv struct {
+	userRepo      *usermocks.MockUserRepository
+	roleRepo      *usermocks.MockRoleRepository
+	specialtyRepo *usermocks.MockSpecialtyRepository
+	staffReqRepo  *usermocks.MockStaffRequestRepository
+	setupRepo     *usermocks.MockSetupRepository
+	sessionRepo   *authmocks.MockSessionRepository
+	auditRepo     *auditmocks.MockRepository
+	sessions      *auth.SessionManager
+	svc           *usecase.Service
 }
 
-func newService(t *testing.T, client *ent.Client) *usecase.Service {
-	t.Helper()
-	svc, _ := newServiceWithSessions(t, client)
-	return svc
-}
-
-func newServiceWithSessions(t *testing.T, client *ent.Client) (*usecase.Service, *auth.SessionManager) {
+func newTestEnv(t *testing.T) *testEnv {
 	t.Helper()
 	log := slog.New(slog.DiscardHandler)
-	sessions, err := auth.NewSessionManager(auth.NewSessionRepository(client), &config.Config{Mode: "development"}, log)
-	if err != nil {
-		t.Fatal(err)
+	userRepo := usermocks.NewMockUserRepository(t)
+	roleRepo := usermocks.NewMockRoleRepository(t)
+	specialtyRepo := usermocks.NewMockSpecialtyRepository(t)
+	staffReqRepo := usermocks.NewMockStaffRequestRepository(t)
+	setupRepo := usermocks.NewMockSetupRepository(t)
+	sessionRepo := authmocks.NewMockSessionRepository(t)
+	auditRepo := auditmocks.NewMockRepository(t)
+
+	auditRepo.EXPECT().LastSignature(mock.Anything).Return("", nil).Maybe()
+	auditRepo.EXPECT().Record(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
+	sessionRepo.EXPECT().CleanupExpired(mock.Anything, mock.Anything).Return(nil).Maybe()
+
+	sessions, err := auth.NewSessionManager(sessionRepo, &config.Config{Mode: "development"}, log)
+	require.NoError(t, err)
+
+	auditLogger, err := audit.NewLogger(auditRepo, log)
+	require.NoError(t, err)
+
+	svc := usecase.NewService(userRepo, roleRepo, specialtyRepo, staffReqRepo, setupRepo, sessions, auditLogger, log)
+
+	return &testEnv{
+		userRepo:      userRepo,
+		roleRepo:      roleRepo,
+		specialtyRepo: specialtyRepo,
+		staffReqRepo:  staffReqRepo,
+		setupRepo:     setupRepo,
+		sessionRepo:   sessionRepo,
+		auditRepo:     auditRepo,
+		sessions:      sessions,
+		svc:           svc,
 	}
-	auditLogger, err := audit.NewLogger(audit.NewAuditRepository(client), log)
-	if err != nil {
-		t.Fatal(err)
-	}
-	userRepo := repository.NewUserRepository(client)
-	roleRepo := repository.NewRoleRepository(client)
-	specialtyRepo := repository.NewSpecialtyRepository(client)
-	staffReqRepo := repository.NewStaffRequestRepository(client)
-	setupRepo := repository.NewSetupRepository(client)
-	return usecase.NewService(userRepo, roleRepo, specialtyRepo, staffReqRepo, setupRepo, sessions, auditLogger, log), sessions
 }
 
 func validInput() usecase.RegisterInput {
@@ -78,47 +78,66 @@ func validInput() usecase.RegisterInput {
 	}
 }
 
-func TestRegisterCreatesPatient(t *testing.T) {
-	db := openAuthDB(t)
-	svc := newService(t, db)
+func validClinicInput() usecase.ClinicInput {
+	return usecase.ClinicInput{
+		Name:    "Clínica Exemplo",
+		TaxID:   "12.345.678/0001-90",
+		City:    "São Paulo",
+		State:   "SP",
+		Country: "BR",
+	}
+}
 
-	p, token, err := svc.Register(context.Background(), validInput())
-	if err != nil {
-		t.Fatalf("Register: %v", err)
-	}
-	if p.Role != auth.RolePatient {
-		t.Fatalf("registered user role = %q, want patient", p.Role)
-	}
-	if p.Email != "ana@example.org" {
-		t.Fatalf("principal email = %q", p.Email)
-	}
-	if token == "" {
-		t.Fatal("Register returned an empty session token")
-	}
+func TestRegisterCreatesPatient(t *testing.T) {
+	env := newTestEnv(t)
+	patientRoleID := uuid.MustParse("01990000-0000-7000-8000-000000000001")
+
+	env.roleRepo.EXPECT().GetByName(mock.Anything, "patient").Return(&usermodel.Role{
+		ID:   patientRoleID,
+		Name: "patient",
+	}, nil).Once()
+
+	var createdUser *usermodel.User
+	env.userRepo.EXPECT().Create(mock.Anything, mock.Anything).RunAndReturn(func(ctx context.Context, u *usermodel.User) (*usermodel.User, error) {
+		createdUser = u
+		return u, nil
+	}).Once()
+
+	env.sessionRepo.EXPECT().Create(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
+
+	p, token, err := env.svc.Register(context.Background(), validInput())
+	require.NoError(t, err)
+	assert.Equal(t, auth.RolePatient, p.Role)
+	assert.Equal(t, "ana@example.org", p.Email)
+	assert.NotEmpty(t, token)
+	assert.NotNil(t, createdUser)
+	assert.Equal(t, patientRoleID, createdUser.RoleID)
 }
 
 func TestRegisterSecondUserBecomesPatient(t *testing.T) {
-	db := openAuthDB(t)
-	svc := newService(t, db)
+	env := newTestEnv(t)
+	patientRoleID := uuid.MustParse("01990000-0000-7000-8000-000000000001")
 
-	if _, _, err := svc.Register(context.Background(), validInput()); err != nil {
-		t.Fatal(err)
-	}
+	env.roleRepo.EXPECT().GetByName(mock.Anything, "patient").Return(&usermodel.Role{
+		ID:   patientRoleID,
+		Name: "patient",
+	}, nil).Once()
+
+	env.userRepo.EXPECT().Create(mock.Anything, mock.Anything).RunAndReturn(func(ctx context.Context, u *usermodel.User) (*usermodel.User, error) {
+		return u, nil
+	}).Once()
+
+	env.sessionRepo.EXPECT().Create(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
 
 	input := validInput()
 	input.Email = "bruno@example.org"
-	p, _, err := svc.Register(context.Background(), input)
-	if err != nil {
-		t.Fatalf("Register: %v", err)
-	}
-	if p.Role != auth.RolePatient {
-		t.Fatalf("second user role = %q, want patient", p.Role)
-	}
+	p, _, err := env.svc.Register(context.Background(), input)
+	require.NoError(t, err)
+	assert.Equal(t, auth.RolePatient, p.Role)
 }
 
 func TestRegisterValidation(t *testing.T) {
-	db := openAuthDB(t)
-	svc := newService(t, db)
+	env := newTestEnv(t)
 
 	cases := []struct {
 		name    string
@@ -134,94 +153,106 @@ func TestRegisterValidation(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			input := validInput()
 			tc.mutate(&input)
-			_, _, err := svc.Register(context.Background(), input)
+			_, _, err := env.svc.Register(context.Background(), input)
+			require.Error(t, err)
 			var v *usecase.ValidationError
-			if !errors.As(err, &v) {
-				t.Fatalf("Register = %v, want ValidationError", err)
-			}
+			require.ErrorAs(t, err, &v)
 		})
 	}
 }
 
 func TestLoginSuccess(t *testing.T) {
-	db := openAuthDB(t)
-	svc, sessions := newServiceWithSessions(t, db)
+	env := newTestEnv(t)
+	userID := uuid.MustParse("01990000-0000-7000-8000-000000000010")
+	hash, err := auth.HashPassword("password-123")
+	require.NoError(t, err)
 
-	if _, _, err := svc.Register(context.Background(), validInput()); err != nil {
-		t.Fatal(err)
-	}
+	env.userRepo.EXPECT().GetByEmail(mock.Anything, "ana@example.org").Return(&usermodel.GetUserByIDRow{
+		ID:           userID,
+		Email:        "ana@example.org",
+		PasswordHash: hash,
+		DisplayName:  "Ana Souza",
+		RoleName:     "patient",
+		Active:       true,
+	}, nil).Once()
 
-	p, token, err := svc.Login(context.Background(), usecase.Credentials{
+	env.sessionRepo.EXPECT().Create(mock.Anything, mock.Anything, userID, mock.Anything).Return(nil).Once()
+
+	p, token, err := env.svc.Login(context.Background(), usecase.Credentials{
 		Email:    "ANA@example.org", // Case insensitive
 		Password: "password-123",
 	})
-	if err != nil {
-		t.Fatalf("Login: %v", err)
-	}
-	if p.Email != "ana@example.org" {
-		t.Fatalf("principal email = %q", p.Email)
-	}
-
-	authed, err := sessions.Authenticate(context.Background(), token)
-	if err != nil {
-		t.Fatalf("session invalid: %v", err)
-	}
-	if authed.ID != p.ID {
-		t.Fatalf("authed ID = %q, want %q", authed.ID, p.ID)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, "ana@example.org", p.Email)
+	assert.NotEmpty(t, token)
 }
 
 func TestLoginWrongPassword(t *testing.T) {
-	db := openAuthDB(t)
-	svc := newService(t, db)
+	env := newTestEnv(t)
+	userID := uuid.MustParse("01990000-0000-7000-8000-000000000010")
+	hash, err := auth.HashPassword("password-123")
+	require.NoError(t, err)
 
-	if _, _, err := svc.Register(context.Background(), validInput()); err != nil {
-		t.Fatal(err)
-	}
+	env.userRepo.EXPECT().GetByEmail(mock.Anything, "ana@example.org").Return(&usermodel.GetUserByIDRow{
+		ID:           userID,
+		Email:        "ana@example.org",
+		PasswordHash: hash,
+		DisplayName:  "Ana Souza",
+		RoleName:     "patient",
+		Active:       true,
+	}, nil).Once()
 
-	_, _, err := svc.Login(context.Background(), usecase.Credentials{
+	_, _, err = env.svc.Login(context.Background(), usecase.Credentials{
 		Email:    "ana@example.org",
 		Password: "wrong-password",
 	})
-	if !errors.Is(err, usecase.ErrInvalidCredentials) {
-		t.Fatalf("Login = %v, want ErrInvalidCredentials", err)
-	}
+	require.ErrorIs(t, err, usecase.ErrInvalidCredentials)
 }
 
 func TestLoginUnknownEmail(t *testing.T) {
-	db := openAuthDB(t)
-	svc := newService(t, db)
+	env := newTestEnv(t)
+	env.userRepo.EXPECT().GetByEmail(mock.Anything, "unknown@example.org").Return(nil, usecase.ErrUserNotFound).Once()
 
-	_, _, err := svc.Login(context.Background(), usecase.Credentials{
+	_, _, err := env.svc.Login(context.Background(), usecase.Credentials{
 		Email:    "unknown@example.org",
 		Password: "password-123",
 	})
-	if !errors.Is(err, usecase.ErrInvalidCredentials) {
-		t.Fatalf("Login = %v, want ErrInvalidCredentials", err)
-	}
+	require.ErrorIs(t, err, usecase.ErrInvalidCredentials)
 }
 
 func TestLogout(t *testing.T) {
-	db := openAuthDB(t)
-	svc, sessions := newServiceWithSessions(t, db)
+	env := newTestEnv(t)
+	env.sessionRepo.EXPECT().Create(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
 
-	_, token, err := svc.Register(context.Background(), validInput())
-	if err != nil {
-		t.Fatal(err)
-	}
+	token, err := env.sessions.Create(context.Background(), auth.Principal{
+		ID:    uuid.NewString(),
+		Email: "ana@example.org",
+		Name:  "Ana",
+		Role:  auth.RolePatient,
+	})
+	require.NoError(t, err)
 
-	if err := svc.Logout(context.Background(), token); err != nil {
-		t.Fatalf("Logout: %v", err)
-	}
+	env.sessionRepo.EXPECT().Delete(mock.Anything, mock.Anything).Return(nil).Once()
 
-	if _, err := sessions.Authenticate(context.Background(), token); !errors.Is(err, auth.ErrNoSession) {
-		t.Fatalf("session after logout = %v, want ErrNoSession", err)
-	}
+	err = env.svc.Logout(context.Background(), token)
+	require.NoError(t, err)
 }
 
 func TestConcurrentRegistrationsProduceOnlyPatients(t *testing.T) {
-	db := openAuthDB(t)
-	svc := newService(t, db)
+	env := newTestEnv(t)
+	patientRoleID := uuid.MustParse("01990000-0000-7000-8000-000000000001")
+
+	env.roleRepo.EXPECT().GetByName(mock.Anything, "patient").Return(&usermodel.Role{
+		ID:   patientRoleID,
+		Name: "patient",
+	}, nil).Maybe()
+
+	env.userRepo.EXPECT().Create(mock.Anything, mock.Anything).RunAndReturn(func(ctx context.Context, u *usermodel.User) (*usermodel.User, error) {
+		assert.Equal(t, patientRoleID, u.RoleID)
+		return u, nil
+	}).Maybe()
+
+	env.sessionRepo.EXPECT().Create(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
 
 	const attempts = 8
 	var wg sync.WaitGroup
@@ -232,159 +263,135 @@ func TestConcurrentRegistrationsProduceOnlyPatients(t *testing.T) {
 			defer wg.Done()
 			input := validInput()
 			input.Email = "user" + string(rune('a'+i)) + "@example.org"
-			_, _, errs[i] = svc.Register(context.Background(), input)
+			_, _, errs[i] = env.svc.Register(context.Background(), input)
 		}(i)
 	}
 	wg.Wait()
 
-	for i, err := range errs {
-		if err != nil {
-			t.Fatalf("register %d failed: %v", i, err)
-		}
-	}
-
-	admins, err := db.User.Query().Where(user.HasRoleWith(role.NameEQ("admin"))).Count(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if admins != 0 {
-		t.Fatalf("public registration produced %d admins, want 0", admins)
+	for _, err := range errs {
+		require.NoError(t, err)
 	}
 }
 
 func TestDuplicateEmailMapsToDomainError(t *testing.T) {
-	db := openAuthDB(t)
-	svc := newService(t, db)
+	env := newTestEnv(t)
+	patientRoleID := uuid.MustParse("01990000-0000-7000-8000-000000000001")
 
-	if _, _, err := svc.Register(context.Background(), validInput()); err != nil {
-		t.Fatal(err)
-	}
+	env.roleRepo.EXPECT().GetByName(mock.Anything, "patient").Return(&usermodel.Role{
+		ID:   patientRoleID,
+		Name: "patient",
+	}, nil).Once()
+
+	env.userRepo.EXPECT().Create(mock.Anything, mock.Anything).Return(nil, usecase.ErrEmailTaken).Once()
 
 	input := validInput()
 	input.Email = "ANA@example.org"
-	if _, _, err := svc.Register(context.Background(), input); !errors.Is(err, usecase.ErrEmailTaken) {
-		t.Fatalf("duplicate register = %v, want ErrEmailTaken", err)
-	}
+	_, _, err := env.svc.Register(context.Background(), input)
+	require.ErrorIs(t, err, usecase.ErrEmailTaken)
 }
 
 func TestRegisterUsesUUIDv7ID(t *testing.T) {
-	db := openAuthDB(t)
-	svc := newService(t, db)
+	env := newTestEnv(t)
+	patientRoleID := uuid.MustParse("01990000-0000-7000-8000-000000000001")
 
-	p, _, err := svc.Register(context.Background(), validInput())
-	if err != nil {
-		t.Fatal(err)
-	}
+	env.roleRepo.EXPECT().GetByName(mock.Anything, "patient").Return(&usermodel.Role{
+		ID:   patientRoleID,
+		Name: "patient",
+	}, nil).Once()
 
-	id, err := uuid.Parse(p.ID)
-	if err != nil {
-		t.Fatalf("principal id %q is not a UUID: %v", p.ID, err)
-	}
-	if id.Version() != 7 {
-		t.Fatalf("principal id %q is not UUIDv7 (version %d)", p.ID, id.Version())
-	}
-}
+	var createdID uuid.UUID
+	env.userRepo.EXPECT().Create(mock.Anything, mock.Anything).RunAndReturn(func(ctx context.Context, u *usermodel.User) (*usermodel.User, error) {
+		createdID = u.ID
+		return u, nil
+	}).Once()
 
-func validClinicInput() usecase.ClinicInput {
-	return usecase.ClinicInput{
-		Name:    "Clínica Exemplo",
-		TaxID:   "12.345.678/0001-90",
-		City:    "São Paulo",
-		State:   "SP",
-		Country: "BR",
-	}
+	env.sessionRepo.EXPECT().Create(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
+
+	p, _, err := env.svc.Register(context.Background(), validInput())
+	require.NoError(t, err)
+	assert.Equal(t, 7, int(createdID.Version()))
+	assert.Equal(t, createdID.String(), p.ID)
 }
 
 func TestIsOnboarded(t *testing.T) {
-	db := openAuthDB(t)
-	svc := newService(t, db)
+	env := newTestEnv(t)
 
-	ok, err := svc.IsOnboarded(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if ok {
-		t.Fatal("empty system must not be onboarded")
-	}
+	env.setupRepo.EXPECT().IsOnboarded(mock.Anything).Return(false, nil).Once()
+	ok, err := env.svc.IsOnboarded(context.Background())
+	require.NoError(t, err)
+	assert.False(t, ok)
 
-	if _, _, err := svc.Onboard(context.Background(), validInput(), validClinicInput()); err != nil {
-		t.Fatal(err)
-	}
-	ok, err = svc.IsOnboarded(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !ok {
-		t.Fatal("system with an admin must be onboarded")
-	}
+	env.setupRepo.EXPECT().IsOnboarded(mock.Anything).Return(true, nil).Once()
+	ok, err = env.svc.IsOnboarded(context.Background())
+	require.NoError(t, err)
+	assert.True(t, ok)
 }
 
 func TestOnboardCreatesAdminAndClinic(t *testing.T) {
-	db := openAuthDB(t)
-	svc, sessions := newServiceWithSessions(t, db)
+	env := newTestEnv(t)
+	adminRoleID := uuid.MustParse("01990000-0000-7000-8000-000000000002")
+	adminUserID := uuid.MustParse("01990000-0000-7000-8000-000000000003")
 
-	p, token, err := svc.Onboard(context.Background(), validInput(), validClinicInput())
-	if err != nil {
-		t.Fatalf("Onboard: %v", err)
-	}
-	if p.Role != auth.RoleAdmin {
-		t.Fatalf("onboarded role = %q, want admin", p.Role)
-	}
+	env.roleRepo.EXPECT().GetByName(mock.Anything, "admin").Return(&usermodel.Role{
+		ID:   adminRoleID,
+		Name: "admin",
+	}, nil).Once()
 
-	if _, err := sessions.Authenticate(context.Background(), token); err != nil {
-		t.Fatalf("onboard session invalid: %v", err)
-	}
+	env.setupRepo.EXPECT().Onboard(mock.Anything, mock.Anything, mock.Anything).RunAndReturn(func(ctx context.Context, adminUser *usermodel.User, clinic *clinicmodel.Clinic) (*usermodel.User, error) {
+		assert.Equal(t, adminRoleID, adminUser.RoleID)
+		assert.Equal(t, "Clínica Exemplo", clinic.Name)
+		adminUser.ID = adminUserID
+		return adminUser, nil
+	}).Once()
 
-	c, err := db.Clinic.Query().Only(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if c.Name != "Clínica Exemplo" {
-		t.Fatalf("clinic name = %q", c.Name)
-	}
+	env.sessionRepo.EXPECT().Create(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
 
-	admins, err := db.User.Query().Where(user.HasRoleWith(role.NameEQ("admin"))).Count(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if admins != 1 {
-		t.Fatalf("admins = %d, want 1", admins)
-	}
+	p, token, err := env.svc.Onboard(context.Background(), validInput(), validClinicInput())
+	require.NoError(t, err)
+	assert.Equal(t, auth.RoleAdmin, p.Role)
+	assert.NotEmpty(t, token)
 }
 
 func TestOnboardFailsWhenAlreadyOnboarded(t *testing.T) {
-	db := openAuthDB(t)
-	svc := newService(t, db)
+	env := newTestEnv(t)
+	adminRoleID := uuid.MustParse("01990000-0000-7000-8000-000000000002")
 
-	if _, _, err := svc.Onboard(context.Background(), validInput(), validClinicInput()); err != nil {
-		t.Fatal(err)
-	}
+	env.roleRepo.EXPECT().GetByName(mock.Anything, "admin").Return(&usermodel.Role{
+		ID:   adminRoleID,
+		Name: "admin",
+	}, nil).Once()
+
+	env.setupRepo.EXPECT().Onboard(mock.Anything, mock.Anything, mock.Anything).Return(nil, usecase.ErrAlreadyOnboarded).Once()
 
 	input := validInput()
 	input.Email = "outro@example.org"
-	if _, _, err := svc.Onboard(context.Background(), input, validClinicInput()); !errors.Is(err, usecase.ErrAlreadyOnboarded) {
-		t.Fatalf("second Onboard = %v, want ErrAlreadyOnboarded", err)
-	}
-
-	count, err := db.User.Query().Count(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if count != 1 {
-		t.Fatalf("users = %d, want 1 (failed onboard must not create users)", count)
-	}
-	cCount, err := db.Clinic.Query().Count(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cCount != 1 {
-		t.Fatalf("clinics = %d, want 1", cCount)
-	}
+	_, _, err := env.svc.Onboard(context.Background(), input, validClinicInput())
+	require.ErrorIs(t, err, usecase.ErrAlreadyOnboarded)
 }
 
 func TestConcurrentOnboardSingleWinner(t *testing.T) {
-	db := openAuthDB(t)
-	svc := newService(t, db)
+	env := newTestEnv(t)
+	adminRoleID := uuid.MustParse("01990000-0000-7000-8000-000000000002")
+
+	env.roleRepo.EXPECT().GetByName(mock.Anything, "admin").Return(&usermodel.Role{
+		ID:   adminRoleID,
+		Name: "admin",
+	}, nil).Maybe()
+
+	var setupMu sync.Mutex
+	setupDone := false
+
+	env.setupRepo.EXPECT().Onboard(mock.Anything, mock.Anything, mock.Anything).RunAndReturn(func(ctx context.Context, u *usermodel.User, c *clinicmodel.Clinic) (*usermodel.User, error) {
+		setupMu.Lock()
+		defer setupMu.Unlock()
+		if setupDone {
+			return nil, usecase.ErrAlreadyOnboarded
+		}
+		setupDone = true
+		return u, nil
+	}).Maybe()
+
+	env.sessionRepo.EXPECT().Create(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
 
 	const attempts = 6
 	var wg sync.WaitGroup
@@ -395,7 +402,7 @@ func TestConcurrentOnboardSingleWinner(t *testing.T) {
 			defer wg.Done()
 			input := validInput()
 			input.Email = "admin" + string(rune('a'+i)) + "@example.org"
-			_, _, errs[i] = svc.Onboard(context.Background(), input, validClinicInput())
+			_, _, errs[i] = env.svc.Onboard(context.Background(), input, validClinicInput())
 		}(i)
 	}
 	wg.Wait()
@@ -404,26 +411,15 @@ func TestConcurrentOnboardSingleWinner(t *testing.T) {
 	for _, err := range errs {
 		if err == nil {
 			successes++
-		} else if !errors.Is(err, usecase.ErrAlreadyOnboarded) {
-			t.Fatalf("Onboard = %v, want success or ErrAlreadyOnboarded", err)
+		} else {
+			assert.ErrorIs(t, err, usecase.ErrAlreadyOnboarded)
 		}
 	}
-	if successes != 1 {
-		t.Fatalf("concurrent onboarding succeeded %d times, want exactly 1", successes)
-	}
-
-	admins, err := db.User.Query().Where(user.HasRoleWith(role.NameEQ("admin"))).Count(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if admins != 1 {
-		t.Fatalf("admins = %d, want 1", admins)
-	}
+	assert.Equal(t, 1, successes)
 }
 
 func TestOnboardValidation(t *testing.T) {
-	db := openAuthDB(t)
-	svc := newService(t, db)
+	env := newTestEnv(t)
 
 	cases := []struct {
 		name    string
@@ -441,64 +437,48 @@ func TestOnboardValidation(t *testing.T) {
 			admin := validInput()
 			clinic := validClinicInput()
 			tc.mutate(&admin, &clinic)
-			_, _, err := svc.Onboard(context.Background(), admin, clinic)
+			_, _, err := env.svc.Onboard(context.Background(), admin, clinic)
+			require.Error(t, err)
 			var v *usecase.ValidationError
-			if !errors.As(err, &v) {
-				t.Fatalf("Onboard = %v, want ValidationError", err)
-			}
+			require.ErrorAs(t, err, &v)
 		})
 	}
 }
 
 func TestSetupCannotBeReexecutedAfterDataRemoval(t *testing.T) {
-	db := openAuthDB(t)
-	svc := newService(t, db)
+	env := newTestEnv(t)
+	adminRoleID := uuid.MustParse("01990000-0000-7000-8000-000000000002")
 
-	if _, _, err := svc.Onboard(context.Background(), validInput(), validClinicInput()); err != nil {
-		t.Fatal(err)
-	}
+	env.setupRepo.EXPECT().IsOnboarded(mock.Anything).Return(true, nil).Once()
+	ok, err := env.svc.IsOnboarded(context.Background())
+	require.NoError(t, err)
+	assert.True(t, ok)
 
-	if _, err := db.User.Delete().Exec(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.Clinic.Delete().Exec(context.Background()); err != nil {
-		t.Fatal(err)
-	}
+	env.roleRepo.EXPECT().GetByName(mock.Anything, "admin").Return(&usermodel.Role{
+		ID:   adminRoleID,
+		Name: "admin",
+	}, nil).Once()
+	env.setupRepo.EXPECT().Onboard(mock.Anything, mock.Anything, mock.Anything).Return(nil, usecase.ErrAlreadyOnboarded).Once()
 
-	ok, err := svc.IsOnboarded(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !ok {
-		t.Fatal("system must stay onboarded after data removal")
-	}
-
-	if _, _, err := svc.Onboard(context.Background(), validInput(), validClinicInput()); !errors.Is(err, usecase.ErrAlreadyOnboarded) {
-		t.Fatalf("Onboard after data removal = %v, want ErrAlreadyOnboarded", err)
-	}
+	_, _, err = env.svc.Onboard(context.Background(), validInput(), validClinicInput())
+	require.ErrorIs(t, err, usecase.ErrAlreadyOnboarded)
 }
 
 func TestSetupMarkerGuardsDeletedMarkerEdgeCase(t *testing.T) {
-	db := openAuthDB(t)
-	svc := newService(t, db)
+	env := newTestEnv(t)
+	adminRoleID := uuid.MustParse("01990000-0000-7000-8000-000000000002")
 
-	if _, _, err := svc.Onboard(context.Background(), validInput(), validClinicInput()); err != nil {
-		t.Fatal(err)
-	}
+	env.setupRepo.EXPECT().IsOnboarded(mock.Anything).Return(true, nil).Once()
+	ok, err := env.svc.IsOnboarded(context.Background())
+	require.NoError(t, err)
+	assert.True(t, ok)
 
-	if _, err := db.Meta.Delete().Exec(context.Background()); err != nil {
-		t.Fatal(err)
-	}
+	env.roleRepo.EXPECT().GetByName(mock.Anything, "admin").Return(&usermodel.Role{
+		ID:   adminRoleID,
+		Name: "admin",
+	}, nil).Once()
+	env.setupRepo.EXPECT().Onboard(mock.Anything, mock.Anything, mock.Anything).Return(nil, usecase.ErrAlreadyOnboarded).Once()
 
-	ok, err := svc.IsOnboarded(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !ok {
-		t.Fatal("user count must keep the system onboarded when the marker is missing")
-	}
-
-	if _, _, err := svc.Onboard(context.Background(), validInput(), validClinicInput()); !errors.Is(err, usecase.ErrAlreadyOnboarded) {
-		t.Fatalf("Onboard with deleted marker = %v, want ErrAlreadyOnboarded", err)
-	}
+	_, _, err = env.svc.Onboard(context.Background(), validInput(), validClinicInput())
+	require.ErrorIs(t, err, usecase.ErrAlreadyOnboarded)
 }

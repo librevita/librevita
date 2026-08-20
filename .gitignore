@@ -53,12 +53,11 @@ internal/ui/static/fonts/*.woff
 internal/ui/static/fonts/*.woff2
 internal/ui/assets.go
 
-
-
 # Generated templ views
 **/*_templ.go
 
 # Generated Ent ORM code (source of truth: internal/database/schema/)
 ent/
 
-
+# Generated mocks
+tests/mocks

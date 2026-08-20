@@ -1,0 +1,63 @@
+with-expecter: true
+issue-845-fix: true
+filename: "{{.InterfaceName | snakecase}}_mock.go"
+mockname: "Mock{{.InterfaceName}}"
+outpkg: "mocks"
+packages:
+  librevita.org/internal/domain/clinic/model:
+    config:
+      dir: "tests/mocks/domain/clinic/model"
+    interfaces:
+      Repository:
+  librevita.org/internal/domain/identifier/model:
+    config:
+      dir: "tests/mocks/domain/identifier/model"
+    interfaces:
+      SystemRepository:
+      IdentifierRepository:
+  librevita.org/internal/domain/identifier/usecase:
+    config:
+      dir: "tests/mocks/domain/identifier/usecase"
+    interfaces:
+      Service:
+      SystemsService:
+  librevita.org/internal/domain/patient/model:
+    config:
+      dir: "tests/mocks/domain/patient/model"
+    interfaces:
+      PatientRepository:
+  librevita.org/internal/domain/user/model:
+    config:
+      dir: "tests/mocks/domain/user/model"
+    interfaces:
+      UserRepository:
+      RoleRepository:
+      SpecialtyRepository:
+      StaffRequestRepository:
+      SetupRepository:
+  librevita.org/internal/core/auth:
+    config:
+      dir: "tests/mocks/core/auth"
+    interfaces:
+      SessionRepository:
+  librevita.org/internal/core/audit:
+    config:
+      dir: "tests/mocks/core/audit"
+    interfaces:
+      Repository:
+  librevita.org/internal/core/policy:
+    config:
+      dir: "tests/mocks/core/policy"
+    interfaces:
+      Repository:
+  librevita.org/internal/core/storage:
+    config:
+      dir: "tests/mocks/core/storage"
+    interfaces:
+      Store:
+      IndexRepository:
+  librevita.org/internal/core/crypto:
+    config:
+      dir: "tests/mocks/core/crypto"
+    interfaces:
+      KeyVault:

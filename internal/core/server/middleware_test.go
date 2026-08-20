@@ -2,56 +2,74 @@ package server
 
 import (
 	"context"
-	"database/sql"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
-	"entgo.io/ent/dialect"
-	entsql "entgo.io/ent/dialect/sql"
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
-	_ "modernc.org/sqlite"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 
-	"librevita.org/ent"
 	"librevita.org/internal/core/audit"
 	"librevita.org/internal/core/auth"
 	"librevita.org/internal/core/config"
-	"librevita.org/internal/core/database"
 	"librevita.org/internal/core/policy"
-	"librevita.org/internal/testutil"
 	"librevita.org/internal/ui"
+	auditmocks "librevita.org/tests/mocks/core/audit"
+	authmocks "librevita.org/tests/mocks/core/auth"
+	policymocks "librevita.org/tests/mocks/core/policy"
 )
-
-func openTestDB(t *testing.T) *ent.Client {
-	t.Helper()
-	db, err := sql.Open("sqlite", "file:server-test-"+uuid.NewString()+"?mode=memory&cache=shared")
-	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
-	}
-	db.SetMaxOpenConns(1)
-	t.Cleanup(func() { db.Close() })
-
-	if err := database.Migrate(context.Background(), db, slog.New(slog.DiscardHandler)); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
-
-	drv := entsql.OpenDB(dialect.SQLite, db)
-	client := ent.NewClient(ent.Driver(drv))
-	t.Cleanup(func() { client.Close() })
-	return client
-}
 
 func testLogger() *slog.Logger { return slog.New(slog.DiscardHandler) }
 
-func TestRequireAuthRedirectsAnonymous(t *testing.T) {
-	db := openTestDB(t)
-	sessions, err := auth.NewSessionManager(auth.NewSessionRepository(db), &config.Config{Mode: "development"}, testLogger())
-	if err != nil {
-		t.Fatal(err)
+func newMockSessionManager(t *testing.T) (*auth.SessionManager, *authmocks.MockSessionRepository) {
+	t.Helper()
+	sessionRepo := authmocks.NewMockSessionRepository(t)
+	sessionRepo.EXPECT().CleanupExpired(mock.Anything, mock.Anything).Return(nil).Maybe()
+	sessionRepo.EXPECT().Create(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
+
+	mgr, err := auth.NewSessionManager(sessionRepo, &config.Config{Mode: "development"}, testLogger())
+	require.NoError(t, err)
+	return mgr, sessionRepo
+}
+
+func newMockAuditLogger(t *testing.T) (*audit.Logger, *auditmocks.MockRepository) {
+	t.Helper()
+	auditRepo := auditmocks.NewMockRepository(t)
+	auditRepo.EXPECT().LastSignature(mock.Anything).Return("", nil).Maybe()
+	auditRepo.EXPECT().Record(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
+
+	l, err := audit.NewLogger(auditRepo, testLogger())
+	require.NoError(t, err)
+	return l, auditRepo
+}
+
+func newMockPolicyEngine(t *testing.T) (*policy.PolicyEngine, *policymocks.MockRepository) {
+	t.Helper()
+	policyRepo := policymocks.NewMockRepository(t)
+	policyRepo.EXPECT().SeedDefaults(mock.Anything, mock.Anything).Return(nil).Maybe()
+
+	var defaultRows []policy.PolicyRow
+	for name, expr := range policy.DefaultPolicies {
+		defaultRows = append(defaultRows, policy.PolicyRow{
+			Name:       name,
+			Expression: expr,
+		})
 	}
+	policyRepo.EXPECT().List(mock.Anything).Return(defaultRows, nil).Maybe()
+
+	pe, err := policy.NewPolicyEngine(policyRepo, testLogger())
+	require.NoError(t, err)
+	require.NoError(t, pe.Load(context.Background()))
+	return pe, policyRepo
+}
+
+func TestRequireAuthRedirectsAnonymous(t *testing.T) {
+	sessions, _ := newMockSessionManager(t)
 
 	e := echo.New()
 	e.GET("/", func(c echo.Context) error { return c.String(http.StatusOK, "ok") }, RequireAuth(sessions, testLogger()))
@@ -59,36 +77,38 @@ func TestRequireAuthRedirectsAnonymous(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rec := httptest.NewRecorder()
 	e.ServeHTTP(rec, req)
-	if rec.Code != http.StatusFound || rec.Header().Get("Location") != LoginPath {
-		t.Fatalf("anonymous request = %d %q, want 302 %q", rec.Code, rec.Header().Get("Location"), LoginPath)
-	}
+
+	assert.Equal(t, http.StatusFound, rec.Code)
+	assert.Equal(t, LoginPath, rec.Header().Get("Location"))
 }
 
 func TestRequireAuthAcceptsValidSession(t *testing.T) {
-	db := openTestDB(t)
-	sessions, err := auth.NewSessionManager(auth.NewSessionRepository(db), &config.Config{Mode: "development"}, testLogger())
-	if err != nil {
-		t.Fatal(err)
-	}
+	sessions, sessionRepo := newMockSessionManager(t)
+	userID := uuid.MustParse("01990000-0000-7000-8000-000000000001")
 
-	hash, err := auth.HashPassword("test-password")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := testutil.User(context.Background(), db, "01990000-0000-7000-8000-000000000001", "user@example.org", "admin", hash); err != nil {
-		t.Fatal(err)
-	}
+	token, err := sessions.Create(context.Background(), auth.Principal{
+		ID:    userID.String(),
+		Email: "user@example.org",
+		Name:  "Test User",
+		Role:  auth.RoleAdmin,
+	})
+	require.NoError(t, err)
 
-	token, err := sessions.Create(context.Background(), auth.Principal{ID: "01990000-0000-7000-8000-000000000001", Email: "user@example.org", Name: "Test User", Role: auth.RoleAdmin})
-	if err != nil {
-		t.Fatal(err)
-	}
+	sessionRepo.EXPECT().GetActive(mock.Anything, mock.Anything, mock.Anything).Return(&auth.SessionRecord{
+		User: &auth.SessionUser{
+			ID:     userID,
+			Email:  "user@example.org",
+			Name:   "Test User",
+			Role:   auth.RoleAdmin,
+			Active: true,
+		},
+	}, nil).Once()
 
 	e := echo.New()
 	e.GET("/", func(c echo.Context) error {
-		if Principal(c) == nil {
-			t.Fatal("principal missing from context")
-		}
+		p := Principal(c)
+		require.NotNil(t, p, "principal missing from context")
+		assert.Equal(t, userID.String(), p.ID)
 		return c.String(http.StatusOK, "ok")
 	}, RequireAuth(sessions, testLogger()))
 
@@ -96,20 +116,13 @@ func TestRequireAuthAcceptsValidSession(t *testing.T) {
 	req.AddCookie(sessions.Cookie(token))
 	rec := httptest.NewRecorder()
 	e.ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("authenticated request = %d, want 200", rec.Code)
-	}
+
+	assert.Equal(t, http.StatusOK, rec.Code)
 }
 
 func TestRequirePolicyAllowsAndDenies(t *testing.T) {
-	pe, err := policy.NewPolicyEngine(policy.NewPolicyRepository(openTestDB(t)), testLogger())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := pe.Load(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	auditLogger := newTestAudit(t)
+	pe, _ := newMockPolicyEngine(t)
+	auditLogger, _ := newMockAuditLogger(t)
 
 	for _, tc := range []struct {
 		name string
@@ -124,7 +137,12 @@ func TestRequirePolicyAllowsAndDenies(t *testing.T) {
 			e.GET("/admin", func(c echo.Context) error { return c.String(http.StatusOK, "ok") },
 				func(next echo.HandlerFunc) echo.HandlerFunc {
 					return func(c echo.Context) error {
-						c.Set(principalKey, &auth.Principal{ID: "01990000-0000-7000-8000-000000000001", Email: "u@example.org", Name: "User", Role: tc.role})
+						c.Set(principalKey, &auth.Principal{
+							ID:    "01990000-0000-7000-8000-000000000001",
+							Email: "u@example.org",
+							Name:  "User",
+							Role:  tc.role,
+						})
 						return next(c)
 					}
 				},
@@ -133,53 +151,48 @@ func TestRequirePolicyAllowsAndDenies(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, "/admin", nil)
 			rec := httptest.NewRecorder()
 			e.ServeHTTP(rec, req)
-			if rec.Code != tc.code {
-				t.Fatalf("GET /admin = %d, want %d", rec.Code, tc.code)
-			}
+
+			assert.Equal(t, tc.code, rec.Code)
 		})
 	}
 }
 
 func TestRequirePolicyRedirectsWithoutPrincipal(t *testing.T) {
-	pe, err := policy.NewPolicyEngine(policy.NewPolicyRepository(openTestDB(t)), testLogger())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := pe.Load(context.Background()); err != nil {
-		t.Fatal(err)
-	}
+	pe, _ := newMockPolicyEngine(t)
+	auditLogger, _ := newMockAuditLogger(t)
 
 	e := echo.New()
 	e.GET("/admin", func(c echo.Context) error { return c.String(http.StatusOK, "ok") },
-		RequirePolicy(pe, newTestAudit(t), testLogger(), "admin.view"))
+		RequirePolicy(pe, auditLogger, testLogger(), "admin.view"))
 
 	req := httptest.NewRequest(http.MethodGet, "/admin", nil)
 	rec := httptest.NewRecorder()
 	e.ServeHTTP(rec, req)
-	if rec.Code != http.StatusFound {
-		t.Fatalf("GET /admin without principal = %d, want 302", rec.Code)
-	}
+
+	assert.Equal(t, http.StatusFound, rec.Code)
 }
 
 func TestRequirePolicyDenialIsAudited(t *testing.T) {
-	db := openTestDB(t)
-	auditLogger, err := audit.NewLogger(audit.NewAuditRepository(db), testLogger())
-	if err != nil {
-		t.Fatal(err)
-	}
-	pe, err := policy.NewPolicyEngine(policy.NewPolicyRepository(openTestDB(t)), testLogger())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := pe.Load(context.Background()); err != nil {
-		t.Fatal(err)
-	}
+	pe, _ := newMockPolicyEngine(t)
+	auditRepo := auditmocks.NewMockRepository(t)
+	auditRepo.EXPECT().LastSignature(mock.Anything).Return("", nil).Once()
+	auditRepo.EXPECT().Record(mock.Anything, mock.MatchedBy(func(ev audit.Event) bool {
+		return ev.Action == "authorize" && ev.Resource == "policy:admin.view" && ev.Result == audit.AuditResultFailure
+	}), mock.Anything, mock.Anything).Return(nil).Once()
+
+	auditLogger, err := audit.NewLogger(auditRepo, testLogger())
+	require.NoError(t, err)
 
 	e := echo.New()
 	e.GET("/admin", func(c echo.Context) error { return c.String(http.StatusOK, "ok") },
 		func(next echo.HandlerFunc) echo.HandlerFunc {
 			return func(c echo.Context) error {
-				c.Set(principalKey, &auth.Principal{ID: "01990000-0000-7000-8000-000000000001", Email: "u@example.org", Name: "User", Role: auth.RolePatient})
+				c.Set(principalKey, &auth.Principal{
+					ID:    "01990000-0000-7000-8000-000000000001",
+					Email: "u@example.org",
+					Name:  "User",
+					Role:  auth.RolePatient,
+				})
 				return next(c)
 			}
 		},
@@ -188,66 +201,45 @@ func TestRequirePolicyDenialIsAudited(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/admin", nil)
 	rec := httptest.NewRecorder()
 	e.ServeHTTP(rec, req)
-	if rec.Code != http.StatusForbidden {
-		t.Fatalf("GET /admin = %d, want 403", rec.Code)
-	}
 
-	lastAudit, err := db.AuditLog.Query().First(context.Background())
-	if err != nil {
-		t.Fatalf("read audit_log: %v", err)
-	}
-	if lastAudit.Action != "authorize" || lastAudit.Resource != "policy:admin.view" || string(lastAudit.Result) != audit.AuditResultFailure.String() {
-		t.Fatalf("unexpected audit row: %q %q %q", lastAudit.Action, lastAudit.Resource, lastAudit.Result)
-	}
-}
-
-func newTestAudit(t *testing.T) *audit.Logger {
-	t.Helper()
-	db := openTestDB(t)
-	l, err := audit.NewLogger(audit.NewAuditRepository(db), testLogger())
-	if err != nil {
-		t.Fatal(err)
-	}
-	return l
+	assert.Equal(t, http.StatusForbidden, rec.Code)
 }
 
 func TestNotFoundRedirectsAnonymous(t *testing.T) {
-	db := openTestDB(t)
-	sessions, err := auth.NewSessionManager(auth.NewSessionRepository(db), &config.Config{Mode: "development"}, testLogger())
-	if err != nil {
-		t.Fatal(err)
-	}
+	sessions, _ := newMockSessionManager(t)
 	e := echo.New()
 	registerNotFound(e, sessions)
 
 	req := httptest.NewRequest(http.MethodGet, "/no-such-page", nil)
 	rec := httptest.NewRecorder()
 	e.ServeHTTP(rec, req)
-	if rec.Code != http.StatusFound {
-		t.Fatalf("anonymous unknown route = %d, want 302", rec.Code)
-	}
-	if loc := rec.Header().Get("Location"); loc != LoginPath+"?next=%2Fno-such-page" {
-		t.Errorf("redirect = %q, want login with next", loc)
-	}
+
+	assert.Equal(t, http.StatusFound, rec.Code)
+	assert.Equal(t, LoginPath+"?next=%2Fno-such-page", rec.Header().Get("Location"))
 }
 
 func TestNotFoundAuthenticated(t *testing.T) {
-	db := openTestDB(t)
-	sessions, err := auth.NewSessionManager(auth.NewSessionRepository(db), &config.Config{Mode: "development"}, testLogger())
-	if err != nil {
-		t.Fatal(err)
-	}
-	hash, err := auth.HashPassword("test-password")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := testutil.User(context.Background(), db, "01990000-0000-7000-8000-000000000001", "user@example.org", "admin", hash); err != nil {
-		t.Fatal(err)
-	}
-	token, err := sessions.Create(context.Background(), auth.Principal{ID: "01990000-0000-7000-8000-000000000001", Email: "user@example.org", Name: "Test User", Role: auth.RoleAdmin})
-	if err != nil {
-		t.Fatal(err)
-	}
+	sessions, sessionRepo := newMockSessionManager(t)
+	userID := uuid.MustParse("01990000-0000-7000-8000-000000000001")
+
+	token, err := sessions.Create(context.Background(), auth.Principal{
+		ID:    userID.String(),
+		Email: "user@example.org",
+		Name:  "Test User",
+		Role:  auth.RoleAdmin,
+	})
+	require.NoError(t, err)
+
+	sessionRepo.EXPECT().GetActive(mock.Anything, mock.Anything, mock.Anything).Return(&auth.SessionRecord{
+		User: &auth.SessionUser{
+			ID:     userID,
+			Email:  "user@example.org",
+			Name:   "Test User",
+			Role:   auth.RoleAdmin,
+			Active: true,
+		},
+	}, nil).Once()
+
 	e := echo.New()
 	registerNotFound(e, sessions)
 
@@ -255,31 +247,22 @@ func TestNotFoundAuthenticated(t *testing.T) {
 	req.AddCookie(sessions.Cookie(token))
 	rec := httptest.NewRecorder()
 	e.ServeHTTP(rec, req)
-	if rec.Code != http.StatusNotFound {
-		t.Fatalf("authenticated unknown route = %d, want 404", rec.Code)
-	}
+
+	assert.Equal(t, http.StatusNotFound, rec.Code)
 }
 
 func TestNotFoundPublicPaths(t *testing.T) {
-	db := openTestDB(t)
-	sessions, err := auth.NewSessionManager(auth.NewSessionRepository(db), &config.Config{Mode: "development"}, testLogger())
-	if err != nil {
-		t.Fatal(err)
-	}
+	sessions, _ := newMockSessionManager(t)
 	e := echo.New()
 	registerNotFound(e, sessions)
 
 	req := httptest.NewRequest(http.MethodGet, "/setup", nil)
 	rec := httptest.NewRecorder()
 	e.ServeHTTP(rec, req)
-	if rec.Code != http.StatusNotFound {
-		t.Fatalf("unknown /setup path = %d, want 404 (public path)", rec.Code)
-	}
+
+	assert.Equal(t, http.StatusNotFound, rec.Code)
 }
 
-// TestBodyLimitRaisesAvatarUploadCap pins the effective upload ceiling:
-// the global 1M body limit skips the avatar and document routes, so
-// their own per-route limits (2M avatar, 25M documents) are reachable.
 func TestSecurityHeadersAreStrict(t *testing.T) {
 	e := New(auth.NewCSRF(&config.Config{Mode: "development"}), &config.Config{Mode: "development"}, testLogger())
 	e.GET("/x", func(c echo.Context) error { return c.NoContent(http.StatusOK) })
@@ -289,9 +272,8 @@ func TestSecurityHeadersAreStrict(t *testing.T) {
 	e.ServeHTTP(rec, req)
 
 	wantCSP := "default-src 'self'; script-src 'self' '" + ui.ThemeScriptHash + "'; style-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
-	if got := rec.Header().Get("Content-Security-Policy"); got != wantCSP {
-		t.Fatalf("CSP = %q, want %q", got, wantCSP)
-	}
+	assert.Equal(t, wantCSP, rec.Header().Get("Content-Security-Policy"))
+
 	for _, h := range []string{
 		"X-Content-Type-Options",
 		"Referrer-Policy",
@@ -299,13 +281,9 @@ func TestSecurityHeadersAreStrict(t *testing.T) {
 		"Cross-Origin-Resource-Policy",
 		"Permissions-Policy",
 	} {
-		if rec.Header().Get(h) == "" {
-			t.Fatalf("missing security header %s", h)
-		}
+		assert.NotEmpty(t, rec.Header().Get(h), "missing security header %s", h)
 	}
-	if got := rec.Header().Get("Strict-Transport-Security"); got != "" {
-		t.Fatalf("HSTS present with hsts_max_age=0: %q", got)
-	}
+	assert.Empty(t, rec.Header().Get("Strict-Transport-Security"))
 }
 
 func TestSecurityHeadersHSTSIsConfigurable(t *testing.T) {
@@ -316,9 +294,7 @@ func TestSecurityHeadersHSTSIsConfigurable(t *testing.T) {
 	rec := httptest.NewRecorder()
 	e.ServeHTTP(rec, req)
 
-	if got := rec.Header().Get("Strict-Transport-Security"); got != "max-age=31536000" {
-		t.Fatalf("HSTS = %q, want max-age=31536000", got)
-	}
+	assert.Equal(t, "max-age=31536000", rec.Header().Get("Strict-Transport-Security"))
 }
 
 func TestBodyLimitRaisesAvatarUploadCap(t *testing.T) {
@@ -332,14 +308,10 @@ func TestBodyLimitRaisesAvatarUploadCap(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/profile/avatar", strings.NewReader(big))
 	rec := httptest.NewRecorder()
 	e.ServeHTTP(rec, req)
-	if rec.Code == http.StatusRequestEntityTooLarge {
-		t.Fatal("avatar upload was capped by the global 1M body limit")
-	}
+	assert.NotEqual(t, http.StatusRequestEntityTooLarge, rec.Code, "avatar upload was capped by global 1M body limit")
 
 	req = httptest.NewRequest(http.MethodPost, "/profile", strings.NewReader(big))
 	rec = httptest.NewRecorder()
 	e.ServeHTTP(rec, req)
-	if rec.Code != http.StatusRequestEntityTooLarge {
-		t.Fatalf("plain route status = %d, want 413 from the global limit", rec.Code)
-	}
+	assert.Equal(t, http.StatusRequestEntityTooLarge, rec.Code)
 }

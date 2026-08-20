@@ -7,19 +7,21 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // TestS3ConfigValidation covers the configuration contract.
 func TestS3ConfigValidation(t *testing.T) {
-	if _, err := NewS3(S3Config{Bucket: "b"}); err == nil {
-		t.Error("missing endpoint must be rejected")
-	}
-	if _, err := NewS3(S3Config{Endpoint: "e"}); err == nil {
-		t.Error("missing bucket must be rejected")
-	}
-	if _, err := NewS3(S3Config{Endpoint: "e", Bucket: "b"}); err != nil {
-		t.Errorf("valid config rejected: %v", err)
-	}
+	_, err := NewS3(S3Config{Bucket: "b"})
+	assert.Error(t, err, "missing endpoint must be rejected")
+
+	_, err = NewS3(S3Config{Endpoint: "e"})
+	assert.Error(t, err, "missing bucket must be rejected")
+
+	_, err = NewS3(S3Config{Endpoint: "e", Bucket: "b"})
+	assert.NoError(t, err, "valid config should be accepted")
 }
 
 // fakeS3 serves a minimal S3 API surface over HTTP: PUT, GET, HEAD and
@@ -59,9 +61,7 @@ func fakeS3(t *testing.T, body string) (*httptest.Server, *S3) {
 	s, err := NewS3(S3Config{
 		Endpoint: host, Bucket: "bucket", Region: "us-east-1", Secure: false, PathStyle: true,
 	})
-	if err != nil {
-		t.Fatalf("NewS3: %v", err)
-	}
+	require.NoError(t, err)
 	return server, s
 }
 
@@ -70,37 +70,23 @@ func TestS3PutGetStatDelete(t *testing.T) {
 	ctx := context.Background()
 
 	info, err := s.Put(ctx, "patients/p1/doc.txt", strings.NewReader("hello"), 5, "text/plain")
-	if err != nil {
-		t.Fatalf("Put: %v", err)
-	}
-	if info.Key != "patients/p1/doc.txt" {
-		t.Errorf("Put info = %+v", info)
-	}
-	if info.Checksum != blake2b256Hex("hello") {
-		t.Errorf("checksum = %q, want the canonical digest of hello", info.Checksum)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, "patients/p1/doc.txt", info.Key)
+	assert.Equal(t, blake2b256Hex("hello"), info.Checksum)
 
 	obj, err := s.Get(ctx, "patients/p1/doc.txt")
-	if err != nil {
-		t.Fatalf("Get: %v", err)
-	}
+	require.NoError(t, err)
 	defer obj.Data.Close()
-	got, _ := io.ReadAll(obj.Data)
-	if string(got) != "hello" {
-		t.Errorf("Get body = %q, want hello", got)
-	}
+	got, err := io.ReadAll(obj.Data)
+	require.NoError(t, err)
+	assert.Equal(t, "hello", string(got))
 
 	st, err := s.Stat(ctx, "patients/p1/doc.txt")
-	if err != nil {
-		t.Fatalf("Stat: %v", err)
-	}
-	if st.Size != 5 {
-		t.Errorf("Stat size = %d, want 5", st.Size)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, int64(5), st.Size)
 
-	if err := s.Delete(ctx, "patients/p1/doc.txt"); err != nil {
-		t.Fatalf("Delete: %v", err)
-	}
+	err = s.Delete(ctx, "patients/p1/doc.txt")
+	require.NoError(t, err)
 }
 
 // TestS3RejectsTraversal ensures key validation happens before any
@@ -109,12 +95,11 @@ func TestS3RejectsTraversal(t *testing.T) {
 	_, s := fakeS3(t, "")
 	ctx := context.Background()
 	for _, key := range []string{"../escape", "/abs", `a\b`} {
-		if _, err := s.Put(ctx, key, strings.NewReader("x"), 1, ""); err == nil {
-			t.Errorf("Put(%q) = nil, want error", key)
-		}
-		if err := s.Delete(ctx, key); err == nil {
-			t.Errorf("Delete(%q) = nil, want error", key)
-		}
+		_, err := s.Put(ctx, key, strings.NewReader("x"), 1, "")
+		assert.Error(t, err, "Put(%q) should fail", key)
+
+		err = s.Delete(ctx, key)
+		assert.Error(t, err, "Delete(%q) should fail", key)
 	}
 }
 
