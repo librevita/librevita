@@ -17,7 +17,6 @@ import (
 
 var (
 	testClinic  = uuid.MustParse("00000000-0000-0000-0000-000000000011")
-	testClinic2 = uuid.MustParse("00000000-0000-0000-0000-000000000012")
 	testAdminID = uuid.MustParse("00000000-0000-0000-0000-000000000021")
 )
 

@@ -253,6 +253,7 @@ func TestPostgresConfigDefaultsAndValidation(t *testing.T) {
 	assert.NoError(t, cfg.validate())
 
 	dsn := cfg.Database.Postgres.DSN()
+	// #nosec G101 -- sample test DSN string used for asserting PostgresConfig.DSN() formatting in unit tests, not a real secret.
 	wantDSN := "postgres://app:secret@db.example.com:5432/librevita_prod?sslmode=require"
 	assert.Equal(t, wantDSN, dsn)
 }

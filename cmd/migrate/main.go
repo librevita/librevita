@@ -189,7 +189,7 @@ func main() {
 	flag.BoolVar(&rehash, "rehash", false, "recalculate and write atlas.sum for the migrations directory")
 	flag.Parse()
 
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o750); err != nil {
 		log.Fatalf("failed creating migrations directory %q: %v", dir, err)
 	}
 
@@ -232,6 +232,7 @@ func main() {
 			}
 			if devURL == "" {
 				// Default to standard local postgres ports
+				// #nosec G101 -- default local dev postgres connection string used by the migration CLI in local development, not a production secret.
 				devURL = "postgres://postgres:postgres@localhost:5433/dev?sslmode=disable"
 			}
 		} else {

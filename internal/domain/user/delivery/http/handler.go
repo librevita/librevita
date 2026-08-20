@@ -326,13 +326,6 @@ func (h *Handler) activityRows(ctx context.Context, activity []audit.EventRow, c
 	return out
 }
 
-func orEmpty(s *string) string {
-	if s == nil {
-		return ""
-	}
-	return *s
-}
-
 // ProfilePage renders the signed-in user's profile with the color scheme
 // preference.
 // userClock resolves the display clock: the user's personal timezone
