@@ -1,4 +1,4 @@
-package identifier
+package model
 
 import (
 	"testing"

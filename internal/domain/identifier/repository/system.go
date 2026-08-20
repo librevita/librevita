@@ -9,7 +9,7 @@ import (
 
 	"librevita.org/ent"
 	"librevita.org/ent/identifiersystem"
-	patientmodel "librevita.org/internal/domain/patient/model"
+	identifiermodel "librevita.org/internal/domain/identifier/model"
 )
 
 type systemRepository struct {
@@ -17,63 +17,63 @@ type systemRepository struct {
 }
 
 // NewSystemRepository creates an identifier system repository adapter.
-func NewSystemRepository(client *ent.Client) patientmodel.SystemRepository {
+func NewSystemRepository(client *ent.Client) identifiermodel.SystemRepository {
 	return &systemRepository{client: client}
 }
 
-func (r *systemRepository) ListAll(ctx context.Context) ([]*patientmodel.IdentifierSystem, error) {
+func (r *systemRepository) ListAll(ctx context.Context) ([]*identifiermodel.IdentifierSystem, error) {
 	rows, err := r.client.IdentifierSystem.Query().
 		Order(ent.Asc(identifiersystem.FieldDisplayName)).
 		All(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("system repository: list all: %w", err)
 	}
-	out := make([]*patientmodel.IdentifierSystem, 0, len(rows))
+	out := make([]*identifiermodel.IdentifierSystem, 0, len(rows))
 	for _, row := range rows {
 		out = append(out, toSystemDomain(row))
 	}
 	return out, nil
 }
 
-func (r *systemRepository) ListActive(ctx context.Context) ([]*patientmodel.IdentifierSystem, error) {
+func (r *systemRepository) ListActive(ctx context.Context) ([]*identifiermodel.IdentifierSystem, error) {
 	rows, err := r.client.IdentifierSystem.Query().
 		Where(identifiersystem.ActiveEQ(true)).
 		All(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("system repository: list active: %w", err)
 	}
-	out := make([]*patientmodel.IdentifierSystem, 0, len(rows))
+	out := make([]*identifiermodel.IdentifierSystem, 0, len(rows))
 	for _, row := range rows {
 		out = append(out, toSystemDomain(row))
 	}
 	return out, nil
 }
 
-func (r *systemRepository) GetByID(ctx context.Context, id uuid.UUID) (*patientmodel.IdentifierSystem, error) {
+func (r *systemRepository) GetByID(ctx context.Context, id uuid.UUID) (*identifiermodel.IdentifierSystem, error) {
 	row, err := r.client.IdentifierSystem.Get(ctx, id)
 	if err != nil {
 		if ent.IsNotFound(err) {
-			return nil, patientmodel.ErrSystemNotFound
+			return nil, identifiermodel.ErrSystemNotFound
 		}
 		return nil, fmt.Errorf("system repository: get by id: %w", err)
 	}
 	return toSystemDomain(row), nil
 }
 
-func (r *systemRepository) GetBySystem(ctx context.Context, system string) (*patientmodel.IdentifierSystem, error) {
+func (r *systemRepository) GetBySystem(ctx context.Context, system string) (*identifiermodel.IdentifierSystem, error) {
 	row, err := r.client.IdentifierSystem.Query().
 		Where(identifiersystem.SystemEQ(system)).
 		Only(ctx)
 	if err != nil {
 		if ent.IsNotFound(err) {
-			return nil, patientmodel.ErrSystemNotFound
+			return nil, identifiermodel.ErrSystemNotFound
 		}
 		return nil, fmt.Errorf("system repository: get by system: %w", err)
 	}
 	return toSystemDomain(row), nil
 }
 
-func (r *systemRepository) Create(ctx context.Context, s *patientmodel.IdentifierSystem) (*patientmodel.IdentifierSystem, error) {
+func (r *systemRepository) Create(ctx context.Context, s *identifiermodel.IdentifierSystem) (*identifiermodel.IdentifierSystem, error) {
 	create := r.client.IdentifierSystem.Create().
 		SetID(s.ID).
 		SetSystem(s.System).
@@ -93,14 +93,14 @@ func (r *systemRepository) Create(ctx context.Context, s *patientmodel.Identifie
 	saved, err := create.Save(ctx)
 	if err != nil {
 		if ent.IsConstraintError(err) {
-			return nil, patientmodel.ErrDuplicate
+			return nil, identifiermodel.ErrDuplicate
 		}
 		return nil, fmt.Errorf("system repository: create: %w", err)
 	}
 	return toSystemDomain(saved), nil
 }
 
-func (r *systemRepository) Update(ctx context.Context, s *patientmodel.IdentifierSystem) (*patientmodel.IdentifierSystem, error) {
+func (r *systemRepository) Update(ctx context.Context, s *identifiermodel.IdentifierSystem) (*identifiermodel.IdentifierSystem, error) {
 	update := r.client.IdentifierSystem.UpdateOneID(s.ID).
 		SetDisplayName(s.DisplayName).
 		SetPattern(s.Pattern).
@@ -119,10 +119,10 @@ func (r *systemRepository) Update(ctx context.Context, s *patientmodel.Identifie
 	updated, err := update.Save(ctx)
 	if err != nil {
 		if ent.IsNotFound(err) {
-			return nil, patientmodel.ErrSystemNotFound
+			return nil, identifiermodel.ErrSystemNotFound
 		}
 		if ent.IsConstraintError(err) {
-			return nil, patientmodel.ErrDuplicate
+			return nil, identifiermodel.ErrDuplicate
 		}
 		return nil, fmt.Errorf("system repository: update: %w", err)
 	}
@@ -136,7 +136,7 @@ func (r *systemRepository) SetActive(ctx context.Context, id uuid.UUID, active b
 		Exec(ctx)
 	if err != nil {
 		if ent.IsNotFound(err) {
-			return patientmodel.ErrSystemNotFound
+			return identifiermodel.ErrSystemNotFound
 		}
 		return fmt.Errorf("system repository: set active: %w", err)
 	}
@@ -144,13 +144,13 @@ func (r *systemRepository) SetActive(ctx context.Context, id uuid.UUID, active b
 }
 
 func (r *systemRepository) SeedDefaults(ctx context.Context) error {
-	defaultSystems := []*patientmodel.IdentifierSystem{
+	defaultSystems := []*identifiermodel.IdentifierSystem{
 		{
 			System:           "urn:librevita:id:br:cpf",
 			DisplayName:      "CPF (Brasil)",
 			Pattern:          `[0-9]{11}`,
-			Transform:        patientmodel.TransformDigits,
-			CheckAlgorithm:   patientmodel.CheckMod11Desc,
+			Transform:        identifiermodel.TransformDigits,
+			CheckAlgorithm:   identifiermodel.CheckMod11Desc,
 			CheckBaseLen:     9,
 			CheckDVCount:     2,
 			CheckStartWeight: 10,
@@ -161,8 +161,8 @@ func (r *systemRepository) SeedDefaults(ctx context.Context) error {
 			System:           "urn:librevita:id:br:sus",
 			DisplayName:      "Cartão SUS (Brasil)",
 			Pattern:          `[0-9]{15}`,
-			Transform:        patientmodel.TransformDigits,
-			CheckAlgorithm:   patientmodel.CheckMod11Cyclic,
+			Transform:        identifiermodel.TransformDigits,
+			CheckAlgorithm:   identifiermodel.CheckMod11Cyclic,
 			CheckBaseLen:     14,
 			CheckDVCount:     1,
 			CheckStartWeight: 10,
@@ -173,8 +173,8 @@ func (r *systemRepository) SeedDefaults(ctx context.Context) error {
 			System:           "urn:librevita:id:pt:nif",
 			DisplayName:      "NIF (Portugal)",
 			Pattern:          `[0-9]{9}`,
-			Transform:        patientmodel.TransformDigits,
-			CheckAlgorithm:   patientmodel.CheckMod11Desc,
+			Transform:        identifiermodel.TransformDigits,
+			CheckAlgorithm:   identifiermodel.CheckMod11Desc,
 			CheckBaseLen:     8,
 			CheckDVCount:     1,
 			CheckStartWeight: 9,
@@ -185,8 +185,8 @@ func (r *systemRepository) SeedDefaults(ctx context.Context) error {
 			System:           "urn:librevita:id:passport",
 			DisplayName:      "Passaporte",
 			Pattern:          `[A-Z]{1,2}[0-9]{6,9}`,
-			Transform:        patientmodel.TransformUpper,
-			CheckAlgorithm:   patientmodel.CheckNone,
+			Transform:        identifiermodel.TransformUpper,
+			CheckAlgorithm:   identifiermodel.CheckNone,
 			CheckBaseLen:     0,
 			CheckDVCount:     1,
 			CheckStartWeight: 10,
@@ -225,17 +225,17 @@ func (r *systemRepository) SeedDefaults(ctx context.Context) error {
 	return nil
 }
 
-func toSystemDomain(row *ent.IdentifierSystem) *patientmodel.IdentifierSystem {
+func toSystemDomain(row *ent.IdentifierSystem) *identifiermodel.IdentifierSystem {
 	if row == nil {
 		return nil
 	}
-	return &patientmodel.IdentifierSystem{
+	return &identifiermodel.IdentifierSystem{
 		ID:               row.ID,
 		System:           row.System,
 		DisplayName:      row.DisplayName,
 		Pattern:          row.Pattern,
-		Transform:        patientmodel.Transform(row.Transform),
-		CheckAlgorithm:   patientmodel.CheckAlgorithm(row.CheckAlgorithm),
+		Transform:        identifiermodel.Transform(row.Transform),
+		CheckAlgorithm:   identifiermodel.CheckAlgorithm(row.CheckAlgorithm),
 		CheckBaseLen:     row.CheckBaseLen,
 		CheckDVCount:     row.CheckDvCount,
 		CheckStartWeight: row.CheckStartWeight,

@@ -17,8 +17,8 @@ import (
 	"librevita.org/internal/core/storage"
 	clinicmodel "librevita.org/internal/domain/clinic/model"
 	clinicusecase "librevita.org/internal/domain/clinic/usecase"
+	identifierusecase "librevita.org/internal/domain/identifier/usecase"
 	"librevita.org/internal/domain/patient/delivery/views"
-	"librevita.org/internal/domain/patient/identifier"
 	patientmodel "librevita.org/internal/domain/patient/model"
 	"librevita.org/internal/domain/patient/usecase"
 	"librevita.org/internal/ui/components"
@@ -48,14 +48,14 @@ type Handler struct {
 	csrf    *auth.CSRF
 	audit   *audit.Logger
 	files   *storage.FileManager
-	ids     *identifier.Service
-	systems *identifier.SystemsService
+	ids     identifierusecase.Service
+	systems identifierusecase.SystemsService
 }
 
 // NewHandler is the Fx provider.
 func NewHandler(svc *usecase.Service, clocks *clinicusecase.ClockProvider,
 	csrf *auth.CSRF, auditLogger *audit.Logger, files *storage.FileManager,
-	ids *identifier.Service, systems *identifier.SystemsService) *Handler {
+	ids identifierusecase.Service, systems identifierusecase.SystemsService) *Handler {
 	return &Handler{svc: svc, clocks: clocks, csrf: csrf, audit: auditLogger,
 		files: files, ids: ids, systems: systems}
 }
@@ -406,7 +406,7 @@ func (h *Handler) createIdentifier(ctx context.Context, clinicID, patientID, act
 	if value == "" {
 		return nil
 	}
-	if _, err := h.ids.AddIdentifier(ctx, clinicID, actorID, identifier.Input{
+	if _, err := h.ids.AddIdentifier(ctx, clinicID, actorID, identifierusecase.Input{
 		PatientID: patientID, System: input.IdentifierSystem, Value: value,
 	}); err != nil {
 		return err

@@ -18,7 +18,9 @@ import (
 	"librevita.org/ent/role"
 	"librevita.org/internal/core/crypto"
 	"librevita.org/internal/core/vault"
-	"librevita.org/internal/domain/patient/identifier"
+	identifiermodel "librevita.org/internal/domain/identifier/model"
+	identifierrepo "librevita.org/internal/domain/identifier/repository"
+	identifierusecase "librevita.org/internal/domain/identifier/usecase"
 	"librevita.org/internal/domain/patient/usecase"
 	"librevita.org/internal/testutil"
 )
@@ -131,16 +133,18 @@ func TestDqliteSpike(t *testing.T) {
 	}
 	patientID := createdPt.ID
 
-	reg := identifier.NewRegistry()
-	rows, err := identifier.LoadActiveSystems(context.Background(), client)
+	reg := identifiermodel.NewRegistry()
+	sysRepo := identifierrepo.NewSystemRepository(client)
+	rows, err := sysRepo.ListActive(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := reg.Reload(rows); err != nil {
 		t.Fatal(err)
 	}
-	svc := identifier.NewService(client, engine, reg, slog.New(slog.DiscardHandler))
-	if _, err := svc.AddIdentifier(context.Background(), clinicID, adminID, identifier.Input{
+	idRepo := identifierrepo.NewIdentifierRepository(client)
+	svc := identifierusecase.NewService(idRepo, engine, reg, slog.New(slog.DiscardHandler))
+	if _, err := svc.AddIdentifier(context.Background(), clinicID, adminID, identifierusecase.Input{
 		PatientID: patientID.String(), Value: "123.456.789-09",
 	}); err != nil {
 		t.Fatalf("add identifier: %v", err)
@@ -158,9 +162,9 @@ func TestDqliteSpike(t *testing.T) {
 		t.Fatal(err)
 	}
 	other := otherPt.ID
-	if _, err := svc.AddIdentifier(context.Background(), clinicID, adminID, identifier.Input{
+	if _, err := svc.AddIdentifier(context.Background(), clinicID, adminID, identifierusecase.Input{
 		PatientID: other.String(), Value: "12345678909",
-	}); !errors.Is(err, identifier.ErrDuplicate) {
+	}); !errors.Is(err, identifierusecase.ErrDuplicate) {
 		t.Fatalf("duplicate = %v, want ErrDuplicate", err)
 	}
 	t.Log("dqlite spike OK: migrations, transactions, FLE")

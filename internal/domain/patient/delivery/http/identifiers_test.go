@@ -13,7 +13,6 @@ import (
 	"github.com/labstack/echo/v4"
 
 	"librevita.org/ent"
-	"librevita.org/ent/identifiersystem"
 	"librevita.org/ent/patientidentifier"
 	"librevita.org/internal/core/audit"
 	"librevita.org/internal/core/auth"
@@ -25,7 +24,7 @@ import (
 	"librevita.org/internal/core/vault"
 	clinicrepo "librevita.org/internal/domain/clinic/repository"
 	clinicusecase "librevita.org/internal/domain/clinic/usecase"
-	"librevita.org/internal/domain/patient/identifier"
+	identifierusecase "librevita.org/internal/domain/identifier/usecase"
 	patientrepo "librevita.org/internal/domain/patient/repository"
 	"librevita.org/internal/domain/patient/usecase"
 	"librevita.org/internal/testutil"
@@ -90,10 +89,6 @@ func newIdentEnv(t *testing.T) (*echo.Echo, *auth.SessionManager, *usecase.Servi
 		server.RequireAuth(sessions, log),
 		server.RequirePolicy(policies, auditLogger, log, "patient.view"),
 	}
-	admin := []echo.MiddlewareFunc{
-		server.RequireAuth(sessions, log),
-		server.RequirePolicy(policies, auditLogger, log, "admin.view"),
-	}
 	lookup := append(view, server.RateLimit(server.NewRateLimiter(60, 1e9)))
 	e.GET("/patients/lookup", h.IdentifierLookup, lookup...)
 	e.POST("/patients/:id/identifiers", h.IdentifierAdd, view...)
@@ -101,11 +96,6 @@ func newIdentEnv(t *testing.T) (*echo.Echo, *auth.SessionManager, *usecase.Servi
 	e.GET("/patients/:id", h.Detail, view...)
 	e.GET("/patients", h.List, view...)
 	e.POST("/patients", h.Create, view...)
-	e.GET("/identifier-systems", h.IdentifierSystemsPage, admin...)
-	e.POST("/identifier-systems", h.IdentifierSystemCreate, admin...)
-	e.POST("/identifier-systems/:id", h.IdentifierSystemUpdate, admin...)
-	e.POST("/identifier-systems/:id/active", h.IdentifierSystemSetActive, admin...)
-	e.GET("/identifier-systems/check-fields", h.SystemCheckFields, admin...)
 	return e, sessions, svc, auditLogger, client
 }
 
@@ -332,84 +322,6 @@ func TestIdentifierLookupRequiresAuth(t *testing.T) {
 	}
 }
 
-// TestIdentifierSystemsAdmin covers the administrator catalog: create,
-// validation, toggle, and registry reload.
-func TestIdentifierSystemsAdmin(t *testing.T) {
-	e, sessions, _, _, db := newIdentEnv(t)
-	cookie := adminSession(t, sessions)
-
-	// Create a Paraguayan cédula.
-	rec := postForm(t, e, "/identifier-systems", cookie, url.Values{
-		"system":             {"urn:librevita:id:py:cedula"},
-		"display_name":       {"Cédula de Identidad (Paraguay)"},
-		"pattern":            {"[0-9]{8}"},
-		"transform":          {"digits"},
-		"check_algorithm":    {"mod11_desc"},
-		"check_base_len":     {"7"},
-		"check_dv_count":     {"1"},
-		"check_start_weight": {"8"},
-	})
-	if rec.Code != http.StatusFound {
-		t.Fatalf("create status = %d, want 302 (%s)", rec.Code, rec.Body.String())
-	}
-
-	// The catalog lists it.
-	page := getWithCookie(t, e, "/identifier-systems", cookie, false)
-	if !strings.Contains(page.Body.String(), "Cédula de Identidad") {
-		t.Fatalf("catalog page = %q, want the new system", page.Body.String())
-	}
-
-	// Invalid regex is rejected inline.
-	bad := postForm(t, e, "/identifier-systems", cookie, url.Values{
-		"system":          {"urn:librevita:id:x:bad"},
-		"display_name":    {"Bad"},
-		"pattern":         {"["},
-		"transform":       {"none"},
-		"check_algorithm": {"none"},
-	})
-	if bad.Code != http.StatusOK || !strings.Contains(bad.Body.String(), "not a valid regex") {
-		t.Fatalf("bad regex status = %d body = %q, want inline error", bad.Code, bad.Body.String())
-	}
-
-	// URN outside the namespace is rejected.
-	outside := postForm(t, e, "/identifier-systems", cookie, url.Values{
-		"system":          {"com.example:doc"},
-		"display_name":    {"Outside"},
-		"pattern":         {"[0-9]{8}"},
-		"transform":       {"none"},
-		"check_algorithm": {"none"},
-	})
-	if outside.Code != http.StatusOK || !strings.Contains(outside.Body.String(), "urn:librevita:id:") {
-		t.Fatalf("outside status = %d body = %q, want namespace error", outside.Code, outside.Body.String())
-	}
-
-	// Toggle the cédula inactive: the registry reloads and the value
-	// falls back to raw detection.
-	sysRow, err := db.IdentifierSystem.Query().
-		Where(identifiersystem.SystemEQ("urn:librevita:id:py:cedula")).
-		First(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	systemID := sysRow.ID.String()
-	toggle := postForm(t, e, "/identifier-systems/"+systemID+"/active", cookie, url.Values{})
-	if toggle.Code != http.StatusOK || !strings.Contains(toggle.Body.String(), "Inactive") {
-		t.Fatalf("toggle status = %d body = %q, want the inactive row", toggle.Code, toggle.Body.String())
-	}
-
-	// Check fields partial renders only for a chosen algorithm. The
-	// "none" branch emits hidden defaults so the form still submits
-	// without JavaScript, but no labeled inputs.
-	fields := getWithCookie(t, e, "/identifier-systems/check-fields?check_algorithm=mod11_desc", cookie, false)
-	if !strings.Contains(fields.Body.String(), "Start weight") {
-		t.Fatalf("fields partial = %q, want the start weight input", fields.Body.String())
-	}
-	none := getWithCookie(t, e, "/identifier-systems/check-fields?check_algorithm=none", cookie, false)
-	if strings.Contains(none.Body.String(), "Start weight") {
-		t.Fatalf("none partial = %q, must not render the check fields", none.Body.String())
-	}
-}
-
 // TestAuditNeverContainsPlaintext verifies that the audit trail carries
 // no document value: only system URNs and counts.
 func TestAuditNeverContainsPlaintext(t *testing.T) {
@@ -600,7 +512,7 @@ func TestRegistryDocumentLookup(t *testing.T) {
 		"value": {"52998224725"},
 	})
 
-	hit := getWithCookie(t, e, "/patients?q=52998224725&field="+identifier.CPFSystem, cookie, false)
+	hit := getWithCookie(t, e, "/patients?q=52998224725&field="+identifierusecase.CPFSystem, cookie, false)
 	if hit.Code != http.StatusOK || !strings.Contains(hit.Body.String(), "Ana Souza") {
 		t.Fatalf("document lookup missed the owner: %q", hit.Body.String())
 	}
@@ -621,7 +533,7 @@ func TestRegistryDocumentLookup(t *testing.T) {
 	}
 
 	// The same value under another system is not the chosen document.
-	miss := getWithCookie(t, e, "/patients?q=52998224725&field="+identifier.NIFSystem, cookie, false)
+	miss := getWithCookie(t, e, "/patients?q=52998224725&field="+identifierusecase.NIFSystem, cookie, false)
 	if miss.Code != http.StatusOK || strings.Contains(miss.Body.String(), "Ana Souza") {
 		t.Fatalf("wrong-system lookup returned the owner: %q", miss.Body.String())
 	}
@@ -634,7 +546,7 @@ func TestRegistryDocumentLookup(t *testing.T) {
 
 	// Short and empty values render the empty list without a lookup.
 	for _, q := range []string{"", "ab"} {
-		short := getWithCookie(t, e, "/patients?q="+q+"&field="+identifier.CPFSystem, cookie, true)
+		short := getWithCookie(t, e, "/patients?q="+q+"&field="+identifierusecase.CPFSystem, cookie, true)
 		if short.Code != http.StatusOK || !strings.Contains(short.Body.String(), "No patients found") {
 			t.Fatalf("q=%q status = %d body = %q, want the empty list", q, short.Code, short.Body.String())
 		}

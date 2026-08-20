@@ -1,20 +1,9 @@
 package model
 
 import (
-	"context"
-	"errors"
 	"time"
 
 	"github.com/google/uuid"
-)
-
-// Domain errors for identifier systems.
-var (
-	ErrSystemNotFound      = errors.New("patient: identifier system not found")
-	ErrDuplicate           = errors.New("patient: identifier system already exists")
-	ErrDuplicateIdentifier = errors.New("patient: identifier already registered")
-	ErrSystemInactive      = errors.New("patient: identifier system is inactive")
-	ErrSystemImmutable     = errors.New("patient: cannot modify system identifier")
 )
 
 // Transform is the canonicalization mode applied to raw input before
@@ -89,7 +78,7 @@ type IdentifierSystem struct {
 	UpdatedAt        time.Time
 }
 
-// IdentifierRecord is the encrypted physical record of a patient identifier.
+// IdentifierRecord is the encrypted physical record of an identifier.
 type IdentifierRecord struct {
 	ID              uuid.UUID
 	PatientID       uuid.UUID
@@ -102,24 +91,13 @@ type IdentifierRecord struct {
 	UpdatedAt       time.Time
 }
 
-// SystemRepository defines the persistence contract for document systems.
-type SystemRepository interface {
-	ListActive(ctx context.Context) ([]*IdentifierSystem, error)
-	ListAll(ctx context.Context) ([]*IdentifierSystem, error)
-	GetByID(ctx context.Context, id uuid.UUID) (*IdentifierSystem, error)
-	GetBySystem(ctx context.Context, system string) (*IdentifierSystem, error)
-	Create(ctx context.Context, sys *IdentifierSystem) (*IdentifierSystem, error)
-	Update(ctx context.Context, sys *IdentifierSystem) (*IdentifierSystem, error)
-	SetActive(ctx context.Context, id uuid.UUID, active bool) error
-	SeedDefaults(ctx context.Context) error
-}
-
-// IdentifierRepository defines the persistence contract for patient identifiers.
-type IdentifierRepository interface {
-	Add(ctx context.Context, rec IdentifierRecord) (*IdentifierRecord, error)
-	FindByBlindIndex(ctx context.Context, clinicID uuid.UUID, blindIndex string) (*IdentifierRecord, error)
-	ListByPatient(ctx context.Context, patientID uuid.UUID) ([]IdentifierRecord, error)
-	ListByPatients(ctx context.Context, patientIDs []uuid.UUID) ([]IdentifierRecord, error)
-	Remove(ctx context.Context, patientID, identifierID uuid.UUID) error
-	PatientExists(ctx context.Context, clinicID, patientID uuid.UUID) (bool, error)
+// Identifier represents a decrypted identification document.
+type Identifier struct {
+	ID        string
+	PatientID string
+	System    string
+	Value     string
+	CreatedBy string
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }

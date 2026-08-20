@@ -353,7 +353,7 @@ errors.
 
 ### Domain Architecture
 
-Each domain (`clinic`, `user`, `patient`) follows Clean Architecture with these layers:
+Each domain (`clinic`, `user`, `patient`, `identifier`, `calendar`) follows Clean Architecture with these layers:
 
 - **`model/`** — pure domain core: structs, value types, domain errors, and repository interfaces. Zero dependencies
   on `usecase/`, `repository/`, or `ent/`.
