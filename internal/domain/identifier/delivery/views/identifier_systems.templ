@@ -234,6 +234,21 @@ templ CheckFieldsPartial(values SystemFormValues) {
 	}
 }
 
+templ systemOption(value string, label string, mask string, selected string) {
+	if value == selected {
+		<option value={ value } selected>{ label }</option>
+	} else {
+		<option value={ value }>{ label }</option>
+	}
+}
+
+func orDash(s string) string {
+	if s == "" {
+		return "—"
+	}
+	return s
+}
+
 func orDef(s string, def string) string {
 	if s == "" {
 		return def

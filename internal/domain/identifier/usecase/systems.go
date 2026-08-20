@@ -1,50 +1,38 @@
-package identifier
+package usecase
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
 
 	"github.com/google/uuid"
+
+	identifiermodel "librevita.org/internal/domain/identifier/model"
 )
 
-// ErrSystemNotFound is returned when the system does not exist.
-var ErrSystemNotFound = errors.New("identifier: system not found")
+// systemURNPrefix is the namespace administrators use when registering
+// a new document system.
+const systemURNPrefix = "urn:librevita:id:"
 
-// SystemInput is the editable definition of a document system.
-type SystemInput struct {
-	System           string
-	DisplayName      string
-	Pattern          string
-	Mask             string
-	Transform        Transform
-	CheckAlgorithm   CheckAlgorithm
-	CheckBaseLen     int
-	CheckDVCount     int
-	CheckStartWeight int
-}
-
-// SystemsService administers identifier_systems.
-type SystemsService struct {
-	repo SystemRepository
-	reg  *Registry
+type systemsService struct {
+	repo identifiermodel.SystemRepository
+	reg  *identifiermodel.Registry
 	log  *slog.Logger
 }
 
-// NewSystemsService is the Fx provider.
-func NewSystemsService(repo SystemRepository, reg *Registry, log *slog.Logger) *SystemsService {
-	return &SystemsService{repo: repo, reg: reg, log: log}
+// NewSystemsService creates a new SystemsService implementation for administering document systems.
+func NewSystemsService(repo identifiermodel.SystemRepository, reg *identifiermodel.Registry, log *slog.Logger) SystemsService {
+	return &systemsService{repo: repo, reg: reg, log: log}
 }
 
 // List returns every system, active and inactive, ordered by URN.
-func (s *SystemsService) List(ctx context.Context) ([]*IdentifierSystem, error) {
+func (s *systemsService) List(ctx context.Context) ([]*identifiermodel.IdentifierSystem, error) {
 	return s.repo.ListAll(ctx)
 }
 
 // SystemByID returns one system, active or inactive.
-func (s *SystemsService) SystemByID(ctx context.Context, id string) (*IdentifierSystem, error) {
+func (s *systemsService) SystemByID(ctx context.Context, id string) (*identifiermodel.IdentifierSystem, error) {
 	uUUID, err := uuid.Parse(id)
 	if err != nil {
 		return nil, fmt.Errorf("identifier: invalid system id: %w", err)
@@ -53,7 +41,7 @@ func (s *SystemsService) SystemByID(ctx context.Context, id string) (*Identifier
 }
 
 // Create registers a new document system.
-func (s *SystemsService) Create(ctx context.Context, createdBy string, in SystemInput) (*IdentifierSystem, error) {
+func (s *systemsService) Create(ctx context.Context, createdBy string, in SystemInput) (*identifiermodel.IdentifierSystem, error) {
 	cfg, err := validateInput(in)
 	if err != nil {
 		return nil, err
@@ -69,7 +57,7 @@ func (s *SystemsService) Create(ctx context.Context, createdBy string, in System
 		cb = &parsed
 	}
 
-	sys := &IdentifierSystem{
+	sys := &identifiermodel.IdentifierSystem{
 		ID:               id,
 		System:           cfg.System,
 		DisplayName:      cfg.DisplayName,
@@ -95,7 +83,7 @@ func (s *SystemsService) Create(ctx context.Context, createdBy string, in System
 }
 
 // Update replaces the definition of an existing system.
-func (s *SystemsService) Update(ctx context.Context, id string, in SystemInput) (*IdentifierSystem, error) {
+func (s *systemsService) Update(ctx context.Context, id string, in SystemInput) (*identifiermodel.IdentifierSystem, error) {
 	cfg, err := validateInput(in)
 	if err != nil {
 		return nil, err
@@ -105,7 +93,7 @@ func (s *SystemsService) Update(ctx context.Context, id string, in SystemInput) 
 		return nil, fmt.Errorf("identifier: invalid system id: %w", err)
 	}
 
-	sys := &IdentifierSystem{
+	sys := &identifiermodel.IdentifierSystem{
 		ID:               uUUID,
 		System:           cfg.System,
 		DisplayName:      cfg.DisplayName,
@@ -129,7 +117,7 @@ func (s *SystemsService) Update(ctx context.Context, id string, in SystemInput) 
 }
 
 // SetActive activates or deactivates a system.
-func (s *SystemsService) SetActive(ctx context.Context, id string, active bool) error {
+func (s *systemsService) SetActive(ctx context.Context, id string, active bool) error {
 	uUUID, err := uuid.Parse(id)
 	if err != nil {
 		return fmt.Errorf("identifier: invalid system id: %w", err)
@@ -141,7 +129,7 @@ func (s *SystemsService) SetActive(ctx context.Context, id string, active bool) 
 }
 
 // reload refreshes the shared registry from the database.
-func (s *SystemsService) reload(ctx context.Context) error {
+func (s *systemsService) reload(ctx context.Context) error {
 	rows, err := s.repo.ListActive(ctx)
 	if err != nil {
 		return fmt.Errorf("identifier: reload systems: %w", err)
@@ -152,8 +140,8 @@ func (s *SystemsService) reload(ctx context.Context) error {
 	return nil
 }
 
-func validateInput(in SystemInput) (SystemConfig, error) {
-	cfg := SystemConfig{
+func validateInput(in SystemInput) (identifiermodel.SystemConfig, error) {
+	cfg := identifiermodel.SystemConfig{
 		System:           strings.TrimSpace(in.System),
 		DisplayName:      strings.TrimSpace(in.DisplayName),
 		Pattern:          strings.TrimSpace(in.Pattern),
@@ -163,17 +151,26 @@ func validateInput(in SystemInput) (SystemConfig, error) {
 		CheckDVCount:     in.CheckDVCount,
 		CheckStartWeight: in.CheckStartWeight,
 	}
-	if err := cfg.validateShape(); err != nil {
-		return SystemConfig{}, &ValidationError{Msg: err.Error()}
+	if err := cfg.ValidateShape(); err != nil {
+		return identifiermodel.SystemConfig{}, &identifiermodel.ValidationError{Msg: err.Error()}
 	}
 	if !strings.HasPrefix(cfg.System, systemURNPrefix) {
-		return SystemConfig{}, &ValidationError{Msg: "system must start with " + systemURNPrefix}
+		return identifiermodel.SystemConfig{}, &identifiermodel.ValidationError{Msg: "system must start with " + systemURNPrefix}
 	}
 	if len(cfg.DisplayName) > 80 {
-		return SystemConfig{}, &ValidationError{Msg: "display name is too long"}
+		return identifiermodel.SystemConfig{}, &identifiermodel.ValidationError{Msg: "display name is too long"}
 	}
-	if _, err := compilePattern(cfg.Pattern); err != nil {
-		return SystemConfig{}, &ValidationError{Msg: "pattern is not a valid regex: " + err.Error()}
+	if _, err := identifiermodel.ParseSystemConfig(&identifiermodel.IdentifierSystem{
+		System:           cfg.System,
+		DisplayName:      cfg.DisplayName,
+		Pattern:          cfg.Pattern,
+		Transform:        cfg.Transform,
+		CheckAlgorithm:   cfg.CheckAlgorithm,
+		CheckBaseLen:     cfg.CheckBaseLen,
+		CheckDVCount:     cfg.CheckDVCount,
+		CheckStartWeight: cfg.CheckStartWeight,
+	}); err != nil {
+		return identifiermodel.SystemConfig{}, &identifiermodel.ValidationError{Msg: "pattern is not a valid regex: " + err.Error()}
 	}
 	return cfg, nil
 }

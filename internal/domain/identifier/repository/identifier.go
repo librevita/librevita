@@ -9,19 +9,19 @@ import (
 	"librevita.org/ent"
 	"librevita.org/ent/patient"
 	"librevita.org/ent/patientidentifier"
-	patientmodel "librevita.org/internal/domain/patient/model"
+	identifiermodel "librevita.org/internal/domain/identifier/model"
 )
 
 type identifierRepository struct {
 	client *ent.Client
 }
 
-// NewIdentifierRepository creates a patient identifier repository adapter.
-func NewIdentifierRepository(client *ent.Client) patientmodel.IdentifierRepository {
+// NewIdentifierRepository creates an identifier repository adapter.
+func NewIdentifierRepository(client *ent.Client) identifiermodel.IdentifierRepository {
 	return &identifierRepository{client: client}
 }
 
-func (r *identifierRepository) Add(ctx context.Context, rec patientmodel.IdentifierRecord) (*patientmodel.IdentifierRecord, error) {
+func (r *identifierRepository) Add(ctx context.Context, rec identifiermodel.IdentifierRecord) (*identifiermodel.IdentifierRecord, error) {
 	create := r.client.PatientIdentifier.Create().
 		SetID(rec.ID).
 		SetPatientID(rec.PatientID).
@@ -36,14 +36,14 @@ func (r *identifierRepository) Add(ctx context.Context, rec patientmodel.Identif
 	saved, err := create.Save(ctx)
 	if err != nil {
 		if ent.IsConstraintError(err) {
-			return nil, patientmodel.ErrDuplicate
+			return nil, identifiermodel.ErrDuplicate
 		}
 		return nil, fmt.Errorf("identifier repository: add: %w", err)
 	}
 	return toIdentifierRecordDomain(saved), nil
 }
 
-func (r *identifierRepository) FindByBlindIndex(ctx context.Context, clinicID uuid.UUID, blindIndex string) (*patientmodel.IdentifierRecord, error) {
+func (r *identifierRepository) FindByBlindIndex(ctx context.Context, clinicID uuid.UUID, blindIndex string) (*identifiermodel.IdentifierRecord, error) {
 	row, err := r.client.PatientIdentifier.Query().
 		Where(
 			patientidentifier.BlindIndexEQ(blindIndex),
@@ -52,14 +52,14 @@ func (r *identifierRepository) FindByBlindIndex(ctx context.Context, clinicID uu
 		Only(ctx)
 	if err != nil {
 		if ent.IsNotFound(err) {
-			return nil, patientmodel.ErrNotFound
+			return nil, identifiermodel.ErrNotFound
 		}
 		return nil, fmt.Errorf("identifier repository: find by blind index: %w", err)
 	}
 	return toIdentifierRecordDomain(row), nil
 }
 
-func (r *identifierRepository) ListByPatient(ctx context.Context, patientID uuid.UUID) ([]patientmodel.IdentifierRecord, error) {
+func (r *identifierRepository) ListByPatient(ctx context.Context, patientID uuid.UUID) ([]identifiermodel.IdentifierRecord, error) {
 	rows, err := r.client.PatientIdentifier.Query().
 		Where(patientidentifier.PatientIDEQ(patientID)).
 		Order(ent.Asc(patientidentifier.FieldCreatedAt)).
@@ -67,14 +67,14 @@ func (r *identifierRepository) ListByPatient(ctx context.Context, patientID uuid
 	if err != nil {
 		return nil, fmt.Errorf("identifier repository: list by patient: %w", err)
 	}
-	out := make([]patientmodel.IdentifierRecord, 0, len(rows))
+	out := make([]identifiermodel.IdentifierRecord, 0, len(rows))
 	for _, row := range rows {
 		out = append(out, *toIdentifierRecordDomain(row))
 	}
 	return out, nil
 }
 
-func (r *identifierRepository) ListByPatients(ctx context.Context, patientIDs []uuid.UUID) ([]patientmodel.IdentifierRecord, error) {
+func (r *identifierRepository) ListByPatients(ctx context.Context, patientIDs []uuid.UUID) ([]identifiermodel.IdentifierRecord, error) {
 	if len(patientIDs) == 0 {
 		return nil, nil
 	}
@@ -84,7 +84,7 @@ func (r *identifierRepository) ListByPatients(ctx context.Context, patientIDs []
 	if err != nil {
 		return nil, fmt.Errorf("identifier repository: list by patients: %w", err)
 	}
-	out := make([]patientmodel.IdentifierRecord, 0, len(rows))
+	out := make([]identifiermodel.IdentifierRecord, 0, len(rows))
 	for _, row := range rows {
 		out = append(out, *toIdentifierRecordDomain(row))
 	}
@@ -102,7 +102,7 @@ func (r *identifierRepository) Remove(ctx context.Context, patientID, identifier
 		return fmt.Errorf("identifier repository: remove: %w", err)
 	}
 	if count == 0 {
-		return patientmodel.ErrNotFound
+		return identifiermodel.ErrNotFound
 	}
 	return nil
 }
@@ -116,11 +116,11 @@ func (r *identifierRepository) PatientExists(ctx context.Context, clinicID, pati
 		Exist(ctx)
 }
 
-func toIdentifierRecordDomain(row *ent.PatientIdentifier) *patientmodel.IdentifierRecord {
+func toIdentifierRecordDomain(row *ent.PatientIdentifier) *identifiermodel.IdentifierRecord {
 	if row == nil {
 		return nil
 	}
-	return &patientmodel.IdentifierRecord{
+	return &identifiermodel.IdentifierRecord{
 		ID:              row.ID,
 		PatientID:       row.PatientID,
 		System:          row.System,

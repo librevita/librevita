@@ -32,7 +32,9 @@ import (
 	"librevita.org/internal/core/vault"
 	clinicrepo "librevita.org/internal/domain/clinic/repository"
 	clinicusecase "librevita.org/internal/domain/clinic/usecase"
-	"librevita.org/internal/domain/patient/identifier"
+	identifiermodel "librevita.org/internal/domain/identifier/model"
+	identifierrepo "librevita.org/internal/domain/identifier/repository"
+	identifierusecase "librevita.org/internal/domain/identifier/usecase"
 	patientrepo "librevita.org/internal/domain/patient/repository"
 	"librevita.org/internal/domain/patient/usecase"
 	"librevita.org/internal/testutil"
@@ -43,10 +45,10 @@ var testAdminID = uuid.MustParse("01990000-0000-7000-8000-00000000000a")
 // newIdentifierServices wires the identifier subsystem against a
 // migrated database: a fixed master key, the registry seeded from the
 // migration rows, and the two services the handlers use.
-func newIdentifierServices(t *testing.T, client *ent.Client, key *crypto.MasterKey, log *slog.Logger) (*identifier.Service, *identifier.SystemsService) {
+func newIdentifierServices(t *testing.T, client *ent.Client, key *crypto.MasterKey, log *slog.Logger) (identifierusecase.Service, identifierusecase.SystemsService) {
 	t.Helper()
-	reg := identifier.NewRegistry()
-	sysRepo := patientrepo.NewSystemRepository(client)
+	reg := identifiermodel.NewRegistry()
+	sysRepo := identifierrepo.NewSystemRepository(client)
 	rows, err := sysRepo.ListActive(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -54,8 +56,8 @@ func newIdentifierServices(t *testing.T, client *ent.Client, key *crypto.MasterK
 	if err := reg.Reload(rows); err != nil {
 		t.Fatal(err)
 	}
-	idRepo := patientrepo.NewIdentifierRepository(client)
-	return identifier.NewService(idRepo, key, reg, log), identifier.NewSystemsService(sysRepo, reg, log)
+	idRepo := identifierrepo.NewIdentifierRepository(client)
+	return identifierusecase.NewService(idRepo, key, reg, log), identifierusecase.NewSystemsService(sysRepo, reg, log)
 }
 
 func newDocEnv(t *testing.T) (*echo.Echo, *auth.SessionManager, *usecase.Service, *storage.FileManager) {

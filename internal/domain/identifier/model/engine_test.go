@@ -1,4 +1,4 @@
-package identifier
+package model
 
 import (
 	"strings"
@@ -22,11 +22,11 @@ func testSystem(system, displayName, pattern string, transform Transform,
 }
 
 // mustConfigured parses a row into a strategy, failing the test.
-func mustConfigured(t *testing.T, row *IdentifierSystem) *configured {
+func mustConfigured(t *testing.T, row *IdentifierSystem) *Configured {
 	t.Helper()
-	c, err := newConfigured(row)
+	c, err := NewConfigured(row)
 	if err != nil {
-		t.Fatalf("newConfigured(%s): %v", row.System, err)
+		t.Fatalf("NewConfigured(%s): %v", row.System, err)
 	}
 	return c
 }
@@ -186,7 +186,7 @@ func TestConfiguredRejectsConfigErrors(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if _, err := newConfigured(tc.row); err == nil {
+			if _, err := NewConfigured(tc.row); err == nil {
 				t.Fatal("expected an error")
 			}
 		})
