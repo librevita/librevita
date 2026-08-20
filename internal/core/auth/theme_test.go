@@ -3,6 +3,8 @@ package auth_test
 import (
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+
 	"librevita.org/internal/core/auth"
 )
 
@@ -11,17 +13,12 @@ import (
 // round-trips.
 func TestUITheme(t *testing.T) {
 	for _, theme := range []auth.UITheme{auth.UIThemeSystem, auth.UIThemeLight, auth.UIThemeDark} {
-		if !theme.Valid() {
-			t.Fatalf("%q must be valid", theme)
-		}
-		if got, ok := auth.ParseUITheme(theme.String()); !ok || got != theme {
-			t.Fatalf("ParseUITheme(%q) = %q, %v; want %q, true", theme.String(), got, ok, theme)
-		}
+		assert.True(t, theme.Valid(), "%q must be valid", theme)
+		got, ok := auth.ParseUITheme(theme.String())
+		assert.True(t, ok)
+		assert.Equal(t, theme, got)
 	}
-	if auth.UITheme("sepia").Valid() {
-		t.Fatal("theme outside the CHECK set must not be valid")
-	}
-	if _, ok := auth.ParseUITheme("sepia"); ok {
-		t.Fatal("ParseUITheme must reject values outside the CHECK set")
-	}
+	assert.False(t, auth.UITheme("sepia").Valid())
+	_, ok := auth.ParseUITheme("sepia")
+	assert.False(t, ok)
 }

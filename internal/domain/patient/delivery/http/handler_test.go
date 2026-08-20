@@ -3,6 +3,8 @@ package http
 import (
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+
 	"librevita.org/internal/core/audit"
 	"librevita.org/internal/domain/patient/usecase"
 )
@@ -38,22 +40,17 @@ func TestPatientChanges(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := patientChanges(before, tc.input); got != tc.want {
-				t.Errorf("patientChanges = %q, want %q", got, tc.want)
-			}
+			assert.Equal(t, tc.want, patientChanges(before, tc.input))
 		})
 	}
 }
 
 func TestDisplayValue(t *testing.T) {
 	short := "abc"
-	if got := displayValue(short); got != short {
-		t.Errorf("displayValue(%q) = %q, want unchanged", short, got)
-	}
+	assert.Equal(t, short, displayValue(short))
+
 	long := "0123456789012345678901234567890123456789X"
-	if got, want := displayValue(long), "0123456789012345678901234567890123456..."; got != want {
-		t.Errorf("displayValue(long) = %q, want %q", got, want)
-	}
+	assert.Equal(t, "0123456789012345678901234567890123456...", displayValue(long))
 }
 
 func TestHistoryText(t *testing.T) {
@@ -97,9 +94,7 @@ func TestHistoryText(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := historyText(tc.ev); got != tc.want {
-				t.Errorf("historyText = %q, want %q", got, tc.want)
-			}
+			assert.Equal(t, tc.want, historyText(tc.ev))
 		})
 	}
 }

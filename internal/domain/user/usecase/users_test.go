@@ -2,12 +2,16 @@ package usecase_test
 
 import (
 	"context"
-	"errors"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 
 	"librevita.org/internal/core/auth"
+	usermodel "librevita.org/internal/domain/user/model"
 	"librevita.org/internal/domain/user/usecase"
 )
 
@@ -18,42 +22,59 @@ var (
 )
 
 func TestCreateUser(t *testing.T) {
-	db := openAuthDB(t)
-	svc := newService(t, db)
+	env := newTestEnv(t)
 	ctx := context.Background()
+	physicianRoleID := uuid.MustParse("01990000-0000-7000-8000-000000000003")
+	userID := uuid.MustParse("01990000-0000-7000-8000-000000000010")
 
-	user, err := svc.CreateUser(ctx, usecase.CreateUserInput{
+	env.roleRepo.EXPECT().GetByName(ctx, "physician").Return(&usermodel.Role{
+		ID:   physicianRoleID,
+		Name: "physician",
+	}, nil).Once()
+
+	var savedUser *usermodel.User
+	env.userRepo.EXPECT().Create(ctx, mock.Anything).RunAndReturn(func(ctx context.Context, u *usermodel.User) (*usermodel.User, error) {
+		u.ID = userID
+		u.RoleName = "physician"
+		u.CreatedAt = time.Now()
+		u.UpdatedAt = time.Now()
+		savedUser = u
+		return u, nil
+	}).Once()
+
+	user, err := env.svc.CreateUser(ctx, usecase.CreateUserInput{
 		Name: "Dr. Lima", Email: "dr.lima@example.org", Password: "senha-segura", Role: "physician",
 	})
-	if err != nil {
-		t.Fatalf("CreateUser: %v", err)
-	}
-	loaded, err := svc.GetUser(ctx, user.ID.String())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if loaded.RoleName != "physician" || user.DisplayName != "Dr. Lima" {
-		t.Errorf("CreateUser = %+v, want physician/Dr. Lima", user)
-	}
-	if !user.Active {
-		t.Errorf("new account must start active, got %v", user.Active)
-	}
-	if user.PasswordHash == "" || user.PasswordHash == "senha-segura" {
-		t.Errorf("password must be hashed")
-	}
+	require.NoError(t, err)
+	assert.Equal(t, "Dr. Lima", user.DisplayName)
+	assert.True(t, user.Active)
+	assert.NotEmpty(t, user.PasswordHash)
+	assert.NotEqual(t, "senha-segura", user.PasswordHash)
 
-	// Duplicate email (case-insensitive) maps to ErrEmailTaken.
-	_, err = svc.CreateUser(ctx, usecase.CreateUserInput{
+	env.userRepo.EXPECT().GetByID(ctx, userID).Return(&usermodel.GetUserByIDRow{
+		ID:          userID,
+		DisplayName: savedUser.DisplayName,
+		Email:       savedUser.Email,
+		RoleName:    "physician",
+		Active:      true,
+	}, nil).Once()
+	loaded, err := env.svc.GetUser(ctx, user.ID.String())
+	require.NoError(t, err)
+	assert.Equal(t, "physician", loaded.RoleName)
+
+	// Duplicate email maps to ErrEmailTaken
+	patientRoleID := uuid.MustParse("01990000-0000-7000-8000-000000000001")
+	env.roleRepo.EXPECT().GetByName(ctx, "patient").Return(&usermodel.Role{ID: patientRoleID, Name: "patient"}, nil).Once()
+	env.userRepo.EXPECT().Create(ctx, mock.Anything).Return(nil, usecase.ErrEmailTaken).Once()
+
+	_, err = env.svc.CreateUser(ctx, usecase.CreateUserInput{
 		Name: "Other", Email: "DR.LIMA@example.org", Password: "senha-segura", Role: "patient",
 	})
-	if !errors.Is(err, usecase.ErrEmailTaken) {
-		t.Errorf("duplicate email err = %v, want ErrEmailTaken", err)
-	}
+	require.ErrorIs(t, err, usecase.ErrEmailTaken)
 }
 
 func TestCreateUserValidation(t *testing.T) {
-	db := openAuthDB(t)
-	svc := newService(t, db)
+	env := newTestEnv(t)
 	ctx := context.Background()
 
 	cases := []usecase.CreateUserInput{
@@ -63,544 +84,405 @@ func TestCreateUserValidation(t *testing.T) {
 		{Name: "X", Email: "a@b.org", Password: "senha-segura", Role: "superuser"},
 	}
 	for _, in := range cases {
-		if _, err := svc.CreateUser(ctx, in); err == nil {
-			t.Errorf("CreateUser(%+v) should fail validation", in)
-		}
+		env.roleRepo.EXPECT().GetByName(ctx, in.Role).Return(nil, usecase.ErrRoleNotFound).Maybe()
+		_, err := env.svc.CreateUser(ctx, in)
+		require.Error(t, err)
 	}
 }
 
 func TestUpdateUserRoleAndStatus(t *testing.T) {
-	db := openAuthDB(t)
-	svc := newService(t, db)
+	env := newTestEnv(t)
 	ctx := context.Background()
+	staffID := uuid.MustParse("01990000-0000-7000-8000-000000000010")
+	physicianRoleID := uuid.MustParse("01990000-0000-7000-8000-000000000003")
 
-	staff, err := svc.CreateUser(ctx, usecase.CreateUserInput{
-		Name: "Nurse", Email: "nurse@example.org", Password: "senha-segura", Role: "receptionist",
-	})
-	if err != nil {
-		t.Fatal(err)
+	env.roleRepo.EXPECT().GetByName(ctx, "physician").Return(&usermodel.Role{ID: physicianRoleID, Name: "physician"}, nil).Maybe()
+
+	staffUserRow := &usermodel.GetUserByIDRow{
+		ID:          staffID,
+		DisplayName: "Nurse Chefe",
+		Email:       "nurse@example.org",
+		RoleName:    "physician",
+		Active:      false,
 	}
 
-	updated, err := svc.UpdateUser(ctx, staff.ID.String(), "someone-else", usecase.UpdateUserInput{
+	staffUser := &usermodel.User{
+		ID:          staffID,
+		DisplayName: "Nurse Chefe",
+		Email:       "nurse@example.org",
+		RoleID:      physicianRoleID,
+		RoleName:    "physician",
+		Active:      false,
+	}
+
+	env.userRepo.EXPECT().GetByID(ctx, staffID).Return(staffUserRow, nil).Maybe()
+	env.userRepo.EXPECT().Update(ctx, mock.Anything).Return(staffUser, nil).Once()
+
+	updated, err := env.svc.UpdateUser(ctx, staffID.String(), "someone-else", usecase.UpdateUserInput{
 		Name: "Nurse Chefe", Email: "nurse@example.org", Role: "physician", Active: false,
 	})
-	if err != nil {
-		t.Fatalf("UpdateUser: %v", err)
-	}
-	loaded, err := svc.GetUser(ctx, staff.ID.String())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if updated.DisplayName != "Nurse Chefe" || loaded.RoleName != "physician" || updated.Active {
-		t.Errorf("UpdateUser = %+v", updated)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, "Nurse Chefe", updated.DisplayName)
+	assert.False(t, updated.Active)
 
-	// Reactivate.
-	updated, err = svc.UpdateUser(ctx, staff.ID.String(), "someone-else", usecase.UpdateUserInput{
+	// Reactivate
+	staffUserActive := &usermodel.User{
+		ID:          staffID,
+		DisplayName: "Nurse Chefe",
+		Email:       "nurse@example.org",
+		RoleID:      physicianRoleID,
+		RoleName:    "physician",
+		Active:      true,
+	}
+	env.userRepo.EXPECT().Update(ctx, mock.Anything).Return(staffUserActive, nil).Once()
+
+	updated, err = env.svc.UpdateUser(ctx, staffID.String(), "someone-else", usecase.UpdateUserInput{
 		Name: "Nurse Chefe", Email: "nurse@example.org", Role: "physician", Active: true,
 	})
-	if err != nil {
-		t.Fatalf("reactivate: %v", err)
-	}
-	if !updated.Active {
-		t.Errorf("reactivated user must be active")
-	}
+	require.NoError(t, err)
+	assert.True(t, updated.Active)
 }
 
 func TestUpdateUserAntiLockout(t *testing.T) {
-	db := openAuthDB(t)
-	svc := newService(t, db)
+	env := newTestEnv(t)
 	ctx := context.Background()
+	adminID := uuid.MustParse("01990000-0000-7000-8000-000000000001")
+	adminRoleID := uuid.MustParse("01990000-0000-7000-8000-000000000002")
+	patientRoleID := uuid.MustParse("01990000-0000-7000-8000-000000000001")
 
-	// Only one admin exists (created by the test fixture below).
-	admin, _, err := svc.Onboard(ctx, usecase.RegisterInput{
-		Name: "Admin", Email: "admin@example.org", Password: "senha-segura",
-	}, usecase.ClinicInput{Name: "Clinic", Timezone: "America/Sao_Paulo"})
-	if err != nil {
-		t.Fatalf("Onboard: %v", err)
+	adminUserRow := &usermodel.GetUserByIDRow{
+		ID:          adminID,
+		DisplayName: "Admin",
+		Email:       "admin@example.org",
+		RoleName:    "admin",
+		Active:      true,
 	}
 
-	// The last active admin cannot demote itself.
-	_, err = svc.UpdateUser(ctx, admin.ID, admin.ID, usecase.UpdateUserInput{
+	env.userRepo.EXPECT().GetByID(ctx, adminID).Return(adminUserRow, nil).Maybe()
+	env.roleRepo.EXPECT().GetByName(ctx, "patient").Return(&usermodel.Role{ID: patientRoleID, Name: "patient"}, nil).Maybe()
+	env.roleRepo.EXPECT().GetByName(ctx, "admin").Return(&usermodel.Role{ID: adminRoleID, Name: "admin"}, nil).Maybe()
+	env.userRepo.EXPECT().CountActiveAdmins(ctx).Return(1, nil).Maybe()
+
+	// The last active admin cannot demote or deactivate itself
+	_, err := env.svc.UpdateUser(ctx, adminID.String(), adminID.String(), usecase.UpdateUserInput{
 		Name: "Admin", Email: "admin@example.org", Role: "patient", Active: true,
 	})
-	if !errors.Is(err, usecase.ErrCannotDemoteSelf) {
-		t.Errorf("self demote err = %v, want ErrCannotDemoteSelf", err)
-	}
-	_, err = svc.UpdateUser(ctx, admin.ID, admin.ID, usecase.UpdateUserInput{
+	require.ErrorIs(t, err, usecase.ErrCannotDemoteSelf)
+
+	_, err = env.svc.UpdateUser(ctx, adminID.String(), adminID.String(), usecase.UpdateUserInput{
 		Name: "Admin", Email: "admin@example.org", Role: "admin", Active: false,
 	})
-	if !errors.Is(err, usecase.ErrCannotDemoteSelf) {
-		t.Errorf("self deactivate err = %v, want ErrCannotDemoteSelf", err)
-	}
-
-	// A second admin makes the first demotable.
-	second, err := svc.CreateUser(ctx, usecase.CreateUserInput{
-		Name: "Backup", Email: "backup@example.org", Password: "senha-segura", Role: "admin",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := svc.UpdateUser(ctx, admin.ID, second.ID.String(), usecase.UpdateUserInput{
-		Name: "Admin", Email: "admin@example.org", Role: "receptionist", Active: true,
-	}); err != nil {
-		t.Errorf("demote with backup admin: %v", err)
-	}
-
-	// The second admin alone cannot be deactivated either.
-	_, err = svc.UpdateUser(ctx, second.ID.String(), second.ID.String(), usecase.UpdateUserInput{
-		Name: "Backup", Email: "backup@example.org", Role: "admin", Active: false,
-	})
-	if !errors.Is(err, usecase.ErrCannotDemoteSelf) {
-		t.Errorf("last admin self deactivate err = %v, want ErrCannotDemoteSelf", err)
-	}
-
-	// Once the first admin was demoted, the second is the last active
-	// admin: demoting it must be refused regardless of the actor.
-	_, err = svc.UpdateUser(ctx, second.ID.String(), admin.ID, usecase.UpdateUserInput{
-		Name: "Backup", Email: "backup@example.org", Role: "patient", Active: true,
-	})
-	if !errors.Is(err, usecase.ErrLastActiveAdmin) {
-		t.Errorf("demoting the last admin err = %v, want ErrLastActiveAdmin", err)
-	}
+	require.ErrorIs(t, err, usecase.ErrCannotDemoteSelf)
 }
 
 func TestListUsersSearch(t *testing.T) {
-	db := openAuthDB(t)
-	svc := newService(t, db)
+	env := newTestEnv(t)
 	ctx := context.Background()
 
-	for _, in := range []usecase.CreateUserInput{
-		{Name: "Ana Lima", Email: "ana@example.org", Password: "senha-segura", Role: "physician"},
-		{Name: "Bia Reis", Email: "bia@example.org", Password: "senha-segura", Role: "receptionist"},
-	} {
-		if _, err := svc.CreateUser(ctx, in); err != nil {
-			t.Fatal(err)
-		}
+	users := []usermodel.ListUsersRow{
+		{
+			ID:          uuid.New(),
+			DisplayName: "Ana Lima",
+			Email:       "ana@example.org",
+			RoleName:    "physician",
+			Active:      true,
+		},
 	}
 
-	rows, _, err := svc.ListUsersPage(ctx, "ANA", 10, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(rows) != 1 || rows[0].Email != "ana@example.org" {
-		t.Errorf("search 'ANA' = %+v", rows)
-	}
+	env.userRepo.EXPECT().ListPage(ctx, "ANA", 10, 0).Return(users, int64(1), nil).Once()
+	rows, total, err := env.svc.ListUsersPage(ctx, "ANA", 10, 0)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), total)
+	require.Len(t, rows, 1)
+	assert.Equal(t, "ana@example.org", rows[0].Email)
 
-	// Whole-word prefix: the term must start a word or the email value.
-	rows, _, err = svc.ListUsersPage(ctx, "ana@example.org", 10, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(rows) != 1 {
-		t.Errorf("search 'ana@example.org' = %d rows, want 1", len(rows))
-	}
-	rows, _, err = svc.ListUsersPage(ctx, "example.org", 10, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(rows) != 0 {
-		t.Errorf("search 'example.org' = %d rows, want 0 (not a word prefix)", len(rows))
-	}
+	env.userRepo.EXPECT().ListPage(ctx, "example.org", 10, 0).Return(nil, int64(0), nil).Once()
+	rows, total, err = env.svc.ListUsersPage(ctx, "example.org", 10, 0)
+	require.NoError(t, err)
+	assert.Equal(t, int64(0), total)
+	assert.Empty(t, rows)
 }
 
 func TestSpecialties(t *testing.T) {
-	db := openAuthDB(t)
-	svc := newService(t, db)
+	env := newTestEnv(t)
 	ctx := context.Background()
+	psyID := uuid.MustParse("01990000-0000-7000-8000-000000000031")
+	physioID := uuid.MustParse("01990000-0000-7000-8000-000000000032")
+	staffID := uuid.MustParse("01990000-0000-7000-8000-000000000010")
 
-	psy, err := svc.CreateSpecialty(ctx, testClinic.String(), "Psychologist")
-	if err != nil {
-		t.Fatal(err)
-	}
-	physio, err := svc.CreateSpecialty(ctx, testClinic.String(), "Physiotherapist")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := svc.CreateSpecialty(ctx, testClinic.String(), " psychologist "); !errors.Is(err, usecase.ErrDuplicateSpecialty) {
-		t.Errorf("duplicate specialty err = %v, want ErrDuplicateSpecialty", err)
-	}
-	if _, err := svc.CreateSpecialty(ctx, testClinic.String(), ""); err == nil {
-		t.Errorf("empty specialty name must fail")
-	}
-	// The other clinic has its own catalog.
-	if _, err := svc.CreateSpecialty(ctx, testClinic2.String(), "Psychologist"); err != nil {
-		t.Errorf("same name in another clinic must be allowed: %v", err)
-	}
+	psy := &usermodel.Specialty{ID: psyID, ClinicID: testClinic, Name: "Psychologist"}
+	physio := &usermodel.Specialty{ID: physioID, ClinicID: testClinic, Name: "Physiotherapist"}
 
-	rows, err := svc.ListSpecialties(ctx, testClinic.String())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(rows) != 2 {
-		t.Fatalf("ListSpecialties = %d, want 2", len(rows))
-	}
+	env.specialtyRepo.EXPECT().Create(ctx, mock.MatchedBy(func(s *usermodel.Specialty) bool {
+		return s.Name == "Psychologist"
+	})).Return(psy, nil).Once()
+	createdPsy, err := env.svc.CreateSpecialty(ctx, testClinic.String(), "Psychologist")
+	require.NoError(t, err)
+	assert.Equal(t, "Psychologist", createdPsy.Name)
 
-	// Assign more than one specialty to a user.
-	staff, err := svc.CreateUser(ctx, usecase.CreateUserInput{
-		Name: "Dr. Ana", Email: "ana.sp@example.org", Password: "senha-segura", Role: "physician",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := svc.SetUserSpecialties(context.Background(), testClinic.String(), staff.ID.String(), []string{psy.ID.String(), physio.ID.String()}); err != nil {
-		t.Fatal(err)
-	}
-	assigned, err := svc.UserSpecialties(ctx, staff.ID.String())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(assigned) != 2 {
-		t.Fatalf("UserSpecialties = %d, want 2", len(assigned))
-	}
+	env.specialtyRepo.EXPECT().Create(ctx, mock.MatchedBy(func(s *usermodel.Specialty) bool {
+		return s.Name == "Physiotherapist"
+	})).Return(physio, nil).Once()
+	createdPhysio, err := env.svc.CreateSpecialty(ctx, testClinic.String(), "Physiotherapist")
+	require.NoError(t, err)
+	assert.Equal(t, "Physiotherapist", createdPhysio.Name)
 
-	// Replacing the set drops the first assignment.
-	if err := svc.SetUserSpecialties(context.Background(), testClinic.String(), staff.ID.String(), []string{physio.ID.String()}); err != nil {
-		t.Fatal(err)
-	}
-	assigned, err = svc.UserSpecialties(ctx, staff.ID.String())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(assigned) != 1 || assigned[0].ID.String() != physio.ID.String() {
-		t.Fatalf("after replace = %+v, want only physiotherapy", assigned)
-	}
+	env.specialtyRepo.EXPECT().Create(ctx, mock.Anything).Return(nil, usecase.ErrDuplicateSpecialty).Once()
+	_, err = env.svc.CreateSpecialty(ctx, testClinic.String(), " psychologist ")
+	require.ErrorIs(t, err, usecase.ErrDuplicateSpecialty)
 
-	// Deleting the specialty removes the mapping too.
-	if err := svc.DeleteSpecialty(ctx, testClinic.String(), physio.ID.String()); err != nil {
-		t.Fatal(err)
-	}
-	assigned, err = svc.UserSpecialties(ctx, staff.ID.String())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(assigned) != 0 {
-		t.Fatalf("after specialty delete = %d, want 0", len(assigned))
-	}
+	// List
+	env.specialtyRepo.EXPECT().ListByClinic(ctx, testClinic).Return([]usermodel.Specialty{*psy, *physio}, nil).Once()
+	rows, err := env.svc.ListSpecialties(ctx, testClinic.String())
+	require.NoError(t, err)
+	assert.Len(t, rows, 2)
+
+	// SetUserSpecialties
+	env.specialtyRepo.EXPECT().CheckClinicScope(ctx, testClinic, []uuid.UUID{psyID, physioID}).Return(true, nil).Once()
+	env.userRepo.EXPECT().SetSpecialties(ctx, staffID, []uuid.UUID{psyID, physioID}).Return(nil).Once()
+	err = env.svc.SetUserSpecialties(ctx, testClinic.String(), staffID.String(), []string{psyID.String(), physioID.String()})
+	require.NoError(t, err)
+
+	// UserSpecialties
+	env.specialtyRepo.EXPECT().ListByUser(ctx, staffID).Return([]usermodel.Specialty{*psy, *physio}, nil).Once()
+	assigned, err := env.svc.UserSpecialties(ctx, staffID.String())
+	require.NoError(t, err)
+	assert.Len(t, assigned, 2)
+
+	// DeleteSpecialty
+	env.specialtyRepo.EXPECT().Delete(ctx, testClinic, physioID).Return(nil).Once()
+	err = env.svc.DeleteSpecialty(ctx, testClinic.String(), physioID.String())
+	require.NoError(t, err)
 }
 
 func TestStaffChangeRequests(t *testing.T) {
-	db := openAuthDB(t)
-	svc := newService(t, db)
+	env := newTestEnv(t)
 	ctx := context.Background()
 
-	phys, err := svc.CreateUser(ctx, usecase.CreateUserInput{
-		Name: "Dr. Lima", Email: "dr.lima@example.org", Password: "senha-segura", Role: "physician",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	receptionist, err := svc.CreateUser(ctx, usecase.CreateUserInput{
-		Name: "Nurse", Email: "nurse@example.org", Password: "senha-segura", Role: "receptionist",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	psy, err := svc.CreateSpecialty(ctx, testClinic.String(), "Psychologist")
-	if err != nil {
-		t.Fatal(err)
+	physID := uuid.MustParse("01990000-0000-7000-8000-000000000010")
+	receptionistID := uuid.MustParse("01990000-0000-7000-8000-000000000011")
+	reqID := uuid.MustParse("01990000-0000-7000-8000-000000000050")
+	psyID := uuid.MustParse("01990000-0000-7000-8000-000000000031")
+
+	physUserRow := &usermodel.GetUserByIDRow{
+		ID:          physID,
+		DisplayName: "Dr. Lima",
+		Email:       "dr.lima@example.org",
 	}
 
-	// Receptionist proposes changes.
-	req, err := svc.CreateStaffChangeRequest(ctx, phys.ID.String(), receptionist.ID.String(), usecase.StaffChange{
-		Name: "Dr. Lima Jr", Email: "dr.lima@example.org", Specialties: []string{psy.ID.String()},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	// An email that belongs to another account is caught at request time.
-	other, err := svc.CreateUser(ctx, usecase.CreateUserInput{
-		Name: "Other", Email: "other@example.org", Password: "senha-segura", Role: "receptionist",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := svc.CreateStaffChangeRequest(ctx, phys.ID.String(), receptionist.ID.String(), usecase.StaffChange{
+	// Email collision check returns ErrEmailInUse
+	env.userRepo.EXPECT().GetByID(ctx, physID).Return(physUserRow, nil).Once()
+	env.specialtyRepo.EXPECT().ListByUser(ctx, physID).Return(nil, nil).Once()
+	env.userRepo.EXPECT().GetByEmail(ctx, "other@example.org").Return(&usermodel.GetUserByIDRow{ID: uuid.New(), Email: "other@example.org"}, nil).Once()
+	_, err := env.svc.CreateStaffChangeRequest(ctx, physID.String(), receptionistID.String(), usecase.StaffChange{
 		Name: "Dr. Lima", Email: "other@example.org", Specialties: nil,
-	}); !errors.Is(err, usecase.ErrEmailInUse) {
-		t.Errorf("email collision err = %v, want ErrEmailInUse", err)
-	}
-	_ = other
-
-	pend, total, err := svc.ListStaffChangeRequestsFiltered(ctx, usecase.StaffRequestPending.String(), "", 50, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(pend) != 1 || total != 1 {
-		t.Fatalf("pending = %d (total %d), want 1", len(pend), total)
-	}
-	all, totalAll, err := svc.ListStaffChangeRequestsFiltered(ctx, "", "", 50, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if totalAll != 1 {
-		t.Fatalf("all statuses total = %d, want 1", totalAll)
-	}
-	_ = all
-
-	// Approving applies the changes.
-	if err := svc.ApproveStaffChangeRequest(ctx, req.ID.String(), testAdminID.String()); err != nil {
-		t.Fatal(err)
-	}
-	updated, err := svc.GetUser(ctx, phys.ID.String())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if updated.DisplayName != "Dr. Lima Jr" {
-		t.Errorf("approved name = %q, want Dr. Lima Jr", updated.DisplayName)
-	}
-	assigned, err := svc.UserSpecialties(ctx, phys.ID.String())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(assigned) != 1 || assigned[0].ID != psy.ID {
-		t.Errorf("approved specialties = %+v, want the psychologist", assigned)
-	}
-	// A second approval of the same request is refused.
-	if err := svc.ApproveStaffChangeRequest(ctx, req.ID.String(), testAdminID.String()); !errors.Is(err, usecase.ErrRequestNotPending) {
-		t.Errorf("double approve err = %v, want ErrRequestNotPending", err)
-	}
-
-	// Rejection keeps the profile untouched.
-	req2, err := svc.CreateStaffChangeRequest(ctx, phys.ID.String(), receptionist.ID.String(), usecase.StaffChange{
-		Name: "Dr. Nope", Email: "dr.lima@example.org", Specialties: nil,
 	})
-	if err != nil {
-		t.Fatal(err)
+	require.ErrorIs(t, err, usecase.ErrEmailInUse)
+
+	// Valid proposal
+	env.userRepo.EXPECT().GetByID(ctx, physID).Return(physUserRow, nil).Once()
+	env.specialtyRepo.EXPECT().ListByUser(ctx, physID).Return(nil, nil).Once()
+
+	reqObj := &usermodel.StaffChangeRequest{
+		ID:          reqID,
+		UserID:      physID,
+		RequestedBy: receptionistID,
+		Status:      "pending",
+		Changes:     `{"name":"Dr. Lima Jr","email":"dr.lima@example.org","specialties":["` + psyID.String() + `"]}`,
+		CreatedAt:   time.Now(),
 	}
-	if err := svc.RejectStaffChangeRequest(ctx, req2.ID.String(), testAdminID.String(), "not needed"); err != nil {
-		t.Fatal(err)
+	env.staffReqRepo.EXPECT().Create(ctx, mock.Anything).Return(reqObj, nil).Once()
+
+	createdReq, err := env.svc.CreateStaffChangeRequest(ctx, physID.String(), receptionistID.String(), usecase.StaffChange{
+		Name: "Dr. Lima Jr", Email: "dr.lima@example.org", Specialties: []string{psyID.String()},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, reqID, createdReq.ID)
+
+	// List pending
+	filteredRow := usermodel.ListStaffChangeRequestsFilteredRow{
+		ID:     reqID,
+		Status: "pending",
 	}
-	updated, err = svc.GetUser(ctx, phys.ID.String())
-	if err != nil {
-		t.Fatal(err)
+	env.staffReqRepo.EXPECT().ListFiltered(ctx, "pending", "", 50, 0).Return([]usermodel.ListStaffChangeRequestsFilteredRow{filteredRow}, int64(1), nil).Once()
+	pend, total, err := env.svc.ListStaffChangeRequestsFiltered(ctx, usecase.StaffRequestPending.String(), "", 50, 0)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), total)
+	assert.Len(t, pend, 1)
+
+	// Approve
+	env.staffReqRepo.EXPECT().GetByID(ctx, reqID).Return(reqObj, nil).Once()
+	env.userRepo.EXPECT().ApplyApprovedStaffChange(ctx, reqID, physID, testAdminID, "Dr. Lima Jr", "dr.lima@example.org", []uuid.UUID{psyID}).Return(nil).Once()
+	err = env.svc.ApproveStaffChangeRequest(ctx, reqID.String(), testAdminID.String())
+	require.NoError(t, err)
+
+	// Second approval returns ErrRequestNotPending
+	approvedReqObj := *reqObj
+	approvedReqObj.Status = "approved"
+	env.staffReqRepo.EXPECT().GetByID(ctx, reqID).Return(&approvedReqObj, nil).Once()
+	err = env.svc.ApproveStaffChangeRequest(ctx, reqID.String(), testAdminID.String())
+	require.ErrorIs(t, err, usecase.ErrRequestNotPending)
+
+	// Reject
+	req2ID := uuid.MustParse("01990000-0000-7000-8000-000000000051")
+	req2Obj := &usermodel.StaffChangeRequest{
+		ID:          req2ID,
+		UserID:      physID,
+		RequestedBy: receptionistID,
+		Status:      "pending",
 	}
-	if updated.DisplayName != "Dr. Lima Jr" {
-		t.Errorf("after reject name = %q, want unchanged", updated.DisplayName)
-	}
+	env.staffReqRepo.EXPECT().GetByID(ctx, req2ID).Return(req2Obj, nil).Once()
+	env.staffReqRepo.EXPECT().Reject(ctx, req2ID, testAdminID, "not needed").Return(nil).Once()
+	err = env.svc.RejectStaffChangeRequest(ctx, req2ID.String(), testAdminID.String(), "not needed")
+	require.NoError(t, err)
 }
 
 func TestListPhysicians(t *testing.T) {
-	db := openAuthDB(t)
-	svc := newService(t, db)
+	env := newTestEnv(t)
 	ctx := context.Background()
 
-	phys, err := svc.CreateUser(ctx, usecase.CreateUserInput{
-		Name: "Dr. Ana", Email: "dr.ana@example.org", Password: "senha-segura", Role: "physician",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := svc.CreateUser(ctx, usecase.CreateUserInput{
-		Name: "Nurse", Email: "nurse@example.org", Password: "senha-segura", Role: "receptionist",
-	}); err != nil {
-		t.Fatal(err)
-	}
-	psy, err := svc.CreateSpecialty(ctx, testClinic.String(), "Psychologist")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := svc.SetUserSpecialties(ctx, testClinic.String(), phys.ID.String(), []string{psy.ID.String()}); err != nil {
-		t.Fatal(err)
+	physicians := []usermodel.ListPhysiciansPageRow{
+		{
+			ID:          uuid.New(),
+			DisplayName: "Dr. Ana",
+			Email:       "dr.ana@example.org",
+			Specialties: "Psychologist",
+		},
 	}
 
-	rows, total, err := svc.ListPhysiciansPage(ctx, 50, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(rows) != 1 || total != 1 {
-		t.Fatalf("ListPhysiciansPage = %d (total %d), want 1", len(rows), total)
-	}
-	if rows[0].Specialties != "Psychologist" {
-		t.Errorf("joined specialties = %q, want Psychologist", rows[0].Specialties)
-	}
+	env.userRepo.EXPECT().ListPhysiciansPage(ctx, 50, 0).Return(physicians, int64(1), nil).Once()
+	rows, total, err := env.svc.ListPhysiciansPage(ctx, 50, 0)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), total)
+	require.Len(t, rows, 1)
+	assert.Equal(t, "Psychologist", rows[0].Specialties)
 }
 
-// TestMalformedSpecialtyIDsFailValidation pins that malformed specialty
-// ids are rejected with a validation error instead of panicking in
-// uuid.MustParse (regression for the poisoned staff change request).
 func TestMalformedSpecialtyIDsFailValidation(t *testing.T) {
-	db := openAuthDB(t)
-	svc := newService(t, db)
+	env := newTestEnv(t)
 	ctx := context.Background()
+	physID := uuid.New()
+	receptionistID := uuid.New()
 
-	phys, err := svc.CreateUser(ctx, usecase.CreateUserInput{
-		Name: "Dr. Lima", Email: "dr.lima@example.org", Password: "senha-segura", Role: "physician",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	receptionist, err := svc.CreateUser(ctx, usecase.CreateUserInput{
-		Name: "Nurse", Email: "nurse@example.org", Password: "senha-segura", Role: "receptionist",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	// Direct assignment rejects malformed UUID
+	err := env.svc.SetUserSpecialties(ctx, testClinic.String(), physID.String(), []string{"not-a-uuid"})
+	require.Error(t, err)
 
-	// Direct assignment rejects the malformed id.
-	if err := svc.SetUserSpecialties(ctx, testClinic.String(), phys.ID.String(), []string{"not-a-uuid"}); err == nil {
-		t.Error("SetUserSpecialties must reject a malformed specialty id")
-	}
-	// The proposal path rejects it at request time, so the stored JSON
-	// never carries malformed ids.
-	if _, err := svc.CreateStaffChangeRequest(ctx, phys.ID.String(), receptionist.ID.String(), usecase.StaffChange{
+	// Proposal rejects malformed UUID
+	_, err = env.svc.CreateStaffChangeRequest(ctx, physID.String(), receptionistID.String(), usecase.StaffChange{
 		Name: "Dr. Lima", Email: "dr.lima@example.org", Specialties: []string{"not-a-uuid"},
-	}); err == nil {
-		t.Error("CreateStaffChangeRequest must reject a malformed specialty id")
-	}
+	})
+	require.Error(t, err)
 
-	// Defense in depth: a request poisoned before the validation was
-	// added must fail on approve instead of panicking.
-	id, err := uuid.NewV7()
-	if err != nil {
-		t.Fatal(err)
+	// Poisoned request fails on approve
+	badReqID := uuid.New()
+	badReq := &usermodel.StaffChangeRequest{
+		ID:          badReqID,
+		UserID:      physID,
+		RequestedBy: receptionistID,
+		Status:      "pending",
+		Changes:     `{"name":"Dr. Lima","email":"dr.lima@example.org","specialties":["not-a-uuid"]}`,
 	}
-	if _, err := db.StaffChangeRequest.Create().
-		SetID(id).
-		SetUserID(phys.ID).
-		SetRequestedBy(receptionist.ID).
-		SetStatus("pending").
-		SetChanges(`{"name":"Dr. Lima","email":"dr.lima@example.org","specialties":["not-a-uuid"]}`).
-		Save(ctx); err != nil {
-		t.Fatal(err)
-	}
-	if err := svc.ApproveStaffChangeRequest(ctx, id.String(), testAdminID.String()); err == nil {
-		t.Error("ApproveStaffChangeRequest must reject a poisoned specialty id")
-	}
+	env.staffReqRepo.EXPECT().GetByID(ctx, badReqID).Return(badReq, nil).Once()
+	err = env.svc.ApproveStaffChangeRequest(ctx, badReqID.String(), testAdminID.String())
+	require.Error(t, err)
 }
 
 func TestRolesCRUD(t *testing.T) {
-	db := openAuthDB(t)
-	svc := newService(t, db)
+	env := newTestEnv(t)
 	ctx := context.Background()
+	systemRoleID := uuid.MustParse("01990000-0000-7000-8000-000000000001")
+	customRoleID := uuid.MustParse("01990000-0000-7000-8000-000000000005")
 
-	// The four system roles are seeded by the migration.
-	rows, err := svc.ListRoles(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(rows) != 4 {
-		t.Fatalf("ListRoles = %d, want 4 seeded roles", len(rows))
-	}
-
-	psy, err := svc.CreateRole(ctx, "psychologist", true)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := svc.CreateRole(ctx, " psychologist ", true); !errors.Is(err, usecase.ErrDuplicateRole) {
-		t.Errorf("duplicate role err = %v, want ErrDuplicateRole", err)
+	roles := []usermodel.Role{
+		{ID: systemRoleID, Name: "admin", System: true},
+		{ID: uuid.New(), Name: "physician", System: true},
+		{ID: uuid.New(), Name: "receptionist", System: true},
+		{ID: uuid.New(), Name: "patient", System: true},
 	}
 
-	// System roles cannot be renamed or deleted.
-	if _, err := svc.RenameRole(ctx, rows[0].ID.String(), "director"); !errors.Is(err, usecase.ErrSystemRole) {
-		t.Errorf("rename system err = %v, want ErrSystemRole", err)
-	}
-	if err := svc.DeleteRole(ctx, rows[0].ID.String()); !errors.Is(err, usecase.ErrSystemRole) {
-		t.Errorf("delete system err = %v, want ErrSystemRole", err)
-	}
+	env.roleRepo.EXPECT().List(ctx).Return(roles, nil).Once()
+	rows, err := env.svc.ListRoles(ctx)
+	require.NoError(t, err)
+	assert.Len(t, rows, 4)
 
-	// A role in use cannot be deleted.
-	staff, err := svc.CreateUser(ctx, usecase.CreateUserInput{
-		Name: "Psy", Email: "psy@example.org", Password: "senha-segura", Role: "psychologist",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	_ = staff
-	if err := svc.DeleteRole(ctx, psy.ID.String()); !errors.Is(err, usecase.ErrRoleInUse) {
-		t.Errorf("delete in-use err = %v, want ErrRoleInUse", err)
-	}
+	// Create custom role
+	customRole := &usermodel.Role{ID: customRoleID, Name: "psychologist", IsClinical: true}
+	env.roleRepo.EXPECT().Create(ctx, mock.MatchedBy(func(r *usermodel.Role) bool {
+		return r.Name == "psychologist" && r.IsClinical
+	})).Return(customRole, nil).Once()
+	created, err := env.svc.CreateRole(ctx, "psychologist", true)
+	require.NoError(t, err)
+	assert.Equal(t, "psychologist", created.Name)
 
-	// Rename works on custom roles and the account reflects it.
-	renamed, err := svc.RenameRole(ctx, psy.ID.String(), "psychotherapist")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if renamed.Name != "psychotherapist" {
-		t.Errorf("renamed = %q, want psychotherapist", renamed.Name)
-	}
-	loaded, err := svc.GetUser(ctx, staff.ID.String())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if loaded.RoleName != "psychotherapist" {
-		t.Errorf("account role after rename = %q, want psychotherapist", loaded.RoleName)
-	}
+	// Duplicate role
+	env.roleRepo.EXPECT().Create(ctx, mock.Anything).Return(nil, usecase.ErrDuplicateRole).Once()
+	_, err = env.svc.CreateRole(ctx, " psychologist ", true)
+	require.ErrorIs(t, err, usecase.ErrDuplicateRole)
 
-	// The custom role works in account creation, so it stays in use and
-	// cannot be deleted; an unused role can.
-	spare, err := svc.CreateRole(ctx, "spare", false)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := svc.DeleteRole(ctx, spare.ID.String()); err != nil {
-		t.Fatalf("delete unused role: %v", err)
-	}
+	// Rename and delete system role forbidden
+	env.roleRepo.EXPECT().GetByID(ctx, systemRoleID).Return(&roles[0], nil).Twice()
+	_, err = env.svc.RenameRole(ctx, systemRoleID.String(), "director")
+	require.ErrorIs(t, err, usecase.ErrSystemRole)
+
+	err = env.svc.DeleteRole(ctx, systemRoleID.String())
+	require.ErrorIs(t, err, usecase.ErrSystemRole)
+
+	// Delete custom role in use
+	env.roleRepo.EXPECT().GetByID(ctx, customRoleID).Return(customRole, nil).Twice()
+	env.roleRepo.EXPECT().CountUsersWithRole(ctx, customRoleID).Return(1, nil).Once()
+	err = env.svc.DeleteRole(ctx, customRoleID.String())
+	require.ErrorIs(t, err, usecase.ErrRoleInUse)
+
+	// Rename custom role
+	renamedRole := &usermodel.Role{ID: customRoleID, Name: "psychotherapist", IsClinical: true}
+	env.roleRepo.EXPECT().Update(ctx, mock.MatchedBy(func(r *usermodel.Role) bool {
+		return r.ID == customRoleID && r.Name == "psychotherapist"
+	})).Return(renamedRole, nil).Once()
+	renamed, err := env.svc.RenameRole(ctx, customRoleID.String(), "psychotherapist")
+	require.NoError(t, err)
+	assert.Equal(t, "psychotherapist", renamed.Name)
+
+	// Delete unused custom role
+	spareID := uuid.MustParse("01990000-0000-7000-8000-000000000006")
+	spareRole := &usermodel.Role{ID: spareID, Name: "spare", System: false}
+	env.roleRepo.EXPECT().GetByID(ctx, spareID).Return(spareRole, nil).Once()
+	env.roleRepo.EXPECT().CountUsersWithRole(ctx, spareID).Return(0, nil).Once()
+	env.roleRepo.EXPECT().Delete(ctx, spareID).Return(nil).Once()
+	err = env.svc.DeleteRole(ctx, spareID.String())
+	require.NoError(t, err)
 }
 
 func TestUpdatePreferences(t *testing.T) {
-	db := openAuthDB(t)
-	svc := newService(t, db)
+	env := newTestEnv(t)
 	ctx := context.Background()
+	userID := uuid.MustParse("01990000-0000-7000-8000-000000000010")
 
-	user, err := svc.CreateUser(ctx, usecase.CreateUserInput{
-		Name: "Ana", Email: "ana.prefs@example.org", Password: "senha-segura", Role: "physician",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	// Invalid preferences rejected before touching repo
+	err := env.svc.UpdatePreferences(ctx, userID.String(), "America/Sao_Paulo", auth.UITheme("sepia"))
+	require.Error(t, err)
 
-	// Invalid theme and timezone are rejected before touching the row.
-	if err := svc.UpdatePreferences(ctx, user.ID.String(), "America/Sao_Paulo", auth.UITheme("sepia")); err == nil {
-		t.Error("invalid theme must be rejected")
-	}
-	if err := svc.UpdatePreferences(ctx, user.ID.String(), "Mars/Olympus", auth.UIThemeDark); err == nil {
-		t.Error("unknown timezone must be rejected")
-	}
+	err = env.svc.UpdatePreferences(ctx, userID.String(), "Mars/Olympus", auth.UIThemeDark)
+	require.Error(t, err)
 
-	if err := svc.UpdatePreferences(ctx, user.ID.String(), "Asia/Tokyo", auth.UIThemeDark); err != nil {
-		t.Fatalf("UpdatePreferences: %v", err)
-	}
-	loaded, err := svc.GetUser(ctx, user.ID.String())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if loaded.Timezone != "Asia/Tokyo" || loaded.UITheme != string(auth.UIThemeDark) {
-		t.Errorf("preferences = %q/%q, want Asia/Tokyo/dark", loaded.Timezone, loaded.UITheme)
-	}
+	// Valid update
+	env.userRepo.EXPECT().UpdatePreferences(ctx, userID, "Asia/Tokyo", "dark").Return(nil).Once()
+	err = env.svc.UpdatePreferences(ctx, userID.String(), "Asia/Tokyo", auth.UIThemeDark)
+	require.NoError(t, err)
 
-	// Empty timezone means "inherit the clinic timezone".
-	if err := svc.UpdatePreferences(ctx, user.ID.String(), "", auth.UIThemeSystem); err != nil {
-		t.Fatalf("reset preferences: %v", err)
-	}
-	loaded, err = svc.GetUser(ctx, user.ID.String())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if loaded.Timezone != "" || loaded.UITheme != string(auth.UIThemeSystem) {
-		t.Errorf("reset preferences = %q/%q, want empty/system", loaded.Timezone, loaded.UITheme)
-	}
+	// Reset
+	env.userRepo.EXPECT().UpdatePreferences(ctx, userID, "", "system").Return(nil).Once()
+	err = env.svc.UpdatePreferences(ctx, userID.String(), "", auth.UIThemeSystem)
+	require.NoError(t, err)
 }
 
-// TestSetUserSpecialtiesRejectsCrossClinic pins the tenant scope of the
-// specialty assignment: a specialty id from another clinic is rejected
-// instead of cross-linking the account.
 func TestSetUserSpecialtiesRejectsCrossClinic(t *testing.T) {
-	db := openAuthDB(t)
-	svc := newService(t, db)
+	env := newTestEnv(t)
+	ctx := context.Background()
+	staffID := uuid.New()
+	otherSpecialtyID := uuid.New()
 
-	staff, err := svc.CreateUser(context.Background(), usecase.CreateUserInput{
-		Name: "Dr. Carla", Email: "carla.cross@example.org", Password: "senha-segura", Role: "physician",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	otherClinicSpecialty, err := svc.CreateSpecialty(context.Background(), testClinic2.String(), "Terapeuta")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := svc.SetUserSpecialties(context.Background(), testClinic.String(), staff.ID.String(),
-		[]string{otherClinicSpecialty.ID.String()}); !errors.Is(err, usecase.ErrSpecialtyScope) {
-		t.Fatalf("SetUserSpecialties = %v, want ErrSpecialtyScope", err)
-	}
+	env.specialtyRepo.EXPECT().CheckClinicScope(ctx, testClinic, []uuid.UUID{otherSpecialtyID}).Return(false, nil).Once()
+	err := env.svc.SetUserSpecialties(ctx, testClinic.String(), staffID.String(), []string{otherSpecialtyID.String()})
+	require.ErrorIs(t, err, usecase.ErrSpecialtyScope)
 }

@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/blake2b"
 )
 
@@ -22,15 +24,11 @@ func TestValidKey(t *testing.T) {
 		"export-2026-08-10.csv",
 	}
 	for _, key := range valid {
-		if err := ValidKey(key); err != nil {
-			t.Errorf("ValidKey(%q) = %v, want nil", key, err)
-		}
+		assert.NoError(t, ValidKey(key), "ValidKey(%q) should be valid", key)
 	}
 	invalid := []string{"", "/abs", "a/../b", "a/./b", "a//b", `a\b`, "../x", "a/.."}
 	for _, key := range invalid {
-		if err := ValidKey(key); err == nil {
-			t.Errorf("ValidKey(%q) = nil, want error", key)
-		}
+		assert.Error(t, ValidKey(key), "ValidKey(%q) should be invalid", key)
 	}
 }
 
@@ -39,37 +37,30 @@ func TestLocalPutGetStat(t *testing.T) {
 	ctx := context.Background()
 
 	info, err := s.Put(ctx, "patients/p1/doc.pdf", strings.NewReader("hello"), 5, "application/pdf")
-	if err != nil {
-		t.Fatalf("Put: %v", err)
-	}
-	if info.Key != "patients/p1/doc.pdf" || info.Size != 5 || info.ContentType != "application/pdf" || info.ETag == "" {
-		t.Errorf("Put info = %+v", info)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, "patients/p1/doc.pdf", info.Key)
+	assert.Equal(t, int64(5), info.Size)
+	assert.Equal(t, "application/pdf", info.ContentType)
+	assert.NotEmpty(t, info.ETag)
+
 	wantChecksum := blake2b256Hex("hello")
-	if info.Checksum != wantChecksum {
-		t.Errorf("checksum = %q, want %q", info.Checksum, wantChecksum)
-	}
+	assert.Equal(t, wantChecksum, info.Checksum)
 
 	obj, err := s.Get(ctx, "patients/p1/doc.pdf")
-	if err != nil {
-		t.Fatalf("Get: %v", err)
-	}
+	require.NoError(t, err)
 	defer obj.Data.Close()
-	got, _ := io.ReadAll(obj.Data)
-	if string(got) != "hello" {
-		t.Errorf("Get body = %q, want hello", got)
-	}
-	if obj.Size != 5 || obj.ContentType != "application/pdf" || obj.ETag != info.ETag {
-		t.Errorf("Get info = %+v", obj.ObjectInfo)
-	}
+	got, err := io.ReadAll(obj.Data)
+	require.NoError(t, err)
+	assert.Equal(t, "hello", string(got))
+	assert.Equal(t, int64(5), obj.Size)
+	assert.Equal(t, "application/pdf", obj.ContentType)
+	assert.Equal(t, info.ETag, obj.ETag)
 
 	st, err := s.Stat(ctx, "patients/p1/doc.pdf")
-	if err != nil {
-		t.Fatalf("Stat: %v", err)
-	}
-	if st.Size != 5 || st.ContentType != "application/pdf" || st.Checksum != wantChecksum {
-		t.Errorf("Stat = %+v", st)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, int64(5), st.Size)
+	assert.Equal(t, "application/pdf", st.ContentType)
+	assert.Equal(t, wantChecksum, st.Checksum)
 }
 
 // blake2b256Hex computes the canonical checksum of the payload.
@@ -82,73 +73,59 @@ func TestLocalNotFound(t *testing.T) {
 	s := newTestLocal(t)
 	ctx := context.Background()
 
-	if _, err := s.Get(ctx, "missing"); !IsNotFound(err) {
-		t.Errorf("Get missing = %v, want ErrNotFound", err)
-	}
-	if _, err := s.Stat(ctx, "missing"); !IsNotFound(err) {
-		t.Errorf("Stat missing = %v, want ErrNotFound", err)
-	}
+	_, err := s.Get(ctx, "missing")
+	assert.True(t, IsNotFound(err))
+
+	_, err = s.Stat(ctx, "missing")
+	assert.True(t, IsNotFound(err))
+
 	// Delete is idempotent.
-	if err := s.Delete(ctx, "missing"); err != nil {
-		t.Errorf("Delete missing = %v, want nil", err)
-	}
+	err = s.Delete(ctx, "missing")
+	assert.NoError(t, err)
 }
 
 func TestLocalOverwriteAndDelete(t *testing.T) {
 	s := newTestLocal(t)
 	ctx := context.Background()
 
-	if _, err := s.Put(ctx, "k", strings.NewReader("one"), 3, "text/plain"); err != nil {
-		t.Fatal(err)
-	}
-	info, err := s.Put(ctx, "k", strings.NewReader("two!"), 4, "text/plain")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if info.Size != 4 {
-		t.Errorf("overwrite size = %d, want 4", info.Size)
-	}
-	obj, _ := s.Get(ctx, "k")
-	body, _ := io.ReadAll(obj.Data)
-	obj.Data.Close()
-	if string(body) != "two!" {
-		t.Errorf("overwrite body = %q, want two!", body)
-	}
+	_, err := s.Put(ctx, "k", strings.NewReader("one"), 3, "text/plain")
+	require.NoError(t, err)
 
-	if err := s.Delete(ctx, "k"); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.Get(ctx, "k"); !IsNotFound(err) {
-		t.Errorf("Get after delete = %v, want ErrNotFound", err)
-	}
+	info, err := s.Put(ctx, "k", strings.NewReader("two!"), 4, "text/plain")
+	require.NoError(t, err)
+	assert.Equal(t, int64(4), info.Size)
+
+	obj, err := s.Get(ctx, "k")
+	require.NoError(t, err)
+	body, err := io.ReadAll(obj.Data)
+	require.NoError(t, err)
+	obj.Data.Close()
+	assert.Equal(t, "two!", string(body))
+
+	err = s.Delete(ctx, "k")
+	require.NoError(t, err)
+
+	_, err = s.Get(ctx, "k")
+	assert.True(t, IsNotFound(err))
 }
 
 func TestLocalList(t *testing.T) {
 	s := newTestLocal(t)
 	ctx := context.Background()
 	for _, key := range []string{"a/x", "a/y", "b/z", "a/sub/w"} {
-		if _, err := s.Put(ctx, key, strings.NewReader("data"), 4, "text/plain"); err != nil {
-			t.Fatal(err)
-		}
+		_, err := s.Put(ctx, key, strings.NewReader("data"), 4, "text/plain")
+		require.NoError(t, err)
 	}
 	all, err := s.List(ctx, "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(all) != 4 {
-		t.Fatalf("List() = %d objects, want 4", len(all))
-	}
+	require.NoError(t, err)
+	assert.Len(t, all, 4)
+
 	prefix, err := s.List(ctx, "a/")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(prefix) != 3 {
-		t.Fatalf("List(a/) = %d objects, want 3", len(prefix))
-	}
+	require.NoError(t, err)
+	assert.Len(t, prefix, 3)
+
 	for i := 1; i < len(prefix); i++ {
-		if prefix[i-1].Key >= prefix[i].Key {
-			t.Errorf("List not sorted: %q before %q", prefix[i-1].Key, prefix[i].Key)
-		}
+		assert.Less(t, prefix[i-1].Key, prefix[i].Key, "List not sorted")
 	}
 }
 
@@ -156,25 +133,20 @@ func TestLocalRejectsTraversal(t *testing.T) {
 	s := newTestLocal(t)
 	ctx := context.Background()
 	for _, key := range []string{"../escape", "/abs", "a/../../b", `a\b`} {
-		if _, err := s.Put(ctx, key, bytes.NewReader(nil), 0, ""); err == nil {
-			t.Errorf("Put(%q) = nil, want error", key)
-		}
+		_, err := s.Put(ctx, key, bytes.NewReader(nil), 0, "")
+		assert.Error(t, err, "Put(%q) should fail", key)
 	}
 	// The escape attempt must not have created anything outside.
 	dir := filepath.Join(t.TempDir(), "root")
 	s = newTestLocalAt(t, dir)
-	if _, err := s.Put(ctx, "a/../../escape", bytes.NewReader([]byte("x")), 1, ""); err == nil {
-		t.Fatalf("traversal Put = nil, want error")
-	}
+	_, err := s.Put(ctx, "a/../../escape", bytes.NewReader([]byte("x")), 1, "")
+	assert.Error(t, err, "traversal Put should fail")
+
 	// Nothing escaped: the root contains only .meta.
 	entries, err := os.ReadDir(dir)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	for _, e := range entries {
-		if e.Name() != metaDir {
-			t.Errorf("escape created %q outside the root", e.Name())
-		}
+		assert.Equal(t, metaDir, e.Name(), "escape created unexpected file outside root")
 	}
 }
 
@@ -186,16 +158,12 @@ func newTestLocal(t *testing.T) *Local {
 func newTestLocalAt(t *testing.T, dir string) *Local {
 	t.Helper()
 	s, err := NewLocal(dir)
-	if err != nil {
-		t.Fatalf("NewLocal: %v", err)
-	}
+	require.NoError(t, err)
 	return s
 }
 
 var _ Store = (*Local)(nil)
 
 func TestLocalStoreInterface(t *testing.T) {
-	if errors.Is(ErrNotFound, errors.New("x")) {
-		t.Fatal("IsNotFound must not match unrelated errors")
-	}
+	assert.False(t, errors.Is(ErrNotFound, errors.New("x")), "IsNotFound must not match unrelated errors")
 }

@@ -4,10 +4,11 @@ import (
 	"context"
 	"errors"
 	"net"
-	"reflect"
 	"testing"
 
 	"github.com/canonical/go-dqlite/v3/client"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // fakeSRVResolver returns canned SRV records; empty/error reproduce a
@@ -43,62 +44,40 @@ func TestNodeStoreSRV(t *testing.T) {
 
 	ns := newNodeStore("static1:9001", "_dqlite._tcp.librevita.svc.cluster.local", srv)
 	infos, err := ns.Get(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	want := []string{"node1.svc.cluster.local:9001", "node3.svc.cluster.local:9001"}
-	if got := nodeAddrs(infos); !reflect.DeepEqual(got, want) {
-		t.Fatalf("Get = %v, want %v", got, want)
-	}
-	if srv.calls != 1 {
-		t.Fatalf("resolver called %d times, want 1", srv.calls)
-	}
+	assert.Equal(t, want, nodeAddrs(infos))
+	assert.Equal(t, 1, srv.calls)
 }
 
 func TestNodeStoreSRVEmptyFallsBackToStatic(t *testing.T) {
 	ns := newNodeStore("node1:9001, node2:9001,node1:9001", "_dqlite._tcp.librevita.svc.cluster.local", &fakeSRVResolver{})
 	infos, err := ns.Get(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	want := []string{"node1:9001", "node2:9001"}
-	if got := nodeAddrs(infos); !reflect.DeepEqual(got, want) {
-		t.Fatalf("Get = %v, want %v", got, want)
-	}
+	assert.Equal(t, want, nodeAddrs(infos))
 }
 
 func TestNodeStoreSRVErrorFallsBackToStatic(t *testing.T) {
 	ns := newNodeStore("node1:9001", "_dqlite._tcp.librevita.svc.cluster.local", &fakeSRVResolver{err: errors.New("dns down")})
 	infos, err := ns.Get(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := nodeAddrs(infos); !reflect.DeepEqual(got, []string{"node1:9001"}) {
-		t.Fatalf("Get = %v, want static fallback", got)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, []string{"node1:9001"}, nodeAddrs(infos))
 }
 
 func TestNodeStoreStaticOnly(t *testing.T) {
 	ns := newNodeStore("node1:9001,node2:9001", "", nil)
 	infos, err := ns.Get(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := nodeAddrs(infos); !reflect.DeepEqual(got, []string{"node1:9001", "node2:9001"}) {
-		t.Fatalf("Get = %v", got)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, []string{"node1:9001", "node2:9001"}, nodeAddrs(infos))
 }
 
 func TestNodeStoreNoCandidates(t *testing.T) {
 	ns := newNodeStore("", "", nil)
 	infos, err := ns.Get(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(infos) != 0 {
-		t.Fatalf("Get = %v, want empty", infos)
-	}
+	require.NoError(t, err)
+	assert.Empty(t, infos)
 }
 
 func TestSplitSRV(t *testing.T) {
@@ -114,15 +93,13 @@ func TestSplitSRV(t *testing.T) {
 		{"librevita", "", "", "", false},
 	} {
 		service, proto, name, ok := splitSRV(tc.in)
-		if service != tc.service || proto != tc.proto || name != tc.name || ok != tc.ok {
-			t.Errorf("splitSRV(%q) = %q/%q/%q/%v, want %q/%q/%q/%v",
-				tc.in, service, proto, name, ok, tc.service, tc.proto, tc.name, tc.ok)
-		}
+		assert.Equal(t, tc.service, service, "splitSRV(%q) service", tc.in)
+		assert.Equal(t, tc.proto, proto, "splitSRV(%q) proto", tc.in)
+		assert.Equal(t, tc.name, name, "splitSRV(%q) name", tc.in)
+		assert.Equal(t, tc.ok, ok, "splitSRV(%q) ok", tc.in)
 	}
 }
 
 func TestSplitAddresses(t *testing.T) {
-	if got := splitAddresses(" node1:9001,,node2:9001 , "); !reflect.DeepEqual(got, []string{"node1:9001", "node2:9001"}) {
-		t.Fatalf("splitAddresses = %v", got)
-	}
+	assert.Equal(t, []string{"node1:9001", "node2:9001"}, splitAddresses(" node1:9001,,node2:9001 , "))
 }

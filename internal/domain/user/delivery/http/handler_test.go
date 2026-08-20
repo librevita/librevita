@@ -2,137 +2,121 @@ package http_test
 
 import (
 	"context"
-	"database/sql"
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"testing"
 
-	"entgo.io/ent/dialect"
-	entsql "entgo.io/ent/dialect/sql"
-	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
-	_ "modernc.org/sqlite"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 
-	"librevita.org/ent"
 	"librevita.org/internal/core/audit"
 	"librevita.org/internal/core/auth"
 	"librevita.org/internal/core/config"
-	"librevita.org/internal/core/crypto"
-	"librevita.org/internal/core/database"
 	"librevita.org/internal/core/policy"
-	"librevita.org/internal/core/storage"
-	"librevita.org/internal/core/vault"
-	clinicrepo "librevita.org/internal/domain/clinic/repository"
 	clinicusecase "librevita.org/internal/domain/clinic/usecase"
-	patientrepo "librevita.org/internal/domain/patient/repository"
-	patientusecase "librevita.org/internal/domain/patient/usecase"
 	httphandler "librevita.org/internal/domain/user/delivery/http"
-	userrepo "librevita.org/internal/domain/user/repository"
 	"librevita.org/internal/domain/user/usecase"
+	auditmocks "librevita.org/tests/mocks/core/audit"
+	authmocks "librevita.org/tests/mocks/core/auth"
+	policymocks "librevita.org/tests/mocks/core/policy"
+	storagemocks "librevita.org/tests/mocks/core/storage"
+	clinicmocks "librevita.org/tests/mocks/domain/clinic/model"
+	patientmocks "librevita.org/tests/mocks/domain/patient/model"
+	usermocks "librevita.org/tests/mocks/domain/user/model"
 )
 
-func openHandlerDB(t *testing.T) (*sql.DB, *ent.Client) {
-	t.Helper()
-	db, err := sql.Open("sqlite", "file:handler-test-"+uuid.NewString()+"?mode=memory&cache=shared")
-	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
-	}
-	db.SetMaxOpenConns(1)
-	t.Cleanup(func() { db.Close() })
-
-	if err := database.Migrate(context.Background(), db, slog.New(slog.DiscardHandler)); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
-
-	drv := entsql.OpenDB(dialect.SQLite, db)
-	client := ent.NewClient(ent.Driver(drv))
-	t.Cleanup(func() { client.Close() })
-
-	return db, client
+type userHandlerTestEnv struct {
+	handler     *httphandler.Handler
+	sessions    *auth.SessionManager
+	sessionRepo *authmocks.MockSessionRepository
+	setupRepo   *usermocks.MockSetupRepository
+	svc         *usecase.Service
 }
 
-func newHandler(t *testing.T, client *ent.Client) (*httphandler.Handler, *auth.SessionManager, *usecase.Service) {
+func newUserHandlerEnv(t *testing.T) *userHandlerTestEnv {
 	t.Helper()
 	log := slog.New(slog.DiscardHandler)
-	sessions, err := auth.NewSessionManager(auth.NewSessionRepository(client), &config.Config{Mode: "development"}, log)
-	if err != nil {
-		t.Fatal(err)
-	}
-	auditLogger, err := audit.NewLogger(audit.NewAuditRepository(client), log)
-	if err != nil {
-		t.Fatal(err)
-	}
 
-	userRepo := userrepo.NewUserRepository(client)
-	roleRepo := userrepo.NewRoleRepository(client)
-	specialtyRepo := userrepo.NewSpecialtyRepository(client)
-	staffReqRepo := userrepo.NewStaffRequestRepository(client)
-	setupRepo := userrepo.NewSetupRepository(client)
+	sessionRepo := authmocks.NewMockSessionRepository(t)
+	sessionRepo.EXPECT().CleanupExpired(mock.Anything, mock.Anything).Return(nil).Maybe()
+	sessionRepo.EXPECT().Create(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
+
+	sessions, err := auth.NewSessionManager(sessionRepo, &config.Config{Mode: "development"}, log)
+	require.NoError(t, err)
+
+	auditRepo := auditmocks.NewMockRepository(t)
+	auditRepo.EXPECT().LastSignature(mock.Anything).Return("", nil).Maybe()
+	auditRepo.EXPECT().Record(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
+	auditLogger, err := audit.NewLogger(auditRepo, log)
+	require.NoError(t, err)
+
+	userRepo := usermocks.NewMockUserRepository(t)
+	roleRepo := usermocks.NewMockRoleRepository(t)
+	specialtyRepo := usermocks.NewMockSpecialtyRepository(t)
+	staffReqRepo := usermocks.NewMockStaffRequestRepository(t)
+	setupRepo := usermocks.NewMockSetupRepository(t)
 
 	svc := usecase.NewService(userRepo, roleRepo, specialtyRepo, staffReqRepo, setupRepo, sessions, auditLogger, log)
 	csrf := auth.NewCSRF(&config.Config{Mode: "development"})
-	policies, err := policy.NewPolicyEngine(policy.NewPolicyRepository(client), log)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := policies.Load(context.Background()); err != nil {
-		t.Fatal(err)
-	}
 
-	v, err := vault.NewBBoltVault(filepath.Join(t.TempDir(), "keys.db"))
-	if err != nil {
-		t.Fatal(err)
+	policyRepo := policymocks.NewMockRepository(t)
+	policyRepo.EXPECT().SeedDefaults(mock.Anything, mock.Anything).Return(nil).Maybe()
+	var defaultRows []policy.PolicyRow
+	for name, expr := range policy.DefaultPolicies {
+		defaultRows = append(defaultRows, policy.PolicyRow{
+			Name:       name,
+			Expression: expr,
+		})
 	}
-	t.Cleanup(func() { _ = v.Close() })
+	policyRepo.EXPECT().List(mock.Anything).Return(defaultRows, nil).Maybe()
+	policies, err := policy.NewPolicyEngine(policyRepo, log)
+	require.NoError(t, err)
+	require.NoError(t, policies.Load(context.Background()))
 
-	engine, err := crypto.NewEngine("nAmIvOXVc0vb6M9G7P9q2j2yK1WxP3sJ8q5dR4tU6wA=", v)
-	if err != nil {
-		t.Fatal(err)
+	patientRepo := patientmocks.NewMockPatientRepository(t)
+	patientSvc := usecase.NewService(userRepo, roleRepo, specialtyRepo, staffReqRepo, setupRepo, sessions, auditLogger, log)
+	_ = patientRepo
+	_ = patientSvc
+
+	clinicRepo := clinicmocks.NewMockRepository(t)
+	clocks := clinicusecase.NewClockProvider(clinicRepo)
+
+	fileStore := storagemocks.NewMockStore(t)
+	fileIndex := storagemocks.NewMockIndexRepository(t)
+	_ = fileStore
+	_ = fileIndex
+
+	h := httphandler.NewHandler(svc, nil, csrf, sessions, policies, auditLogger, clocks, nil, log)
+	return &userHandlerTestEnv{
+		handler:     h,
+		sessions:    sessions,
+		sessionRepo: sessionRepo,
+		setupRepo:   setupRepo,
+		svc:         svc,
 	}
-
-	patientSvc := patientusecase.NewService(patientrepo.NewPatientRepository(client), engine, log, policies)
-	files := mustFileManager(t, client)
-	h := httphandler.NewHandler(svc, patientSvc, csrf, sessions, policies, auditLogger, clinicusecase.NewClockProvider(clinicrepo.NewClinicRepository(client)), files, slog.New(slog.DiscardHandler))
-	return h, sessions, svc
 }
 
 func TestLogoutSurfacesRevocationFailure(t *testing.T) {
-	db, client := openHandlerDB(t)
-	h, sessions, _ := newHandler(t, client)
+	env := newUserHandlerEnv(t)
 
-	token, err := sessions.Create(context.Background(), auth.Principal{
+	token, err := env.sessions.Create(context.Background(), auth.Principal{
 		ID: "01990000-0000-7000-8000-000000000001", Email: "ana@example.org", Name: "Ana", Role: auth.RoleAdmin,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
-	db.Close() // Simulate a database outage during logout.
+	// Simulate database failure during session deletion
+	env.sessionRepo.EXPECT().Delete(mock.Anything, mock.Anything).Return(errors.New("db outage")).Once()
 
 	e := echo.New()
 	req := httptest.NewRequest(http.MethodPost, "/auth/logout", nil)
-	req.AddCookie(sessions.Cookie(token))
+	req.AddCookie(env.sessions.Cookie(token))
 	rec := httptest.NewRecorder()
 	c := e.NewContext(req, rec)
 
-	err = h.Logout(c)
-	if err == nil {
-		t.Fatal("Logout must return an error when revocation fails")
-	}
-}
-
-// mustFileManager builds a FileManager over a temp local store.
-func mustFileManager(t *testing.T, client *ent.Client) *storage.FileManager {
-	t.Helper()
-	s, err := storage.NewLocal(t.TempDir())
-	if err != nil {
-		t.Fatal(err)
-	}
-	fm, err := storage.NewFileManager(storage.NewIndexRepository(client), s, slog.New(slog.DiscardHandler))
-	if err != nil {
-		t.Fatal(err)
-	}
-	return fm
+	err = env.handler.Logout(c)
+	assert.Error(t, err, "Logout must return an error when revocation fails")
 }

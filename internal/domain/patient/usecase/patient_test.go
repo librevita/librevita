@@ -2,78 +2,31 @@ package usecase_test
 
 import (
 	"context"
-	"database/sql"
-	"errors"
 	"log/slog"
-	"path/filepath"
 	"testing"
+	"time"
 
-	"entgo.io/ent/dialect"
-	entsql "entgo.io/ent/dialect/sql"
 	"github.com/google/uuid"
-	_ "modernc.org/sqlite"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 
-	"librevita.org/ent"
 	"librevita.org/internal/core/auth"
 	"librevita.org/internal/core/crypto"
-	"librevita.org/internal/core/database"
 	"librevita.org/internal/core/policy"
-	"librevita.org/internal/core/vault"
 	patientmodel "librevita.org/internal/domain/patient/model"
-	"librevita.org/internal/domain/patient/repository"
 	"librevita.org/internal/domain/patient/usecase"
-	"librevita.org/internal/testutil"
+	cryptomocks "librevita.org/tests/mocks/core/crypto"
+	policymocks "librevita.org/tests/mocks/core/policy"
+	patientmocks "librevita.org/tests/mocks/domain/patient/model"
 )
-
-func openDB(t *testing.T) *ent.Client {
-	t.Helper()
-	name := "patient-test-" + uuid.NewString()
-	db, err := sql.Open("sqlite", "file:"+name+"?mode=memory&cache=shared")
-	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
-	}
-	db.SetMaxOpenConns(1)
-	t.Cleanup(func() { db.Close() })
-
-	if err := database.Migrate(context.Background(), db, slog.New(slog.DiscardHandler)); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
-
-	drv := entsql.OpenDB(dialect.SQLite, db)
-	client := ent.NewClient(ent.Driver(drv))
-	t.Cleanup(func() { client.Close() })
-	return client
-}
-
-func newService(t *testing.T, client *ent.Client) *usecase.Service {
-	t.Helper()
-	v, err := vault.NewBBoltVault(filepath.Join(t.TempDir(), "keys.db"))
-	if err != nil {
-		t.Fatalf("bbolt vault: %v", err)
-	}
-	t.Cleanup(func() { _ = v.Close() })
-
-	engine, err := crypto.NewEngine("nAmIvOXVc0vb6M9G7P9q2j2yK1WxP3sJ8q5dR4tU6wA=", v)
-	if err != nil {
-		t.Fatalf("master key: %v", err)
-	}
-
-	policies, err := policy.NewPolicyEngine(policy.NewPolicyRepository(client), slog.New(slog.DiscardHandler))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := policies.Load(context.Background()); err != nil {
-		t.Fatal(err)
-	}
-	repo := repository.NewPatientRepository(client)
-	return usecase.NewService(repo, engine, slog.New(slog.DiscardHandler), policies)
-}
 
 var (
 	testClinicID = uuid.MustParse("00000000-0000-0000-0000-000000000001")
 	testUserID   = uuid.MustParse("00000000-0000-0000-0000-000000000002")
 	missingID    = uuid.MustParse("00000000-0000-0000-0000-00000000ffff")
 	ghostID      = uuid.MustParse("00000000-0000-0000-0000-00000000fffe")
+	testKeyB64   = "nAmIvOXVc0vb6M9G7P9q2j2yK1WxP3sJ8q5dR4tU6wA="
 )
 
 func uuidStrPtrTest(u *uuid.UUID) *string {
@@ -103,30 +56,76 @@ func validInput() usecase.PatientInput {
 	}
 }
 
+func setupPatientTest(t *testing.T) (
+	*patientmocks.MockPatientRepository,
+	*cryptomocks.MockKeyVault,
+	*usecase.Service,
+) {
+	t.Helper()
+	vaultMock := cryptomocks.NewMockKeyVault(t)
+	deks := make(map[string][]byte)
+	vaultMock.EXPECT().GetDEK(mock.Anything, mock.Anything).RunAndReturn(func(ctx context.Context, urn string) ([]byte, error) {
+		if dek, ok := deks[urn]; ok {
+			return dek, nil
+		}
+		return nil, crypto.ErrKeyNotFound
+	}).Maybe()
+	vaultMock.EXPECT().PutDEK(mock.Anything, mock.Anything, mock.Anything).RunAndReturn(func(ctx context.Context, urn string, dek []byte) error {
+		deks[urn] = dek
+		return nil
+	}).Maybe()
+
+	engine, err := crypto.NewEngine(testKeyB64, vaultMock)
+	require.NoError(t, err)
+
+	policyRepoMock := policymocks.NewMockRepository(t)
+	policyRepoMock.EXPECT().SeedDefaults(mock.Anything, mock.Anything).Return(nil).Maybe()
+	var defaultRows []policy.PolicyRow
+	for name, expr := range policy.DefaultPolicies {
+		defaultRows = append(defaultRows, policy.PolicyRow{
+			Name:       name,
+			Expression: expr,
+		})
+	}
+	policyRepoMock.EXPECT().List(mock.Anything).Return(defaultRows, nil).Maybe()
+
+	policies, err := policy.NewPolicyEngine(policyRepoMock, slog.New(slog.DiscardHandler))
+	require.NoError(t, err)
+	require.NoError(t, policies.Load(context.Background()))
+
+	repoMock := patientmocks.NewMockPatientRepository(t)
+	svc := usecase.NewService(repoMock, engine, slog.New(slog.DiscardHandler), policies)
+
+	return repoMock, vaultMock, svc
+}
+
 func TestCreateAndGet(t *testing.T) {
-	client := openDB(t)
-	svc := newService(t, client)
+	repoMock, _, svc := setupPatientTest(t)
+
+	var savedRecord patientmodel.PatientRecord
+	repoMock.EXPECT().Create(mock.Anything, mock.MatchedBy(func(rec patientmodel.PatientRecord) bool {
+		return rec.ClinicID == testClinicID && rec.BlindIndex != "" && len(rec.EncryptedPayload) > 0
+	})).RunAndReturn(func(ctx context.Context, rec patientmodel.PatientRecord) (*patientmodel.PatientRecord, error) {
+		rec.CreatedAt = time.Now()
+		rec.UpdatedAt = time.Now()
+		savedRecord = rec
+		return &rec, nil
+	}).Once()
 
 	pt, err := svc.Create(context.Background(), testClinicID.String(), testUserID.String(), validInput())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if pt.ID == uuid.Nil || pt.Status != patientmodel.PatientStatusActive {
-		t.Fatalf("created patient = %+v, want id and active status", pt)
-	}
+	require.NoError(t, err)
+	assert.NotEqual(t, uuid.Nil, pt.ID)
+	assert.Equal(t, patientmodel.PatientStatusActive, pt.Status)
+
+	repoMock.EXPECT().Get(mock.Anything, testClinicID, pt.ID).Return(&savedRecord, nil).Once()
 
 	got, err := svc.Get(context.Background(), testClinicID.String(), pt.ID.String())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got.DisplayName != "Maria Oliveira" {
-		t.Fatalf("Get = %+v", got)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, "Maria Oliveira", got.DisplayName)
 }
 
 func TestCreateValidation(t *testing.T) {
-	client := openDB(t)
-	svc := newService(t, client)
+	_, _, svc := setupPatientTest(t)
 
 	cases := []struct {
 		name   string
@@ -142,189 +141,235 @@ func TestCreateValidation(t *testing.T) {
 			in := validInput()
 			tc.mutate(&in)
 			_, err := svc.Create(context.Background(), testClinicID.String(), testUserID.String(), in)
+			require.Error(t, err)
 			var v *usecase.ValidationError
-			if !errors.As(err, &v) {
-				t.Fatalf("Create = %v, want ValidationError", err)
-			}
+			require.ErrorAs(t, err, &v)
 		})
 	}
 }
 
 func TestUpdate(t *testing.T) {
-	client := openDB(t)
-	svc := newService(t, client)
+	repoMock, _, svc := setupPatientTest(t)
+
+	var savedRecord patientmodel.PatientRecord
+	repoMock.EXPECT().Create(mock.Anything, mock.Anything).RunAndReturn(func(ctx context.Context, rec patientmodel.PatientRecord) (*patientmodel.PatientRecord, error) {
+		rec.CreatedAt = time.Now()
+		rec.UpdatedAt = time.Now()
+		savedRecord = rec
+		return &rec, nil
+	}).Once()
 
 	pt, err := svc.Create(context.Background(), testClinicID.String(), testUserID.String(), validInput())
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	in := validInput()
 	in.DisplayName = "Maria O. Lima"
+
+	repoMock.EXPECT().Get(mock.Anything, testClinicID, pt.ID).Return(&savedRecord, nil).Once()
+	repoMock.EXPECT().Update(mock.Anything, mock.MatchedBy(func(rec patientmodel.PatientRecord) bool {
+		return rec.ID == pt.ID && rec.ClinicID == testClinicID
+	})).RunAndReturn(func(ctx context.Context, rec patientmodel.PatientRecord) (*patientmodel.PatientRecord, error) {
+		rec.UpdatedAt = time.Now()
+		savedRecord = rec
+		return &rec, nil
+	}).Once()
+
 	updated, err := svc.Update(context.Background(), testClinicID.String(), pt.ID.String(), in)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if updated.DisplayName != "Maria O. Lima" {
-		t.Fatalf("Update = %+v", updated)
-	}
-	if _, err := svc.Update(context.Background(), testClinicID.String(), missingID.String(), in); !errors.Is(err, usecase.ErrNotFound) {
-		t.Fatalf("Update missing = %v, want ErrNotFound", err)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, "Maria O. Lima", updated.DisplayName)
+
+	// Update missing patient
+	repoMock.EXPECT().Get(mock.Anything, testClinicID, missingID).Return(nil, usecase.ErrNotFound).Once()
+	_, err = svc.Update(context.Background(), testClinicID.String(), missingID.String(), in)
+	require.ErrorIs(t, err, usecase.ErrNotFound)
 }
 
 func TestListAndSearch(t *testing.T) {
-	client := openDB(t)
-	svc := newService(t, client)
+	repoMock, _, svc := setupPatientTest(t)
+
+	var records []patientmodel.PatientRecord
+	repoMock.EXPECT().Create(mock.Anything, mock.Anything).RunAndReturn(func(ctx context.Context, rec patientmodel.PatientRecord) (*patientmodel.PatientRecord, error) {
+		rec.CreatedAt = time.Now()
+		rec.UpdatedAt = time.Now()
+		records = append(records, rec)
+		return &rec, nil
+	}).Times(3)
 
 	for _, name := range []string{"Ana Souza", "Bruno Lima", "Carla Dias"} {
 		in := validInput()
 		in.DisplayName = name
-		if _, err := svc.Create(context.Background(), testClinicID.String(), testUserID.String(), in); err != nil {
-			t.Fatal(err)
-		}
+		_, err := svc.Create(context.Background(), testClinicID.String(), testUserID.String(), in)
+		require.NoError(t, err)
 	}
+
+	repoMock.EXPECT().ListByClinicAndStatus(mock.Anything, testClinicID, (*patientmodel.PatientStatus)(nil)).Return(records, nil).Times(3)
 
 	all, total, err := svc.ListPage(context.Background(), testClinicID.String(), "", "", "", 50, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(all) != 3 || total != 3 {
-		t.Fatalf("ListPage = %d patients (total %d), want 3", len(all), total)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, int64(3), total)
+	assert.Len(t, all, 3)
 
 	hit, _, err := svc.ListPage(context.Background(), testClinicID.String(), "bruno", "", "", 50, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(hit) != 1 || hit[0].DisplayName != "Bruno Lima" {
-		t.Fatalf("search 'bruno' = %+v, want only Bruno Lima", hit)
-	}
+	require.NoError(t, err)
+	require.Len(t, hit, 1)
+	assert.Equal(t, "Bruno Lima", hit[0].DisplayName)
 
 	none, _, err := svc.ListPage(context.Background(), testClinicID.String(), "zzz", "", "", 50, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(none) != 0 {
-		t.Fatalf("search 'zzz' = %d, want 0", len(none))
-	}
+	require.NoError(t, err)
+	assert.Empty(t, none)
 
-	// Status filter.
-	pt, err := svc.Get(context.Background(), testClinicID.String(), hit[0].ID.String())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := svc.SetStatus(context.Background(), testClinicID.String(), pt.ID.String(), patientmodel.PatientStatusInactive); err != nil {
-		t.Fatal(err)
-	}
+	// Status filter
+	repoMock.EXPECT().BulkSetStatus(mock.Anything, testClinicID, []uuid.UUID{hit[0].ID}, patientmodel.PatientStatusInactive).Return(1, nil).Once()
+	err = svc.SetStatus(context.Background(), testClinicID.String(), hit[0].ID.String(), patientmodel.PatientStatusInactive)
+	require.NoError(t, err)
+
+	// Update record in mock slice to inactive
+	activeStatus := patientmodel.PatientStatusActive
+	inactiveStatus := patientmodel.PatientStatusInactive
+	records[1].Status = inactiveStatus
+
+	repoMock.EXPECT().ListByClinicAndStatus(mock.Anything, testClinicID, &activeStatus).Return([]patientmodel.PatientRecord{records[0], records[2]}, nil).Once()
 	active, _, err := svc.ListPage(context.Background(), testClinicID.String(), "", "", patientmodel.PatientStatusActive.String(), 50, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(active) != 2 {
-		t.Fatalf("active = %d, want 2", len(active))
-	}
+	require.NoError(t, err)
+	assert.Len(t, active, 2)
+
+	repoMock.EXPECT().ListByClinicAndStatus(mock.Anything, testClinicID, &inactiveStatus).Return([]patientmodel.PatientRecord{records[1]}, nil).Once()
 	inactive, _, err := svc.ListPage(context.Background(), testClinicID.String(), "", "", patientmodel.PatientStatusInactive.String(), 50, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(inactive) != 1 {
-		t.Fatalf("inactive = %d, want 1", len(inactive))
-	}
+	require.NoError(t, err)
+	assert.Len(t, inactive, 1)
 }
 
 func TestSetStatus(t *testing.T) {
-	client := openDB(t)
-	svc := newService(t, client)
+	repoMock, _, svc := setupPatientTest(t)
+
+	var savedRecord patientmodel.PatientRecord
+	repoMock.EXPECT().Create(mock.Anything, mock.Anything).RunAndReturn(func(ctx context.Context, rec patientmodel.PatientRecord) (*patientmodel.PatientRecord, error) {
+		rec.CreatedAt = time.Now()
+		savedRecord = rec
+		return &rec, nil
+	}).Once()
 
 	pt, err := svc.Create(context.Background(), testClinicID.String(), testUserID.String(), validInput())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := svc.SetStatus(context.Background(), testClinicID.String(), pt.ID.String(), patientmodel.PatientStatusInactive); err != nil {
-		t.Fatal(err)
-	}
-	got, _ := svc.Get(context.Background(), testClinicID.String(), pt.ID.String())
-	if got.Status != patientmodel.PatientStatusInactive {
-		t.Fatalf("status = %q, want inactive", got.Status)
-	}
+	require.NoError(t, err)
+
+	repoMock.EXPECT().BulkSetStatus(mock.Anything, testClinicID, []uuid.UUID{pt.ID}, patientmodel.PatientStatusInactive).Return(1, nil).Once()
+	err = svc.SetStatus(context.Background(), testClinicID.String(), pt.ID.String(), patientmodel.PatientStatusInactive)
+	require.NoError(t, err)
+
+	savedRecord.Status = patientmodel.PatientStatusInactive
+	repoMock.EXPECT().Get(mock.Anything, testClinicID, pt.ID).Return(&savedRecord, nil).Once()
+
+	got, err := svc.Get(context.Background(), testClinicID.String(), pt.ID.String())
+	require.NoError(t, err)
+	assert.Equal(t, patientmodel.PatientStatusInactive, got.Status)
 }
 
 func TestCount(t *testing.T) {
-	client := openDB(t)
-	svc := newService(t, client)
+	repoMock, _, svc := setupPatientTest(t)
 
-	if n, _ := svc.Count(context.Background(), testClinicID.String()); n != 0 {
-		t.Fatalf("count = %d, want 0", n)
-	}
-	in := validInput()
-	if _, err := svc.Create(context.Background(), testClinicID.String(), testUserID.String(), in); err != nil {
-		t.Fatal(err)
-	}
-	if n, _ := svc.Count(context.Background(), testClinicID.String()); n != 1 {
-		t.Fatalf("count = %d, want 1", n)
-	}
+	repoMock.EXPECT().Count(mock.Anything, testClinicID).Return(0, nil).Once()
+	n, err := svc.Count(context.Background(), testClinicID.String())
+	require.NoError(t, err)
+	assert.Equal(t, int64(0), n)
+
+	repoMock.EXPECT().Create(mock.Anything, mock.Anything).Return(&patientmodel.PatientRecord{
+		ID:       uuid.New(),
+		ClinicID: testClinicID,
+	}, nil).Once()
+
+	_, err = svc.Create(context.Background(), testClinicID.String(), testUserID.String(), validInput())
+	require.NoError(t, err)
+
+	repoMock.EXPECT().Count(mock.Anything, testClinicID).Return(1, nil).Once()
+	n, err = svc.Count(context.Background(), testClinicID.String())
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), n)
 }
 
 func TestCreateRecordsRegistrar(t *testing.T) {
-	client := openDB(t)
-	svc := newService(t, client)
+	repoMock, _, svc := setupPatientTest(t)
 
-	if err := testutil.User(context.Background(), client, testUserID.String(), "ana@example.org", "admin", "x"); err != nil {
-		t.Fatal(err)
-	}
+	var savedRecord patientmodel.PatientRecord
+	repoMock.EXPECT().Create(mock.Anything, mock.MatchedBy(func(rec patientmodel.PatientRecord) bool {
+		return rec.CreatedBy != nil && *rec.CreatedBy == testUserID
+	})).RunAndReturn(func(ctx context.Context, rec patientmodel.PatientRecord) (*patientmodel.PatientRecord, error) {
+		rec.CreatedAt = time.Now()
+		savedRecord = rec
+		return &rec, nil
+	}).Once()
+
 	pt, err := svc.Create(context.Background(), testClinicID.String(), testUserID.String(), validInput())
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
+	creatorEmail := "ana@example.org"
+	creatorName := "Ana"
+	repoMock.EXPECT().GetWithCreator(mock.Anything, testClinicID, pt.ID).Return(&patientmodel.PatientRecordWithCreator{
+		Record:       savedRecord,
+		CreatorEmail: &creatorEmail,
+		CreatorName:  &creatorName,
+	}, nil).Once()
+
 	row, err := svc.GetWithCreator(context.Background(), testClinicID.String(), pt.ID.String())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if row.CreatedBy == nil || row.CreatedBy.String() != testUserID.String() {
-		t.Fatalf("CreatedBy = %v, want %s", row.CreatedBy, testUserID)
-	}
-	if orEmpty(row.CreatorEmail) != "ana@example.org" {
-		t.Fatalf("CreatorEmail = %q, want ana@example.org", orEmpty(row.CreatorEmail))
-	}
+	require.NoError(t, err)
+	require.NotNil(t, row.CreatedBy)
+	assert.Equal(t, testUserID.String(), row.CreatedBy.String())
+	assert.Equal(t, "ana@example.org", orEmpty(row.CreatorEmail))
 }
 
 func TestGetWithCreatorMissingUser(t *testing.T) {
-	client := openDB(t)
-	svc := newService(t, client)
+	repoMock, _, svc := setupPatientTest(t)
+
+	var savedRecord patientmodel.PatientRecord
+	repoMock.EXPECT().Create(mock.Anything, mock.MatchedBy(func(rec patientmodel.PatientRecord) bool {
+		return rec.CreatedBy != nil && *rec.CreatedBy == ghostID
+	})).RunAndReturn(func(ctx context.Context, rec patientmodel.PatientRecord) (*patientmodel.PatientRecord, error) {
+		rec.CreatedAt = time.Now()
+		savedRecord = rec
+		return &rec, nil
+	}).Once()
 
 	pt, err := svc.Create(context.Background(), testClinicID.String(), ghostID.String(), validInput())
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
+	repoMock.EXPECT().GetWithCreator(mock.Anything, testClinicID, pt.ID).Return(&patientmodel.PatientRecordWithCreator{
+		Record:       savedRecord,
+		CreatorEmail: nil,
+		CreatorName:  nil,
+	}, nil).Once()
+
 	row, err := svc.GetWithCreator(context.Background(), testClinicID.String(), pt.ID.String())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if row.CreatorEmail != nil {
-		t.Fatalf("CreatorEmail = %q, want empty for unknown user", *row.CreatorEmail)
-	}
+	require.NoError(t, err)
+	assert.Nil(t, row.CreatorEmail)
 }
 
 func TestAuthorizePatientEdit(t *testing.T) {
-	client := openDB(t)
-	svc := newService(t, client)
+	repoMock, _, svc := setupPatientTest(t)
 	ctx := context.Background()
 
 	admin := &auth.Principal{ID: "01990000-0000-7000-8000-000000000001", Email: "admin@c.org", Name: "Admin", Role: auth.RoleAdmin}
 	owner := &auth.Principal{ID: "01990000-0000-7000-8000-000000000002", Email: "owner@c.org", Name: "Owner", Role: auth.RolePhysician}
 	other := &auth.Principal{ID: "01990000-0000-7000-8000-000000000003", Email: "other@c.org", Name: "Other", Role: auth.RolePhysician}
 
+	ownerUUID := uuid.MustParse(owner.ID)
+	repoMock.EXPECT().Create(mock.Anything, mock.Anything).Return(&patientmodel.PatientRecord{
+		ID:        uuid.MustParse("01990000-0000-7000-8000-000000000010"),
+		ClinicID:  testClinicID,
+		CreatedBy: &ownerUUID,
+		Status:    patientmodel.PatientStatusActive,
+	}, nil).Once()
+
 	pt, err := svc.Create(ctx, testClinicID.String(), owner.ID, validInput())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := svc.AuthorizePatientEdit(ctx, admin, pt.ID.String(), uuidStrPtrTest(pt.CreatedBy), pt.Status); err != nil {
-		t.Errorf("admin edit denied: %v", err)
-	}
-	if err := svc.AuthorizePatientEdit(ctx, owner, pt.ID.String(), uuidStrPtrTest(pt.CreatedBy), pt.Status); err != nil {
-		t.Errorf("owner edit denied: %v", err)
-	}
-	if err := svc.AuthorizePatientEdit(ctx, other, pt.ID.String(), uuidStrPtrTest(pt.CreatedBy), pt.Status); !errors.Is(err, usecase.ErrForbidden) {
-		t.Errorf("other physician err = %v, want ErrForbidden", err)
-	}
+	require.NoError(t, err)
+
+	// Admin can edit
+	err = svc.AuthorizePatientEdit(ctx, admin, pt.ID.String(), uuidStrPtrTest(pt.CreatedBy), pt.Status)
+	assert.NoError(t, err)
+
+	// Owner physician can edit
+	err = svc.AuthorizePatientEdit(ctx, owner, pt.ID.String(), uuidStrPtrTest(pt.CreatedBy), pt.Status)
+	assert.NoError(t, err)
+
+	// Other physician cannot edit
+	err = svc.AuthorizePatientEdit(ctx, other, pt.ID.String(), uuidStrPtrTest(pt.CreatedBy), pt.Status)
+	require.ErrorIs(t, err, usecase.ErrForbidden)
 }

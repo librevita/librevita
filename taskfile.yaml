@@ -29,6 +29,7 @@ vars:
   TEMPL_VERSION: v0.3.1020
   GOLANGCI_VERSION: v2.12.2
   GOVULN_VERSION: v1.1.4
+  MOCKERY_VERSION: v2.53.6
 tasks:
   # ------------------------------------------------------------------------
   # Tools and generated sources
@@ -47,12 +48,14 @@ tasks:
       - 'GOBIN={{.ROOT_DIR}}/.tools/bin go install github.com/a-h/templ/cmd/templ@{{.TEMPL_VERSION}}'
       - 'GOBIN={{.ROOT_DIR}}/.tools/bin go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@{{.GOLANGCI_VERSION}}'
       - 'GOBIN={{.ROOT_DIR}}/.tools/bin go install golang.org/x/vuln/cmd/govulncheck@{{.GOVULN_VERSION}}'
+      - 'GOBIN={{.ROOT_DIR}}/.tools/bin go install github.com/vektra/mockery/v2@{{.MOCKERY_VERSION}}'
     sources:
       - taskfile.yaml
     generates:
       - .tools/bin/templ
       - .tools/bin/golangci-lint
       - .tools/bin/govulncheck
+      - .tools/bin/mockery
   # Generated Ent entities and versioned migration helpers.
   gen-ent:
     desc: Regenerate Ent client, entities, and migration helpers
@@ -112,10 +115,22 @@ tasks:
       - '**/*.templ'
     generates:
       - '**/*_templ.go'
+  gen-mocks:
+    desc: Regenerate Mockery interface mocks
+    deps:
+      - tools
+    cmds:
+      - 'PATH={{.ROOT_DIR}}/.tools/bin:$PATH mockery'
+    sources:
+      - .mockery.yaml
+      - 'internal/**/*.go'
+    generates:
+      - 'tests/mocks/**/*.go'
   gen:
-    desc: Regenerate Ent models, schema, and templ views
+    desc: Regenerate Ent models, schema, mocks, and templ views
     deps:
       - gen-ent
+      - gen-mocks
       - gen-templ
   # ------------------------------------------------------------------------
   # Frontend (Node)

@@ -10,6 +10,8 @@ import (
 	"entgo.io/ent/dialect"
 	entsql "entgo.io/ent/dialect/sql"
 	"github.com/google/uuid"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	_ "modernc.org/sqlite"
 
 	"librevita.org/ent"
@@ -22,14 +24,12 @@ func openIndexDB(t *testing.T) (*sql.DB, *ent.Client) {
 	t.Helper()
 	name := "storage-test-" + uuid.NewString()
 	db, err := sql.Open("sqlite", "file:"+name+"?mode=memory&cache=shared")
-	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
-	}
+	require.NoError(t, err)
 	db.SetMaxOpenConns(1)
 	t.Cleanup(func() { db.Close() })
-	if err := database.Migrate(context.Background(), db, slog.New(slog.DiscardHandler)); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
+
+	err = database.Migrate(context.Background(), db, slog.New(slog.DiscardHandler))
+	require.NoError(t, err)
 
 	drv := entsql.OpenDB(dialect.SQLite, db)
 	client := ent.NewClient(ent.Driver(drv))
@@ -48,16 +48,13 @@ func TestStorageIndexWire(t *testing.T) {
 
 	key := "patient_document/01990000-0000-7000-8000-000000000001/doc.pdf"
 	blob, err := store.Put(ctx, key, strings.NewReader("pdf-bytes"), 9, "application/pdf")
-	if err != nil {
-		t.Fatalf("Put: %v", err)
-	}
+	require.NoError(t, err)
 
 	owner := uuid.MustParse("01990000-0000-7000-8000-00000000000a")
 	resource := uuid.MustParse("01990000-0000-7000-8000-000000000001")
 	id, err := uuid.NewV7()
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	created, err := client.StorageObject.Create().
 		SetID(id).
 		SetKey(key).
@@ -70,20 +67,14 @@ func TestStorageIndexWire(t *testing.T) {
 		SetChecksum(blob.Checksum).
 		SetCreatedBy(owner).
 		Save(ctx)
-	if err != nil {
-		t.Fatalf("CreateStorageObject: %v", err)
-	}
-	if created.OriginalName != "document.pdf" || created.Size != 9 || created.Etag != blob.ETag {
-		t.Errorf("index row = %+v", created)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, "document.pdf", created.OriginalName)
+	assert.Equal(t, int64(9), created.Size)
+	assert.Equal(t, blob.ETag, created.Etag)
 
 	byKey, err := client.StorageObject.Query().Where(storageobject.KeyEQ(key)).Only(ctx)
-	if err != nil {
-		t.Fatalf("GetStorageObjectByKey: %v", err)
-	}
-	if byKey.ID != created.ID {
-		t.Errorf("byKey.ID = %s, want %s", byKey.ID, created.ID)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, created.ID, byKey.ID)
 
 	listed, err := client.StorageObject.Query().
 		Where(
@@ -91,24 +82,20 @@ func TestStorageIndexWire(t *testing.T) {
 			storageobject.ResourceIDEQ(resource.String()),
 		).
 		All(ctx)
-	if err != nil {
-		t.Fatalf("ListStorageObjectsByResource: %v", err)
-	}
-	if len(listed) != 1 || listed[0].Key != key {
-		t.Errorf("list = %+v, want the stored key", listed)
-	}
+	require.NoError(t, err)
+	require.Len(t, listed, 1)
+	assert.Equal(t, key, listed[0].Key)
 
-	if err := client.StorageObject.DeleteOneID(created.ID).Exec(ctx); err != nil {
-		t.Fatalf("DeleteStorageObject: %v", err)
-	}
-	if _, err := client.StorageObject.Query().Where(storageobject.KeyEQ(key)).Only(ctx); !ent.IsNotFound(err) {
-		t.Errorf("GetStorageObjectByKey after delete = %v, want ent.IsNotFound", err)
-	}
+	err = client.StorageObject.DeleteOneID(created.ID).Exec(ctx)
+	require.NoError(t, err)
+
+	_, err = client.StorageObject.Query().Where(storageobject.KeyEQ(key)).Only(ctx)
+	assert.True(t, ent.IsNotFound(err))
+
 	// The blob itself is still in the store; deleting the index row does
 	// not touch the object.
-	if _, err := store.Stat(ctx, key); err != nil {
-		t.Errorf("blob Stat after index delete = %v, want present", err)
-	}
+	_, err = store.Stat(ctx, key)
+	assert.NoError(t, err)
 }
 
 // TestStorageIndexRejectsNegativeSize exercises the size constraint.
@@ -116,9 +103,8 @@ func TestStorageIndexRejectsNegativeSize(t *testing.T) {
 	ctx := context.Background()
 	_, client := openIndexDB(t)
 	badID, err := uuid.NewV7()
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
+
 	_, err = client.StorageObject.Create().
 		SetID(badID).
 		SetKey("k/1").
@@ -131,7 +117,5 @@ func TestStorageIndexRejectsNegativeSize(t *testing.T) {
 		SetChecksum("c").
 		SetCreatedBy(uuid.MustParse("01990000-0000-7000-8000-00000000000a")).
 		Save(ctx)
-	if err == nil {
-		t.Fatal("negative size must violate the CHECK constraint")
-	}
+	assert.Error(t, err, "negative size must violate the CHECK constraint")
 }

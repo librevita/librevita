@@ -3,6 +3,9 @@ package model
 import (
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // testSystem builds a domain entity for tests.
@@ -25,9 +28,7 @@ func testSystem(system, displayName, pattern string, transform Transform,
 func mustConfigured(t *testing.T, row *IdentifierSystem) *Configured {
 	t.Helper()
 	c, err := NewConfigured(row)
-	if err != nil {
-		t.Fatalf("NewConfigured(%s): %v", row.System, err)
-	}
+	require.NoError(t, err, "NewConfigured(%s)", row.System)
 	return c
 }
 
@@ -55,12 +56,8 @@ func TestCPF(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.value, func(t *testing.T) {
 			got, err := c.Normalize(tc.value)
-			if err != nil {
-				t.Fatalf("Normalize(%s): %v", tc.value, err)
-			}
-			if got != tc.want {
-				t.Fatalf("Normalize(%s) = %q, want %q", tc.value, got, tc.want)
-			}
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, got)
 		})
 	}
 
@@ -73,9 +70,8 @@ func TestCPF(t *testing.T) {
 	}
 	for _, raw := range invalid {
 		t.Run("invalid/"+raw, func(t *testing.T) {
-			if _, err := c.Normalize(raw); err == nil {
-				t.Fatalf("Normalize(%s) expected an error", raw)
-			}
+			_, err := c.Normalize(raw)
+			assert.Error(t, err)
 		})
 	}
 }
@@ -84,20 +80,14 @@ func TestSUS(t *testing.T) {
 	c := mustConfigured(t, seedRows()[1])
 
 	valid := "123456789012340"
-	if !c.Detect(valid) {
-		t.Fatal("Detect(valid) = false, want true")
-	}
-	got, err := c.Normalize(" 123 4567 8901 2340 ")
-	if err != nil {
-		t.Fatalf("Normalize: %v", err)
-	}
-	if got != valid {
-		t.Fatalf("Normalize = %q, want %q", got, valid)
-	}
+	assert.True(t, c.Detect(valid))
 
-	if _, err := c.Normalize("123456789012341"); err == nil {
-		t.Fatal("Normalize(bad dv) expected an error")
-	}
+	got, err := c.Normalize(" 123 4567 8901 2340 ")
+	require.NoError(t, err)
+	assert.Equal(t, valid, got)
+
+	_, err = c.Normalize("123456789012341")
+	assert.Error(t, err)
 }
 
 func TestNIF(t *testing.T) {
@@ -105,22 +95,16 @@ func TestNIF(t *testing.T) {
 
 	valid := "123456789"
 	got, err := c.Normalize(" 123 456 789 ")
-	if err != nil {
-		t.Fatalf("Normalize: %v", err)
-	}
-	if got != valid {
-		t.Fatalf("Normalize = %q, want %q", got, valid)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, valid, got)
 
 	valid2 := "999999990"
 	got2, err := c.Normalize(valid2)
-	if err != nil || got2 != valid2 {
-		t.Fatalf("Normalize(%s) = %q, err: %v", valid2, got2, err)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, valid2, got2)
 
-	if _, err := c.Normalize("123456780"); err == nil {
-		t.Fatal("Normalize(bad dv) expected an error")
-	}
+	_, err = c.Normalize("123456780")
+	assert.Error(t, err)
 }
 
 func TestPassport(t *testing.T) {
@@ -137,12 +121,8 @@ func TestPassport(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.raw, func(t *testing.T) {
 			got, err := c.Normalize(tc.raw)
-			if err != nil {
-				t.Fatalf("Normalize(%s): %v", tc.raw, err)
-			}
-			if got != tc.want {
-				t.Fatalf("Normalize(%s) = %q, want %q", tc.raw, got, tc.want)
-			}
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, got)
 		})
 	}
 
@@ -153,24 +133,17 @@ func TestPassport(t *testing.T) {
 	}
 	for _, raw := range invalid {
 		t.Run("invalid/"+raw, func(t *testing.T) {
-			if _, err := c.Normalize(raw); err == nil {
-				t.Fatalf("Normalize(%s) expected an error", raw)
-			}
+			_, err := c.Normalize(raw)
+			assert.Error(t, err)
 		})
 	}
 }
 
 func TestDetect(t *testing.T) {
 	c := mustConfigured(t, seedRows()[0])
-	if !c.Detect("12345678909") {
-		t.Fatal("Detect(12345678909) = false, want true")
-	}
-	if !c.Detect("123.456.789-09") {
-		t.Fatal("Detect(123.456.789-09) = false, want true")
-	}
-	if c.Detect("12345") {
-		t.Fatal("Detect(12345) = true, want false")
-	}
+	assert.True(t, c.Detect("12345678909"))
+	assert.True(t, c.Detect("123.456.789-09"))
+	assert.False(t, c.Detect("12345"))
 }
 
 func TestConfiguredRejectsConfigErrors(t *testing.T) {
@@ -186,29 +159,23 @@ func TestConfiguredRejectsConfigErrors(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			if _, err := NewConfigured(tc.row); err == nil {
-				t.Fatal("expected an error")
-			}
+			_, err := NewConfigured(tc.row)
+			assert.Error(t, err)
 		})
 	}
 }
 
 func TestRawFallback(t *testing.T) {
 	raw := rawStrategy{}
-	if !raw.Detect("anything at all") {
-		t.Fatal("raw fallback must detect everything")
-	}
+	assert.True(t, raw.Detect("anything at all"))
+
 	got, err := raw.Normalize("  some   ID 123 ")
-	if err != nil {
-		t.Fatalf("Normalize: %v", err)
-	}
-	if got != "SOME ID 123" {
-		t.Fatalf("Normalize = %q, want %q", got, "SOME ID 123")
-	}
-	if _, err := raw.Normalize("   "); err != ErrValueRequired {
-		t.Fatalf("Normalize(blank) = %v, want ErrValueRequired", err)
-	}
-	if _, err := raw.Normalize(strings.Repeat("a", 121)); err == nil {
-		t.Fatal("Normalize(too long) = nil, want error")
-	}
+	require.NoError(t, err)
+	assert.Equal(t, "SOME ID 123", got)
+
+	_, err = raw.Normalize("   ")
+	assert.ErrorIs(t, err, ErrValueRequired)
+
+	_, err = raw.Normalize(strings.Repeat("a", 121))
+	assert.Error(t, err)
 }

@@ -3,6 +3,8 @@ package policy_test
 import (
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+
 	"librevita.org/internal/core/policy"
 )
 
@@ -11,17 +13,12 @@ import (
 // stored representation round-trips.
 func TestPolicyOrigin(t *testing.T) {
 	for _, origin := range []policy.PolicyOrigin{policy.PolicyOriginSeed, policy.PolicyOriginAdmin, policy.PolicyOriginSystem} {
-		if !origin.Valid() {
-			t.Fatalf("%q must be valid", origin)
-		}
-		if got, ok := policy.ParsePolicyOrigin(origin.String()); !ok || got != origin {
-			t.Fatalf("ParsePolicyOrigin(%q) = %q, %v; want %q, true", origin.String(), got, ok, origin)
-		}
+		assert.True(t, origin.Valid(), "%q must be valid", origin)
+		got, ok := policy.ParsePolicyOrigin(origin.String())
+		assert.True(t, ok)
+		assert.Equal(t, origin, got)
 	}
-	if policy.PolicyOrigin("cli").Valid() {
-		t.Fatal("origin outside the CHECK set must not be valid")
-	}
-	if _, ok := policy.ParsePolicyOrigin("cli"); ok {
-		t.Fatal("ParsePolicyOrigin must reject values outside the CHECK set")
-	}
+	assert.False(t, policy.PolicyOrigin("cli").Valid())
+	_, ok := policy.ParsePolicyOrigin("cli")
+	assert.False(t, ok)
 }

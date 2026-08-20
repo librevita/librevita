@@ -8,6 +8,8 @@ import (
 
 	"entgo.io/ent/dialect"
 	entsql "entgo.io/ent/dialect/sql"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	_ "modernc.org/sqlite"
 
 	"librevita.org/ent"
@@ -18,15 +20,12 @@ import (
 func openAuditTest(t *testing.T) (*sql.DB, audit.Repository) {
 	t.Helper()
 	db, err := sql.Open("sqlite", "file:audit-test?mode=memory&cache=shared&_time_format=sqlite")
-	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
-	}
+	require.NoError(t, err)
 	db.SetMaxOpenConns(1)
 	t.Cleanup(func() { db.Close() })
 
-	if err := database.Migrate(context.Background(), db, slog.New(slog.DiscardHandler)); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
+	err = database.Migrate(context.Background(), db, slog.New(slog.DiscardHandler))
+	require.NoError(t, err)
 
 	drv := entsql.OpenDB(dialect.SQLite, db)
 	client := ent.NewClient(ent.Driver(drv))
@@ -39,9 +38,7 @@ func openAuditTest(t *testing.T) (*sql.DB, audit.Repository) {
 func TestRecordPersistsEvent(t *testing.T) {
 	db, repo := openAuditTest(t)
 	logger, err := audit.NewLogger(repo, slog.New(slog.DiscardHandler))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	logger.Record(context.Background(), audit.Event{
 		ActorID: "01990000-0000-7000-8000-000000000001", ActorMail: "ana@example.org",
@@ -53,26 +50,22 @@ func TestRecordPersistsEvent(t *testing.T) {
 	var action, result, requestID string
 	err = db.QueryRow(`SELECT actor_id, action, result, request_id FROM audit_log`).
 		Scan(&actorID, &action, &result, &requestID)
-	if err != nil {
-		t.Fatalf("read audit_log: %v", err)
-	}
-	if actorID != "01990000-0000-7000-8000-000000000001" || action != "login" || result != audit.AuditResultSuccess.String() || requestID != "req-123" {
-		t.Fatalf("unexpected row: %q %q %q %q", actorID, action, result, requestID)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, "01990000-0000-7000-8000-000000000001", actorID)
+	assert.Equal(t, "login", action)
+	assert.Equal(t, audit.AuditResultSuccess.String(), result)
+	assert.Equal(t, "req-123", requestID)
 }
 
 func TestRecordRequiresRepository(t *testing.T) {
-	if _, err := audit.NewLogger(nil, slog.New(slog.DiscardHandler)); err == nil {
-		t.Fatal("NewLogger(nil) should fail")
-	}
+	_, err := audit.NewLogger(nil, slog.New(slog.DiscardHandler))
+	assert.Error(t, err)
 }
 
 func TestRecordSwallowsWriteErrors(t *testing.T) {
 	db, repo := openAuditTest(t)
 	logger, err := audit.NewLogger(repo, slog.New(slog.DiscardHandler))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	db.Close()
 
 	logger.Record(context.Background(), audit.Event{
@@ -84,9 +77,7 @@ func TestHashChain(t *testing.T) {
 	db, repo := openAuditTest(t)
 	logger := slog.New(slog.DiscardHandler)
 	l, err := audit.NewLogger(repo, logger)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	ctx := context.Background()
 
 	for _, ev := range []audit.Event{
@@ -96,42 +87,35 @@ func TestHashChain(t *testing.T) {
 	} {
 		l.Record(ctx, ev)
 	}
-	if broken, err := l.VerifyChain(ctx); err != nil || broken != 0 {
-		t.Fatalf("intact chain: broken=%d err=%v", broken, err)
-	}
+	broken, err := l.VerifyChain(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, int64(0), broken)
 
 	// Every row must carry a hash derived from the previous one.
 	rows, err := l.Recent(ctx, 10, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(rows) != 3 {
-		t.Fatalf("rows = %d, want 3", len(rows))
-	}
+	require.NoError(t, err)
+	assert.Len(t, rows, 3)
 
 	// Forging an entry with a wrong hash breaks the chain from there on.
-	if _, err := db.Exec(`INSERT INTO audit_log (actor_name, actor_role, user_agent, action, resource, resource_name, result, created_at, signature)
-		VALUES ('', '', '', 'forged', 'user', '', 'success', '2026-01-01T00:00:00.000Z', 'deadbeef')`); err != nil {
-		t.Fatal(err)
-	}
-	if broken, err := l.VerifyChain(ctx); err != nil || broken == 0 {
-		t.Fatalf("broken chain must be detected, broken=%d err=%v", broken, err)
-	}
+	_, err = db.Exec(`INSERT INTO audit_log (actor_name, actor_role, user_agent, action, resource, resource_name, result, created_at, signature)
+		VALUES ('', '', '', 'forged', 'user', '', 'success', '2026-01-01T00:00:00.000Z', 'deadbeef')`)
+	require.NoError(t, err)
+
+	broken, err = l.VerifyChain(ctx)
+	require.NoError(t, err)
+	assert.NotEqual(t, int64(0), broken)
 }
 
 func TestAuditLogAppendOnly(t *testing.T) {
 	db, repo := openAuditTest(t)
 	l, err := audit.NewLogger(repo, slog.New(slog.DiscardHandler))
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	ctx := context.Background()
 	l.Record(ctx, audit.Event{Action: "login", Resource: "user", Result: audit.AuditResultSuccess})
 
-	if _, err := db.Exec(`UPDATE audit_log SET detail = 'tampered'`); err == nil {
-		t.Fatal("UPDATE on audit_log must be refused")
-	}
-	if _, err := db.Exec(`DELETE FROM audit_log`); err == nil {
-		t.Fatal("DELETE on audit_log must be refused")
-	}
+	_, err = db.Exec(`UPDATE audit_log SET detail = 'tampered'`)
+	assert.Error(t, err, "UPDATE on audit_log must be refused")
+
+	_, err = db.Exec(`DELETE FROM audit_log`)
+	assert.Error(t, err, "DELETE on audit_log must be refused")
 }

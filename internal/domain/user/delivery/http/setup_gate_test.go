@@ -1,73 +1,55 @@
 package http_test
 
 import (
-	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/labstack/echo/v4"
-
-	"librevita.org/internal/domain/user/usecase"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 )
 
 func TestSetupGateRedirectsWhenNotOnboarded(t *testing.T) {
-	_, client := openHandlerDB(t)
-	h, _, _ := newHandler(t, client)
+	env := newUserHandlerEnv(t)
+	env.setupRepo.EXPECT().IsOnboarded(mock.Anything).Return(false, nil).Once()
 
 	e := echo.New()
-	e.GET("/", func(c echo.Context) error { return c.String(http.StatusOK, "home") }, h.SetupGate())
+	e.GET("/", func(c echo.Context) error { return c.String(http.StatusOK, "home") }, env.handler.SetupGate())
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rec := httptest.NewRecorder()
 	e.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusFound || rec.Header().Get("Location") != "/setup" {
-		t.Fatalf("first access = %d %q, want 302 /setup", rec.Code, rec.Header().Get("Location"))
-	}
+	assert.Equal(t, http.StatusFound, rec.Code)
+	assert.Equal(t, "/setup", rec.Header().Get("Location"))
 }
 
 func TestSetupGatePassesWhenOnboarded(t *testing.T) {
-	_, client := openHandlerDB(t)
-	h, _, svc := newHandler(t, client)
-
-	if _, _, err := svc.Onboard(context.Background(),
-		validRegisterInput(), validClinicInput()); err != nil {
-		t.Fatal(err)
-	}
+	env := newUserHandlerEnv(t)
+	env.setupRepo.EXPECT().IsOnboarded(mock.Anything).Return(true, nil).Once()
 
 	e := echo.New()
-	e.GET("/", func(c echo.Context) error { return c.String(http.StatusOK, "home") }, h.SetupGate())
+	e.GET("/", func(c echo.Context) error { return c.String(http.StatusOK, "home") }, env.handler.SetupGate())
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rec := httptest.NewRecorder()
 	e.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusOK {
-		t.Fatalf("onboarded access = %d, want 200", rec.Code)
-	}
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, "home", rec.Body.String())
 }
 
 func TestSetupGateExemptsSetupPath(t *testing.T) {
-	_, client := openHandlerDB(t)
-	h, _, _ := newHandler(t, client)
+	env := newUserHandlerEnv(t)
 
 	e := echo.New()
-	e.GET("/setup", func(c echo.Context) error { return c.String(http.StatusOK, "setup") }, h.SetupGate())
+	e.GET("/setup", func(c echo.Context) error { return c.String(http.StatusOK, "setup") }, env.handler.SetupGate())
 
 	req := httptest.NewRequest(http.MethodGet, "/setup", nil)
 	rec := httptest.NewRecorder()
 	e.ServeHTTP(rec, req)
 
-	if rec.Code != http.StatusOK {
-		t.Fatalf("GET /setup before onboarding = %d, want 200", rec.Code)
-	}
-}
-
-func validRegisterInput() usecase.RegisterInput {
-	return usecase.RegisterInput{Name: "Ana", Email: "ana@example.org", Password: "password-123"}
-}
-
-func validClinicInput() usecase.ClinicInput {
-	return usecase.ClinicInput{Name: "Clinica"}
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, "setup", rec.Body.String())
 }

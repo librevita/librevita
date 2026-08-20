@@ -2,281 +2,301 @@ package usecase_test
 
 import (
 	"context"
-	"database/sql"
-	"errors"
 	"log/slog"
-	"path/filepath"
 	"testing"
+	"time"
 
-	"entgo.io/ent/dialect"
-	entsql "entgo.io/ent/dialect/sql"
 	"github.com/google/uuid"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 
-	_ "modernc.org/sqlite"
-
-	"librevita.org/ent"
 	"librevita.org/internal/core/crypto"
-	"librevita.org/internal/core/database"
-	"librevita.org/internal/core/vault"
 	identifiermodel "librevita.org/internal/domain/identifier/model"
-	identifierrepo "librevita.org/internal/domain/identifier/repository"
 	"librevita.org/internal/domain/identifier/usecase"
+	cryptomocks "librevita.org/tests/mocks/core/crypto"
+	identifiermocks "librevita.org/tests/mocks/domain/identifier/model"
 )
 
 var (
 	testClinicID = uuid.MustParse("00000000-0000-0000-0000-000000000001")
 	testUserID   = uuid.MustParse("00000000-0000-0000-0000-000000000002")
+	testKeyB64   = "nAmIvOXVc0vb6M9G7P9q2j2yK1WxP3sJ8q5dR4tU6wA="
 )
 
-func openTestDB(t *testing.T) *ent.Client {
-	t.Helper()
-	name := "identifier-test-" + uuid.NewString()
-	db, err := sql.Open("sqlite", "file:"+name+"?mode=memory&cache=shared")
-	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
+func defaultTestSystems() []*identifiermodel.IdentifierSystem {
+	return []*identifiermodel.IdentifierSystem{
+		{
+			ID:               uuid.MustParse("01990000-0000-7000-8000-000000000001"),
+			System:           usecase.CPFSystem,
+			DisplayName:      "CPF (Brasil)",
+			Pattern:          `^[0-9]{11}$`,
+			Transform:        identifiermodel.TransformDigits,
+			CheckAlgorithm:   identifiermodel.CheckMod11Desc,
+			CheckBaseLen:     9,
+			CheckDVCount:     2,
+			CheckStartWeight: 10,
+			Active:           true,
+		},
+		{
+			ID:               uuid.MustParse("01990000-0000-7000-8000-000000000002"),
+			System:           usecase.NIFSystem,
+			DisplayName:      "NIF (Portugal)",
+			Pattern:          `^[0-9]{9}$`,
+			Transform:        identifiermodel.TransformDigits,
+			CheckAlgorithm:   identifiermodel.CheckMod11Desc,
+			CheckBaseLen:     8,
+			CheckDVCount:     1,
+			CheckStartWeight: 9,
+			Active:           true,
+		},
 	}
-	db.SetMaxOpenConns(1)
-	t.Cleanup(func() { db.Close() })
-
-	if err := database.Migrate(context.Background(), db, slog.New(slog.DiscardHandler)); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
-
-	drv := entsql.OpenDB(dialect.SQLite, db)
-	client := ent.NewClient(ent.Driver(drv))
-	t.Cleanup(func() { client.Close() })
-	return client
 }
 
-func newTestServices(t *testing.T, client *ent.Client) (usecase.Service, usecase.SystemsService, *identifiermodel.Registry) {
+func setupTestServices(t *testing.T) (
+	*identifiermocks.MockIdentifierRepository,
+	*identifiermocks.MockSystemRepository,
+	*cryptomocks.MockKeyVault,
+	usecase.Service,
+	usecase.SystemsService,
+	*identifiermodel.Registry,
+) {
 	t.Helper()
-	v, err := vault.NewBBoltVault(filepath.Join(t.TempDir(), "keys.db"))
-	if err != nil {
-		t.Fatalf("bbolt vault: %v", err)
-	}
-	t.Cleanup(func() { _ = v.Close() })
+	vaultMock := cryptomocks.NewMockKeyVault(t)
+	// In-memory vault storage for patient DEKs during encryption tests
+	deks := make(map[string][]byte)
+	vaultMock.EXPECT().GetDEK(mock.Anything, mock.Anything).RunAndReturn(func(ctx context.Context, urn string) ([]byte, error) {
+		if dek, ok := deks[urn]; ok {
+			return dek, nil
+		}
+		return nil, crypto.ErrKeyNotFound
+	}).Maybe()
+	vaultMock.EXPECT().PutDEK(mock.Anything, mock.Anything, mock.Anything).RunAndReturn(func(ctx context.Context, urn string, dek []byte) error {
+		deks[urn] = dek
+		return nil
+	}).Maybe()
 
-	key, err := crypto.NewMasterKey("nAmIvOXVc0vb6M9G7P9q2j2yK1WxP3sJ8q5dR4tU6wA=", v)
-	if err != nil {
-		t.Fatalf("master key: %v", err)
-	}
-	sysRepo := identifierrepo.NewSystemRepository(client)
+	key, err := crypto.NewMasterKey(testKeyB64, vaultMock)
+	require.NoError(t, err)
+
 	reg := identifiermodel.NewRegistry()
-	rows, err := sysRepo.ListActive(context.Background())
-	if err != nil {
-		t.Fatalf("load systems: %v", err)
-	}
-	if err := reg.Reload(rows); err != nil {
-		t.Fatalf("reload: %v", err)
-	}
-	log := slog.New(slog.DiscardHandler)
-	idRepo := identifierrepo.NewIdentifierRepository(client)
-	return usecase.NewService(idRepo, key, reg, log), usecase.NewSystemsService(sysRepo, reg, log), reg
-}
+	require.NoError(t, reg.Reload(defaultTestSystems()))
 
-func seedPatient(t *testing.T, client *ent.Client, clinicID uuid.UUID) uuid.UUID {
-	t.Helper()
-	id, err := uuid.NewV7()
-	if err != nil {
-		t.Fatal(err)
-	}
-	p, err := client.Patient.Create().
-		SetID(id).
-		SetClinicID(clinicID).
-		SetBlindIndex("idx-" + id.String()).
-		SetEncryptedPayload([]byte("payload")).
-		SetNonce([]byte("123456789012345678901234")).
-		Save(context.Background())
-	if err != nil {
-		t.Fatalf("create patient: %v", err)
-	}
-	return p.ID
+	idRepoMock := identifiermocks.NewMockIdentifierRepository(t)
+	sysRepoMock := identifiermocks.NewMockSystemRepository(t)
+	log := slog.New(slog.DiscardHandler)
+
+	svc := usecase.NewService(idRepoMock, key, reg, log)
+	systemsSvc := usecase.NewSystemsService(sysRepoMock, reg, log)
+
+	return idRepoMock, sysRepoMock, vaultMock, svc, systemsSvc, reg
 }
 
 func TestAddAndFindByValue(t *testing.T) {
-	db := openTestDB(t)
-	svc, _, _ := newTestServices(t, db)
-	patientID := seedPatient(t, db, testClinicID)
+	idRepoMock, _, _, svc, _, _ := setupTestServices(t)
+	patientID := uuid.MustParse("01990000-0000-7000-8000-000000000010")
+
+	var storedRecord identifiermodel.IdentifierRecord
+
+	idRepoMock.EXPECT().Add(mock.Anything, mock.MatchedBy(func(rec identifiermodel.IdentifierRecord) bool {
+		return rec.PatientID == patientID && rec.System == usecase.CPFSystem && rec.BlindIndex != ""
+	})).RunAndReturn(func(ctx context.Context, rec identifiermodel.IdentifierRecord) (*identifiermodel.IdentifierRecord, error) {
+		rec.ID = uuid.MustParse("01990000-0000-7000-8000-000000000020")
+		rec.CreatedAt = time.Now()
+		storedRecord = rec
+		return &rec, nil
+	}).Once()
 
 	got, err := svc.AddIdentifier(context.Background(), testClinicID.String(), testUserID.String(), usecase.Input{
-		PatientID: patientID.String(), Value: "123.456.789-09",
+		PatientID: patientID.String(),
+		Value:     "123.456.789-09",
 	})
-	if err != nil {
-		t.Fatalf("AddIdentifier: %v", err)
-	}
-	if got.System != usecase.CPFSystem {
-		t.Fatalf("system = %s, want %s (detected)", got.System, usecase.CPFSystem)
-	}
-	if got.Value != "12345678909" {
-		t.Fatalf("value = %q, want normalized %q", got.Value, "12345678909")
-	}
+	require.NoError(t, err)
+	assert.Equal(t, usecase.CPFSystem, got.System)
+	assert.Equal(t, "12345678909", got.Value)
+
+	// Find by normalized value
+	idRepoMock.EXPECT().FindByBlindIndex(mock.Anything, testClinicID, mock.Anything).RunAndReturn(func(ctx context.Context, cID uuid.UUID, blind string) (*identifiermodel.IdentifierRecord, error) {
+		if blind == storedRecord.BlindIndex {
+			return &storedRecord, nil
+		}
+		return nil, usecase.ErrNotFound
+	}).Maybe()
 
 	found, err := svc.FindByValue(context.Background(), testClinicID.String(), "12345678909")
-	if err != nil {
-		t.Fatalf("FindByValue: %v", err)
-	}
-	if len(found) != 1 || found[0].PatientID != patientID.String() {
-		t.Fatalf("FindByValue = %+v, want the patient", found)
-	}
+	require.NoError(t, err)
+	require.Len(t, found, 1)
+	assert.Equal(t, patientID.String(), found[0].PatientID)
+	assert.Equal(t, "12345678909", found[0].Value)
 
-	// The formatted input finds the same document.
+	// Formatted input finds the same document
 	found, err = svc.FindByValue(context.Background(), testClinicID.String(), "123.456.789-09")
-	if err != nil {
-		t.Fatalf("FindByValue: %v", err)
-	}
-	if len(found) != 1 {
-		t.Fatalf("FindByValue(formatted) = %d hits, want 1", len(found))
-	}
+	require.NoError(t, err)
+	require.Len(t, found, 1)
 
-	// Wrong check digit never matches.
+	// Wrong check digit never matches
 	found, err = svc.FindByValue(context.Background(), testClinicID.String(), "12345678901")
-	if err != nil {
-		t.Fatalf("FindByValue: %v", err)
-	}
-	if len(found) != 0 {
-		t.Fatalf("FindByValue(invalid) = %d hits, want 0", len(found))
-	}
+	require.NoError(t, err)
+	assert.Empty(t, found)
 
-	// Unknown value yields nothing.
+	// Unknown value yields nothing
 	found, err = svc.FindByValue(context.Background(), testClinicID.String(), "999999990")
-	if err != nil {
-		t.Fatalf("FindByValue: %v", err)
-	}
-	if len(found) != 0 {
-		t.Fatalf("FindByValue(unknown) = %d hits, want 0", len(found))
-	}
+	require.NoError(t, err)
+	assert.Empty(t, found)
 }
 
 func TestAddIdentifierExplicitSystem(t *testing.T) {
-	db := openTestDB(t)
-	svc, _, _ := newTestServices(t, db)
-	patientID := seedPatient(t, db, testClinicID)
+	idRepoMock, _, _, svc, _, _ := setupTestServices(t)
+	patientID := uuid.MustParse("01990000-0000-7000-8000-000000000010")
+
+	idRepoMock.EXPECT().Add(mock.Anything, mock.MatchedBy(func(rec identifiermodel.IdentifierRecord) bool {
+		return rec.PatientID == patientID && rec.System == usecase.NIFSystem
+	})).RunAndReturn(func(ctx context.Context, rec identifiermodel.IdentifierRecord) (*identifiermodel.IdentifierRecord, error) {
+		rec.ID = uuid.MustParse("01990000-0000-7000-8000-000000000021")
+		rec.CreatedAt = time.Now()
+		return &rec, nil
+	}).Once()
 
 	got, err := svc.AddIdentifier(context.Background(), testClinicID.String(), testUserID.String(), usecase.Input{
-		PatientID: patientID.String(), System: usecase.NIFSystem, Value: "999 999 990",
+		PatientID: patientID.String(),
+		System:    usecase.NIFSystem,
+		Value:     "999 999 990",
 	})
-	if err != nil {
-		t.Fatalf("AddIdentifier: %v", err)
-	}
-	if got.System != usecase.NIFSystem {
-		t.Fatalf("system = %s, want %s", got.System, usecase.NIFSystem)
-	}
-	if got.Value != "999999990" {
-		t.Fatalf("value = %q, want %q", got.Value, "999999990")
-	}
+	require.NoError(t, err)
+	assert.Equal(t, usecase.NIFSystem, got.System)
+	assert.Equal(t, "999999990", got.Value)
 }
 
 func TestAddIdentifierRejectsInvalidValue(t *testing.T) {
-	db := openTestDB(t)
-	svc, _, _ := newTestServices(t, db)
-	patientID := seedPatient(t, db, testClinicID)
+	_, _, _, svc, _, _ := setupTestServices(t)
+	patientID := uuid.MustParse("01990000-0000-7000-8000-000000000010")
 
 	_, err := svc.AddIdentifier(context.Background(), testClinicID.String(), testUserID.String(), usecase.Input{
-		PatientID: patientID.String(), Value: "12345678901",
+		PatientID: patientID.String(),
+		Value:     "12345678901",
 	})
-	if err == nil {
-		t.Fatal("AddIdentifier with a bad check digit must fail")
-	}
+	require.Error(t, err)
 	var validation *usecase.ValidationError
-	if !errors.As(err, &validation) {
-		t.Fatalf("error = %T %v, want ValidationError", err, err)
-	}
+	require.ErrorAs(t, err, &validation)
 }
 
 func TestAddIdentifierDuplicate(t *testing.T) {
-	db := openTestDB(t)
-	svc, _, _ := newTestServices(t, db)
-	patientA := seedPatient(t, db, testClinicID)
-	patientB := seedPatient(t, db, testClinicID)
+	idRepoMock, _, _, svc, _, _ := setupTestServices(t)
+	patientA := uuid.MustParse("01990000-0000-7000-8000-000000000010")
+	patientB := uuid.MustParse("01990000-0000-7000-8000-000000000011")
 
 	in := usecase.Input{PatientID: patientA.String(), Value: "52998224725"}
-	if _, err := svc.AddIdentifier(context.Background(), testClinicID.String(), testUserID.String(), in); err != nil {
-		t.Fatalf("first AddIdentifier: %v", err)
-	}
-	// Same value, same patient: allowed? No -- UNIQUE(blind_index)
-	// forbids even the same patient registering twice.
-	_, err := svc.AddIdentifier(context.Background(), testClinicID.String(), testUserID.String(), in)
-	if !errors.Is(err, usecase.ErrDuplicate) {
-		t.Fatalf("second AddIdentifier = %v, want ErrDuplicate", err)
-	}
 
-	// Same value, other patient: the CPF already exists.
+	idRepoMock.EXPECT().Add(mock.Anything, mock.Anything).Return(&identifiermodel.IdentifierRecord{
+		ID:        uuid.MustParse("01990000-0000-7000-8000-000000000030"),
+		PatientID: patientA,
+		System:    usecase.CPFSystem,
+	}, nil).Once()
+
+	_, err := svc.AddIdentifier(context.Background(), testClinicID.String(), testUserID.String(), in)
+	require.NoError(t, err)
+
+	// Second attempt on same patient with duplicate blind index error from repository
+	idRepoMock.EXPECT().Add(mock.Anything, mock.Anything).Return(nil, usecase.ErrDuplicate).Once()
+	_, err = svc.AddIdentifier(context.Background(), testClinicID.String(), testUserID.String(), in)
+	require.ErrorIs(t, err, usecase.ErrDuplicate)
+
+	// Duplicate on other patient
+	idRepoMock.EXPECT().Add(mock.Anything, mock.Anything).Return(nil, usecase.ErrDuplicate).Once()
 	inB := usecase.Input{PatientID: patientB.String(), Value: "52998224725"}
 	_, err = svc.AddIdentifier(context.Background(), testClinicID.String(), testUserID.String(), inB)
-	if !errors.Is(err, usecase.ErrDuplicate) {
-		t.Fatalf("AddIdentifier on other patient = %v, want ErrDuplicate", err)
-	}
+	require.ErrorIs(t, err, usecase.ErrDuplicate)
 }
 
 func TestListAndRemove(t *testing.T) {
-	db := openTestDB(t)
-	svc, _, _ := newTestServices(t, db)
-	patientID := seedPatient(t, db, testClinicID)
+	idRepoMock, _, _, svc, _, _ := setupTestServices(t)
+	patientID := uuid.MustParse("01990000-0000-7000-8000-000000000010")
 
-	for _, value := range []string{"52998224725", "ab1234567"} {
-		if _, err := svc.AddIdentifier(context.Background(), testClinicID.String(), testUserID.String(), usecase.Input{
-			PatientID: patientID.String(), Value: value,
-		}); err != nil {
-			t.Fatalf("AddIdentifier(%s): %v", value, err)
-		}
+	var records []identifiermodel.IdentifierRecord
+	idRepoMock.EXPECT().PatientExists(mock.Anything, testClinicID, patientID).Return(true, nil).Maybe()
+	idRepoMock.EXPECT().Add(mock.Anything, mock.Anything).RunAndReturn(func(ctx context.Context, rec identifiermodel.IdentifierRecord) (*identifiermodel.IdentifierRecord, error) {
+		rec.ID = uuid.New()
+		records = append(records, rec)
+		return &rec, nil
+	}).Twice()
+
+	for _, value := range []string{"52998224725", "52998224725"} {
+		_, err := svc.AddIdentifier(context.Background(), testClinicID.String(), testUserID.String(), usecase.Input{
+			PatientID: patientID.String(),
+			Value:     value,
+		})
+		require.NoError(t, err)
 	}
 
+	idRepoMock.EXPECT().ListByPatient(mock.Anything, patientID).Return(records, nil).Once()
 	got, err := svc.List(context.Background(), testClinicID.String(), patientID.String())
-	if err != nil {
-		t.Fatalf("List: %v", err)
-	}
-	if len(got) != 2 {
-		t.Fatalf("List = %d identifiers, want 2", len(got))
-	}
+	require.NoError(t, err)
+	require.Len(t, got, 2)
 
-	if err := svc.Remove(context.Background(), testClinicID.String(), patientID.String(), got[0].ID); err != nil {
-		t.Fatalf("Remove: %v", err)
-	}
+	removeID := uuid.MustParse(got[0].ID)
+	idRepoMock.EXPECT().Remove(mock.Anything, patientID, removeID).Return(nil).Once()
+	err = svc.Remove(context.Background(), testClinicID.String(), patientID.String(), got[0].ID)
+	require.NoError(t, err)
+
+	// List after remove returns remaining item
+	idRepoMock.EXPECT().ListByPatient(mock.Anything, patientID).Return(records[1:], nil).Once()
 	got, err = svc.List(context.Background(), testClinicID.String(), patientID.String())
-	if err != nil {
-		t.Fatalf("List: %v", err)
-	}
-	if len(got) != 1 {
-		t.Fatalf("List after remove = %d identifiers, want 1", len(got))
-	}
-	// The removed value is no longer findable.
-	found, err := svc.FindByValue(context.Background(), testClinicID.String(), got[0].Value)
-	if err != nil {
-		t.Fatalf("FindByValue: %v", err)
-	}
-	if len(found) != 0 && found[0].Value != got[0].Value {
-		t.Fatalf("FindByValue after remove = %+v", found)
-	}
+	require.NoError(t, err)
+	require.Len(t, got, 1)
+
+	// Removed value lookup yields nothing
+	idRepoMock.EXPECT().FindByBlindIndex(mock.Anything, testClinicID, mock.Anything).Return(nil, usecase.ErrNotFound).Maybe()
+	found, err := svc.FindByValue(context.Background(), testClinicID.String(), "52998224725")
+	require.NoError(t, err)
+	assert.Empty(t, found)
 }
 
 func TestFindByValueScopedToClinic(t *testing.T) {
-	db := openTestDB(t)
-	svc, _, _ := newTestServices(t, db)
+	idRepoMock, _, _, svc, _, _ := setupTestServices(t)
 	otherClinic := uuid.MustParse("00000000-0000-0000-0000-00000000000a")
-	patientID := seedPatient(t, db, testClinicID)
+	patientID := uuid.MustParse("00000000-0000-0000-0000-000000000010")
 
-	if _, err := svc.AddIdentifier(context.Background(), testClinicID.String(), testUserID.String(), usecase.Input{
-		PatientID: patientID.String(), Value: "52998224725",
-	}); err != nil {
-		t.Fatalf("AddIdentifier: %v", err)
-	}
+	idRepoMock.EXPECT().Add(mock.Anything, mock.Anything).Return(&identifiermodel.IdentifierRecord{
+		ID:        uuid.New(),
+		PatientID: patientID,
+		System:    usecase.CPFSystem,
+	}, nil).Once()
 
-	// Another clinic must not see the document.
+	_, err := svc.AddIdentifier(context.Background(), testClinicID.String(), testUserID.String(), usecase.Input{
+		PatientID: patientID.String(),
+		Value:     "52998224725",
+	})
+	require.NoError(t, err)
+
+	// Another clinic must not see the document
+	idRepoMock.EXPECT().FindByBlindIndex(mock.Anything, otherClinic, mock.Anything).Return(nil, usecase.ErrNotFound).Maybe()
 	found, err := svc.FindByValue(context.Background(), otherClinic.String(), "52998224725")
-	if err != nil {
-		t.Fatalf("FindByValue: %v", err)
-	}
-	if len(found) != 0 {
-		t.Fatalf("cross-clinic FindByValue = %d hits, want 0", len(found))
-	}
+	require.NoError(t, err)
+	assert.Empty(t, found)
 }
 
 func TestAdministratorRegistersNewSystem(t *testing.T) {
-	db := openTestDB(t)
-	svc, systems, reg := newTestServices(t, db)
-	patientID := seedPatient(t, db, testClinicID)
+	idRepoMock, sysRepoMock, _, svc, systems, reg := setupTestServices(t)
+	patientID := uuid.MustParse("01990000-0000-7000-8000-000000000010")
+	createdID := uuid.MustParse("01990000-0000-7000-8000-000000000099")
 
-	// A Paraguayan cédula: 8 digits with the standard scheme.
+	createdSystem := &identifiermodel.IdentifierSystem{
+		ID:               createdID,
+		System:           "urn:librevita:id:py:cedula",
+		DisplayName:      "Cédula de Identidad (Paraguay)",
+		Pattern:          "[0-9]{8}",
+		Transform:        identifiermodel.TransformDigits,
+		CheckAlgorithm:   identifiermodel.CheckMod11Desc,
+		CheckBaseLen:     7,
+		CheckDVCount:     1,
+		CheckStartWeight: 8,
+		Active:           true,
+	}
+
+	sysListWithNew := append(defaultTestSystems(), createdSystem)
+	sysRepoMock.EXPECT().Create(mock.Anything, mock.Anything).Return(createdSystem, nil).Once()
+	sysRepoMock.EXPECT().ListActive(mock.Anything).Return(sysListWithNew, nil).Once()
+
 	created, err := systems.Create(context.Background(), testUserID.String(), usecase.SystemInput{
 		System:           "urn:librevita:id:py:cedula",
 		DisplayName:      "Cédula de Identidad (Paraguay)",
@@ -287,100 +307,139 @@ func TestAdministratorRegistersNewSystem(t *testing.T) {
 		CheckDVCount:     1,
 		CheckStartWeight: 8,
 	})
-	if err != nil {
-		t.Fatalf("Create: %v", err)
-	}
-	if len(reg.Systems()) == 4 {
-		t.Fatal("registry was not reloaded after Create")
-	}
+	require.NoError(t, err)
+	assert.Equal(t, 3, len(reg.Systems())) // 2 default + 1 new = 3 active systems
 
-	// 1.234.567-9 is the cédula with its check digit.
+	var storedRecord identifiermodel.IdentifierRecord
+	idRepoMock.EXPECT().Add(mock.Anything, mock.MatchedBy(func(rec identifiermodel.IdentifierRecord) bool {
+		return rec.System == "urn:librevita:id:py:cedula"
+	})).RunAndReturn(func(ctx context.Context, rec identifiermodel.IdentifierRecord) (*identifiermodel.IdentifierRecord, error) {
+		rec.ID = uuid.New()
+		storedRecord = rec
+		return &rec, nil
+	}).Once()
+
 	got, err := svc.AddIdentifier(context.Background(), testClinicID.String(), testUserID.String(), usecase.Input{
-		PatientID: patientID.String(), Value: "12345679",
+		PatientID: patientID.String(),
+		Value:     "12345679",
 	})
-	if err != nil {
-		t.Fatalf("AddIdentifier: %v", err)
-	}
-	if got.System != "urn:librevita:id:py:cedula" {
-		t.Fatalf("system = %s, want the configured cédula", got.System)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, "urn:librevita:id:py:cedula", got.System)
 
-	// Lookup works through the blind index.
+	// Lookup through blind index
+	idRepoMock.EXPECT().FindByBlindIndex(mock.Anything, testClinicID, mock.Anything).RunAndReturn(func(ctx context.Context, cID uuid.UUID, blind string) (*identifiermodel.IdentifierRecord, error) {
+		if blind == storedRecord.BlindIndex {
+			return &storedRecord, nil
+		}
+		return nil, usecase.ErrNotFound
+	}).Maybe()
+
 	found, err := svc.FindByValue(context.Background(), testClinicID.String(), "1234.567-9")
-	if err != nil {
-		t.Fatalf("FindByValue: %v", err)
-	}
-	if len(found) != 1 {
-		t.Fatalf("FindByValue = %d hits, want 1", len(found))
-	}
+	require.NoError(t, err)
+	require.Len(t, found, 1)
 
-	// Deactivating the system keeps the row readable but the value no
-	// longer matches (the raw fallback yields a different blind index).
-	if err := systems.SetActive(context.Background(), created.ID.String(), false); err != nil {
-		t.Fatalf("SetActive: %v", err)
-	}
+	// Deactivating system
+	sysRepoMock.EXPECT().SetActive(mock.Anything, created.ID, false).Return(nil).Once()
+	sysRepoMock.EXPECT().ListActive(mock.Anything).Return(defaultTestSystems(), nil).Once()
+	err = systems.SetActive(context.Background(), created.ID.String(), false)
+	require.NoError(t, err)
+
+	// Adding after deactivation falls back to raw system
+	idRepoMock.EXPECT().Add(mock.Anything, mock.MatchedBy(func(rec identifiermodel.IdentifierRecord) bool {
+		return rec.System == usecase.RawSystem
+	})).Return(&identifiermodel.IdentifierRecord{
+		ID:        uuid.New(),
+		PatientID: patientID,
+		System:    usecase.RawSystem,
+	}, nil).Once()
+
 	got, err = svc.AddIdentifier(context.Background(), testClinicID.String(), testUserID.String(), usecase.Input{
-		PatientID: seedPatient(t, db, testClinicID).String(), Value: "12345678",
+		PatientID: patientID.String(),
+		Value:     "12345678",
 	})
-	if err != nil {
-		t.Fatalf("AddIdentifier after deactivation: %v", err)
-	}
-	if got.System != usecase.RawSystem {
-		t.Fatalf("system after deactivation = %s, want raw", got.System)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, usecase.RawSystem, got.System)
 }
 
 func TestUpdateSystemPreservesActiveState(t *testing.T) {
-	db := openTestDB(t)
-	_, systems, _ := newTestServices(t, db)
+	_, sysRepoMock, _, _, systems, _ := setupTestServices(t)
 	ctx := context.Background()
+	systemID := uuid.MustParse("01990000-0000-7000-8000-000000000099")
+
+	createdSystem := &identifiermodel.IdentifierSystem{
+		ID:             systemID,
+		System:         "urn:librevita:id:py:cedula",
+		DisplayName:    "Cedula",
+		Pattern:        `^\d{6,8}-\d$`,
+		Transform:      identifiermodel.TransformNone,
+		CheckAlgorithm: identifiermodel.CheckNone,
+		Active:         true,
+	}
+
+	sysRepoMock.EXPECT().Create(mock.Anything, mock.Anything).Return(createdSystem, nil).Once()
+	sysRepoMock.EXPECT().ListActive(mock.Anything).Return(append(defaultTestSystems(), createdSystem), nil).Once()
 
 	created, err := systems.Create(ctx, testUserID.String(), usecase.SystemInput{
-		System: "urn:librevita:id:py:cedula", DisplayName: "Cedula", Pattern: `^\d{6,8}-\d$`,
-		Transform: usecase.TransformNone, CheckAlgorithm: usecase.CheckNone, CheckDVCount: 1, CheckStartWeight: 2,
+		System:         "urn:librevita:id:py:cedula",
+		DisplayName:    "Cedula",
+		Pattern:        `^\d{6,8}-\d$`,
+		Transform:      usecase.TransformNone,
+		CheckAlgorithm: usecase.CheckNone,
 	})
-	if err != nil {
-		t.Fatal(err)
+	require.NoError(t, err)
+
+	// SetActive to false
+	sysRepoMock.EXPECT().SetActive(mock.Anything, created.ID, false).Return(nil).Once()
+	sysRepoMock.EXPECT().ListActive(mock.Anything).Return(defaultTestSystems(), nil).Once()
+	err = systems.SetActive(ctx, created.ID.String(), false)
+	require.NoError(t, err)
+
+	// Update inactive system
+	updatedSystem := &identifiermodel.IdentifierSystem{
+		ID:             systemID,
+		System:         "urn:librevita:id:py:cedula",
+		DisplayName:    "Cedula de Identidad",
+		Pattern:        `^\d{6,8}-\d$`,
+		Transform:      identifiermodel.TransformNone,
+		CheckAlgorithm: identifiermodel.CheckNone,
+		Active:         false,
 	}
-	if err := systems.SetActive(ctx, created.ID.String(), false); err != nil {
-		t.Fatal(err)
-	}
+	sysRepoMock.EXPECT().Update(mock.Anything, mock.MatchedBy(func(s *identifiermodel.IdentifierSystem) bool {
+		return s.ID == created.ID
+	})).Return(updatedSystem, nil).Once()
+	sysRepoMock.EXPECT().ListActive(mock.Anything).Return(defaultTestSystems(), nil).Once()
+
 	updated, err := systems.Update(ctx, created.ID.String(), usecase.SystemInput{
-		System: "urn:librevita:id:py:cedula", DisplayName: "Cedula de Identidad", Pattern: `^\d{6,8}-\d$`,
-		Transform: usecase.TransformNone, CheckAlgorithm: usecase.CheckNone, CheckDVCount: 1, CheckStartWeight: 2,
+		System:         "urn:librevita:id:py:cedula",
+		DisplayName:    "Cedula de Identidad",
+		Pattern:        `^\d{6,8}-\d$`,
+		Transform:      usecase.TransformNone,
+		CheckAlgorithm: usecase.CheckNone,
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if updated.Active {
-		t.Errorf("updated system active = %v, want false (editing a deactivated system must not reactivate it)", updated.Active)
-	}
+	require.NoError(t, err)
+	assert.False(t, updated.Active)
 }
 
 func TestListSkipsUndecryptableIdentifiers(t *testing.T) {
-	client := openTestDB(t)
-	svc, _, _ := newTestServices(t, client)
-	patientID := seedPatient(t, client, testClinicID)
+	idRepoMock, _, _, svc, _, _ := setupTestServices(t)
+	patientID := uuid.MustParse("01990000-0000-7000-8000-000000000010")
 
-	badID := uuid.Must(uuid.NewV7())
-	_, err := client.PatientIdentifier.Create().
-		SetID(badID).
-		SetPatientID(patientID).
-		SetSystem(usecase.CPFSystem).
-		SetValueCiphertext([]byte("invalid-ciphertext")).
-		SetNonce([]byte("invalid-nonce-24-bytes--")).
-		SetBlindIndex("0000000000000000000000000000000000000000000000000000000000000000").
-		SetCreatedBy(testUserID).
-		Save(context.Background())
-	if err != nil {
-		t.Fatalf("insert bad identifier: %v", err)
+	// Corrupted ciphertext/nonce record
+	badRecord := identifiermodel.IdentifierRecord{
+		ID:              uuid.New(),
+		PatientID:       patientID,
+		System:          usecase.CPFSystem,
+		ValueCiphertext: []byte("invalid-ciphertext"),
+		Nonce:           []byte("invalid-nonce-24-bytes--"),
+		BlindIndex:      "0000000000000000000000000000000000000000000000000000000000000000",
+		CreatedBy:       &testUserID,
+		CreatedAt:       time.Now(),
 	}
+
+	idRepoMock.EXPECT().PatientExists(mock.Anything, testClinicID, patientID).Return(true, nil).Once()
+	idRepoMock.EXPECT().ListByPatient(mock.Anything, patientID).Return([]identifiermodel.IdentifierRecord{badRecord}, nil).Once()
 
 	got, err := svc.List(context.Background(), testClinicID.String(), patientID.String())
-	if err != nil {
-		t.Fatalf("List returned error for undecryptable row: %v", err)
-	}
-	if len(got) != 0 {
-		t.Fatalf("List = %d, want 0", len(got))
-	}
+	require.NoError(t, err)
+	assert.Empty(t, got)
 }

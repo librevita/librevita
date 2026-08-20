@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
+
 	"librevita.org/internal/core/config"
 )
 
@@ -18,15 +20,9 @@ func TestCSRFCookieAttributes(t *testing.T) {
 
 	for name, c := range map[string]*CSRF{"development": dev, "production": prod} {
 		cookie := c.Cookie("token")
-		if !cookie.HttpOnly {
-			t.Fatalf("%s: CSRF cookie must be HttpOnly", name)
-		}
-		if cookie.SameSite != http.SameSiteLaxMode {
-			t.Fatalf("%s: CSRF cookie must be SameSite=Lax", name)
-		}
+		assert.True(t, cookie.HttpOnly, "%s: CSRF cookie must be HttpOnly", name)
+		assert.Equal(t, http.SameSiteLaxMode, cookie.SameSite, "%s: CSRF cookie must be SameSite=Lax", name)
 		wantSecure := name == "production"
-		if cookie.Secure != wantSecure {
-			t.Fatalf("%s: Secure = %v, want %v", name, cookie.Secure, wantSecure)
-		}
+		assert.Equal(t, wantSecure, cookie.Secure, "%s: Secure mismatch", name)
 	}
 }
