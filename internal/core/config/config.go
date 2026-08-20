@@ -114,6 +114,18 @@ type Config struct {
 	// otherwise (previously encrypted values become undecryptable on
 	// restart).
 	MasterKey string `koanf:"master_key"`
+
+	// Crypto configures cryptographic agility defaults (hashing algorithm and encryption version).
+	Crypto CryptoConfig `koanf:"crypto"`
+}
+
+// CryptoConfig defines defaults for cryptographic hashing and symmetric AEAD encryption.
+type CryptoConfig struct {
+	// HashAlgorithm is the default hash engine: "blake2s" (default) or "blake2b".
+	HashAlgorithm string `koanf:"hash_algorithm"`
+
+	// EncryptionCipher is the default symmetric encryption cipher: "xchacha20-poly1305" (default).
+	EncryptionCipher string `koanf:"encryption_cipher"`
 }
 
 // VaultConfig defines the active key vault backend. The backend-specific
@@ -394,6 +406,8 @@ func RegisterFlags(fs *pflag.FlagSet) {
 	stringFlag(fs, "vault-hashicorp-address", "", "HashiCorp Vault / OpenBao address (e.g. http://localhost:8200)")
 	stringFlag(fs, "vault-hashicorp-token", "", "HashiCorp Vault / OpenBao authentication token")
 	stringFlag(fs, "vault-hashicorp-mount", "secret", "HashiCorp Vault KV v2 mount path")
+	stringFlag(fs, "crypto-hash-algorithm", "blake2s", "Default cryptographic hash engine (blake2s, blake2b)")
+	stringFlag(fs, "crypto-encryption-cipher", "xchacha20-poly1305", "Default symmetric encryption cipher (xchacha20-poly1305)")
 }
 
 // IsProduction reports whether the application runs in production.
@@ -567,9 +581,30 @@ func (c *Config) normalize() {
 	if strings.TrimSpace(c.Vault.BBolt.Path) == "" {
 		c.Vault.BBolt.Path = filepath.Join(c.DataDir, "keys.db")
 	}
+
+	c.Crypto.HashAlgorithm = strings.ToLower(strings.TrimSpace(c.Crypto.HashAlgorithm))
+	if c.Crypto.HashAlgorithm == "" {
+		c.Crypto.HashAlgorithm = "blake2s"
+	}
+	c.Crypto.EncryptionCipher = strings.ToLower(strings.TrimSpace(c.Crypto.EncryptionCipher))
+	if c.Crypto.EncryptionCipher == "" {
+		c.Crypto.EncryptionCipher = "xchacha20-poly1305"
+	}
 }
 
 func (c *Config) validate() error {
+	switch c.Crypto.HashAlgorithm {
+	case "", "blake2s", "blake2b":
+	default:
+		return fmt.Errorf("config: invalid crypto.hash_algorithm %q (active supported: \"blake2s\", \"blake2b\")", c.Crypto.HashAlgorithm)
+	}
+
+	switch c.Crypto.EncryptionCipher {
+	case "", "xchacha20-poly1305", "xchacha20poly1305":
+	default:
+		return fmt.Errorf("config: invalid crypto.encryption_cipher %q (active supported: \"xchacha20-poly1305\")", c.Crypto.EncryptionCipher)
+	}
+
 	switch c.Vault.Backend {
 	case "", "bbolt", "nats", "etcd", "hashicorp", "hashicorp_vault", "openbao":
 	default:
@@ -840,6 +875,10 @@ func mapEnvironmentKey(key string) string {
 		return "vault.hashicorp.token"
 	case "vault_hashicorp_mount":
 		return "vault.hashicorp.mount"
+	case "crypto_hash_algorithm":
+		return "crypto.hash_algorithm"
+	case "crypto_encryption_cipher":
+		return "crypto.encryption_cipher"
 	default:
 		return ""
 	}

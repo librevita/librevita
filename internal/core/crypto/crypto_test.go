@@ -166,6 +166,8 @@ func TestFxModuleIntegration(t *testing.T) {
 
 	var keyVault crypto.KeyVault
 	var eng *crypto.Engine
+	var hasher crypto.Hasher
+	var encryptor crypto.Encryptor
 
 	app := fxtest.New(t,
 		fx.Provide(
@@ -174,17 +176,32 @@ func TestFxModuleIntegration(t *testing.T) {
 		),
 		vault.Module,
 		crypto.Module,
-		fx.Populate(&keyVault, &eng),
+		fx.Populate(&keyVault, &eng, &hasher, &encryptor),
 	)
 	app.RequireStart()
 	defer app.RequireStop()
 
 	require.NotNil(t, keyVault)
 	require.NotNil(t, eng)
+	require.NotNil(t, hasher)
+	require.NotNil(t, encryptor)
+
+	// Verify hasher
+	h, err := hasher.HashString("test-session")
+	require.NoError(t, err)
+	assert.True(t, strings.HasPrefix(h, "blake2s$"))
+
+	// Verify encryptor
+	ct, err := encryptor.Encrypt([]byte("medical-data"), []byte("aad"))
+	require.NoError(t, err)
+	assert.Equal(t, crypto.MagicByteXChaCha20Poly1305, ct[0])
+	pt, err := encryptor.Decrypt(ct, []byte("aad"))
+	require.NoError(t, err)
+	assert.Equal(t, []byte("medical-data"), pt)
 
 	ctx := context.Background()
 	pURN := "urn:librevita:patient:fx-test"
-	_, err := eng.SetupPatientDEK(ctx, pURN)
+	_, err = eng.SetupPatientDEK(ctx, pURN)
 	require.NoError(t, err)
 }
 
