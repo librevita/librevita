@@ -11,9 +11,9 @@ import (
 // everything else falls back to raw.
 const RawSystem = "urn:librevita:id:raw"
 
-// systemURNPrefix is the namespace administrators use when registering
+// SystemURNPrefix is the namespace administrators use when registering
 // a new document system.
-const systemURNPrefix = "urn:librevita:id:"
+const SystemURNPrefix = "urn:librevita:id:"
 
 // Seed system URNs, the defaults shipped in the migration. They are
 // rows, not a closed set: deployments in other jurisdictions register

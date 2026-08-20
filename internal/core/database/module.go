@@ -44,4 +44,3 @@ func registerLifecycle(lc fx.Lifecycle, store *Store, log *slog.Logger) {
 		},
 	})
 }
-

@@ -26,14 +26,14 @@ func openIndexDB(t *testing.T) (*sql.DB, *ent.Client) {
 	db, err := sql.Open("sqlite", "file:"+name+"?mode=memory&cache=shared")
 	require.NoError(t, err)
 	db.SetMaxOpenConns(1)
-	t.Cleanup(func() { db.Close() })
+	t.Cleanup(func() { _ = db.Close() })
 
 	err = database.Migrate(context.Background(), db, slog.New(slog.DiscardHandler))
 	require.NoError(t, err)
 
 	drv := entsql.OpenDB(dialect.SQLite, db)
 	client := ent.NewClient(ent.Driver(drv))
-	t.Cleanup(func() { client.Close() })
+	t.Cleanup(func() { _ = client.Close() })
 
 	return db, client
 }

@@ -55,15 +55,6 @@ func (h *Handler) physicianRows(rows []usecase.ListPhysiciansPageRow) []views.Ph
 	return out
 }
 
-// asString flattens the GROUP_CONCAT column, which is typed
-// interface{} and may hold a NULL-derived empty value.
-func asString(v interface{}) string {
-	if s, ok := v.(string); ok {
-		return s
-	}
-	return ""
-}
-
 // StaffEditPage renders the physician profile form. Admins get the
 // direct edit; other staff get the change-request form.
 func (h *Handler) StaffEditPage(c echo.Context) error {

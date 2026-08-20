@@ -2,7 +2,6 @@ package database
 
 import (
 	"context"
-	"io"
 	"log/slog"
 	"path/filepath"
 	"testing"
@@ -28,10 +27,10 @@ func TestStoreSQLiteAndEntClient(t *testing.T) {
 		},
 	}
 
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	logger := slog.New(slog.DiscardHandler)
 	store, err := NewStore(cfg, logger)
 	require.NoError(t, err)
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	assert.Equal(t, config.DriverSQLite, store.Driver())
 	require.NotNil(t, store.SQL())

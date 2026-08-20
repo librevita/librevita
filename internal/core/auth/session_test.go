@@ -31,7 +31,7 @@ func openSessionTest(t *testing.T) *ent.Client {
 	db, err := sql.Open("sqlite", "file:session-test-"+uuid.NewString()+"?mode=memory&cache=shared")
 	require.NoError(t, err)
 	db.SetMaxOpenConns(1)
-	t.Cleanup(func() { db.Close() })
+	t.Cleanup(func() { _ = db.Close() })
 
 	log := slog.New(slog.DiscardHandler)
 	err = database.Migrate(context.Background(), db, log)
@@ -39,7 +39,7 @@ func openSessionTest(t *testing.T) *ent.Client {
 
 	drv := entsql.OpenDB(dialect.SQLite, db)
 	client := ent.NewClient(ent.Driver(drv))
-	t.Cleanup(func() { client.Close() })
+	t.Cleanup(func() { _ = client.Close() })
 
 	return client
 }

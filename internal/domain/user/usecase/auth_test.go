@@ -2,6 +2,7 @@ package usecase_test
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"sync"
 	"testing"
@@ -262,7 +263,7 @@ func TestConcurrentRegistrationsProduceOnlyPatients(t *testing.T) {
 		go func(i int) {
 			defer wg.Done()
 			input := validInput()
-			input.Email = "user" + string(rune('a'+i)) + "@example.org"
+			input.Email = fmt.Sprintf("user%d@example.org", i)
 			_, _, errs[i] = env.svc.Register(context.Background(), input)
 		}(i)
 	}
@@ -401,7 +402,7 @@ func TestConcurrentOnboardSingleWinner(t *testing.T) {
 		go func(i int) {
 			defer wg.Done()
 			input := validInput()
-			input.Email = "admin" + string(rune('a'+i)) + "@example.org"
+			input.Email = fmt.Sprintf("admin%d@example.org", i)
 			_, _, errs[i] = env.svc.Onboard(context.Background(), input, validClinicInput())
 		}(i)
 	}
