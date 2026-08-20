@@ -11,11 +11,11 @@ import (
 
 	"github.com/labstack/echo/v4"
 
+	"librevita.org/internal/core/audit"
 	"librevita.org/internal/core/auth"
 	"librevita.org/internal/core/server"
 	"librevita.org/internal/domain/user/delivery/views"
 	"librevita.org/internal/domain/user/usecase"
-	"librevita.org/internal/types"
 	"librevita.org/internal/ui/components"
 )
 
@@ -106,7 +106,7 @@ func (h *Handler) StaffUpdate(c echo.Context) error {
 	if err := h.applyStaffChange(ctx, id, change, server.ActorID(c), "admin update"); err != nil {
 		return h.staffUpdateError(c, id, change, err)
 	}
-	h.audit.Record(ctx, server.EventFromRequest(c, types.AuditResultSuccess,
+	h.audit.Record(ctx, server.EventFromRequest(c, audit.AuditResultSuccess,
 		"staff.update", "user:"+id, "", "direct admin edit"))
 	return server.HtmxRedirect(c, "/staff")
 }
@@ -120,7 +120,7 @@ func (h *Handler) StaffRequestChange(c echo.Context) error {
 	if _, err := h.svc.CreateStaffChangeRequest(ctx, id, server.ActorID(c), change); err != nil {
 		return h.staffRequestError(c, id, change, err)
 	}
-	h.audit.Record(ctx, server.EventFromRequest(c, types.AuditResultSuccess,
+	h.audit.Record(ctx, server.EventFromRequest(c, audit.AuditResultSuccess,
 		"staff.request", "user:"+id, "", "change requested for approval"))
 	return server.HtmxRedirect(c, "/staff")
 }
@@ -302,7 +302,7 @@ func (h *Handler) StaffRequestApprove(c echo.Context) error {
 	if err := h.svc.ApproveStaffChangeRequest(ctx, id, server.ActorID(c)); err != nil {
 		return h.requestError(c, err)
 	}
-	h.audit.Record(ctx, server.EventFromRequest(c, types.AuditResultSuccess,
+	h.audit.Record(ctx, server.EventFromRequest(c, audit.AuditResultSuccess,
 		"staff.approve", "request:"+id, "", ""))
 	return server.HtmxRedirect(c, "/staff/requests")
 }
@@ -314,7 +314,7 @@ func (h *Handler) StaffRequestReject(c echo.Context) error {
 	if err := h.svc.RejectStaffChangeRequest(ctx, id, server.ActorID(c), c.FormValue("note")); err != nil {
 		return h.requestError(c, err)
 	}
-	h.audit.Record(ctx, server.EventFromRequest(c, types.AuditResultSuccess,
+	h.audit.Record(ctx, server.EventFromRequest(c, audit.AuditResultSuccess,
 		"staff.reject", "request:"+id, "", c.FormValue("note")))
 	return server.HtmxRedirect(c, "/staff/requests")
 }
@@ -435,7 +435,7 @@ func (h *Handler) StaffCreate(c echo.Context) error {
 	if err := h.svc.SetUserSpecialties(ctx, clinicID, user.ID.String(), c.Request().PostForm["specialties"]); err != nil {
 		return err
 	}
-	h.audit.Record(ctx, server.EventFromRequest(c, types.AuditResultSuccess,
+	h.audit.Record(ctx, server.EventFromRequest(c, audit.AuditResultSuccess,
 		"staff.create", "user:"+user.ID.String(), "", "physician account created"))
 	return server.HtmxRedirect(c, "/staff")
 }

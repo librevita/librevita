@@ -23,7 +23,6 @@ import (
 	"github.com/google/cel-go/common/types"
 
 	"librevita.org/internal/core/auth"
-	lvtypes "librevita.org/internal/types"
 )
 
 // Every expression receives the same variables:
@@ -228,9 +227,9 @@ func (pe *PolicyEngine) Set(ctx context.Context, name, expression string, actor 
 	pe.setMu.Lock()
 	defer pe.setMu.Unlock()
 
-	origin := lvtypes.PolicyOriginSystem
+	origin := PolicyOriginSystem
 	if actor.ID != "" {
-		origin = lvtypes.PolicyOriginAdmin
+		origin = PolicyOriginAdmin
 	}
 
 	if err := pe.repo.Set(ctx, name, expression, actor, origin.String()); err != nil {

@@ -13,11 +13,11 @@ import (
 	"github.com/labstack/echo/v4"
 	"golang.org/x/crypto/blake2b"
 
+	"librevita.org/internal/core/audit"
 	"librevita.org/internal/core/server"
 	"librevita.org/internal/core/storage"
 	"librevita.org/internal/domain/patient/delivery/views"
 	"librevita.org/internal/domain/patient/usecase"
-	"librevita.org/internal/types"
 )
 
 // patientDocumentDomain is the attachment namespace for patient files.
@@ -69,7 +69,7 @@ func (h *Handler) UploadDocument(c echo.Context) error {
 	}
 	// The canonical checksum is witnessed in the append-only chain, so
 	// any later modification of the blob is provable.
-	h.audit.Record(ctx, server.EventFromRequest(c, types.AuditResultSuccess,
+	h.audit.Record(ctx, server.EventFromRequest(c, audit.AuditResultSuccess,
 		"file.upload", "patient:"+pt.ID.String(), meta.OriginalName, "checksum: "+meta.Checksum))
 	return server.HtmxRedirect(c, "/patients/"+pt.ID.String())
 }
@@ -104,7 +104,7 @@ func (h *Handler) DownloadDocument(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-	h.audit.Record(ctx, server.EventFromRequest(c, types.AuditResultSuccess,
+	h.audit.Record(ctx, server.EventFromRequest(c, audit.AuditResultSuccess,
 		"file.read", "patient:"+pt.ID.String(), meta.OriginalName, ""))
 	c.Response().Header().Set("Content-Disposition",
 		"attachment; filename=\""+strings.ReplaceAll(meta.OriginalName, `"`, "")+"\"")
@@ -112,7 +112,7 @@ func (h *Handler) DownloadDocument(c echo.Context) error {
 		return err
 	}
 	if hex.EncodeToString(hasher.Sum(nil)) != meta.Checksum {
-		h.audit.Record(ctx, server.EventFromRequest(c, types.AuditResultFailure,
+		h.audit.Record(ctx, server.EventFromRequest(c, audit.AuditResultFailure,
 			"file.read", "patient:"+pt.ID.String(), meta.OriginalName, "checksum mismatch"))
 	}
 	return nil

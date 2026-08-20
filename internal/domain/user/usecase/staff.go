@@ -8,8 +8,6 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
-
-	"librevita.org/internal/types"
 )
 
 // StaffChange is the JSON payload of a proposed physician profile change.
@@ -124,7 +122,7 @@ func (s *Service) ApproveStaffChangeRequest(ctx context.Context, id, decidedBy s
 	if err != nil {
 		return err
 	}
-	if types.StaffRequestStatus(req.Status) != types.StaffRequestPending {
+	if StaffRequestStatus(req.Status) != StaffRequestPending {
 		return ErrRequestNotPending
 	}
 
@@ -161,7 +159,7 @@ func (s *Service) RejectStaffChangeRequest(ctx context.Context, id, decidedBy, n
 	if err != nil {
 		return err
 	}
-	if types.StaffRequestStatus(req.Status) != types.StaffRequestPending {
+	if StaffRequestStatus(req.Status) != StaffRequestPending {
 		return ErrRequestNotPending
 	}
 

@@ -7,8 +7,8 @@ import (
 
 	"github.com/google/uuid"
 
+	"librevita.org/internal/core/auth"
 	"librevita.org/internal/domain/user/usecase"
-	"librevita.org/internal/types"
 )
 
 var (
@@ -322,7 +322,7 @@ func TestStaffChangeRequests(t *testing.T) {
 	}
 	_ = other
 
-	pend, total, err := svc.ListStaffChangeRequestsFiltered(ctx, types.StaffRequestPending.String(), "", 50, 0)
+	pend, total, err := svc.ListStaffChangeRequestsFiltered(ctx, usecase.StaffRequestPending.String(), "", 50, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -551,33 +551,33 @@ func TestUpdatePreferences(t *testing.T) {
 	}
 
 	// Invalid theme and timezone are rejected before touching the row.
-	if err := svc.UpdatePreferences(ctx, user.ID.String(), "America/Sao_Paulo", types.UITheme("sepia")); err == nil {
+	if err := svc.UpdatePreferences(ctx, user.ID.String(), "America/Sao_Paulo", auth.UITheme("sepia")); err == nil {
 		t.Error("invalid theme must be rejected")
 	}
-	if err := svc.UpdatePreferences(ctx, user.ID.String(), "Mars/Olympus", types.UIThemeDark); err == nil {
+	if err := svc.UpdatePreferences(ctx, user.ID.String(), "Mars/Olympus", auth.UIThemeDark); err == nil {
 		t.Error("unknown timezone must be rejected")
 	}
 
-	if err := svc.UpdatePreferences(ctx, user.ID.String(), "Asia/Tokyo", types.UIThemeDark); err != nil {
+	if err := svc.UpdatePreferences(ctx, user.ID.String(), "Asia/Tokyo", auth.UIThemeDark); err != nil {
 		t.Fatalf("UpdatePreferences: %v", err)
 	}
 	loaded, err := svc.GetUser(ctx, user.ID.String())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if loaded.Timezone != "Asia/Tokyo" || loaded.UITheme != string(types.UIThemeDark) {
+	if loaded.Timezone != "Asia/Tokyo" || loaded.UITheme != string(auth.UIThemeDark) {
 		t.Errorf("preferences = %q/%q, want Asia/Tokyo/dark", loaded.Timezone, loaded.UITheme)
 	}
 
 	// Empty timezone means "inherit the clinic timezone".
-	if err := svc.UpdatePreferences(ctx, user.ID.String(), "", types.UIThemeSystem); err != nil {
+	if err := svc.UpdatePreferences(ctx, user.ID.String(), "", auth.UIThemeSystem); err != nil {
 		t.Fatalf("reset preferences: %v", err)
 	}
 	loaded, err = svc.GetUser(ctx, user.ID.String())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if loaded.Timezone != "" || loaded.UITheme != string(types.UIThemeSystem) {
+	if loaded.Timezone != "" || loaded.UITheme != string(auth.UIThemeSystem) {
 		t.Errorf("reset preferences = %q/%q, want empty/system", loaded.Timezone, loaded.UITheme)
 	}
 }

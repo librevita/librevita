@@ -2,7 +2,6 @@ package layouts
 
 import (
 	"librevita.org/internal/core/auth"
-	"librevita.org/internal/types"
 )
 
 // App is the authenticated application shell: topbar and sidebar around
@@ -25,9 +24,9 @@ templ App(title string, token string, principal *auth.Principal, active string) 
 
 // themeOf resolves the shell theme; anonymous sessions follow the
 // system scheme.
-func themeOf(p *auth.Principal) types.UITheme {
+func themeOf(p *auth.Principal) auth.UITheme {
 	if p == nil {
-		return types.UIThemeSystem
+		return auth.UIThemeSystem
 	}
 	return p.UITheme
 }

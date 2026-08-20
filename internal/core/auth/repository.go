@@ -9,7 +9,6 @@ import (
 
 	"librevita.org/ent"
 	"librevita.org/ent/session"
-	"librevita.org/internal/types"
 )
 
 type sessionRepository struct {
@@ -64,7 +63,7 @@ func (r *sessionRepository) GetActive(ctx context.Context, id string, now time.T
 			Role:     roleName,
 			Active:   usr.Active,
 			Timezone: usr.Timezone,
-			UITheme:  types.UITheme(usr.UITheme),
+			UITheme:  UITheme(usr.UITheme),
 		}
 	}
 

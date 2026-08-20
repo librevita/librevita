@@ -19,10 +19,10 @@ import (
 	"librevita.org/internal/core/database"
 	"librevita.org/internal/core/policy"
 	"librevita.org/internal/core/vault"
+	patientmodel "librevita.org/internal/domain/patient/model"
 	"librevita.org/internal/domain/patient/repository"
 	"librevita.org/internal/domain/patient/usecase"
 	"librevita.org/internal/testutil"
-	"librevita.org/internal/types"
 )
 
 func openDB(t *testing.T) *ent.Client {
@@ -95,7 +95,7 @@ func validInput() usecase.PatientInput {
 	return usecase.PatientInput{
 		DisplayName: "Maria Oliveira",
 		BirthDate:   "1985-03-14",
-		Sex:         types.SexFemale,
+		Sex:         patientmodel.SexFemale,
 		Phone:       "+55 11 99999-0000",
 		Email:       "maria@example.org",
 		City:        "São Paulo",
@@ -111,7 +111,7 @@ func TestCreateAndGet(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if pt.ID == uuid.Nil || pt.Status != types.PatientStatusActive {
+	if pt.ID == uuid.Nil || pt.Status != patientmodel.PatientStatusActive {
 		t.Fatalf("created patient = %+v, want id and active status", pt)
 	}
 
@@ -133,7 +133,7 @@ func TestCreateValidation(t *testing.T) {
 		mutate func(*usecase.PatientInput)
 	}{
 		{"missing name", func(in *usecase.PatientInput) { in.DisplayName = " " }},
-		{"bad sex", func(in *usecase.PatientInput) { in.Sex = types.Sex("alien") }},
+		{"bad sex", func(in *usecase.PatientInput) { in.Sex = patientmodel.Sex("alien") }},
 		{"bad birth date", func(in *usecase.PatientInput) { in.BirthDate = "14/03/1985" }},
 		{"bad email", func(in *usecase.PatientInput) { in.Email = "not-an-email" }},
 	}
@@ -213,17 +213,17 @@ func TestListAndSearch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := svc.SetStatus(context.Background(), testClinicID.String(), pt.ID.String(), types.PatientStatusInactive); err != nil {
+	if err := svc.SetStatus(context.Background(), testClinicID.String(), pt.ID.String(), patientmodel.PatientStatusInactive); err != nil {
 		t.Fatal(err)
 	}
-	active, _, err := svc.ListPage(context.Background(), testClinicID.String(), "", "", types.PatientStatusActive.String(), 50, 0)
+	active, _, err := svc.ListPage(context.Background(), testClinicID.String(), "", "", patientmodel.PatientStatusActive.String(), 50, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(active) != 2 {
 		t.Fatalf("active = %d, want 2", len(active))
 	}
-	inactive, _, err := svc.ListPage(context.Background(), testClinicID.String(), "", "", types.PatientStatusInactive.String(), 50, 0)
+	inactive, _, err := svc.ListPage(context.Background(), testClinicID.String(), "", "", patientmodel.PatientStatusInactive.String(), 50, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -240,11 +240,11 @@ func TestSetStatus(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := svc.SetStatus(context.Background(), testClinicID.String(), pt.ID.String(), types.PatientStatusInactive); err != nil {
+	if err := svc.SetStatus(context.Background(), testClinicID.String(), pt.ID.String(), patientmodel.PatientStatusInactive); err != nil {
 		t.Fatal(err)
 	}
 	got, _ := svc.Get(context.Background(), testClinicID.String(), pt.ID.String())
-	if got.Status != types.PatientStatusInactive {
+	if got.Status != patientmodel.PatientStatusInactive {
 		t.Fatalf("status = %q, want inactive", got.Status)
 	}
 }

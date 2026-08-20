@@ -10,7 +10,6 @@ import (
 	"librevita.org/ent"
 	"librevita.org/ent/patient"
 	patientmodel "librevita.org/internal/domain/patient/model"
-	"librevita.org/internal/types"
 )
 
 type patientRepository struct {
@@ -106,7 +105,7 @@ func (r *patientRepository) Update(ctx context.Context, rec patientmodel.Patient
 	return toPatientRecord(updated), nil
 }
 
-func (r *patientRepository) BulkSetStatus(ctx context.Context, clinicID uuid.UUID, patientIDs []uuid.UUID, status types.PatientStatus) (int, error) {
+func (r *patientRepository) BulkSetStatus(ctx context.Context, clinicID uuid.UUID, patientIDs []uuid.UUID, status patientmodel.PatientStatus) (int, error) {
 	count, err := r.client.Patient.Update().
 		Where(
 			patient.ClinicIDEQ(clinicID),
@@ -121,7 +120,7 @@ func (r *patientRepository) BulkSetStatus(ctx context.Context, clinicID uuid.UUI
 	return count, nil
 }
 
-func (r *patientRepository) ListByClinicAndStatus(ctx context.Context, clinicID uuid.UUID, status *types.PatientStatus) ([]patientmodel.PatientRecord, error) {
+func (r *patientRepository) ListByClinicAndStatus(ctx context.Context, clinicID uuid.UUID, status *patientmodel.PatientStatus) ([]patientmodel.PatientRecord, error) {
 	query := r.client.Patient.Query().Where(patient.ClinicIDEQ(clinicID))
 	if status != nil {
 		query = query.Where(patient.StatusEQ(patient.Status(*status)))
@@ -161,7 +160,7 @@ func toPatientRecord(p *ent.Patient) *patientmodel.PatientRecord {
 		BlindIndex:       p.BlindIndex,
 		EncryptedPayload: p.EncryptedPayload,
 		Nonce:            p.Nonce,
-		Status:           types.PatientStatus(p.Status),
+		Status:           patientmodel.PatientStatus(p.Status),
 		CreatedBy:        createdBy,
 		CreatedAt:        p.CreatedAt,
 		UpdatedAt:        p.UpdatedAt,

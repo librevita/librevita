@@ -1,7 +1,7 @@
 package layouts
 
 import (
-	"librevita.org/internal/types"
+	"librevita.org/internal/core/auth"
 	"librevita.org/internal/ui"
 )
 
@@ -16,7 +16,7 @@ import (
 // immutably. The theme bootstrap is rendered inline (allowed by its
 // CSP content hash) so the dark class exists before first paint while
 // the big bundle loads with defer.
-templ Base(title string, theme types.UITheme, token string) {
+templ Base(title string, theme auth.UITheme, token string) {
 	<!DOCTYPE html>
 	<html lang="en" data-ui-theme={ theme.String() } class={ "h-full" + darkClass(theme) }>
 		<head>
@@ -38,8 +38,8 @@ templ Base(title string, theme types.UITheme, token string) {
 
 // darkClass pre-applies the dark class when the theme is fixed dark, so
 // the first paint is already dark before the inline bootstrap runs.
-func darkClass(theme types.UITheme) string {
-	if theme == types.UIThemeDark {
+func darkClass(theme auth.UITheme) string {
+	if theme == auth.UIThemeDark {
 		return " dark"
 	}
 	return ""

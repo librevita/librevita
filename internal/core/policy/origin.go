@@ -1,4 +1,4 @@
-package types
+package policy
 
 // PolicyOrigin records who introduced a policy version. It mirrors the
 // CHECK constraint on policy_versions.origin (see

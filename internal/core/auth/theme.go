@@ -1,4 +1,4 @@
-package types
+package auth
 
 // UITheme is the color scheme of the web interface. It mirrors the
 // CHECK constraint on users.ui_theme (see

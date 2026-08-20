@@ -346,7 +346,7 @@ leader — once connected, the cluster syncs the full membership — so SRV disc
 membership changes without restarts; static addresses remain the fallback when a record is empty or the lookup fails.
 
 Every closed value set is enforced twice: by a `CHECK` constraint in the database and by a typed enum
-in `internal/types` (`AuditResult`, `PatientStatus`, `Sex`, `StaffRequestStatus`, `PolicyOrigin`, `UITheme`). Timestamp
+in its respective domain or core package (`AuditResult`, `PatientStatus`, `Sex`, `StaffRequestStatus`, `PolicyOrigin`, `UITheme`). Timestamp
 columns (`created_at`, `updated_at`, `expires_at`, `decided_at`) map natively to Go's `time.Time` via Ent ORM,
 and the generated entities type UUID columns as `uuid.UUID`, so id mixing and magic-number comparisons are compile
 errors.
@@ -474,7 +474,7 @@ The clinical and administrative features are organized in `internal/domain`:
 - **Users** — account management with relational roles: create staff accounts, change roles and status, and manage
   dynamic roles (rename, mark as clinical, delete when unused). The anti-lockout rules refuse to demote or deactivate
   the last active admin, enforced atomically in a single SQL statement.
-- **Preferences** — every user stores their own UI theme (`system`/`light`/`dark`, mirrored by `types.UITheme`) and
+- **Preferences** — every user stores their own UI theme (`system`/`light`/`dark`, mirrored by `auth.UITheme`) and
   personal timezone (empty inherits the clinic timezone); the shell renders the theme server-side and the display clock
   resolves the user's zone with a clinic fallback.
 

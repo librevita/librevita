@@ -13,7 +13,6 @@ import (
 	"librevita.org/ent"
 	"librevita.org/internal/core/audit"
 	"librevita.org/internal/core/database"
-	"librevita.org/internal/types"
 )
 
 func openAuditTest(t *testing.T) (*sql.DB, audit.Repository) {
@@ -46,7 +45,7 @@ func TestRecordPersistsEvent(t *testing.T) {
 
 	logger.Record(context.Background(), audit.Event{
 		ActorID: "01990000-0000-7000-8000-000000000001", ActorMail: "ana@example.org",
-		Action: "login", Resource: "user", Result: types.AuditResultSuccess,
+		Action: "login", Resource: "user", Result: audit.AuditResultSuccess,
 		IP: "127.0.0.1", RequestID: "req-123", Detail: "",
 	})
 
@@ -57,7 +56,7 @@ func TestRecordPersistsEvent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read audit_log: %v", err)
 	}
-	if actorID != "01990000-0000-7000-8000-000000000001" || action != "login" || result != types.AuditResultSuccess.String() || requestID != "req-123" {
+	if actorID != "01990000-0000-7000-8000-000000000001" || action != "login" || result != audit.AuditResultSuccess.String() || requestID != "req-123" {
 		t.Fatalf("unexpected row: %q %q %q %q", actorID, action, result, requestID)
 	}
 }
@@ -77,7 +76,7 @@ func TestRecordSwallowsWriteErrors(t *testing.T) {
 	db.Close()
 
 	logger.Record(context.Background(), audit.Event{
-		Action: "login", Resource: "user", Result: types.AuditResultFailure,
+		Action: "login", Resource: "user", Result: audit.AuditResultFailure,
 	})
 }
 
@@ -91,9 +90,9 @@ func TestHashChain(t *testing.T) {
 	ctx := context.Background()
 
 	for _, ev := range []audit.Event{
-		{Action: "login", Resource: "user", Result: types.AuditResultSuccess},
-		{Action: "patient.update", Resource: "patient:1", Result: types.AuditResultSuccess, Detail: "phone changed"},
-		{Action: "authorize", Resource: "policy:admin.view", Result: types.AuditResultFailure},
+		{Action: "login", Resource: "user", Result: audit.AuditResultSuccess},
+		{Action: "patient.update", Resource: "patient:1", Result: audit.AuditResultSuccess, Detail: "phone changed"},
+		{Action: "authorize", Resource: "policy:admin.view", Result: audit.AuditResultFailure},
 	} {
 		l.Record(ctx, ev)
 	}
@@ -127,7 +126,7 @@ func TestAuditLogAppendOnly(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx := context.Background()
-	l.Record(ctx, audit.Event{Action: "login", Resource: "user", Result: types.AuditResultSuccess})
+	l.Record(ctx, audit.Event{Action: "login", Resource: "user", Result: audit.AuditResultSuccess})
 
 	if _, err := db.Exec(`UPDATE audit_log SET detail = 'tampered'`); err == nil {
 		t.Fatal("UPDATE on audit_log must be refused")
