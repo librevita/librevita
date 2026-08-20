@@ -1,8 +1,4 @@
-// Package types holds domain-wide value types shared by the core and
-// domain packages. The enums here mirror the CHECK constraints of the
-// SQLite schema, so the set of values the application can produce is
-// closed in the same way the database closes it.
-package types
+package audit
 
 // AuditResult is the outcome of an audited operation. It mirrors the
 // CHECK constraint on audit_log.result (see db/migrations/00003_audit.sql),

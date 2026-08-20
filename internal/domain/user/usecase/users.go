@@ -10,7 +10,6 @@ import (
 	"github.com/google/uuid"
 
 	"librevita.org/internal/core/auth"
-	"librevita.org/internal/types"
 )
 
 // CreateUserInput is the staff account creation request.
@@ -161,7 +160,7 @@ func (s *Service) CountStaff(ctx context.Context) (int64, error) {
 }
 
 // UpdatePreferences stores the user's UI theme and personal timezone.
-func (s *Service) UpdatePreferences(ctx context.Context, userID, timezone string, theme types.UITheme) error {
+func (s *Service) UpdatePreferences(ctx context.Context, userID, timezone string, theme auth.UITheme) error {
 	timezone = strings.TrimSpace(timezone)
 	if !theme.Valid() {
 		return &ValidationError{Msg: "invalid UI theme"}

@@ -18,7 +18,6 @@ import (
 	"golang.org/x/crypto/blake2b"
 
 	"librevita.org/internal/core/config"
-	"librevita.org/internal/types"
 )
 
 // SessionCookieName is the name of the session cookie.
@@ -34,7 +33,7 @@ type Principal struct {
 	Name     string
 	Role     Role
 	Timezone string
-	UITheme  types.UITheme
+	UITheme  UITheme
 }
 
 // SessionUser holds the user information joined in active session queries.
@@ -45,7 +44,7 @@ type SessionUser struct {
 	Role     Role
 	Active   bool
 	Timezone string
-	UITheme  types.UITheme
+	UITheme  UITheme
 }
 
 // SessionRecord holds the session storage row.

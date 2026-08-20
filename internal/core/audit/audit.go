@@ -11,21 +11,19 @@ import (
 	"time"
 
 	"golang.org/x/crypto/blake2b"
-
-	"librevita.org/internal/types"
 )
 
 // Event is the structured audit payload recorded for an operation.
 type Event struct {
-	ActorID      string            // User ID, or empty for anonymous requests.
-	ActorMail    string            // Denormalized user email.
-	ActorName    string            // Denormalized display name.
-	ActorRole    string            // Role name at the time of action.
-	UserAgent    string            // Truncated User-Agent header.
-	Action       string            // Operation name (e.g. login, patient.view).
-	Resource     string            // Target resource type (e.g. patient, user).
-	ResourceName string            // Denormalized human-readable resource name.
-	Result       types.AuditResult // AuditResultSuccess or AuditResultFailure.
+	ActorID      string      // User ID, or empty for anonymous requests.
+	ActorMail    string      // Denormalized user email.
+	ActorName    string      // Denormalized display name.
+	ActorRole    string      // Role name at the time of action.
+	UserAgent    string      // Truncated User-Agent header.
+	Action       string      // Operation name (e.g. login, patient.view).
+	Resource     string      // Target resource type (e.g. patient, user).
+	ResourceName string      // Denormalized human-readable resource name.
+	Result       AuditResult // AuditResultSuccess or AuditResultFailure.
 	IP           string
 	RequestID    string
 	Detail       string
@@ -147,7 +145,7 @@ func (l *Logger) VerifyChain(ctx context.Context) (int64, error) {
 			Action:       r.Action,
 			Resource:     r.Resource,
 			ResourceName: r.ResourceName,
-			Result:       types.AuditResult(r.Result),
+			Result:       AuditResult(r.Result),
 			IP:           orEmpty(r.IP),
 			RequestID:    orEmpty(r.RequestID),
 			Detail:       orEmpty(r.Detail),

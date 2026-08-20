@@ -16,7 +16,6 @@ import (
 	"librevita.org/internal/core/crypto"
 	"librevita.org/internal/core/policy"
 	patientmodel "librevita.org/internal/domain/patient/model"
-	"librevita.org/internal/types"
 )
 
 const (
@@ -71,7 +70,7 @@ func patientURN(id uuid.UUID) string {
 }
 
 // AuthorizePatientEdit evaluates the fine-grained patient.edit policy.
-func (s *Service) AuthorizePatientEdit(ctx context.Context, principal *auth.Principal, id string, createdBy *string, status types.PatientStatus) error {
+func (s *Service) AuthorizePatientEdit(ctx context.Context, principal *auth.Principal, id string, createdBy *string, status patientmodel.PatientStatus) error {
 	resource := map[string]any{
 		"id":         id,
 		"created_by": orEmpty(createdBy),
@@ -138,7 +137,7 @@ func (s *Service) Create(ctx context.Context, clinicID, createdBy string, in Pat
 		BlindIndex:       blindHex,
 		EncryptedPayload: ciphertext,
 		Nonce:            nonce,
-		Status:           types.PatientStatusActive,
+		Status:           patientmodel.PatientStatusActive,
 		CreatedBy:        cb,
 	}
 
@@ -262,7 +261,7 @@ func (s *Service) Update(ctx context.Context, clinicID, id string, in PatientInp
 		BlindIndex:       blindHex,
 		EncryptedPayload: ciphertext,
 		Nonce:            nonce,
-		Status:           types.PatientStatusActive,
+		Status:           patientmodel.PatientStatusActive,
 	}
 
 	// Preserve existing status on update
@@ -282,7 +281,7 @@ func (s *Service) Update(ctx context.Context, clinicID, id string, in PatientInp
 }
 
 // SetStatus updates the patient status, scoped to the clinic.
-func (s *Service) SetStatus(ctx context.Context, clinicID, id string, status types.PatientStatus) error {
+func (s *Service) SetStatus(ctx context.Context, clinicID, id string, status patientmodel.PatientStatus) error {
 	pUUID, err := uuid.Parse(id)
 	if err != nil {
 		return fmt.Errorf("usecase: invalid patient id: %w", err)
@@ -309,9 +308,9 @@ func (s *Service) ListPage(ctx context.Context, clinicID, q, field, status strin
 		return nil, 0, fmt.Errorf("usecase: invalid clinic id: %w", err)
 	}
 
-	var statusFilter *types.PatientStatus
+	var statusFilter *patientmodel.PatientStatus
 	if status != "" {
-		st := types.PatientStatus(status)
+		st := patientmodel.PatientStatus(status)
 		statusFilter = &st
 	}
 
@@ -422,7 +421,7 @@ func normalize(in PatientInput) (PatientInput, error) {
 	out := PatientInput{
 		DisplayName: strings.TrimSpace(in.DisplayName),
 		BirthDate:   strings.TrimSpace(in.BirthDate),
-		Sex:         types.Sex(strings.TrimSpace(in.Sex.String())),
+		Sex:         patientmodel.Sex(strings.TrimSpace(in.Sex.String())),
 		Phone:       strings.TrimSpace(in.Phone),
 		Email:       strings.TrimSpace(in.Email),
 		Street:      strings.TrimSpace(in.Street),
@@ -438,7 +437,7 @@ func normalize(in PatientInput) (PatientInput, error) {
 		return out, &ValidationError{Msg: "patient name is too long"}
 	}
 	if out.Sex == "" {
-		out.Sex = types.SexUnknown
+		out.Sex = patientmodel.SexUnknown
 	}
 	if !out.Sex.Valid() {
 		return out, &ValidationError{Msg: "invalid sex"}

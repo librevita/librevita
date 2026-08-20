@@ -22,7 +22,6 @@ import (
 	"librevita.org/internal/core/database"
 	"librevita.org/internal/core/policy"
 	"librevita.org/internal/testutil"
-	"librevita.org/internal/types"
 	"librevita.org/internal/ui"
 )
 
@@ -197,7 +196,7 @@ func TestRequirePolicyDenialIsAudited(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read audit_log: %v", err)
 	}
-	if lastAudit.Action != "authorize" || lastAudit.Resource != "policy:admin.view" || string(lastAudit.Result) != types.AuditResultFailure.String() {
+	if lastAudit.Action != "authorize" || lastAudit.Resource != "policy:admin.view" || string(lastAudit.Result) != audit.AuditResultFailure.String() {
 		t.Fatalf("unexpected audit row: %q %q %q", lastAudit.Action, lastAudit.Resource, lastAudit.Result)
 	}
 }

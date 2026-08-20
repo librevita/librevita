@@ -19,8 +19,8 @@ import (
 	clinicusecase "librevita.org/internal/domain/clinic/usecase"
 	"librevita.org/internal/domain/patient/delivery/views"
 	"librevita.org/internal/domain/patient/identifier"
+	patientmodel "librevita.org/internal/domain/patient/model"
 	"librevita.org/internal/domain/patient/usecase"
-	"librevita.org/internal/types"
 	"librevita.org/internal/ui/components"
 )
 
@@ -172,7 +172,7 @@ func (h *Handler) documentLookup(c echo.Context, system, q string) error {
 			matched++
 		}
 		total = int64(matched)
-		h.audit.Record(ctx, server.EventFromRequest(c, types.AuditResultSuccess,
+		h.audit.Record(ctx, server.EventFromRequest(c, audit.AuditResultSuccess,
 			"identifier.search", "", "", "system: "+system+", hits: "+strconv.Itoa(matched)))
 	}
 	pager := views.PatientPager{Q: q, Field: system, Status: "", Page: 1, Total: total, Shown: int64(len(rows))}
@@ -222,7 +222,7 @@ func (h *Handler) Create(c echo.Context) error {
 		// insert (rare race); the patient exists without it.
 		return h.formError(c, "", input, err.Error())
 	}
-	h.audit.Record(ctx, server.EventFromRequest(c, types.AuditResultSuccess,
+	h.audit.Record(ctx, server.EventFromRequest(c, audit.AuditResultSuccess,
 		"patient.create", "patient:"+patient.ID.String(), patient.DisplayName, ""))
 	return server.HtmxRedirect(c, "/patients/"+patient.ID.String())
 }
@@ -296,7 +296,7 @@ func historyText(ev audit.EventRow) string {
 		}
 		return "Updated by " + actor
 	case "patient.status":
-		if ev.Detail != nil && *ev.Detail == types.PatientStatusInactive.String() {
+		if ev.Detail != nil && *ev.Detail == patientmodel.PatientStatusInactive.String() {
 			return "Archived by " + actor
 		}
 		return "Restored by " + actor
@@ -346,7 +346,7 @@ func (h *Handler) Update(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-	if err := h.authorizePatientEdit(c, uuidStrPtr(before.CreatedBy), before.ID.String(), types.PatientStatus(before.Status)); err != nil {
+	if err := h.authorizePatientEdit(c, uuidStrPtr(before.CreatedBy), before.ID.String(), patientmodel.PatientStatus(before.Status)); err != nil {
 		return err
 	}
 	if err := h.prepareIdentifier(ctx, clinicID, &input); err != nil {
@@ -371,7 +371,7 @@ func (h *Handler) Update(c echo.Context) error {
 	if err := h.createIdentifier(ctx, clinicID, patient.ID.String(), server.ActorID(c), input); err != nil {
 		return h.formError(c, id.String(), input, err.Error())
 	}
-	h.audit.Record(ctx, server.EventFromRequest(c, types.AuditResultSuccess,
+	h.audit.Record(ctx, server.EventFromRequest(c, audit.AuditResultSuccess,
 		"patient.update", "patient:"+patient.ID.String(), patient.DisplayName, patientChanges(before, input)))
 	return server.HtmxRedirect(c, "/patients/"+patient.ID.String())
 }
@@ -461,12 +461,12 @@ func displayValue(s string) string {
 // Archive sets the patient inactive. htmx responses carry only an OOB
 // alert so the row is removed from the list.
 func (h *Handler) Archive(c echo.Context) error {
-	return h.setStatus(c, types.PatientStatusInactive, "Patient archived")
+	return h.setStatus(c, patientmodel.PatientStatusInactive, "Patient archived")
 }
 
 // Restore sets the patient active again.
 func (h *Handler) Restore(c echo.Context) error {
-	return h.setStatus(c, types.PatientStatusActive, "Patient restored")
+	return h.setStatus(c, patientmodel.PatientStatusActive, "Patient restored")
 }
 
 // BulkArchive archives the patients whose ids are in the form. The
@@ -503,15 +503,15 @@ func (h *Handler) BulkArchive(c echo.Context) error {
 		if err != nil {
 			continue
 		}
-		if err := h.authorizePatientEdit(c, uuidStrPtr(pt.CreatedBy), pt.ID.String(), types.PatientStatus(pt.Status)); err != nil {
+		if err := h.authorizePatientEdit(c, uuidStrPtr(pt.CreatedBy), pt.ID.String(), patientmodel.PatientStatus(pt.Status)); err != nil {
 			continue
 		}
-		if err := h.svc.SetStatus(ctx, clinicID, id.String(), types.PatientStatusInactive); err == nil {
+		if err := h.svc.SetStatus(ctx, clinicID, id.String(), patientmodel.PatientStatusInactive); err == nil {
 			archived++
-			h.audit.Record(ctx, server.EventFromRequest(c, types.AuditResultSuccess,
-				"patient.status", "patient:"+id.String(), "", types.PatientStatusInactive.String()))
+			h.audit.Record(ctx, server.EventFromRequest(c, audit.AuditResultSuccess,
+				"patient.status", "patient:"+id.String(), "", patientmodel.PatientStatusInactive.String()))
 		} else {
-			h.audit.Record(ctx, server.EventFromRequest(c, types.AuditResultFailure,
+			h.audit.Record(ctx, server.EventFromRequest(c, audit.AuditResultFailure,
 				"patient.status", "patient:"+id.String(), "", "bulk archive failed: "+err.Error()))
 		}
 	}
@@ -529,7 +529,7 @@ func (h *Handler) BulkArchive(c echo.Context) error {
 	return server.Render(c, http.StatusOK, views.PatientListTableWithAlert(rows, pager, msg))
 }
 
-func (h *Handler) setStatus(c echo.Context, status types.PatientStatus, successMsg string) error {
+func (h *Handler) setStatus(c echo.Context, status patientmodel.PatientStatus, successMsg string) error {
 	ctx := c.Request().Context()
 	id, err := patientID(c)
 	if err != nil {
@@ -543,15 +543,15 @@ func (h *Handler) setStatus(c echo.Context, status types.PatientStatus, successM
 	if err != nil {
 		return err
 	}
-	if err := h.authorizePatientEdit(c, uuidStrPtr(pt.CreatedBy), pt.ID.String(), types.PatientStatus(pt.Status)); err != nil {
+	if err := h.authorizePatientEdit(c, uuidStrPtr(pt.CreatedBy), pt.ID.String(), patientmodel.PatientStatus(pt.Status)); err != nil {
 		return err
 	}
 	err = h.svc.SetStatus(ctx, clinicID, id.String(), status)
 	if err == nil {
-		h.audit.Record(ctx, server.EventFromRequest(c, types.AuditResultSuccess,
+		h.audit.Record(ctx, server.EventFromRequest(c, audit.AuditResultSuccess,
 			"patient.status", "patient:"+id.String(), "", status.String()))
 	} else {
-		h.audit.Record(ctx, server.EventFromRequest(c, types.AuditResultFailure,
+		h.audit.Record(ctx, server.EventFromRequest(c, audit.AuditResultFailure,
 			"patient.status", "patient:"+id.String(), "", "could not set status "+status.String()))
 	}
 	if server.IsHtmx(c) {
@@ -600,7 +600,7 @@ func (h *Handler) input(c echo.Context) usecase.PatientInput {
 	return usecase.PatientInput{
 		DisplayName:      c.FormValue("display_name"),
 		BirthDate:        c.FormValue("birth_date"),
-		Sex:              types.Sex(c.FormValue("sex")),
+		Sex:              patientmodel.Sex(c.FormValue("sex")),
 		Phone:            c.FormValue("phone"),
 		Email:            c.FormValue("email"),
 		Street:           c.FormValue("street"),
@@ -736,7 +736,7 @@ func (h *Handler) formError(c echo.Context, id string, input usecase.PatientInpu
 
 // authorizePatientEdit enforces the fine-grained patient.edit policy
 // against the record and audits denials.
-func (h *Handler) authorizePatientEdit(c echo.Context, createdBy *string, ptID string, ptStatus types.PatientStatus) error {
+func (h *Handler) authorizePatientEdit(c echo.Context, createdBy *string, ptID string, ptStatus patientmodel.PatientStatus) error {
 	principal := server.Principal(c)
 	if principal == nil {
 		return echo.NewHTTPError(http.StatusForbidden)
@@ -744,7 +744,7 @@ func (h *Handler) authorizePatientEdit(c echo.Context, createdBy *string, ptID s
 	ctx := c.Request().Context()
 	if err := h.svc.AuthorizePatientEdit(ctx, principal, ptID, createdBy, ptStatus); err != nil {
 		if errors.Is(err, usecase.ErrForbidden) {
-			h.audit.Record(ctx, server.EventFromRequest(c, types.AuditResultFailure,
+			h.audit.Record(ctx, server.EventFromRequest(c, audit.AuditResultFailure,
 				"authorize", "policy:patient.edit", "", "denied patient "+ptID))
 			return echo.NewHTTPError(http.StatusForbidden)
 		}

@@ -11,6 +11,7 @@ type (
 	Specialty                             = usermodel.Specialty
 	StaffChangeRequest                    = usermodel.StaffChangeRequest
 	Preferences                           = usermodel.Preferences
+	StaffRequestStatus                    = usermodel.StaffRequestStatus
 	ListUsersRow                          = usermodel.ListUsersRow
 	GetUserByIDRow                        = usermodel.GetUserByIDRow
 	ListRecentUsersRow                    = usermodel.ListRecentUsersRow
@@ -24,25 +25,31 @@ const (
 	RolePhysician    = usermodel.RolePhysician
 	RoleReceptionist = usermodel.RoleReceptionist
 	RolePatient      = usermodel.RolePatient
+
+	StaffRequestPending  = usermodel.StaffRequestPending
+	StaffRequestApproved = usermodel.StaffRequestApproved
+	StaffRequestRejected = usermodel.StaffRequestRejected
 )
 
+var ParseStaffRequestStatus = usermodel.ParseStaffRequestStatus
+
 var (
-	ErrUserNotFound        = usermodel.ErrUserNotFound
-	ErrDuplicateEmail       = usermodel.ErrDuplicateEmail
-	ErrDuplicateSpecialty   = usermodel.ErrDuplicateSpecialty
-	ErrSpecialtyScope       = usermodel.ErrSpecialtyScope
-	ErrRoleNotFound         = usermodel.ErrRoleNotFound
-	ErrRoleImmutable        = usermodel.ErrRoleImmutable
-	ErrDuplicateRole        = usermodel.ErrDuplicateRole
-	ErrSystemRole           = usermodel.ErrSystemRole
-	ErrRoleInUse            = usermodel.ErrRoleInUse
-	ErrRequestNotFound      = usermodel.ErrRequestNotFound
-	ErrRequestProcessed     = usermodel.ErrRequestProcessed
-	ErrRequestNotPending    = usermodel.ErrRequestNotPending
-	ErrAlreadyOnboarded     = usermodel.ErrAlreadyOnboarded
-	ErrInvalidCredentials   = usermodel.ErrInvalidCredentials
-	ErrEmailTaken           = usermodel.ErrEmailTaken
-	ErrEmailInUse           = usermodel.ErrEmailInUse
-	ErrCannotDemoteSelf     = usermodel.ErrCannotDemoteSelf
-	ErrLastActiveAdmin      = usermodel.ErrLastActiveAdmin
+	ErrUserNotFound       = usermodel.ErrUserNotFound
+	ErrDuplicateEmail     = usermodel.ErrDuplicateEmail
+	ErrDuplicateSpecialty = usermodel.ErrDuplicateSpecialty
+	ErrSpecialtyScope     = usermodel.ErrSpecialtyScope
+	ErrRoleNotFound       = usermodel.ErrRoleNotFound
+	ErrRoleImmutable      = usermodel.ErrRoleImmutable
+	ErrDuplicateRole      = usermodel.ErrDuplicateRole
+	ErrSystemRole         = usermodel.ErrSystemRole
+	ErrRoleInUse          = usermodel.ErrRoleInUse
+	ErrRequestNotFound    = usermodel.ErrRequestNotFound
+	ErrRequestProcessed   = usermodel.ErrRequestProcessed
+	ErrRequestNotPending  = usermodel.ErrRequestNotPending
+	ErrAlreadyOnboarded   = usermodel.ErrAlreadyOnboarded
+	ErrInvalidCredentials = usermodel.ErrInvalidCredentials
+	ErrEmailTaken         = usermodel.ErrEmailTaken
+	ErrEmailInUse         = usermodel.ErrEmailInUse
+	ErrCannotDemoteSelf   = usermodel.ErrCannotDemoteSelf
+	ErrLastActiveAdmin    = usermodel.ErrLastActiveAdmin
 )

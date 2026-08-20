@@ -8,7 +8,7 @@ import (
 type (
 	UserRepository         = usermodel.UserRepository
 	RoleRepository         = usermodel.RoleRepository
-	SpecialtyRepository     = usermodel.SpecialtyRepository
+	SpecialtyRepository    = usermodel.SpecialtyRepository
 	StaffRequestRepository = usermodel.StaffRequestRepository
 	SetupRepository        = usermodel.SetupRepository
 )

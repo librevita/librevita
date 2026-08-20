@@ -10,11 +10,12 @@ import (
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 
+	"librevita.org/internal/core/audit"
 	"librevita.org/internal/core/server"
 	"librevita.org/internal/domain/patient/delivery/views"
 	"librevita.org/internal/domain/patient/identifier"
+	patientmodel "librevita.org/internal/domain/patient/model"
 	"librevita.org/internal/domain/patient/usecase"
-	"librevita.org/internal/types"
 	"librevita.org/internal/ui/components"
 )
 
@@ -41,7 +42,7 @@ func (h *Handler) IdentifierLookup(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-	h.audit.Record(ctx, server.EventFromRequest(c, types.AuditResultSuccess,
+	h.audit.Record(ctx, server.EventFromRequest(c, audit.AuditResultSuccess,
 		"identifier.search", "", "", "hits: "+strconv.Itoa(len(hits))))
 
 	switch len(hits) {
@@ -77,7 +78,7 @@ func (h *Handler) IdentifierAdd(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-	if err := h.authorizePatientEdit(c, uuidStrPtr(pt.CreatedBy), pt.ID.String(), types.PatientStatus(pt.Status)); err != nil {
+	if err := h.authorizePatientEdit(c, uuidStrPtr(pt.CreatedBy), pt.ID.String(), patientmodel.PatientStatus(pt.Status)); err != nil {
 		return err
 	}
 	in := identifier.Input{
@@ -102,7 +103,7 @@ func (h *Handler) IdentifierAdd(c echo.Context) error {
 			return err
 		}
 	}
-	h.audit.Record(ctx, server.EventFromRequest(c, types.AuditResultSuccess,
+	h.audit.Record(ctx, server.EventFromRequest(c, audit.AuditResultSuccess,
 		"identifier.create", "patient:"+pt.ID.String(), created.System, ""))
 	return server.HtmxRedirect(c, "/patients/"+pt.ID.String())
 }
@@ -140,7 +141,7 @@ func (h *Handler) IdentifierRemove(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-	if err := h.authorizePatientEdit(c, uuidStrPtr(pt.CreatedBy), pt.ID.String(), types.PatientStatus(pt.Status)); err != nil {
+	if err := h.authorizePatientEdit(c, uuidStrPtr(pt.CreatedBy), pt.ID.String(), patientmodel.PatientStatus(pt.Status)); err != nil {
 		return err
 	}
 	identifierID, err := uuid.Parse(c.Param("identifierID"))
@@ -170,7 +171,7 @@ func (h *Handler) IdentifierRemove(c echo.Context) error {
 		}
 		return err
 	}
-	h.audit.Record(ctx, server.EventFromRequest(c, types.AuditResultSuccess,
+	h.audit.Record(ctx, server.EventFromRequest(c, audit.AuditResultSuccess,
 		"identifier.remove", "patient:"+pt.ID.String(), system, ""))
 
 	rows, err = h.ids.List(ctx, clinicID, pt.ID.String())
@@ -207,7 +208,7 @@ func (h *Handler) IdentifierSystemCreate(c echo.Context) error {
 		}
 		return err
 	}
-	h.audit.Record(ctx, server.EventFromRequest(c, types.AuditResultSuccess,
+	h.audit.Record(ctx, server.EventFromRequest(c, audit.AuditResultSuccess,
 		"identifier.system.create", "", created.System, ""))
 	return server.HtmxRedirect(c, "/identifier-systems")
 }
@@ -241,7 +242,7 @@ func (h *Handler) IdentifierSystemUpdate(c echo.Context) error {
 		}
 		return err
 	}
-	h.audit.Record(ctx, server.EventFromRequest(c, types.AuditResultSuccess,
+	h.audit.Record(ctx, server.EventFromRequest(c, audit.AuditResultSuccess,
 		"identifier.system.update", "", updated.System, ""))
 	return server.HtmxRedirect(c, "/identifier-systems")
 }

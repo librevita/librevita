@@ -26,10 +26,10 @@ import (
 	_ "golang.org/x/image/tiff"
 	_ "golang.org/x/image/webp"
 
+	"librevita.org/internal/core/audit"
 	"librevita.org/internal/core/server"
 	"librevita.org/internal/core/storage"
 	"librevita.org/internal/domain/user/usecase"
-	"librevita.org/internal/types"
 	"librevita.org/internal/ui/shared"
 )
 
@@ -135,7 +135,7 @@ func (h *Handler) AvatarUpload(c echo.Context) error {
 	h.removeAvatars(ctx, userID, meta.ID)
 
 	// The canonical checksum is witnessed in the append-only chain.
-	h.audit.Record(ctx, server.EventFromRequest(c, types.AuditResultSuccess,
+	h.audit.Record(ctx, server.EventFromRequest(c, audit.AuditResultSuccess,
 		"avatar.update", "user:"+p.ID, meta.OriginalName, "checksum: "+meta.Checksum))
 	return server.HtmxRedirect(c, "/profile")
 }
@@ -149,7 +149,7 @@ func (h *Handler) AvatarRemove(c echo.Context) error {
 	}
 	userID := uuid.MustParse(p.ID)
 	removed := h.removeAvatars(ctx, userID, uuid.Nil)
-	h.audit.Record(ctx, server.EventFromRequest(c, types.AuditResultSuccess,
+	h.audit.Record(ctx, server.EventFromRequest(c, audit.AuditResultSuccess,
 		"avatar.remove", "user:"+p.ID, "", "removed "+itoaAvatar(removed)))
 	return server.HtmxRedirect(c, "/profile")
 }

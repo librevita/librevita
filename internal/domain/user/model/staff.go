@@ -1,4 +1,4 @@
-package types
+package model
 
 // StaffRequestStatus is the state of a staff change request. It mirrors
 // the CHECK constraint on staff_change_requests.status (see

@@ -1,7 +1,7 @@
 package views
 
 import (
-	"librevita.org/internal/types"
+	"librevita.org/internal/core/auth"
 	"librevita.org/internal/ui/layouts"
 )
 
@@ -9,7 +9,7 @@ import (
 // dashboard sign-in card: centered logo, then a wide white card with the
 // email and password fields.
 templ Login(token string, next string, errMsg string) {
-	@layouts.Base("Sign in", types.UIThemeSystem, token) {
+	@layouts.Base("Sign in", auth.UIThemeSystem, token) {
 		<main class="flex min-h-full flex-col items-center justify-center px-6 pt-8">
 			<a href="/auth/login" class="mb-8 flex items-center justify-center text-2xl font-semibold text-gray-900 dark:text-white">
 				<span class="mr-4">@layouts.Logo("h-11 w-11 text-indigo-600")</span>
