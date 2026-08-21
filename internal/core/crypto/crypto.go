@@ -223,6 +223,59 @@ func (e *Engine) DecryptInto(ctx context.Context, urn string, aad, ciphertext, n
 	return nil
 }
 
+// EncryptField encrypts a string field under the entity's DEK with embedded nonce (24 bytes).
+func (e *Engine) EncryptField(ctx context.Context, urn string, aad []byte, plaintext string) ([]byte, error) {
+	if plaintext == "" {
+		return nil, nil
+	}
+	data := []byte(plaintext)
+	defer ZeroBytes(data)
+
+	ct, nonce, err := e.EncryptPayload(ctx, urn, aad, data)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]byte, len(nonce)+len(ct))
+	copy(out[:len(nonce)], nonce)
+	copy(out[len(nonce):], ct)
+	return out, nil
+}
+
+// DecryptField decrypts a field with embedded nonce (24 bytes) under the entity's DEK.
+func (e *Engine) DecryptField(ctx context.Context, urn string, aad []byte, encrypted []byte) (string, error) {
+	if len(encrypted) < SizeNonce {
+		return "", nil
+	}
+	nonce := encrypted[:SizeNonce]
+	ct := encrypted[SizeNonce:]
+	plaintext, err := e.DecryptPayload(ctx, urn, aad, ct, nonce)
+	if err != nil {
+		return "", err
+	}
+	defer ZeroBytes(plaintext)
+	return string(plaintext), nil
+}
+
+// EncryptFieldPtr encrypts a nullable string pointer.
+func (e *Engine) EncryptFieldPtr(ctx context.Context, urn string, aad []byte, plaintext *string) ([]byte, error) {
+	if plaintext == nil || *plaintext == "" {
+		return nil, nil
+	}
+	return e.EncryptField(ctx, urn, aad, *plaintext)
+}
+
+// DecryptFieldPtr decrypts nullable ciphertext bytes into a string pointer.
+func (e *Engine) DecryptFieldPtr(ctx context.Context, urn string, aad []byte, encrypted []byte) (*string, error) {
+	if len(encrypted) == 0 {
+		return nil, nil
+	}
+	s, err := e.DecryptField(ctx, urn, aad, encrypted)
+	if err != nil {
+		return nil, err
+	}
+	return &s, nil
+}
+
 // Seal encrypts plaintext using the global KEK directly.
 // (Used for non-patient system secrets or backwards compatibility).
 func (e *Engine) Seal(aad, plaintext []byte) (ciphertext, nonce []byte, err error) {

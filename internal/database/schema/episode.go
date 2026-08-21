@@ -9,21 +9,14 @@ import (
 	"entgo.io/ent/schema/index"
 	"github.com/google/uuid"
 
-	"librevita.org/internal/database/schema/mixin"
+	"librevita.org/internal/core/database/zk"
 )
 
 // Episode holds the schema definition for Medical Records, Clinical Notes, and Encounters.
 // All clinical PHI (anamnesis, physical exam, diagnostic hypotheses, prescriptions, clinical notes)
-// is stored strictly in the encrypted payload via ZeroKnowledgeMixin.
+// is stored encrypted transparently via ValueScanner.
 type Episode struct {
 	ent.Schema
-}
-
-// Mixin of the Episode entity.
-func (Episode) Mixin() []ent.Mixin {
-	return []ent.Mixin{
-		mixin.ZeroKnowledgeMixin{},
-	}
 }
 
 // Fields of the Episode.
@@ -50,6 +43,24 @@ func (Episode) Fields() []ent.Field {
 			Values("draft", "finalized", "archived").
 			Default("draft").
 			Comment("Lifecycle status of the episode"),
+
+		// Confidential Clinical PHI Fields (Stored as BLOB/BYTEA in DB, strings in Go):
+		field.String("notes").
+			SchemaType(blobType).
+			ValueScanner(zk.EncryptedString()).
+			Optional().
+			Comment("Clinical notes / anamnesis / consultation details (stored as BLOB/BYTEA in DB)"),
+		field.String("prescription").
+			SchemaType(blobType).
+			ValueScanner(zk.EncryptedString()).
+			Optional().
+			Comment("Prescription and medical orders (stored as BLOB/BYTEA in DB)"),
+		field.String("diagnostic").
+			SchemaType(blobType).
+			ValueScanner(zk.EncryptedString()).
+			Optional().
+			Comment("Diagnostic hypotheses / CID (stored as BLOB/BYTEA in DB)"),
+
 		field.Time("created_at").
 			Default(time.Now).
 			Immutable(),

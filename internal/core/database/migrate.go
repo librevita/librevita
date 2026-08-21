@@ -28,6 +28,9 @@ func MigrateWithDriver(ctx context.Context, db *sql.DB, driver string, log *slog
 	if _, err := provider.Up(ctx); err != nil {
 		return fmt.Errorf("migrate: goose up: %w", err)
 	}
+	if err := EnsureAuditTriggers(ctx, db, driver); err != nil {
+		return fmt.Errorf("migrate: audit triggers: %w", err)
+	}
 	return nil
 }
 

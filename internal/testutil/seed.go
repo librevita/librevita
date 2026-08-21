@@ -8,7 +8,13 @@ import (
 
 	"librevita.org/ent"
 	"librevita.org/ent/role"
+	"librevita.org/internal/core/database"
 )
+
+// SeedInitialData seeds default roles and identifier systems using Ent ORM.
+func SeedInitialData(ctx context.Context, client *ent.Client) error {
+	return database.SeedInitialData(ctx, client)
+}
 
 // Clinic seeds a clinic row with the onboarding defaults (BR,
 // America/Sao_Paulo) so callers only provide the identifying fields.
@@ -27,6 +33,7 @@ func Clinic(ctx context.Context, client *ent.Client, id, name, taxID string) err
 
 // User seeds an account with the given role name.
 func User(ctx context.Context, client *ent.Client, id, email, roleName, passwordHash string) error {
+	_ = database.SeedInitialData(ctx, client)
 	roleRow, err := client.Role.Query().Where(role.NameEQ(roleName)).Only(ctx)
 	if err != nil {
 		return err

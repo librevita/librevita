@@ -60,12 +60,7 @@ func newIdentEnv(t *testing.T) (*echo.Echo, *auth.SessionManager, *usecase.Servi
 	}
 	t.Cleanup(func() { _ = v.Close() })
 
-	engine, err := crypto.NewEngine("nAmIvOXVc0vb6M9G7P9q2j2yK1WxP3sJ8q5dR4tU6wA=", v)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	svc := usecase.NewService(patientrepo.NewPatientRepository(client), engine, log, policies)
+	svc := usecase.NewService(patientrepo.NewPatientRepository(client), log, policies)
 	files, err := storage.NewFileManager(storage.NewIndexRepository(client), mustLocalStore(t), log)
 	if err != nil {
 		t.Fatal(err)
@@ -231,6 +226,8 @@ func TestIdentifierAddRejectsCrossClinicPatient(t *testing.T) {
 	}
 	otherPt, err := svc.Create(context.Background(), otherClinic, testAdminID.String(), usecase.PatientInput{
 		DisplayName: "Other Patient",
+		Phone:       "+55 11 98888-1111",
+		Email:       "other@example.org",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -361,6 +358,8 @@ func TestCreatePatientWithDocument(t *testing.T) {
 
 	rec := postForm(t, e, "/patients", cookie, url.Values{
 		"display_name":     {"Novo Paciente"},
+		"phone":            {"+55 11 99999-8888"},
+		"email":            {"novo@example.org"},
 		"identifier_value": {"123.456.789-09"},
 	})
 	if rec.Code != http.StatusFound {
@@ -386,6 +385,8 @@ func TestCreatePatientRejectsBadDocument(t *testing.T) {
 
 	rec := postFormHtmx(t, e, "/patients", cookie, url.Values{
 		"display_name":     {"Novo Paciente"},
+		"phone":            {"+55 11 99999-8888"},
+		"email":            {"novo@example.org"},
 		"identifier_value": {"12345678901"}, // wrong CPF check digit
 	})
 	if rec.Code != http.StatusOK {
@@ -412,6 +413,8 @@ func TestCreatePatientRejectsDuplicateDocument(t *testing.T) {
 
 	first := postForm(t, e, "/patients", cookie, url.Values{
 		"display_name":     {"Primeiro"},
+		"phone":            {"+55 11 99999-8888"},
+		"email":            {"primeiro@example.org"},
 		"identifier_value": {"52998224725"},
 	})
 	if first.Code != http.StatusFound {
@@ -420,6 +423,8 @@ func TestCreatePatientRejectsDuplicateDocument(t *testing.T) {
 
 	second := postFormHtmx(t, e, "/patients", cookie, url.Values{
 		"display_name":     {"Segundo"},
+		"phone":            {"+55 11 99999-7777"},
+		"email":            {"segundo@example.org"},
 		"identifier_value": {"52998224725"},
 	})
 	if second.Code != http.StatusOK || !strings.Contains(second.Body.String(), "already registered") {
@@ -473,7 +478,9 @@ func TestRegistryListSearchField(t *testing.T) {
 
 	email := "fernanda@example.org"
 	if _, err := svc.Create(context.Background(), testClinic, testAdminID.String(), usecase.PatientInput{
-		DisplayName: "Fernanda Rocha", Email: email,
+		DisplayName: "Fernanda Rocha",
+		Phone:       "+55 11 99999-6666",
+		Email:       email,
 	}); err != nil {
 		t.Fatalf("create patient: %v", err)
 	}

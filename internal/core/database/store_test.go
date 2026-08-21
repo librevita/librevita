@@ -55,30 +55,23 @@ func TestStoreSQLiteAndEntClient(t *testing.T) {
 		Save(ctx)
 	require.NoError(t, err)
 
-	blindIndex := "8f48259ca9a27e7f603c4f74d0089ff2bf309f7a7d45f3a0937a0c8b21c4309a"
-	encryptedPayload := []byte("encrypted-patient-demographics-payload")
-	nonce := make([]byte, 24)
-	for i := range nonce {
-		nonce[i] = byte(i)
-	}
-
 	created, err := store.Ent().Patient.Create().
 		SetClinicID(clinicID).
-		SetBlindIndex(blindIndex).
-		SetEncryptedPayload(encryptedPayload).
-		SetNonce(nonce).
+		SetDisplayName("Maria Teste").
+		SetPhone("+55 11 99999-8888").
+		SetEmail("maria@example.org").
 		SetStatus("active").
 		Save(ctx)
 	require.NoError(t, err)
 
 	assert.NotEqual(t, uuid.Nil, created.ID)
-	assert.Equal(t, blindIndex, created.BlindIndex)
+	assert.Equal(t, "Maria Teste", created.DisplayName)
 
-	// Query by exact blind index within clinic
+	// Query by display name within clinic
 	found, err := store.Ent().Patient.Query().
 		Where(
 			patient.ClinicID(clinicID),
-			patient.BlindIndex(blindIndex),
+			patient.DisplayNameEQ("Maria Teste"),
 		).
 		Only(ctx)
 	require.NoError(t, err)

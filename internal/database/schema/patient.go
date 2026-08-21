@@ -9,19 +9,12 @@ import (
 	"entgo.io/ent/schema/index"
 	"github.com/google/uuid"
 
-	"librevita.org/internal/database/schema/mixin"
+	"librevita.org/internal/core/database/zk"
 )
 
-// Patient holds the schema definition for the Patient entity under LibreVita's Zero-Knowledge architecture.
+// Patient holds the schema definition for the Patient entity.
 type Patient struct {
 	ent.Schema
-}
-
-// Mixin of the Patient entity.
-func (Patient) Mixin() []ent.Mixin {
-	return []ent.Mixin{
-		mixin.ZeroKnowledgeMixin{},
-	}
 }
 
 // Fields of the Patient.
@@ -37,6 +30,71 @@ func (Patient) Fields() []ent.Field {
 			Values("active", "inactive", "archived").
 			Default("active").
 			Comment("Lifecycle status of the patient"),
+
+		// Patient PII/PHI Fields (Stored as BLOB/BYTEA in DB, pure strings in Go):
+		field.String("display_name").
+			SchemaType(blobType).
+			ValueScanner(zk.EncryptedString()).
+			NotEmpty().
+			Annotations(zk.Searchable()).
+			Comment("Patient full / social name (stored as BLOB/BYTEA in DB)"),
+
+		field.String("phone").
+			SchemaType(blobType).
+			ValueScanner(zk.EncryptedString()).
+			NotEmpty().
+			Annotations(zk.Searchable()).
+			Comment("Patient contact phone (stored as BLOB/BYTEA in DB)"),
+
+		field.String("email").
+			SchemaType(blobType).
+			ValueScanner(zk.EncryptedString()).
+			NotEmpty().
+			Annotations(zk.Searchable()).
+			Comment("Patient email address (stored as BLOB/BYTEA in DB)"),
+
+		field.String("birth_date").
+			SchemaType(blobType).
+			ValueScanner(zk.EncryptedString()).
+			Optional().
+			Comment("Birth date YYYY-MM-DD (stored as BLOB/BYTEA in DB)"),
+
+		field.String("sex").
+			SchemaType(blobType).
+			ValueScanner(zk.EncryptedString()).
+			Optional().
+			Comment("Patient sex / identity (stored as BLOB/BYTEA in DB)"),
+
+		field.String("street").
+			SchemaType(blobType).
+			ValueScanner(zk.EncryptedString()).
+			Optional().
+			Comment("Street address (stored as BLOB/BYTEA in DB)"),
+
+		field.String("city").
+			SchemaType(blobType).
+			ValueScanner(zk.EncryptedString()).
+			Optional().
+			Comment("City (stored as BLOB/BYTEA in DB)"),
+
+		field.String("state").
+			SchemaType(blobType).
+			ValueScanner(zk.EncryptedString()).
+			Optional().
+			Comment("State / Province (stored as BLOB/BYTEA in DB)"),
+
+		field.String("postal_code").
+			SchemaType(blobType).
+			ValueScanner(zk.EncryptedString()).
+			Optional().
+			Comment("Postal code / CEP (stored as BLOB/BYTEA in DB)"),
+
+		field.String("notes").
+			SchemaType(blobType).
+			ValueScanner(zk.EncryptedString()).
+			Optional().
+			Comment("Clinical / general notes (stored as BLOB/BYTEA in DB)"),
+
 		field.UUID("created_by", uuid.UUID{}).
 			Optional().
 			Nillable().
@@ -70,7 +128,6 @@ func (Patient) Edges() []ent.Edge {
 func (Patient) Indexes() []ent.Index {
 	return []ent.Index{
 		index.Fields("clinic_id"),
-		index.Fields("clinic_id", "blind_index"),
 		index.Fields("status"),
 	}
 }
