@@ -12,11 +12,9 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"librevita.org/internal/core/auth"
-	"librevita.org/internal/core/crypto"
 	"librevita.org/internal/core/policy"
 	patientmodel "librevita.org/internal/domain/patient/model"
 	"librevita.org/internal/domain/patient/usecase"
-	cryptomocks "librevita.org/tests/mocks/core/crypto"
 	policymocks "librevita.org/tests/mocks/core/policy"
 	patientmocks "librevita.org/tests/mocks/domain/patient/model"
 )
@@ -26,7 +24,6 @@ var (
 	testUserID   = uuid.MustParse("00000000-0000-0000-0000-000000000002")
 	missingID    = uuid.MustParse("00000000-0000-0000-0000-00000000ffff")
 	ghostID      = uuid.MustParse("00000000-0000-0000-0000-00000000fffe")
-	testKeyB64   = "nAmIvOXVc0vb6M9G7P9q2j2yK1WxP3sJ8q5dR4tU6wA="
 )
 
 func uuidStrPtrTest(u *uuid.UUID) *string {
@@ -58,25 +55,9 @@ func validInput() usecase.PatientInput {
 
 func setupPatientTest(t *testing.T) (
 	*patientmocks.MockPatientRepository,
-	*cryptomocks.MockKeyVault,
 	*usecase.Service,
 ) {
 	t.Helper()
-	vaultMock := cryptomocks.NewMockKeyVault(t)
-	deks := make(map[string][]byte)
-	vaultMock.EXPECT().GetDEK(mock.Anything, mock.Anything).RunAndReturn(func(ctx context.Context, urn string) ([]byte, error) {
-		if dek, ok := deks[urn]; ok {
-			return dek, nil
-		}
-		return nil, crypto.ErrKeyNotFound
-	}).Maybe()
-	vaultMock.EXPECT().PutDEK(mock.Anything, mock.Anything, mock.Anything).RunAndReturn(func(ctx context.Context, urn string, dek []byte) error {
-		deks[urn] = dek
-		return nil
-	}).Maybe()
-
-	engine, err := crypto.NewEngine(testKeyB64, vaultMock)
-	require.NoError(t, err)
 
 	policyRepoMock := policymocks.NewMockRepository(t)
 	policyRepoMock.EXPECT().SeedDefaults(mock.Anything, mock.Anything).Return(nil).Maybe()
@@ -94,22 +75,22 @@ func setupPatientTest(t *testing.T) (
 	require.NoError(t, policies.Load(context.Background()))
 
 	repoMock := patientmocks.NewMockPatientRepository(t)
-	svc := usecase.NewService(repoMock, engine, slog.New(slog.DiscardHandler), policies)
+	svc := usecase.NewService(repoMock, slog.New(slog.DiscardHandler), policies)
 
-	return repoMock, vaultMock, svc
+	return repoMock, svc
 }
 
 func TestCreateAndGet(t *testing.T) {
-	repoMock, _, svc := setupPatientTest(t)
+	repoMock, svc := setupPatientTest(t)
 
-	var savedRecord patientmodel.PatientRecord
-	repoMock.EXPECT().Create(mock.Anything, mock.MatchedBy(func(rec patientmodel.PatientRecord) bool {
-		return rec.ClinicID == testClinicID && rec.BlindIndex != "" && len(rec.EncryptedPayload) > 0
-	})).RunAndReturn(func(ctx context.Context, rec patientmodel.PatientRecord) (*patientmodel.PatientRecord, error) {
-		rec.CreatedAt = time.Now()
-		rec.UpdatedAt = time.Now()
-		savedRecord = rec
-		return &rec, nil
+	var savedPatient patientmodel.Patient
+	repoMock.EXPECT().Create(mock.Anything, mock.MatchedBy(func(p patientmodel.Patient) bool {
+		return p.ClinicID == testClinicID && p.DisplayName == "Maria Oliveira"
+	})).RunAndReturn(func(ctx context.Context, p patientmodel.Patient) (*patientmodel.Patient, error) {
+		p.CreatedAt = time.Now()
+		p.UpdatedAt = time.Now()
+		savedPatient = p
+		return &p, nil
 	}).Once()
 
 	pt, err := svc.Create(context.Background(), testClinicID.String(), testUserID.String(), validInput())
@@ -117,7 +98,7 @@ func TestCreateAndGet(t *testing.T) {
 	assert.NotEqual(t, uuid.Nil, pt.ID)
 	assert.Equal(t, patientmodel.PatientStatusActive, pt.Status)
 
-	repoMock.EXPECT().Get(mock.Anything, testClinicID, pt.ID).Return(&savedRecord, nil).Once()
+	repoMock.EXPECT().Get(mock.Anything, testClinicID, pt.ID).Return(&savedPatient, nil).Once()
 
 	got, err := svc.Get(context.Background(), testClinicID.String(), pt.ID.String())
 	require.NoError(t, err)
@@ -125,7 +106,7 @@ func TestCreateAndGet(t *testing.T) {
 }
 
 func TestCreateValidation(t *testing.T) {
-	_, _, svc := setupPatientTest(t)
+	_, svc := setupPatientTest(t)
 
 	cases := []struct {
 		name   string
@@ -149,14 +130,14 @@ func TestCreateValidation(t *testing.T) {
 }
 
 func TestUpdate(t *testing.T) {
-	repoMock, _, svc := setupPatientTest(t)
+	repoMock, svc := setupPatientTest(t)
 
-	var savedRecord patientmodel.PatientRecord
-	repoMock.EXPECT().Create(mock.Anything, mock.Anything).RunAndReturn(func(ctx context.Context, rec patientmodel.PatientRecord) (*patientmodel.PatientRecord, error) {
-		rec.CreatedAt = time.Now()
-		rec.UpdatedAt = time.Now()
-		savedRecord = rec
-		return &rec, nil
+	var savedPatient patientmodel.Patient
+	repoMock.EXPECT().Create(mock.Anything, mock.Anything).RunAndReturn(func(ctx context.Context, p patientmodel.Patient) (*patientmodel.Patient, error) {
+		p.CreatedAt = time.Now()
+		p.UpdatedAt = time.Now()
+		savedPatient = p
+		return &p, nil
 	}).Once()
 
 	pt, err := svc.Create(context.Background(), testClinicID.String(), testUserID.String(), validInput())
@@ -165,13 +146,13 @@ func TestUpdate(t *testing.T) {
 	in := validInput()
 	in.DisplayName = "Maria O. Lima"
 
-	repoMock.EXPECT().Get(mock.Anything, testClinicID, pt.ID).Return(&savedRecord, nil).Once()
-	repoMock.EXPECT().Update(mock.Anything, mock.MatchedBy(func(rec patientmodel.PatientRecord) bool {
-		return rec.ID == pt.ID && rec.ClinicID == testClinicID
-	})).RunAndReturn(func(ctx context.Context, rec patientmodel.PatientRecord) (*patientmodel.PatientRecord, error) {
-		rec.UpdatedAt = time.Now()
-		savedRecord = rec
-		return &rec, nil
+	repoMock.EXPECT().Get(mock.Anything, testClinicID, pt.ID).Return(&savedPatient, nil).Once()
+	repoMock.EXPECT().Update(mock.Anything, mock.MatchedBy(func(p patientmodel.Patient) bool {
+		return p.ID == pt.ID && p.ClinicID == testClinicID && p.DisplayName == "Maria O. Lima"
+	})).RunAndReturn(func(ctx context.Context, p patientmodel.Patient) (*patientmodel.Patient, error) {
+		p.UpdatedAt = time.Now()
+		savedPatient = p
+		return &p, nil
 	}).Once()
 
 	updated, err := svc.Update(context.Background(), testClinicID.String(), pt.ID.String(), in)
@@ -185,14 +166,14 @@ func TestUpdate(t *testing.T) {
 }
 
 func TestListAndSearch(t *testing.T) {
-	repoMock, _, svc := setupPatientTest(t)
+	repoMock, svc := setupPatientTest(t)
 
-	var records []patientmodel.PatientRecord
-	repoMock.EXPECT().Create(mock.Anything, mock.Anything).RunAndReturn(func(ctx context.Context, rec patientmodel.PatientRecord) (*patientmodel.PatientRecord, error) {
-		rec.CreatedAt = time.Now()
-		rec.UpdatedAt = time.Now()
-		records = append(records, rec)
-		return &rec, nil
+	var patients []patientmodel.Patient
+	repoMock.EXPECT().Create(mock.Anything, mock.Anything).RunAndReturn(func(ctx context.Context, p patientmodel.Patient) (*patientmodel.Patient, error) {
+		p.CreatedAt = time.Now()
+		p.UpdatedAt = time.Now()
+		patients = append(patients, p)
+		return &p, nil
 	}).Times(3)
 
 	for _, name := range []string{"Ana Souza", "Bruno Lima", "Carla Dias"} {
@@ -202,19 +183,19 @@ func TestListAndSearch(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	repoMock.EXPECT().ListByClinicAndStatus(mock.Anything, testClinicID, (*patientmodel.PatientStatus)(nil)).Return(records, nil).Times(3)
+	repoMock.EXPECT().ListByClinicAndStatus(mock.Anything, testClinicID, (*patientmodel.PatientStatus)(nil)).Return(patients, nil).Times(3)
 
-	all, total, err := svc.ListPage(context.Background(), testClinicID.String(), "", "", "", 50, 0)
+	all, total, err := svc.List(context.Background(), testClinicID.String(), "", "", "", 50, 0)
 	require.NoError(t, err)
 	assert.Equal(t, int64(3), total)
 	assert.Len(t, all, 3)
 
-	hit, _, err := svc.ListPage(context.Background(), testClinicID.String(), "bruno", "", "", 50, 0)
+	hit, _, err := svc.List(context.Background(), testClinicID.String(), "bruno", "", "", 50, 0)
 	require.NoError(t, err)
 	require.Len(t, hit, 1)
 	assert.Equal(t, "Bruno Lima", hit[0].DisplayName)
 
-	none, _, err := svc.ListPage(context.Background(), testClinicID.String(), "zzz", "", "", 50, 0)
+	none, _, err := svc.List(context.Background(), testClinicID.String(), "zzz", "", "", 50, 0)
 	require.NoError(t, err)
 	assert.Empty(t, none)
 
@@ -226,27 +207,27 @@ func TestListAndSearch(t *testing.T) {
 	// Update record in mock slice to inactive
 	activeStatus := patientmodel.PatientStatusActive
 	inactiveStatus := patientmodel.PatientStatusInactive
-	records[1].Status = inactiveStatus
+	patients[1].Status = inactiveStatus
 
-	repoMock.EXPECT().ListByClinicAndStatus(mock.Anything, testClinicID, &activeStatus).Return([]patientmodel.PatientRecord{records[0], records[2]}, nil).Once()
-	active, _, err := svc.ListPage(context.Background(), testClinicID.String(), "", "", patientmodel.PatientStatusActive.String(), 50, 0)
+	repoMock.EXPECT().ListByClinicAndStatus(mock.Anything, testClinicID, &activeStatus).Return([]patientmodel.Patient{patients[0], patients[2]}, nil).Once()
+	active, _, err := svc.List(context.Background(), testClinicID.String(), "", patientmodel.PatientStatusActive.String(), "", 50, 0)
 	require.NoError(t, err)
 	assert.Len(t, active, 2)
 
-	repoMock.EXPECT().ListByClinicAndStatus(mock.Anything, testClinicID, &inactiveStatus).Return([]patientmodel.PatientRecord{records[1]}, nil).Once()
-	inactive, _, err := svc.ListPage(context.Background(), testClinicID.String(), "", "", patientmodel.PatientStatusInactive.String(), 50, 0)
+	repoMock.EXPECT().ListByClinicAndStatus(mock.Anything, testClinicID, &inactiveStatus).Return([]patientmodel.Patient{patients[1]}, nil).Once()
+	inactive, _, err := svc.List(context.Background(), testClinicID.String(), "", patientmodel.PatientStatusInactive.String(), "", 50, 0)
 	require.NoError(t, err)
 	assert.Len(t, inactive, 1)
 }
 
 func TestSetStatus(t *testing.T) {
-	repoMock, _, svc := setupPatientTest(t)
+	repoMock, svc := setupPatientTest(t)
 
-	var savedRecord patientmodel.PatientRecord
-	repoMock.EXPECT().Create(mock.Anything, mock.Anything).RunAndReturn(func(ctx context.Context, rec patientmodel.PatientRecord) (*patientmodel.PatientRecord, error) {
-		rec.CreatedAt = time.Now()
-		savedRecord = rec
-		return &rec, nil
+	var savedPatient patientmodel.Patient
+	repoMock.EXPECT().Create(mock.Anything, mock.Anything).RunAndReturn(func(ctx context.Context, p patientmodel.Patient) (*patientmodel.Patient, error) {
+		p.CreatedAt = time.Now()
+		savedPatient = p
+		return &p, nil
 	}).Once()
 
 	pt, err := svc.Create(context.Background(), testClinicID.String(), testUserID.String(), validInput())
@@ -256,8 +237,8 @@ func TestSetStatus(t *testing.T) {
 	err = svc.SetStatus(context.Background(), testClinicID.String(), pt.ID.String(), patientmodel.PatientStatusInactive)
 	require.NoError(t, err)
 
-	savedRecord.Status = patientmodel.PatientStatusInactive
-	repoMock.EXPECT().Get(mock.Anything, testClinicID, pt.ID).Return(&savedRecord, nil).Once()
+	savedPatient.Status = patientmodel.PatientStatusInactive
+	repoMock.EXPECT().Get(mock.Anything, testClinicID, pt.ID).Return(&savedPatient, nil).Once()
 
 	got, err := svc.Get(context.Background(), testClinicID.String(), pt.ID.String())
 	require.NoError(t, err)
@@ -265,14 +246,14 @@ func TestSetStatus(t *testing.T) {
 }
 
 func TestCount(t *testing.T) {
-	repoMock, _, svc := setupPatientTest(t)
+	repoMock, svc := setupPatientTest(t)
 
 	repoMock.EXPECT().Count(mock.Anything, testClinicID).Return(0, nil).Once()
 	n, err := svc.Count(context.Background(), testClinicID.String())
 	require.NoError(t, err)
 	assert.Equal(t, int64(0), n)
 
-	repoMock.EXPECT().Create(mock.Anything, mock.Anything).Return(&patientmodel.PatientRecord{
+	repoMock.EXPECT().Create(mock.Anything, mock.Anything).Return(&patientmodel.Patient{
 		ID:       uuid.New(),
 		ClinicID: testClinicID,
 	}, nil).Once()
@@ -287,15 +268,15 @@ func TestCount(t *testing.T) {
 }
 
 func TestCreateRecordsRegistrar(t *testing.T) {
-	repoMock, _, svc := setupPatientTest(t)
+	repoMock, svc := setupPatientTest(t)
 
-	var savedRecord patientmodel.PatientRecord
-	repoMock.EXPECT().Create(mock.Anything, mock.MatchedBy(func(rec patientmodel.PatientRecord) bool {
-		return rec.CreatedBy != nil && *rec.CreatedBy == testUserID
-	})).RunAndReturn(func(ctx context.Context, rec patientmodel.PatientRecord) (*patientmodel.PatientRecord, error) {
-		rec.CreatedAt = time.Now()
-		savedRecord = rec
-		return &rec, nil
+	var savedPatient patientmodel.Patient
+	repoMock.EXPECT().Create(mock.Anything, mock.MatchedBy(func(p patientmodel.Patient) bool {
+		return p.CreatedBy != nil && *p.CreatedBy == testUserID
+	})).RunAndReturn(func(ctx context.Context, p patientmodel.Patient) (*patientmodel.Patient, error) {
+		p.CreatedAt = time.Now()
+		savedPatient = p
+		return &p, nil
 	}).Once()
 
 	pt, err := svc.Create(context.Background(), testClinicID.String(), testUserID.String(), validInput())
@@ -303,8 +284,14 @@ func TestCreateRecordsRegistrar(t *testing.T) {
 
 	creatorEmail := "ana@example.org"
 	creatorName := "Ana"
-	repoMock.EXPECT().GetWithCreator(mock.Anything, testClinicID, pt.ID).Return(&patientmodel.PatientRecordWithCreator{
-		Record:       savedRecord,
+	repoMock.EXPECT().GetWithCreator(mock.Anything, testClinicID, pt.ID).Return(&patientmodel.GetPatientWithCreatorRow{
+		ID:           savedPatient.ID,
+		ClinicID:     savedPatient.ClinicID,
+		DisplayName:  savedPatient.DisplayName,
+		Status:       savedPatient.Status,
+		CreatedBy:    savedPatient.CreatedBy,
+		CreatedAt:    savedPatient.CreatedAt,
+		UpdatedAt:    savedPatient.UpdatedAt,
 		CreatorEmail: &creatorEmail,
 		CreatorName:  &creatorName,
 	}, nil).Once()
@@ -317,22 +304,28 @@ func TestCreateRecordsRegistrar(t *testing.T) {
 }
 
 func TestGetWithCreatorMissingUser(t *testing.T) {
-	repoMock, _, svc := setupPatientTest(t)
+	repoMock, svc := setupPatientTest(t)
 
-	var savedRecord patientmodel.PatientRecord
-	repoMock.EXPECT().Create(mock.Anything, mock.MatchedBy(func(rec patientmodel.PatientRecord) bool {
-		return rec.CreatedBy != nil && *rec.CreatedBy == ghostID
-	})).RunAndReturn(func(ctx context.Context, rec patientmodel.PatientRecord) (*patientmodel.PatientRecord, error) {
-		rec.CreatedAt = time.Now()
-		savedRecord = rec
-		return &rec, nil
+	var savedPatient patientmodel.Patient
+	repoMock.EXPECT().Create(mock.Anything, mock.MatchedBy(func(p patientmodel.Patient) bool {
+		return p.CreatedBy != nil && *p.CreatedBy == ghostID
+	})).RunAndReturn(func(ctx context.Context, p patientmodel.Patient) (*patientmodel.Patient, error) {
+		p.CreatedAt = time.Now()
+		savedPatient = p
+		return &p, nil
 	}).Once()
 
 	pt, err := svc.Create(context.Background(), testClinicID.String(), ghostID.String(), validInput())
 	require.NoError(t, err)
 
-	repoMock.EXPECT().GetWithCreator(mock.Anything, testClinicID, pt.ID).Return(&patientmodel.PatientRecordWithCreator{
-		Record:       savedRecord,
+	repoMock.EXPECT().GetWithCreator(mock.Anything, testClinicID, pt.ID).Return(&patientmodel.GetPatientWithCreatorRow{
+		ID:           savedPatient.ID,
+		ClinicID:     savedPatient.ClinicID,
+		DisplayName:  savedPatient.DisplayName,
+		Status:       savedPatient.Status,
+		CreatedBy:    savedPatient.CreatedBy,
+		CreatedAt:    savedPatient.CreatedAt,
+		UpdatedAt:    savedPatient.UpdatedAt,
 		CreatorEmail: nil,
 		CreatorName:  nil,
 	}, nil).Once()
@@ -343,7 +336,7 @@ func TestGetWithCreatorMissingUser(t *testing.T) {
 }
 
 func TestAuthorizePatientEdit(t *testing.T) {
-	repoMock, _, svc := setupPatientTest(t)
+	repoMock, svc := setupPatientTest(t)
 	ctx := context.Background()
 
 	admin := &auth.Principal{ID: "01990000-0000-7000-8000-000000000001", Email: "admin@c.org", Name: "Admin", Role: auth.RoleAdmin}
@@ -351,7 +344,7 @@ func TestAuthorizePatientEdit(t *testing.T) {
 	other := &auth.Principal{ID: "01990000-0000-7000-8000-000000000003", Email: "other@c.org", Name: "Other", Role: auth.RolePhysician}
 
 	ownerUUID := uuid.MustParse(owner.ID)
-	repoMock.EXPECT().Create(mock.Anything, mock.Anything).Return(&patientmodel.PatientRecord{
+	repoMock.EXPECT().Create(mock.Anything, mock.Anything).Return(&patientmodel.Patient{
 		ID:        uuid.MustParse("01990000-0000-7000-8000-000000000010"),
 		ClinicID:  testClinicID,
 		CreatedBy: &ownerUUID,

@@ -8,6 +8,8 @@ import (
 	"go.uber.org/fx"
 
 	"librevita.org/ent"
+	"librevita.org/internal/core/crypto"
+	"librevita.org/internal/core/database/zk"
 )
 
 // Module provides the main store, raw database handle, and Ent ORM client,
@@ -23,8 +25,14 @@ var Module = fx.Module("database",
 // the dqlite wire protocol driver, both database/sql, so every consumer works unchanged.
 func sqlDB(store *Store) *sql.DB { return store.SQL() }
 
-// entClient exposes the Ent ORM client configured for the active persistence backend.
-func entClient(store *Store) *ent.Client { return store.Ent() }
+// entClient exposes the Ent ORM client configured for the active persistence backend
+// with transparent blind indexing hooks and native ValueScanners.
+func entClient(store *Store, hasher crypto.Hasher, encryptor crypto.Encryptor) *ent.Client {
+	zk.SetGlobalEncryptor(encryptor)
+	client := store.Ent()
+	client.Use(zk.BlindIndexHook(hasher))
+	return client
+}
 
 func registerLifecycle(lc fx.Lifecycle, store *Store, log *slog.Logger) {
 	lc.Append(fx.Hook{
@@ -36,6 +44,11 @@ func registerLifecycle(lc fx.Lifecycle, store *Store, log *slog.Logger) {
 					return err
 				}
 				log.Info("Goose migrations applied", "driver", store.Driver())
+			}
+			if client := store.Ent(); client != nil {
+				if err := SeedInitialData(ctx, client); err != nil {
+					return err
+				}
 			}
 			return nil
 		},

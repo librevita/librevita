@@ -3,10 +3,16 @@ package schema
 import (
 	"fmt"
 
+	"entgo.io/ent/dialect"
 	"github.com/google/uuid"
 )
 
-//go:generate go run -mod=mod entgo.io/ent/cmd/ent generate --target=../../../ent --feature sql/versioned-migration .
+//go:generate go run -mod=mod entc.go
+
+var blobType = map[string]string{
+	dialect.SQLite:   "blob",
+	dialect.Postgres: "bytea",
+}
 
 // newUUIDv7 returns a new time-ordered UUIDv7 identifier.
 func newUUIDv7() uuid.UUID {

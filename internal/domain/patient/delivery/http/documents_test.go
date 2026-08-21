@@ -87,19 +87,12 @@ func newDocEnvFull(t *testing.T, dir string) (*echo.Echo, *auth.SessionManager, 
 	if err := policies.Load(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-
 	v, err := vault.NewBBoltVault(filepath.Join(t.TempDir(), "keys.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = v.Close() })
-
-	engine, err := crypto.NewEngine("nAmIvOXVc0vb6M9G7P9q2j2yK1WxP3sJ8q5dR4tU6wA=", v)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	svc := usecase.NewService(patientrepo.NewPatientRepository(client), engine, log, policies)
+	svc := usecase.NewService(patientrepo.NewPatientRepository(client), log, policies)
 	store, err := storage.NewLocal(dir)
 	if err != nil {
 		t.Fatal(err)
@@ -174,7 +167,10 @@ func adminSession(t *testing.T, sessions *auth.SessionManager) *http.Cookie {
 func newPatient(t *testing.T, svc *usecase.Service, clinicID string) uuid.UUID {
 	t.Helper()
 	pt, err := svc.Create(context.Background(), clinicID, testAdminID.String(), usecase.PatientInput{
-		DisplayName: "Ana Souza", Sex: "female",
+		DisplayName: "Ana Souza",
+		Phone:       "+55 11 99999-8888",
+		Email:       "ana@example.org",
+		Sex:         "female",
 	})
 	if err != nil {
 		t.Fatalf("create patient: %v", err)

@@ -270,22 +270,26 @@ implement it, selected with `storage.backend`:
 The backend is wired through the Fx module and injected as the `Store` interface, so domains never depend on the
 concrete implementation.
 
-## Cryptographic Core, Key Vault & Envelope Encryption
+## Cryptographic Core, Zero-Knowledge & Envelope Encryption
 
-LibreVita features an isolated, parametrizable cryptographic core in `internal/core/crypto` providing independent contracts for keyed hashing, symmetric AEAD encryption, and envelope encryption with zero database dependency:
+LibreVita implements an enterprise-grade **Zero-Knowledge Architecture** in `internal/core/crypto` and `internal/core/database/zk` providing column-level transparent authenticated encryption (AEAD), exact-match blind indexing, and per-patient envelope encryption with physical key vault storage:
 
 - **Keyed Hasher (`crypto.Hasher`)** — provides keyed cryptographic hashing for blind indexing and session token verification with cryptographic agility:
   - Formatted prefixed output: `<algorithm>$<hex_hash>` (e.g. `blake2s$3f4a...`).
   - Active native-keyed engines: `blake2s` (default) and `blake2b`.
   - Constant-time verification (`subtle.ConstantTimeCompare`) with legacy raw-hex fallback.
-  - Deterministic blind index computation (`system || '\x00' || value`) ensuring domain separation.
-- **Symmetric AEAD Encryptor (`crypto.Encryptor`)** — provides authenticated payload encryption for medical records:
-  - Magic Byte versioning at `ciphertext[0]`: `0x01` (`MagicByteXChaCha20Poly1305`) using 24-byte random nonces (`XChaCha20-Poly1305`). Short-nonce ciphers (such as standard 12-byte ChaCha20-Poly1305) are rejected in Fail-Fast.
-  - Self-directed dynamic decryption routing by inspecting the Magic Byte at byte `[0]`.
+  - Deterministic blind index computation (`system || '\x00' || value`) ensuring cryptographic domain separation across entities (e.g. `patient.display_name`, `patient.phone`, `patient.email`).
+- **Symmetric AEAD Encryptor (`crypto.Encryptor`)** — provides authenticated payload encryption for sensitive personal and clinical data:
+  - Self-Contained Envelope format with Magic Byte versioning at `ciphertext[0]`: `0xA1` (`MagicByteXChaCha20Poly1305`) containing `[ Version (1B) | Nonce (24B) | Ciphertext + Poly1305 Tag ]`.
+  - Cryptographic Agility: Future-proof architecture supporting algorithm migrations (e.g. AES-256-GCM with 12-byte nonces or Post-Quantum ciphers) without database migrations or schema alterations.
   - Memory security: transient plaintext buffers are securely zeroized with `ZeroBytes`.
+- **Zero-Knowledge Ent Plugin & Column-Level Encryption (`zk.EncryptedString` & `zk.Searchable`)**:
+  - Declarative Schemas: Sensitive fields (`display_name`, `phone`, `email`, `notes`, `prescription`, `diagnostic`, `reason`) are defined cleanly with `ValueScanner(zk.EncryptedString())` and stored as binary `BLOB`/`BYTEA` in the database.
+  - Automatic Blind Indexing: An Ent CodeGen plugin (`zk.Generate`) automatically detects fields annotated with `zk.Searchable()`, dynamically injecting non-nullable `<field>_blind_index` columns and composite clinic-scoped indexes `("clinic_id", "<field>_blind_index")` for instant $O(1)$ tenant-isolated lookups.
+  - Lifecycle Mutation Hooks (`zk.BlindIndexHook`): Computes HMAC-BLAKE2s blind index hashes transparently before database persistence, and automatically clears hashes on updates when fields are emptied.
 - **Envelope Encryption (`*crypto.Engine`)** — protects sensitive patient data (such as FHIR identification documents) with physical state separation:
   - **KEK (Key Encryption Key)** — derived via HKDF-BLAKE2b-256 from `LIBREVITA_MASTER_KEY` (`master_key`) using info string `librevita:kek:v1`. The KEK is kept strictly in memory and never written to disk.
-  - **DEK (Data Encryption Key)** — a cryptographically random 32-byte key generated per patient (`urn:librevita:patient:<id>`). Patient data fields (e.g. `value_ciphertext` in `patient_identifiers`) are encrypted using XChaCha20-Poly1305 with random 24-byte nonces under the patient's DEK.
+  - **DEK (Data Encryption Key)** — a cryptographically random 32-byte key generated per patient (`urn:librevita:patient:<id>`). Patient data fields are encrypted using XChaCha20-Poly1305 with random 24-byte nonces under the patient's DEK.
 - **KeyVault Port & Adapters** — patient DEKs are encrypted under the KEK and stored outside the primary database in a dedicated key vault in `internal/core/vault`. The active implementation is configured with `vault.backend`:
   - **`bbolt`** — embedded Key-Value database (default `<data-dir>/keys.db`).
   - **`nats`** — high-performance NATS JetStream KeyValue store (`--vault-nats-url`, `--vault-nats-bucket`).

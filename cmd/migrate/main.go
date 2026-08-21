@@ -118,6 +118,32 @@ func formatSQL(stmt string) string {
 			return res
 		}
 	}
+
+	if strings.HasPrefix(upper, "ALTER TABLE") {
+		parts := strings.Fields(stmt)
+		if len(parts) >= 3 {
+			tableIdx := 2
+			if strings.ToUpper(parts[2]) == "ONLY" && len(parts) >= 4 {
+				tableIdx = 3
+			}
+			tableEndIdx := strings.Index(stmt, parts[tableIdx]) + len(parts[tableIdx])
+			prefix := strings.TrimSpace(stmt[:tableEndIdx])
+			body := strings.TrimSpace(stmt[tableEndIdx:])
+
+			elements := splitTopLevelCommas(body)
+			if len(elements) > 1 {
+				var formattedBody []string
+				for _, el := range elements {
+					trimmed := strings.TrimSpace(el)
+					if trimmed != "" {
+						formattedBody = append(formattedBody, "  "+trimmed)
+					}
+				}
+				return prefix + "\n" + strings.Join(formattedBody, ",\n")
+			}
+		}
+	}
+
 	return stmt
 }
 

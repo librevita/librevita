@@ -1,0 +1,176 @@
+package repository_test
+
+import (
+	"context"
+	"database/sql"
+	"encoding/base64"
+	"testing"
+
+	"entgo.io/ent/dialect"
+	entsql "entgo.io/ent/dialect/sql"
+	"github.com/google/uuid"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	_ "modernc.org/sqlite"
+
+	"librevita.org/ent"
+	"librevita.org/ent/enttest"
+	"librevita.org/internal/core/crypto"
+	"librevita.org/internal/core/database/zk"
+	patientmodel "librevita.org/internal/domain/patient/model"
+	"librevita.org/internal/domain/patient/repository"
+)
+
+const testKeyB64 = "nAmIvOXVc0vb6M9G7P9q2j2yK1WxP3sJ8q5dR4tU6wA="
+
+func strPtr(s string) *string { return &s }
+
+func setupTestRepository(t *testing.T) (patientmodel.PatientRepository, *ent.Client, crypto.Hasher, uuid.UUID, uuid.UUID) {
+	t.Helper()
+
+	db, err := sql.Open("sqlite", "file:ent?mode=memory&cache=shared&_pragma=foreign_keys(1)")
+	require.NoError(t, err)
+
+	drv := entsql.OpenDB(dialect.SQLite, db)
+	client := enttest.NewClient(t, enttest.WithOptions(ent.Driver(drv)))
+	t.Cleanup(func() {
+		_ = client.Close()
+		_ = db.Close()
+	})
+
+	key, err := base64.StdEncoding.DecodeString(testKeyB64)
+	require.NoError(t, err)
+
+	hasher, err := crypto.NewHasher(key)
+	require.NoError(t, err)
+
+	encryptor, err := crypto.NewEncryptor(key)
+	require.NoError(t, err)
+
+	// Set global encryptor for native ValueScanners and register blind index hook
+	zk.SetGlobalEncryptor(encryptor)
+	client.Use(zk.BlindIndexHook(hasher))
+
+	repo := repository.NewPatientRepository(client)
+
+	// Create clinic, role, and user
+	clinicID := uuid.New()
+	_, err = client.Clinic.Create().
+		SetID(clinicID).
+		SetName("Clínica Central").
+		Save(context.Background())
+	require.NoError(t, err)
+
+	roleID := uuid.New()
+	_, err = client.Role.Create().
+		SetID(roleID).
+		SetName("Doctor").
+		Save(context.Background())
+	require.NoError(t, err)
+
+	userID := uuid.New()
+	_, err = client.User.Create().
+		SetID(userID).
+		SetRoleID(roleID).
+		SetEmail("dr.silva@example.org").
+		SetDisplayName("Dr. Silva").
+		SetPasswordHash("argon2id$test").
+		Save(context.Background())
+	require.NoError(t, err)
+
+	return repo, client, hasher, clinicID, userID
+}
+
+func TestPatientRepository_CRUD(t *testing.T) {
+	repo, client, hasher, clinicID, userID := setupTestRepository(t)
+	ctx := context.Background()
+
+	patientID := uuid.New()
+	p := patientmodel.Patient{
+		ID:          patientID,
+		ClinicID:    clinicID,
+		DisplayName: "Maria Joana",
+		BirthDate:   strPtr("1988-05-20"),
+		Sex:         patientmodel.SexFemale,
+		Email:       strPtr("maria@example.org"),
+		Phone:       strPtr("+55 11 98888-7777"),
+		Street:      strPtr("Av. Paulista 1000"),
+		City:        strPtr("São Paulo"),
+		State:       strPtr("SP"),
+		PostalCode:  strPtr("01310-100"),
+		Notes:       strPtr("Paciente alérgica a dipirona"),
+		Status:      patientmodel.PatientStatusActive,
+		CreatedBy:   &userID,
+	}
+
+	// 1. Create
+	created, err := repo.Create(ctx, p)
+	require.NoError(t, err)
+	require.NotNil(t, created)
+	assert.Equal(t, patientID, created.ID)
+	assert.Equal(t, clinicID, created.ClinicID)
+	assert.Equal(t, "Maria Joana", created.DisplayName)
+	assert.Equal(t, "maria@example.org", *created.Email)
+	assert.Equal(t, patientmodel.PatientStatusActive, created.Status)
+
+	// Verify transparent automatic blind index computation in Ent row
+	rawRow, err := client.Patient.Get(ctx, patientID)
+	require.NoError(t, err)
+	assert.Equal(t, "Maria Joana", rawRow.DisplayName) // Transparently decrypted by interceptor!
+
+	expectedNameBlind, _ := hasher.BlindIndex("patient.display_name", "maria joana")
+	expectedEmailBlind, _ := hasher.BlindIndex("patient.email", "maria@example.org")
+	expectedPhoneBlind, _ := hasher.BlindIndex("patient.phone", "+55 11 98888-7777")
+	assert.Equal(t, expectedNameBlind, rawRow.DisplayNameBlindIndex)
+	assert.Equal(t, expectedEmailBlind, rawRow.EmailBlindIndex)
+	assert.Equal(t, expectedPhoneBlind, rawRow.PhoneBlindIndex)
+
+	// 2. Get
+	fetched, err := repo.Get(ctx, clinicID, patientID)
+	require.NoError(t, err)
+	require.NotNil(t, fetched)
+	assert.Equal(t, patientID, fetched.ID)
+	assert.Equal(t, "Maria Joana", fetched.DisplayName)
+	assert.Equal(t, "1988-05-20", *fetched.BirthDate)
+	assert.Equal(t, patientmodel.SexFemale, fetched.Sex)
+	assert.Equal(t, "maria@example.org", *fetched.Email)
+	assert.Equal(t, "+55 11 98888-7777", *fetched.Phone)
+
+	// 3. GetWithCreator
+	withCreator, err := repo.GetWithCreator(ctx, clinicID, patientID)
+	require.NoError(t, err)
+	require.NotNil(t, withCreator)
+	assert.Equal(t, patientID, withCreator.ID)
+	require.NotNil(t, withCreator.CreatorName)
+	assert.Equal(t, "Dr. Silva", *withCreator.CreatorName)
+	require.NotNil(t, withCreator.CreatorEmail)
+	assert.Equal(t, "dr.silva@example.org", *withCreator.CreatorEmail)
+
+	// 4. Update
+	p.DisplayName = "Maria Joana da Silva"
+	p.Email = strPtr("maria.silva@example.org")
+	p.Status = patientmodel.PatientStatusInactive
+
+	updated, err := repo.Update(ctx, p)
+	require.NoError(t, err)
+	require.NotNil(t, updated)
+	assert.Equal(t, "Maria Joana da Silva", updated.DisplayName)
+	assert.Equal(t, "maria.silva@example.org", *updated.Email)
+	assert.Equal(t, patientmodel.PatientStatusInactive, updated.Status)
+
+	// 5. ListByClinicAndStatus
+	listActive, err := repo.ListByClinicAndStatus(ctx, clinicID, &p.Status)
+	require.NoError(t, err)
+	assert.Len(t, listActive, 1)
+	assert.Equal(t, "Maria Joana da Silva", listActive[0].DisplayName)
+
+	// 6. BulkSetStatus
+	count, err := repo.BulkSetStatus(ctx, clinicID, []uuid.UUID{patientID}, patientmodel.PatientStatusArchived)
+	require.NoError(t, err)
+	assert.Equal(t, 1, count)
+
+	// 7. Count
+	total, err := repo.Count(ctx, clinicID)
+	require.NoError(t, err)
+	assert.Equal(t, 1, total)
+}

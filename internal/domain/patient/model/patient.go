@@ -79,21 +79,7 @@ var (
 	ErrForbidden = errors.New("patient: permission denied")
 )
 
-// PatientPayload is the encrypted PII/PHI payload stored inside encrypted_payload.
-type PatientPayload struct {
-	DisplayName string  `json:"display_name"`
-	BirthDate   *string `json:"birth_date,omitempty"`
-	Sex         Sex     `json:"sex"`
-	Phone       *string `json:"phone,omitempty"`
-	Email       *string `json:"email,omitempty"`
-	Street      *string `json:"street,omitempty"`
-	City        *string `json:"city,omitempty"`
-	State       *string `json:"state,omitempty"`
-	PostalCode  *string `json:"postal_code,omitempty"`
-	Notes       *string `json:"notes,omitempty"`
-}
-
-// Patient represents the decrypted in-memory patient domain model.
+// Patient represents the in-memory patient domain model.
 type Patient struct {
 	ID          uuid.UUID
 	ClinicID    uuid.UUID
@@ -111,26 +97,6 @@ type Patient struct {
 	CreatedBy   *uuid.UUID
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
-}
-
-// PatientRecord is the physical encrypted row stored in the database.
-type PatientRecord struct {
-	ID               uuid.UUID
-	ClinicID         uuid.UUID
-	BlindIndex       string
-	EncryptedPayload []byte
-	Nonce            []byte
-	Status           PatientStatus
-	CreatedBy        *uuid.UUID
-	CreatedAt        time.Time
-	UpdatedAt        time.Time
-}
-
-// PatientRecordWithCreator includes creator metadata for the patient record.
-type PatientRecordWithCreator struct {
-	Record       PatientRecord
-	CreatorName  *string
-	CreatorEmail *string
 }
 
 // GetPatientWithCreatorRow is a projection that includes creator metadata.
@@ -172,13 +138,13 @@ type PatientInput struct {
 	IdentifierValue  string
 }
 
-// PatientRepository defines the storage interface for patient records.
+// PatientRepository defines the storage interface for patient domain models with transparent encryption.
 type PatientRepository interface {
-	Create(ctx context.Context, rec PatientRecord) (*PatientRecord, error)
-	Get(ctx context.Context, clinicID, patientID uuid.UUID) (*PatientRecord, error)
-	GetWithCreator(ctx context.Context, clinicID, patientID uuid.UUID) (*PatientRecordWithCreator, error)
-	Update(ctx context.Context, rec PatientRecord) (*PatientRecord, error)
+	Create(ctx context.Context, patient Patient) (*Patient, error)
+	Get(ctx context.Context, clinicID, patientID uuid.UUID) (*Patient, error)
+	GetWithCreator(ctx context.Context, clinicID, patientID uuid.UUID) (*GetPatientWithCreatorRow, error)
+	Update(ctx context.Context, patient Patient) (*Patient, error)
 	BulkSetStatus(ctx context.Context, clinicID uuid.UUID, patientIDs []uuid.UUID, status PatientStatus) (int, error)
-	ListByClinicAndStatus(ctx context.Context, clinicID uuid.UUID, status *PatientStatus) ([]PatientRecord, error)
+	ListByClinicAndStatus(ctx context.Context, clinicID uuid.UUID, status *PatientStatus) ([]Patient, error)
 	Count(ctx context.Context, clinicID uuid.UUID) (int, error)
 }

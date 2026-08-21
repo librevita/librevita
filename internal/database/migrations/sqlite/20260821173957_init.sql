@@ -29,12 +29,11 @@ CREATE INDEX `accesspolicyversion_policy_id_id` ON `policy_versions` (`policy_id
 -- create "appointments" table
 CREATE TABLE `appointments` (
   `id` uuid NOT NULL,
-  `blind_index` text NOT NULL,
-  `encrypted_payload` blob NOT NULL,
-  `nonce` blob NOT NULL,
   `start_time` datetime NOT NULL,
   `end_time` datetime NOT NULL,
   `status` text NOT NULL DEFAULT ('scheduled'),
+  `reason` blob NULL,
+  `notes` blob NULL,
   `created_by` uuid NULL,
   `created_at` datetime NOT NULL,
   `updated_at` datetime NOT NULL,
@@ -46,9 +45,6 @@ CREATE TABLE `appointments` (
   CONSTRAINT `appointments_patients_appointments` FOREIGN KEY (`patient_id`) REFERENCES `patients` (`id`) ON DELETE NO ACTION,
   CONSTRAINT `appointments_users_appointments` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE NO ACTION
 );
-
--- create index "appointment_blind_index" to table: "appointments"
-CREATE INDEX `appointment_blind_index` ON `appointments` (`blind_index`);
 
 -- create index "appointment_clinic_id_start_time" to table: "appointments"
 CREATE INDEX `appointment_clinic_id_start_time` ON `appointments` (`clinic_id`, `start_time`);
@@ -114,11 +110,11 @@ CREATE TABLE `clinics` (
 -- create "episodes" table
 CREATE TABLE `episodes` (
   `id` uuid NOT NULL,
-  `blind_index` text NOT NULL,
-  `encrypted_payload` blob NOT NULL,
-  `nonce` blob NOT NULL,
   `episode_type` text NOT NULL DEFAULT ('consultation'),
   `status` text NOT NULL DEFAULT ('draft'),
+  `notes` blob NULL,
+  `prescription` blob NULL,
+  `diagnostic` blob NULL,
   `created_at` datetime NOT NULL,
   `updated_at` datetime NOT NULL,
   `appointment_id` uuid NULL,
@@ -131,9 +127,6 @@ CREATE TABLE `episodes` (
   CONSTRAINT `episodes_patients_episodes` FOREIGN KEY (`patient_id`) REFERENCES `patients` (`id`) ON DELETE NO ACTION,
   CONSTRAINT `episodes_users_episodes` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE NO ACTION
 );
-
--- create index "episode_blind_index" to table: "episodes"
-CREATE INDEX `episode_blind_index` ON `episodes` (`blind_index`);
 
 -- create index "episode_clinic_id_created_at" to table: "episodes"
 CREATE INDEX `episode_clinic_id_created_at` ON `episodes` (`clinic_id`, `created_at`);
@@ -183,29 +176,42 @@ CREATE TABLE `meta` (
 -- create "patients" table
 CREATE TABLE `patients` (
   `id` uuid NOT NULL,
-  `blind_index` text NOT NULL,
-  `encrypted_payload` blob NOT NULL,
-  `nonce` blob NOT NULL,
   `status` text NOT NULL DEFAULT ('active'),
+  `display_name` blob NOT NULL,
+  `phone` blob NOT NULL,
+  `email` blob NOT NULL,
+  `birth_date` blob NULL,
+  `sex` blob NULL,
+  `street` blob NULL,
+  `city` blob NULL,
+  `state` blob NULL,
+  `postal_code` blob NULL,
+  `notes` blob NULL,
   `created_by` uuid NULL,
   `created_at` datetime NOT NULL,
   `updated_at` datetime NOT NULL,
+  `display_name_blind_index` text NULL,
+  `phone_blind_index` text NULL,
+  `email_blind_index` text NULL,
   `clinic_id` uuid NOT NULL,
   PRIMARY KEY (`id`),
   CONSTRAINT `patients_clinics_patients` FOREIGN KEY (`clinic_id`) REFERENCES `clinics` (`id`) ON DELETE NO ACTION
 );
 
--- create index "patient_blind_index" to table: "patients"
-CREATE INDEX `patient_blind_index` ON `patients` (`blind_index`);
-
 -- create index "patient_clinic_id" to table: "patients"
 CREATE INDEX `patient_clinic_id` ON `patients` (`clinic_id`);
 
--- create index "patient_clinic_id_blind_index" to table: "patients"
-CREATE INDEX `patient_clinic_id_blind_index` ON `patients` (`clinic_id`, `blind_index`);
-
 -- create index "patient_status" to table: "patients"
 CREATE INDEX `patient_status` ON `patients` (`status`);
+
+-- create index "patient_clinic_id_display_name_blind_index" to table: "patients"
+CREATE INDEX `patient_clinic_id_display_name_blind_index` ON `patients` (`clinic_id`, `display_name_blind_index`);
+
+-- create index "patient_clinic_id_phone_blind_index" to table: "patients"
+CREATE INDEX `patient_clinic_id_phone_blind_index` ON `patients` (`clinic_id`, `phone_blind_index`);
+
+-- create index "patient_clinic_id_email_blind_index" to table: "patients"
+CREATE INDEX `patient_clinic_id_email_blind_index` ON `patients` (`clinic_id`, `email_blind_index`);
 
 -- create "patient_identifiers" table
 CREATE TABLE `patient_identifiers` (
@@ -353,41 +359,7 @@ CREATE TABLE `user_specialties` (
   CONSTRAINT `user_specialties_specialty_id` FOREIGN KEY (`specialty_id`) REFERENCES `specialties` (`id`) ON DELETE CASCADE
 );
 
--- audit_log append-only triggers
--- +goose StatementBegin
-CREATE TRIGGER `audit_log_no_update`
-BEFORE UPDATE ON `audit_log`
-BEGIN
-    SELECT RAISE(ABORT, 'audit_log is append-only');
-END;
--- +goose StatementEnd
-
--- +goose StatementBegin
-CREATE TRIGGER `audit_log_no_delete`
-BEFORE DELETE ON `audit_log`
-BEGIN
-    SELECT RAISE(ABORT, 'audit_log is append-only');
-END;
--- +goose StatementEnd
-
--- seed initial roles
-INSERT INTO `roles` (`id`, `name`, `system`, `is_clinical`, `created_at`) VALUES
-('00000000-0000-7000-8000-000000000001', 'admin', true, false, CURRENT_TIMESTAMP),
-('00000000-0000-7000-8000-000000000002', 'physician', true, true, CURRENT_TIMESTAMP),
-('00000000-0000-7000-8000-000000000003', 'receptionist', true, false, CURRENT_TIMESTAMP),
-('00000000-0000-7000-8000-000000000004', 'patient', true, false, CURRENT_TIMESTAMP);
-
--- seed initial identifier systems
-INSERT INTO `identifier_systems` (`id`, `system`, `display_name`, `pattern`, `transform`, `check_algorithm`, `check_base_len`, `check_dv_count`, `check_start_weight`, `active`, `mask`, `created_at`, `updated_at`) VALUES
-('00000000-0000-7000-8000-000000000011', 'urn:librevita:id:br:cpf', 'CPF (Brasil)', '[0-9]{11}', 'digits', 'mod11_desc', 9, 2, 10, true, '000.000.000-00', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-('00000000-0000-7000-8000-000000000012', 'urn:librevita:id:br:sus', 'Cartão SUS (Brasil)', '[0-9]{15}', 'digits', 'mod11_cyclic', 14, 1, 10, true, '000 0000 0000 0000', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-('00000000-0000-7000-8000-000000000013', 'urn:librevita:id:pt:nif', 'NIF (Portugal)', '[0-9]{9}', 'digits', 'mod11_desc', 8, 1, 9, true, '000 000 000', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
-('00000000-0000-7000-8000-000000000014', 'urn:librevita:id:passport', 'Passaporte', '[A-Z]{1,2}[0-9]{6,9}', 'upper', 'none', 0, 1, 10, true, '', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP);
-
 -- +goose Down
--- reverse: drop audit_log triggers
-DROP TRIGGER IF EXISTS `audit_log_no_delete`;
-DROP TRIGGER IF EXISTS `audit_log_no_update`;
 -- reverse: create "user_specialties" table
 DROP TABLE `user_specialties`;
 -- reverse: create index "users_email_key" to table: "users"
@@ -430,14 +402,16 @@ DROP INDEX `patientidentifier_patient_id`;
 DROP INDEX `patient_identifiers_blind_index_key`;
 -- reverse: create "patient_identifiers" table
 DROP TABLE `patient_identifiers`;
+-- reverse: create index "patient_clinic_id_email_blind_index" to table: "patients"
+DROP INDEX `patient_clinic_id_email_blind_index`;
+-- reverse: create index "patient_clinic_id_phone_blind_index" to table: "patients"
+DROP INDEX `patient_clinic_id_phone_blind_index`;
+-- reverse: create index "patient_clinic_id_display_name_blind_index" to table: "patients"
+DROP INDEX `patient_clinic_id_display_name_blind_index`;
 -- reverse: create index "patient_status" to table: "patients"
 DROP INDEX `patient_status`;
--- reverse: create index "patient_clinic_id_blind_index" to table: "patients"
-DROP INDEX `patient_clinic_id_blind_index`;
 -- reverse: create index "patient_clinic_id" to table: "patients"
 DROP INDEX `patient_clinic_id`;
--- reverse: create index "patient_blind_index" to table: "patients"
-DROP INDEX `patient_blind_index`;
 -- reverse: create "patients" table
 DROP TABLE `patients`;
 -- reverse: create "meta" table
@@ -456,8 +430,6 @@ DROP INDEX `episode_user_id_created_at`;
 DROP INDEX `episode_patient_id_created_at`;
 -- reverse: create index "episode_clinic_id_created_at" to table: "episodes"
 DROP INDEX `episode_clinic_id_created_at`;
--- reverse: create index "episode_blind_index" to table: "episodes"
-DROP INDEX `episode_blind_index`;
 -- reverse: create "episodes" table
 DROP TABLE `episodes`;
 -- reverse: create "clinics" table
@@ -480,8 +452,6 @@ DROP INDEX `appointment_patient_id_start_time`;
 DROP INDEX `appointment_user_id_start_time`;
 -- reverse: create index "appointment_clinic_id_start_time" to table: "appointments"
 DROP INDEX `appointment_clinic_id_start_time`;
--- reverse: create index "appointment_blind_index" to table: "appointments"
-DROP INDEX `appointment_blind_index`;
 -- reverse: create "appointments" table
 DROP TABLE `appointments`;
 -- reverse: create index "accesspolicyversion_policy_id_id" to table: "policy_versions"

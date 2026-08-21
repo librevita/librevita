@@ -16,32 +16,59 @@ type patientRepository struct {
 	client *ent.Client
 }
 
-// NewPatientRepository creates a patient repository adapter.
+// NewPatientRepository creates a pure patient repository adapter.
 func NewPatientRepository(client *ent.Client) patientmodel.PatientRepository {
-	return &patientRepository{client: client}
+	return &patientRepository{
+		client: client,
+	}
 }
 
-func (r *patientRepository) Create(ctx context.Context, rec patientmodel.PatientRecord) (*patientmodel.PatientRecord, error) {
+func (r *patientRepository) Create(ctx context.Context, p patientmodel.Patient) (*patientmodel.Patient, error) {
 	create := r.client.Patient.Create().
-		SetID(rec.ID).
-		SetClinicID(rec.ClinicID).
-		SetBlindIndex(rec.BlindIndex).
-		SetEncryptedPayload(rec.EncryptedPayload).
-		SetNonce(rec.Nonce).
-		SetStatus(patient.Status(rec.Status))
+		SetID(p.ID).
+		SetClinicID(p.ClinicID).
+		SetDisplayName(p.DisplayName).
+		SetStatus(patient.Status(p.Status))
 
-	if rec.CreatedBy != nil {
-		create.SetCreatedBy(*rec.CreatedBy)
+	if p.BirthDate != nil && *p.BirthDate != "" {
+		create.SetBirthDate(*p.BirthDate)
+	}
+	if p.Sex != "" {
+		create.SetSex(string(p.Sex))
+	}
+	if p.Phone != nil && *p.Phone != "" {
+		create.SetPhone(*p.Phone)
+	}
+	if p.Email != nil && *p.Email != "" {
+		create.SetEmail(*p.Email)
+	}
+	if p.Street != nil && *p.Street != "" {
+		create.SetStreet(*p.Street)
+	}
+	if p.City != nil && *p.City != "" {
+		create.SetCity(*p.City)
+	}
+	if p.State != nil && *p.State != "" {
+		create.SetState(*p.State)
+	}
+	if p.PostalCode != nil && *p.PostalCode != "" {
+		create.SetPostalCode(*p.PostalCode)
+	}
+	if p.Notes != nil && *p.Notes != "" {
+		create.SetNotes(*p.Notes)
+	}
+	if p.CreatedBy != nil {
+		create.SetCreatedBy(*p.CreatedBy)
 	}
 
 	saved, err := create.Save(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("patient repository: create: %w", err)
 	}
-	return toPatientRecord(saved), nil
+	return toDomainPatient(saved), nil
 }
 
-func (r *patientRepository) Get(ctx context.Context, clinicID, patientID uuid.UUID) (*patientmodel.PatientRecord, error) {
+func (r *patientRepository) Get(ctx context.Context, clinicID, patientID uuid.UUID) (*patientmodel.Patient, error) {
 	p, err := r.client.Patient.Query().
 		Where(
 			patient.IDEQ(patientID),
@@ -54,10 +81,10 @@ func (r *patientRepository) Get(ctx context.Context, clinicID, patientID uuid.UU
 		}
 		return nil, fmt.Errorf("patient repository: get: %w", err)
 	}
-	return toPatientRecord(p), nil
+	return toDomainPatient(p), nil
 }
 
-func (r *patientRepository) GetWithCreator(ctx context.Context, clinicID, patientID uuid.UUID) (*patientmodel.PatientRecordWithCreator, error) {
+func (r *patientRepository) GetWithCreator(ctx context.Context, clinicID, patientID uuid.UUID) (*patientmodel.GetPatientWithCreatorRow, error) {
 	p, err := r.client.Patient.Query().
 		Where(
 			patient.IDEQ(patientID),
@@ -71,29 +98,92 @@ func (r *patientRepository) GetWithCreator(ctx context.Context, clinicID, patien
 		return nil, fmt.Errorf("patient repository: get with creator: %w", err)
 	}
 
-	rec := toPatientRecord(p)
+	pt := toDomainPatient(p)
 	var creatorName, creatorEmail *string
-	if rec.CreatedBy != nil {
-		if u, err := r.client.User.Get(ctx, *rec.CreatedBy); err == nil && u != nil {
+	if pt.CreatedBy != nil {
+		if u, err := r.client.User.Get(ctx, *pt.CreatedBy); err == nil && u != nil {
 			creatorName = &u.DisplayName
 			creatorEmail = &u.Email
 		}
 	}
 
-	return &patientmodel.PatientRecordWithCreator{
-		Record:       *rec,
-		CreatorName:  creatorName,
+	return &patientmodel.GetPatientWithCreatorRow{
+		ID:           pt.ID,
+		ClinicID:     pt.ClinicID,
+		DisplayName:  pt.DisplayName,
+		BirthDate:    pt.BirthDate,
+		Sex:          pt.Sex,
+		Phone:        pt.Phone,
+		Email:        pt.Email,
+		Street:       pt.Street,
+		City:         pt.City,
+		State:        pt.State,
+		PostalCode:   pt.PostalCode,
+		Notes:        pt.Notes,
+		Status:       pt.Status,
+		CreatedBy:    pt.CreatedBy,
+		CreatedAt:    pt.CreatedAt,
+		UpdatedAt:    pt.UpdatedAt,
 		CreatorEmail: creatorEmail,
+		CreatorName:  creatorName,
 	}, nil
 }
 
-func (r *patientRepository) Update(ctx context.Context, rec patientmodel.PatientRecord) (*patientmodel.PatientRecord, error) {
-	update := r.client.Patient.UpdateOneID(rec.ID).
-		SetBlindIndex(rec.BlindIndex).
-		SetEncryptedPayload(rec.EncryptedPayload).
-		SetNonce(rec.Nonce).
-		SetStatus(patient.Status(rec.Status)).
+func (r *patientRepository) Update(ctx context.Context, p patientmodel.Patient) (*patientmodel.Patient, error) {
+	update := r.client.Patient.UpdateOneID(p.ID).
+		SetDisplayName(p.DisplayName).
+		SetStatus(patient.Status(p.Status)).
 		SetUpdatedAt(time.Now())
+
+	if p.BirthDate != nil && *p.BirthDate != "" {
+		update.SetBirthDate(*p.BirthDate)
+	} else {
+		update.ClearBirthDate()
+	}
+
+	if p.Sex != "" {
+		update.SetSex(string(p.Sex))
+	} else {
+		update.ClearSex()
+	}
+
+	if p.Phone != nil && *p.Phone != "" {
+		update.SetPhone(*p.Phone)
+	}
+
+	if p.Email != nil && *p.Email != "" {
+		update.SetEmail(*p.Email)
+	}
+
+	if p.Street != nil && *p.Street != "" {
+		update.SetStreet(*p.Street)
+	} else {
+		update.ClearStreet()
+	}
+
+	if p.City != nil && *p.City != "" {
+		update.SetCity(*p.City)
+	} else {
+		update.ClearCity()
+	}
+
+	if p.State != nil && *p.State != "" {
+		update.SetState(*p.State)
+	} else {
+		update.ClearState()
+	}
+
+	if p.PostalCode != nil && *p.PostalCode != "" {
+		update.SetPostalCode(*p.PostalCode)
+	} else {
+		update.ClearPostalCode()
+	}
+
+	if p.Notes != nil && *p.Notes != "" {
+		update.SetNotes(*p.Notes)
+	} else {
+		update.ClearNotes()
+	}
 
 	updated, err := update.Save(ctx)
 	if err != nil {
@@ -102,7 +192,7 @@ func (r *patientRepository) Update(ctx context.Context, rec patientmodel.Patient
 		}
 		return nil, fmt.Errorf("patient repository: update: %w", err)
 	}
-	return toPatientRecord(updated), nil
+	return toDomainPatient(updated), nil
 }
 
 func (r *patientRepository) BulkSetStatus(ctx context.Context, clinicID uuid.UUID, patientIDs []uuid.UUID, status patientmodel.PatientStatus) (int, error) {
@@ -120,7 +210,7 @@ func (r *patientRepository) BulkSetStatus(ctx context.Context, clinicID uuid.UUI
 	return count, nil
 }
 
-func (r *patientRepository) ListByClinicAndStatus(ctx context.Context, clinicID uuid.UUID, status *patientmodel.PatientStatus) ([]patientmodel.PatientRecord, error) {
+func (r *patientRepository) ListByClinicAndStatus(ctx context.Context, clinicID uuid.UUID, status *patientmodel.PatientStatus) ([]patientmodel.Patient, error) {
 	query := r.client.Patient.Query().Where(patient.ClinicIDEQ(clinicID))
 	if status != nil {
 		query = query.Where(patient.StatusEQ(patient.Status(*status)))
@@ -130,9 +220,9 @@ func (r *patientRepository) ListByClinicAndStatus(ctx context.Context, clinicID 
 		return nil, fmt.Errorf("patient repository: list: %w", err)
 	}
 
-	out := make([]patientmodel.PatientRecord, 0, len(rows))
+	out := make([]patientmodel.Patient, 0, len(rows))
 	for _, row := range rows {
-		out = append(out, *toPatientRecord(row))
+		out = append(out, *toDomainPatient(row))
 	}
 	return out, nil
 }
@@ -145,24 +235,39 @@ func (r *patientRepository) Count(ctx context.Context, clinicID uuid.UUID) (int,
 	return count, nil
 }
 
-func toPatientRecord(p *ent.Patient) *patientmodel.PatientRecord {
+func stringPtr(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
+}
+
+func toDomainPatient(p *ent.Patient) *patientmodel.Patient {
 	if p == nil {
 		return nil
 	}
-	var createdBy *uuid.UUID
-	if p.CreatedBy != nil {
-		cb := *p.CreatedBy
-		createdBy = &cb
+
+	var sex patientmodel.Sex = patientmodel.SexUnknown
+	if p.Sex != "" {
+		sex = patientmodel.Sex(p.Sex)
 	}
-	return &patientmodel.PatientRecord{
-		ID:               p.ID,
-		ClinicID:         p.ClinicID,
-		BlindIndex:       p.BlindIndex,
-		EncryptedPayload: p.EncryptedPayload,
-		Nonce:            p.Nonce,
-		Status:           patientmodel.PatientStatus(p.Status),
-		CreatedBy:        createdBy,
-		CreatedAt:        p.CreatedAt,
-		UpdatedAt:        p.UpdatedAt,
+
+	return &patientmodel.Patient{
+		ID:          p.ID,
+		ClinicID:    p.ClinicID,
+		DisplayName: p.DisplayName,
+		BirthDate:   stringPtr(p.BirthDate),
+		Sex:         sex,
+		Phone:       stringPtr(p.Phone),
+		Email:       stringPtr(p.Email),
+		Street:      stringPtr(p.Street),
+		City:        stringPtr(p.City),
+		State:       stringPtr(p.State),
+		PostalCode:  stringPtr(p.PostalCode),
+		Notes:       stringPtr(p.Notes),
+		Status:      patientmodel.PatientStatus(p.Status),
+		CreatedBy:   p.CreatedBy,
+		CreatedAt:   p.CreatedAt,
+		UpdatedAt:   p.UpdatedAt,
 	}
 }

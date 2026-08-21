@@ -9,21 +9,14 @@ import (
 	"entgo.io/ent/schema/index"
 	"github.com/google/uuid"
 
-	"librevita.org/internal/database/schema/mixin"
+	"librevita.org/internal/core/database/zk"
 )
 
 // Appointment holds the schema definition for the Appointment entity.
 // Sensitive appointment details (reason for visit, clinical triage notes)
-// are stored in the encrypted payload via ZeroKnowledgeMixin.
+// are stored encrypted transparently via ValueScanner.
 type Appointment struct {
 	ent.Schema
-}
-
-// Mixin of the Appointment entity.
-func (Appointment) Mixin() []ent.Mixin {
-	return []ent.Mixin{
-		mixin.ZeroKnowledgeMixin{},
-	}
 }
 
 // Fields of the Appointment.
@@ -46,6 +39,19 @@ func (Appointment) Fields() []ent.Field {
 			Values("scheduled", "confirmed", "in_progress", "completed", "cancelled", "no_show").
 			Default("scheduled").
 			Comment("Status of the appointment"),
+
+		// Confidential Appointment Fields (Stored as BLOB/BYTEA in DB, strings in Go):
+		field.String("reason").
+			SchemaType(blobType).
+			ValueScanner(zk.EncryptedString()).
+			Optional().
+			Comment("Reason for visit / triage description (stored as BLOB/BYTEA in DB)"),
+		field.String("notes").
+			SchemaType(blobType).
+			ValueScanner(zk.EncryptedString()).
+			Optional().
+			Comment("Clinical appointment notes (stored as BLOB/BYTEA in DB)"),
+
 		field.UUID("created_by", uuid.UUID{}).
 			Optional().
 			Nillable(),
