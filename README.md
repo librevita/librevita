@@ -5,7 +5,10 @@
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue?style=flat-square)](LICENSE)
 [![Repo size](https://img.shields.io/github/repo-size/librevita/librevita?style=flat-square)]()
 
-Self-hosted medical clinic management software built in Go. The module path is `librevita.org`.
+> _"In quella parte del libro de la mia memoria dinanzi a la quale poco si potrebbe leggere, si trova una rubrica la quale dice: **Incipit vita nova**."_  
+> — **Dante Alighieri**, _Vita Nuova_ (c. 1294)
+
+**LibreVita** is a sovereign, zero-knowledge electronic health record (EHR) and clinic management platform built in Go. Uniting the principled tradition of **Libre Software** with Dante’s **_Vita Nuova_** (*"New Life"*), LibreVita marks a new beginning for clinical privacy, human dignity, and patient data sovereignty. The module path is `librevita.org`.
 
 ## Requirements
 
