@@ -593,3 +593,21 @@ should schedule periodic chain verification (a cron hitting the endpoint, or a r
 head in an external append-only store (e.g. a public transparency log or a second cluster).
 
 Sessions require a database/sql backend; the dqlite driver qualifies, so session revocation works on both backends.
+
+## 📜 License & FOSS Social Contract
+
+LibreVita is free and open-source software licensed under the **[GNU Affero General Public License v3.0 or later (AGPL-3.0-or-later)](LICENSE)**.
+
+### Our Perpetual FOSS Pledge
+
+LibreVita was founded with an ethical mission: to defend clinical privacy, ensure absolute patient data sovereignty, and democratize sovereign healthcare infrastructure for humanity. To guarantee that the project will never be compromised or commercialized at the expense of its users, we formally commit to the following principles:
+
+1. **Perpetual Free Software (AGPLv3 or later)**:
+   * LibreVita is and will forever remain 100% Free and Open Source Software. The only future license evolution accepted will be official subsequent versions published by the Free Software Foundation (e.g., AGPLv4).
+2. **No "Bait-and-Switch" or Relicensing**:
+   * We will **never** relicense this codebase under proprietary, closed-source, or restrictive "source-available" licenses (such as BSL, SSPL, or commercial dual-licensing traps).
+3. **No "Open-Core" Trap**:
+   * There is not and will never be an artificial "Enterprise Edition" with paywalled security or clinical features. 100% of our codebase — including Zero-Knowledge encryption, Blind Indexing, CEL policy engine, and audit verification — is completely free and available to all.
+4. **Inbound = Outbound Community Integrity**:
+   * All contributions from the community are accepted under the same AGPL-3.0-or-later terms for the perpetual benefit of the global commons. We will never require predatory Contributor License Agreements (CLAs) that transfer copyright ownership to enable closed-source commercial forks.
+

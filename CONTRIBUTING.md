@@ -75,3 +75,13 @@ Maintainers: enable branch protection on `master` with the CI check required.
 
 Include the LibreVita version or commit, the environment (OS, Go and Node
 versions), and the full error output.
+
+## Licensing & Community Pledge
+
+LibreVita is free and open-source software licensed under the **GNU Affero General Public License v3.0 or later (AGPL-3.0-or-later)**.
+
+By contributing to LibreVita:
+1. You agree that your contributions are licensed under the **AGPL-3.0-or-later**.
+2. We commit that your contributions will remain permanently free software for the global commons, and will never be relicensed under closed-source or restrictive commercial licenses.
+3. We do not require proprietary Contributor License Agreements (CLAs). We follow the standard Developer Certificate of Origin (DCO / Inbound=Outbound) principle.
+
