@@ -39,16 +39,22 @@ packages:
       IndexRepository:
   librevita.org/internal/domain/clinic/model:
     config:
+      all: true
       dir: "tests/mocks/domain/clinic/model"
   librevita.org/internal/domain/identifier/model:
     config:
+      all: true
       dir: "tests/mocks/domain/identifier/model"
   librevita.org/internal/domain/identifier/usecase:
     config:
+      all: true
       dir: "tests/mocks/domain/identifier/usecase"
   librevita.org/internal/domain/patient/model:
     config:
+      all: true
       dir: "tests/mocks/domain/patient/model"
   librevita.org/internal/domain/user/model:
     config:
+      all: true
       dir: "tests/mocks/domain/user/model"
+

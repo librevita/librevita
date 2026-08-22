@@ -247,7 +247,7 @@ func toDomainPatient(p *ent.Patient) *patientmodel.Patient {
 		return nil
 	}
 
-	var sex patientmodel.Sex = patientmodel.SexUnknown
+	sex := patientmodel.SexUnknown
 	if p.Sex != "" {
 		sex = patientmodel.Sex(p.Sex)
 	}

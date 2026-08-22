@@ -67,4 +67,3 @@ func BlindIndexHook(hasher crypto.Hasher) ent.Hook {
 		})
 	}
 }
-
