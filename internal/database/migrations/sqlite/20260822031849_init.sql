@@ -20,7 +20,8 @@ CREATE TABLE `policy_versions` (
   `origin` text NOT NULL DEFAULT ('system'),
   `created_at` datetime NOT NULL,
   `policy_id` uuid NOT NULL,
-  CONSTRAINT `policy_versions_policies_versions` FOREIGN KEY (`policy_id`) REFERENCES `policies` (`id`) ON DELETE NO ACTION
+  CONSTRAINT `policy_versions_policies_versions` FOREIGN KEY (`policy_id`) REFERENCES `policies` (`id`) ON DELETE NO ACTION,
+  CONSTRAINT `policy_versions_origin_check` CHECK (origin IN ('seed', 'admin', 'system'))
 );
 
 -- create index "accesspolicyversion_policy_id_id" to table: "policy_versions"
@@ -43,7 +44,8 @@ CREATE TABLE `appointments` (
   PRIMARY KEY (`id`),
   CONSTRAINT `appointments_clinics_appointments` FOREIGN KEY (`clinic_id`) REFERENCES `clinics` (`id`) ON DELETE NO ACTION,
   CONSTRAINT `appointments_patients_appointments` FOREIGN KEY (`patient_id`) REFERENCES `patients` (`id`) ON DELETE NO ACTION,
-  CONSTRAINT `appointments_users_appointments` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE NO ACTION
+  CONSTRAINT `appointments_users_appointments` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE NO ACTION,
+  CONSTRAINT `appointments_status_check` CHECK (status IN ('scheduled', 'confirmed', 'in_progress', 'completed', 'cancelled', 'no_show'))
 );
 
 -- create index "appointment_clinic_id_start_time" to table: "appointments"
@@ -74,7 +76,8 @@ CREATE TABLE `audit_log` (
   `user_agent` text NOT NULL DEFAULT (''),
   `resource_name` text NOT NULL DEFAULT (''),
   `created_at` datetime NOT NULL,
-  `signature` text NOT NULL
+  `signature` text NOT NULL,
+  CONSTRAINT `audit_log_result_check` CHECK (result IN ('success', 'failure'))
 );
 
 -- create index "auditlog_actor_id" to table: "audit_log"
@@ -125,7 +128,9 @@ CREATE TABLE `episodes` (
   CONSTRAINT `episodes_appointments_episodes` FOREIGN KEY (`appointment_id`) REFERENCES `appointments` (`id`) ON DELETE SET NULL,
   CONSTRAINT `episodes_clinics_episodes` FOREIGN KEY (`clinic_id`) REFERENCES `clinics` (`id`) ON DELETE NO ACTION,
   CONSTRAINT `episodes_patients_episodes` FOREIGN KEY (`patient_id`) REFERENCES `patients` (`id`) ON DELETE NO ACTION,
-  CONSTRAINT `episodes_users_episodes` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE NO ACTION
+  CONSTRAINT `episodes_users_episodes` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE NO ACTION,
+  CONSTRAINT `episodes_episode_type_check` CHECK (episode_type IN ('consultation', 'anamnesis', 'evolution', 'prescription', 'exam_request', 'diagnostic')),
+  CONSTRAINT `episodes_status_check` CHECK (status IN ('draft', 'finalized', 'archived'))
 );
 
 -- create index "episode_clinic_id_created_at" to table: "episodes"
@@ -159,7 +164,9 @@ CREATE TABLE `identifier_systems` (
   `created_by` uuid NULL,
   `created_at` datetime NOT NULL,
   `updated_at` datetime NOT NULL,
-  PRIMARY KEY (`id`)
+  PRIMARY KEY (`id`),
+  CONSTRAINT `identifier_systems_check_algorithm_check` CHECK (check_algorithm IN ('none', 'mod11_desc', 'mod11_cyclic')),
+  CONSTRAINT `identifier_systems_transform_check` CHECK (transform IN ('none', 'digits', 'upper', 'lower'))
 );
 
 -- create index "identifier_systems_system_key" to table: "identifier_systems"
@@ -195,7 +202,8 @@ CREATE TABLE `patients` (
   `email_blind_index` text NULL,
   `clinic_id` uuid NOT NULL,
   PRIMARY KEY (`id`),
-  CONSTRAINT `patients_clinics_patients` FOREIGN KEY (`clinic_id`) REFERENCES `clinics` (`id`) ON DELETE NO ACTION
+  CONSTRAINT `patients_clinics_patients` FOREIGN KEY (`clinic_id`) REFERENCES `clinics` (`id`) ON DELETE NO ACTION,
+  CONSTRAINT `patients_status_check` CHECK (status IN ('active', 'inactive', 'archived'))
 );
 
 -- create index "patient_clinic_id" to table: "patients"
@@ -296,7 +304,8 @@ CREATE TABLE `staff_change_requests` (
   PRIMARY KEY (`id`),
   CONSTRAINT `staff_change_requests_users_requester` FOREIGN KEY (`requested_by`) REFERENCES `users` (`id`) ON DELETE NO ACTION,
   CONSTRAINT `staff_change_requests_users_decider` FOREIGN KEY (`decided_by`) REFERENCES `users` (`id`) ON DELETE SET NULL,
-  CONSTRAINT `staff_change_requests_users_staff_requests` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE NO ACTION
+  CONSTRAINT `staff_change_requests_users_staff_requests` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE NO ACTION,
+  CONSTRAINT `staff_change_requests_status_check` CHECK (status IN ('pending', 'approved', 'rejected'))
 );
 
 -- create index "staffchangerequest_status_created_at" to table: "staff_change_requests"
@@ -344,7 +353,8 @@ CREATE TABLE `users` (
   `updated_at` datetime NOT NULL,
   `role_id` uuid NOT NULL,
   PRIMARY KEY (`id`),
-  CONSTRAINT `users_roles_users` FOREIGN KEY (`role_id`) REFERENCES `roles` (`id`) ON DELETE NO ACTION
+  CONSTRAINT `users_roles_users` FOREIGN KEY (`role_id`) REFERENCES `roles` (`id`) ON DELETE NO ACTION,
+  CONSTRAINT `users_ui_theme_check` CHECK (ui_theme IN ('system', 'light', 'dark'))
 );
 
 -- create index "users_email_key" to table: "users"
