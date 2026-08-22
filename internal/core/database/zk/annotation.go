@@ -36,5 +36,3 @@ func Searchable(domain ...string) Annotation {
 
 // Ensure Annotation implements schema.Annotation at compile time.
 var _ schema.Annotation = (*Annotation)(nil)
-
-

@@ -273,4 +273,3 @@ func BenchmarkHasher_Verify(b *testing.B) {
 		_, _ = h.Verify(data, hashStr)
 	}
 }
-

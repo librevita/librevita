@@ -231,4 +231,3 @@ func BenchmarkEncryptor_XChaCha20Poly1305_Decrypt(b *testing.B) {
 		_, _ = enc.Decrypt(ct, aad)
 	}
 }
-
