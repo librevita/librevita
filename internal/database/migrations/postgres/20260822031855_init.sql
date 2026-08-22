@@ -16,7 +16,8 @@ CREATE TABLE "audit_log" (
   "resource_name" character varying NOT NULL DEFAULT '',
   "created_at" timestamptz NOT NULL,
   "signature" character varying NOT NULL,
-  PRIMARY KEY ("id")
+  PRIMARY KEY ("id"),
+  CONSTRAINT "audit_log_result_check" CHECK ((result)::text = ANY ((ARRAY['success'::character varying, 'failure'::character varying])::text[]))
 );
 
 -- create index "auditlog_action" to table: "audit_log"
@@ -79,7 +80,8 @@ CREATE TABLE "patients" (
   "email_blind_index" character varying NULL,
   "clinic_id" uuid NOT NULL,
   PRIMARY KEY ("id"),
-  CONSTRAINT "patients_clinics_patients" FOREIGN KEY ("clinic_id") REFERENCES "clinics" ("id") ON UPDATE NO ACTION ON DELETE NO ACTION
+  CONSTRAINT "patients_clinics_patients" FOREIGN KEY ("clinic_id") REFERENCES "clinics" ("id") ON UPDATE NO ACTION ON DELETE NO ACTION,
+  CONSTRAINT "patients_status_check" CHECK ((status)::text = ANY ((ARRAY['active'::character varying, 'inactive'::character varying, 'archived'::character varying])::text[]))
 );
 
 -- create index "patient_clinic_id" to table: "patients"
@@ -123,7 +125,8 @@ CREATE TABLE "users" (
   "updated_at" timestamptz NOT NULL,
   "role_id" uuid NOT NULL,
   PRIMARY KEY ("id"),
-  CONSTRAINT "users_roles_users" FOREIGN KEY ("role_id") REFERENCES "roles" ("id") ON UPDATE NO ACTION ON DELETE NO ACTION
+  CONSTRAINT "users_roles_users" FOREIGN KEY ("role_id") REFERENCES "roles" ("id") ON UPDATE NO ACTION ON DELETE NO ACTION,
+  CONSTRAINT "users_ui_theme_check" CHECK ((ui_theme)::text = ANY ((ARRAY['system'::character varying, 'light'::character varying, 'dark'::character varying])::text[]))
 );
 
 -- create index "users_email_key" to table: "users"
@@ -146,7 +149,8 @@ CREATE TABLE "appointments" (
   PRIMARY KEY ("id"),
   CONSTRAINT "appointments_clinics_appointments" FOREIGN KEY ("clinic_id") REFERENCES "clinics" ("id") ON UPDATE NO ACTION ON DELETE NO ACTION,
   CONSTRAINT "appointments_patients_appointments" FOREIGN KEY ("patient_id") REFERENCES "patients" ("id") ON UPDATE NO ACTION ON DELETE NO ACTION,
-  CONSTRAINT "appointments_users_appointments" FOREIGN KEY ("user_id") REFERENCES "users" ("id") ON UPDATE NO ACTION ON DELETE NO ACTION
+  CONSTRAINT "appointments_users_appointments" FOREIGN KEY ("user_id") REFERENCES "users" ("id") ON UPDATE NO ACTION ON DELETE NO ACTION,
+  CONSTRAINT "appointments_status_check" CHECK ((status)::text = ANY ((ARRAY['scheduled'::character varying, 'confirmed'::character varying, 'in_progress'::character varying, 'completed'::character varying, 'cancelled'::character varying, 'no_show'::character varying])::text[]))
 );
 
 -- create index "appointment_clinic_id_start_time" to table: "appointments"
@@ -179,7 +183,9 @@ CREATE TABLE "episodes" (
   CONSTRAINT "episodes_appointments_episodes" FOREIGN KEY ("appointment_id") REFERENCES "appointments" ("id") ON UPDATE NO ACTION ON DELETE SET NULL,
   CONSTRAINT "episodes_clinics_episodes" FOREIGN KEY ("clinic_id") REFERENCES "clinics" ("id") ON UPDATE NO ACTION ON DELETE NO ACTION,
   CONSTRAINT "episodes_patients_episodes" FOREIGN KEY ("patient_id") REFERENCES "patients" ("id") ON UPDATE NO ACTION ON DELETE NO ACTION,
-  CONSTRAINT "episodes_users_episodes" FOREIGN KEY ("user_id") REFERENCES "users" ("id") ON UPDATE NO ACTION ON DELETE NO ACTION
+  CONSTRAINT "episodes_users_episodes" FOREIGN KEY ("user_id") REFERENCES "users" ("id") ON UPDATE NO ACTION ON DELETE NO ACTION,
+  CONSTRAINT "episodes_episode_type_check" CHECK ((episode_type)::text = ANY ((ARRAY['consultation'::character varying, 'anamnesis'::character varying, 'evolution'::character varying, 'prescription'::character varying, 'exam_request'::character varying, 'diagnostic'::character varying])::text[])),
+  CONSTRAINT "episodes_status_check" CHECK ((status)::text = ANY ((ARRAY['draft'::character varying, 'finalized'::character varying, 'archived'::character varying])::text[]))
 );
 
 -- create index "episode_clinic_id_created_at" to table: "episodes"
@@ -213,7 +219,9 @@ CREATE TABLE "identifier_systems" (
   "created_by" uuid NULL,
   "created_at" timestamptz NOT NULL,
   "updated_at" timestamptz NOT NULL,
-  PRIMARY KEY ("id")
+  PRIMARY KEY ("id"),
+  CONSTRAINT "identifier_systems_check_algorithm_check" CHECK ((check_algorithm)::text = ANY ((ARRAY['none'::character varying, 'mod11_desc'::character varying, 'mod11_cyclic'::character varying])::text[])),
+  CONSTRAINT "identifier_systems_transform_check" CHECK ((transform)::text = ANY ((ARRAY['none'::character varying, 'digits'::character varying, 'upper'::character varying, 'lower'::character varying])::text[]))
 );
 
 -- create index "identifier_systems_system_key" to table: "identifier_systems"
@@ -269,7 +277,8 @@ CREATE TABLE "policy_versions" (
   "created_at" timestamptz NOT NULL,
   "policy_id" uuid NOT NULL,
   PRIMARY KEY ("id"),
-  CONSTRAINT "policy_versions_policies_versions" FOREIGN KEY ("policy_id") REFERENCES "policies" ("id") ON UPDATE NO ACTION ON DELETE NO ACTION
+  CONSTRAINT "policy_versions_policies_versions" FOREIGN KEY ("policy_id") REFERENCES "policies" ("id") ON UPDATE NO ACTION ON DELETE NO ACTION,
+  CONSTRAINT "policy_versions_origin_check" CHECK ((origin)::text = ANY ((ARRAY['seed'::character varying, 'admin'::character varying, 'system'::character varying])::text[]))
 );
 
 -- create index "accesspolicyversion_policy_id_id" to table: "policy_versions"
@@ -317,7 +326,8 @@ CREATE TABLE "staff_change_requests" (
   PRIMARY KEY ("id"),
   CONSTRAINT "staff_change_requests_users_decider" FOREIGN KEY ("decided_by") REFERENCES "users" ("id") ON UPDATE NO ACTION ON DELETE SET NULL,
   CONSTRAINT "staff_change_requests_users_requester" FOREIGN KEY ("requested_by") REFERENCES "users" ("id") ON UPDATE NO ACTION ON DELETE NO ACTION,
-  CONSTRAINT "staff_change_requests_users_staff_requests" FOREIGN KEY ("user_id") REFERENCES "users" ("id") ON UPDATE NO ACTION ON DELETE NO ACTION
+  CONSTRAINT "staff_change_requests_users_staff_requests" FOREIGN KEY ("user_id") REFERENCES "users" ("id") ON UPDATE NO ACTION ON DELETE NO ACTION,
+  CONSTRAINT "staff_change_requests_status_check" CHECK ((status)::text = ANY ((ARRAY['pending'::character varying, 'approved'::character varying, 'rejected'::character varying])::text[]))
 );
 
 -- create index "staffchangerequest_requested_by_created_at" to table: "staff_change_requests"

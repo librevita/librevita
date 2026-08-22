@@ -58,6 +58,8 @@ internal/ui/assets.go
 
 # Generated Ent ORM code (source of truth: internal/database/schema/)
 ent/
+.entc/
+**/.entc/
 
 # Generated mocks
 tests/mocks

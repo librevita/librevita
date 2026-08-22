@@ -56,14 +56,19 @@ tasks:
       - .tools/bin/golangci-lint
       - .tools/bin/govulncheck
       - .tools/bin/mockery
-  # Generated Ent entities and versioned migration helpers.
+  # Generated Ent entities and versioned migration helpers. The bootstrap
+  # file seeds the target package so `ent generate` can resolve the ent
+  # package path on a clean checkout (ent/ is not tracked).
   gen-ent:
     desc: Regenerate Ent client, entities, and migration helpers
     cmds:
+      - mkdir -p ent
+      - 'printf "package ent\n" > ent/doc.go'
       - go generate ./internal/database/schema
     sources:
       - internal/database/schema/**/*.go
     generates:
+      - ent/doc.go
       - ent/client.go
       - ent/ent.go
       - ent/mutation.go
@@ -119,6 +124,7 @@ tasks:
     desc: Regenerate Mockery interface mocks
     deps:
       - tools
+      - gen-ent
     cmds:
       - 'PATH={{.ROOT_DIR}}/.tools/bin:$PATH mockery'
     sources:
