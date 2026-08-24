@@ -9,7 +9,7 @@ import (
 	"entgo.io/ent/schema/index"
 	"github.com/google/uuid"
 
-	"librevita.org/internal/core/database/zk"
+	"librevita.org/internal/core/database/fle"
 )
 
 // Appointment holds the schema definition for the Appointment entity.
@@ -43,12 +43,12 @@ func (Appointment) Fields() []ent.Field {
 		// Confidential Appointment Fields (Stored as BLOB/BYTEA in DB, strings in Go):
 		field.String("reason").
 			SchemaType(blobType).
-			ValueScanner(zk.EncryptedString()).
+			ValueScanner(fle.EncryptedString()).
 			Optional().
 			Comment("Reason for visit / triage description (stored as BLOB/BYTEA in DB)"),
 		field.String("notes").
 			SchemaType(blobType).
-			ValueScanner(zk.EncryptedString()).
+			ValueScanner(fle.EncryptedString()).
 			Optional().
 			Comment("Clinical appointment notes (stored as BLOB/BYTEA in DB)"),
 

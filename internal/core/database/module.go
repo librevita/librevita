@@ -9,7 +9,7 @@ import (
 
 	"librevita.org/ent"
 	"librevita.org/internal/core/crypto"
-	"librevita.org/internal/core/database/zk"
+	"librevita.org/internal/core/database/fle"
 )
 
 // Module provides the main store, raw database handle, and Ent ORM client,
@@ -28,9 +28,9 @@ func sqlDB(store *Store) *sql.DB { return store.SQL() }
 // entClient exposes the Ent ORM client configured for the active persistence backend
 // with transparent blind indexing hooks and native ValueScanners.
 func entClient(store *Store, hasher crypto.Hasher, encryptor crypto.Encryptor) *ent.Client {
-	zk.SetGlobalEncryptor(encryptor)
+	fle.SetGlobalEncryptor(encryptor)
 	client := store.Ent()
-	client.Use(zk.BlindIndexHook(hasher))
+	client.Use(fle.BlindIndexHook(hasher))
 	return client
 }
 

@@ -10,7 +10,7 @@ import (
 	"entgo.io/ent/entc/gen"
 	"entgo.io/ent/entc/load"
 	"librevita.org/internal/core/database/check"
-	"librevita.org/internal/core/database/zk"
+	"librevita.org/internal/core/database/fle"
 )
 
 func main() {
@@ -49,9 +49,9 @@ func runCodegen(schemaDir, targetDir string) error {
 	}
 	cfg.Schema = spec.PkgPath
 
-	// 2. Transform schemas: inject blind indexes for zk.Searchable() fields
-	if err := zk.TransformSchemas(spec.Schemas); err != nil {
-		return fmt.Errorf("codegen zk: %w", err)
+	// 2. Transform schemas: inject blind indexes for fle.Searchable() fields
+	if err := fle.TransformSchemas(spec.Schemas); err != nil {
+		return fmt.Errorf("codegen fle: %w", err)
 	}
 
 	// 3. Transform schemas: inject database-level CHECK constraints for Enums

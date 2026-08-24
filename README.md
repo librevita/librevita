@@ -8,7 +8,7 @@
 > _"In quella parte del libro de la mia memoria dinanzi a la quale poco si potrebbe leggere, si trova una rubrica la quale dice: **Incipit vita nova**."_  
 > — **Dante Alighieri**, _Vita Nuova_ (c. 1294)
 
-**LibreVita** is a sovereign, zero-knowledge electronic health record (EHR) and clinic management platform built in Go. Uniting the principled tradition of **Libre Software** with Dante’s **_Vita Nuova_** (*"New Life"*), LibreVita marks a new beginning for clinical privacy, human dignity, and patient data sovereignty. The module path is `librevita.org`.
+**LibreVita** is a sovereign electronic health record (EHR) and clinic management platform built in Go with **Application-Layer Field-Level Encryption (AL-FLE)** and **Blind Indexing**. Uniting the principled tradition of **Libre Software** with Dante’s **_Vita Nuova_** (*"New Life"*), LibreVita marks a new beginning for clinical privacy, human dignity, and patient data sovereignty. The module path is `librevita.org`.
 
 ## Requirements
 
@@ -273,23 +273,23 @@ implement it, selected with `storage.backend`:
 The backend is wired through the Fx module and injected as the `Store` interface, so domains never depend on the
 concrete implementation.
 
-## Cryptographic Core, Zero-Knowledge & Envelope Encryption
-
-LibreVita implements an enterprise-grade **Zero-Knowledge Architecture** in `internal/core/crypto` and `internal/core/database/zk` providing column-level transparent authenticated encryption (AEAD), exact-match blind indexing, and per-patient envelope encryption with physical key vault storage:
-
-- **Keyed Hasher (`crypto.Hasher`)** — provides keyed cryptographic hashing for blind indexing and session token verification with cryptographic agility:
-  - Formatted prefixed output: `<algorithm>$<hex_hash>` (e.g. `blake2s$3f4a...`).
-  - Active native-keyed engines: `blake2s` (default) and `blake2b`.
-  - Constant-time verification (`subtle.ConstantTimeCompare`) with legacy raw-hex fallback.
-  - Deterministic blind index computation (`system || '\x00' || value`) ensuring cryptographic domain separation across entities (e.g. `patient.display_name`, `patient.phone`, `patient.email`).
-- **Symmetric AEAD Encryptor (`crypto.Encryptor`)** — provides authenticated payload encryption for sensitive personal and clinical data:
-  - Self-Contained Envelope format with Magic Byte versioning at `ciphertext[0]`: `0xA1` (`MagicByteXChaCha20Poly1305`) containing `[ Version (1B) | Nonce (24B) | Ciphertext + Poly1305 Tag ]`.
-  - Cryptographic Agility: Future-proof architecture supporting algorithm migrations (e.g. AES-256-GCM with 12-byte nonces or Post-Quantum ciphers) without database migrations or schema alterations.
-  - Memory security: transient plaintext buffers are securely zeroized with `ZeroBytes`.
-- **Zero-Knowledge Ent Plugin & Column-Level Encryption (`zk.EncryptedString` & `zk.Searchable`)**:
-  - Declarative Schemas: Sensitive fields (`display_name`, `phone`, `email`, `notes`, `prescription`, `diagnostic`, `reason`) are defined cleanly with `ValueScanner(zk.EncryptedString())` and stored as binary `BLOB`/`BYTEA` in the database.
-  - Automatic Blind Indexing: An Ent CodeGen plugin (`zk.Generate`) automatically detects fields annotated with `zk.Searchable()`, dynamically injecting non-nullable `<field>_blind_index` columns and composite clinic-scoped indexes `("clinic_id", "<field>_blind_index")` for instant $O(1)$ tenant-isolated lookups.
-  - Lifecycle Mutation Hooks (`zk.BlindIndexHook`): Computes HMAC-BLAKE2s blind index hashes transparently before database persistence, and automatically clears hashes on updates when fields are emptied.
+## Cryptographic Core, AL-FLE & Envelope Encryption
+ 
+LibreVita implements an enterprise-grade **Application-Layer Field-Level Encryption (AL-FLE) with Blind Indexing** architecture in `internal/core/crypto` and `internal/core/database/fle` (providing host-proof database persistence), column-level transparent authenticated encryption (AEAD), exact-match blind indexing, and per-patient envelope encryption with physical key vault storage:
+ 
+ - **Keyed Hasher (`crypto.Hasher`)** — provides keyed cryptographic hashing for blind indexing and session token verification with cryptographic agility:
+   - Formatted prefixed output: `<algorithm>$<hex_hash>` (e.g. `blake2s$3f4a...`).
+   - Active native-keyed engines: `blake2s` (default) and `blake2b`.
+   - Constant-time verification (`subtle.ConstantTimeCompare`) with legacy raw-hex fallback.
+   - Deterministic blind index computation (`system || '\x00' || value`) ensuring cryptographic domain separation across entities (e.g. `patient.display_name`, `patient.phone`, `patient.email`).
+ - **Symmetric AEAD Encryptor (`crypto.Encryptor`)** — provides authenticated payload encryption for sensitive personal and clinical data:
+   - Self-Contained Envelope format with Magic Byte versioning at `ciphertext[0]`: `0xA1` (`MagicByteXChaCha20Poly1305`) containing `[ Version (1B) | Nonce (24B) | Ciphertext + Poly1305 Tag ]`.
+   - Cryptographic Agility: Future-proof architecture supporting algorithm migrations (e.g. AES-256-GCM with 12-byte nonces or Post-Quantum ciphers) without database migrations or schema alterations.
+   - Memory security: transient plaintext buffers are securely zeroized with `ZeroBytes`.
+ - **AL-FLE Ent Plugin & Column-Level Encryption (`fle.EncryptedString` & `fle.Searchable`)**:
+   - Declarative Schemas: Sensitive fields (`display_name`, `phone`, `email`, `notes`, `prescription`, `diagnostic`, `reason`) are defined cleanly with `ValueScanner(fle.EncryptedString())` and stored as binary `BLOB`/`BYTEA` in the database.
+   - Automatic Blind Indexing: An Ent CodeGen plugin (`fle.Generate`) automatically detects fields annotated with `fle.Searchable()`, dynamically injecting non-nullable `<field>_blind_index` columns and composite clinic-scoped indexes `("clinic_id", "<field>_blind_index")` for instant $O(1)$ tenant-isolated lookups.
+   - Lifecycle Mutation Hooks (`fle.BlindIndexHook`): Computes HMAC-BLAKE2s blind index hashes transparently before database persistence, and automatically clears hashes on updates when fields are emptied.
 - **Envelope Encryption (`*crypto.Engine`)** — protects sensitive patient data (such as FHIR identification documents) with physical state separation:
   - **KEK (Key Encryption Key)** — derived via HKDF-BLAKE2b-256 from `LIBREVITA_MASTER_KEY` (`master_key`) using info string `librevita:kek:v1`. The KEK is kept strictly in memory and never written to disk.
   - **DEK (Data Encryption Key)** — a cryptographically random 32-byte key generated per patient (`urn:librevita:patient:<id>`). Patient data fields are encrypted using XChaCha20-Poly1305 with random 24-byte nonces under the patient's DEK.
