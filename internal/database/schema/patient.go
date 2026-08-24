@@ -9,7 +9,7 @@ import (
 	"entgo.io/ent/schema/index"
 	"github.com/google/uuid"
 
-	"librevita.org/internal/core/database/zk"
+	"librevita.org/internal/core/database/fle"
 )
 
 // Patient holds the schema definition for the Patient entity.
@@ -34,64 +34,64 @@ func (Patient) Fields() []ent.Field {
 		// Patient PII/PHI Fields (Stored as BLOB/BYTEA in DB, pure strings in Go):
 		field.String("display_name").
 			SchemaType(blobType).
-			ValueScanner(zk.EncryptedString()).
+			ValueScanner(fle.EncryptedString()).
 			NotEmpty().
-			Annotations(zk.Searchable()).
+			Annotations(fle.Searchable()).
 			Comment("Patient full / social name (stored as BLOB/BYTEA in DB)"),
 
 		field.String("phone").
 			SchemaType(blobType).
-			ValueScanner(zk.EncryptedString()).
+			ValueScanner(fle.EncryptedString()).
 			NotEmpty().
-			Annotations(zk.Searchable()).
+			Annotations(fle.Searchable()).
 			Comment("Patient contact phone (stored as BLOB/BYTEA in DB)"),
 
 		field.String("email").
 			SchemaType(blobType).
-			ValueScanner(zk.EncryptedString()).
+			ValueScanner(fle.EncryptedString()).
 			NotEmpty().
-			Annotations(zk.Searchable()).
+			Annotations(fle.Searchable()).
 			Comment("Patient email address (stored as BLOB/BYTEA in DB)"),
 
 		field.String("birth_date").
 			SchemaType(blobType).
-			ValueScanner(zk.EncryptedString()).
+			ValueScanner(fle.EncryptedString()).
 			Optional().
 			Comment("Birth date YYYY-MM-DD (stored as BLOB/BYTEA in DB)"),
 
 		field.String("sex").
 			SchemaType(blobType).
-			ValueScanner(zk.EncryptedString()).
+			ValueScanner(fle.EncryptedString()).
 			Optional().
 			Comment("Patient sex / identity (stored as BLOB/BYTEA in DB)"),
 
 		field.String("street").
 			SchemaType(blobType).
-			ValueScanner(zk.EncryptedString()).
+			ValueScanner(fle.EncryptedString()).
 			Optional().
 			Comment("Street address (stored as BLOB/BYTEA in DB)"),
 
 		field.String("city").
 			SchemaType(blobType).
-			ValueScanner(zk.EncryptedString()).
+			ValueScanner(fle.EncryptedString()).
 			Optional().
 			Comment("City (stored as BLOB/BYTEA in DB)"),
 
 		field.String("state").
 			SchemaType(blobType).
-			ValueScanner(zk.EncryptedString()).
+			ValueScanner(fle.EncryptedString()).
 			Optional().
 			Comment("State / Province (stored as BLOB/BYTEA in DB)"),
 
 		field.String("postal_code").
 			SchemaType(blobType).
-			ValueScanner(zk.EncryptedString()).
+			ValueScanner(fle.EncryptedString()).
 			Optional().
 			Comment("Postal code / CEP (stored as BLOB/BYTEA in DB)"),
 
 		field.String("notes").
 			SchemaType(blobType).
-			ValueScanner(zk.EncryptedString()).
+			ValueScanner(fle.EncryptedString()).
 			Optional().
 			Comment("Clinical / general notes (stored as BLOB/BYTEA in DB)"),
 

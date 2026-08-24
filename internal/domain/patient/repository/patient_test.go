@@ -16,7 +16,7 @@ import (
 	"librevita.org/ent"
 	"librevita.org/ent/enttest"
 	"librevita.org/internal/core/crypto"
-	"librevita.org/internal/core/database/zk"
+	"librevita.org/internal/core/database/fle"
 	patientmodel "librevita.org/internal/domain/patient/model"
 	"librevita.org/internal/domain/patient/repository"
 )
@@ -48,8 +48,8 @@ func setupTestRepository(t *testing.T) (patientmodel.PatientRepository, *ent.Cli
 	require.NoError(t, err)
 
 	// Set global encryptor for native ValueScanners and register blind index hook
-	zk.SetGlobalEncryptor(encryptor)
-	client.Use(zk.BlindIndexHook(hasher))
+	fle.SetGlobalEncryptor(encryptor)
+	client.Use(fle.BlindIndexHook(hasher))
 
 	repo := repository.NewPatientRepository(client)
 

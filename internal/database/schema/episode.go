@@ -9,7 +9,7 @@ import (
 	"entgo.io/ent/schema/index"
 	"github.com/google/uuid"
 
-	"librevita.org/internal/core/database/zk"
+	"librevita.org/internal/core/database/fle"
 )
 
 // Episode holds the schema definition for Medical Records, Clinical Notes, and Encounters.
@@ -47,17 +47,17 @@ func (Episode) Fields() []ent.Field {
 		// Confidential Clinical PHI Fields (Stored as BLOB/BYTEA in DB, strings in Go):
 		field.String("notes").
 			SchemaType(blobType).
-			ValueScanner(zk.EncryptedString()).
+			ValueScanner(fle.EncryptedString()).
 			Optional().
 			Comment("Clinical notes / anamnesis / consultation details (stored as BLOB/BYTEA in DB)"),
 		field.String("prescription").
 			SchemaType(blobType).
-			ValueScanner(zk.EncryptedString()).
+			ValueScanner(fle.EncryptedString()).
 			Optional().
 			Comment("Prescription and medical orders (stored as BLOB/BYTEA in DB)"),
 		field.String("diagnostic").
 			SchemaType(blobType).
-			ValueScanner(zk.EncryptedString()).
+			ValueScanner(fle.EncryptedString()).
 			Optional().
 			Comment("Diagnostic hypotheses / CID (stored as BLOB/BYTEA in DB)"),
 

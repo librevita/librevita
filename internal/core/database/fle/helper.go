@@ -1,4 +1,4 @@
-package zk
+package fle
 
 import (
 	"database/sql"
@@ -163,14 +163,14 @@ func EncryptPayload(encryptor crypto.Encryptor, payload any, aad []byte) (cipher
 	default:
 		data, err = json.Marshal(p)
 		if err != nil {
-			return nil, nil, fmt.Errorf("entzk: marshal payload: %w", err)
+			return nil, nil, fmt.Errorf("entfle: marshal payload: %w", err)
 		}
 	}
 	defer crypto.ZeroBytes(data)
 
 	ciphertext, err = encryptor.Encrypt(data, aad)
 	if err != nil {
-		return nil, nil, fmt.Errorf("entzk: encrypt payload: %w", err)
+		return nil, nil, fmt.Errorf("entfle: encrypt payload: %w", err)
 	}
 
 	if len(ciphertext) >= 25 {
@@ -185,12 +185,12 @@ func EncryptPayload(encryptor crypto.Encryptor, payload any, aad []byte) (cipher
 func DecryptPayload(encryptor crypto.Encryptor, ciphertext, aad []byte, target any) error {
 	plaintext, err := encryptor.Decrypt(ciphertext, aad)
 	if err != nil {
-		return fmt.Errorf("entzk: decrypt payload: %w", err)
+		return fmt.Errorf("entfle: decrypt payload: %w", err)
 	}
 	defer crypto.ZeroBytes(plaintext)
 
 	if err := json.Unmarshal(plaintext, target); err != nil {
-		return fmt.Errorf("entzk: unmarshal payload: %w", err)
+		return fmt.Errorf("entfle: unmarshal payload: %w", err)
 	}
 	return nil
 }

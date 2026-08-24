@@ -1,13 +1,13 @@
-package zk
+package fle
 
 import (
 	"entgo.io/ent/schema"
 )
 
-// AnnotationName identifies the ZeroKnowledge metadata annotation in Ent schemas.
-const AnnotationName = "ZeroKnowledge"
+// AnnotationName identifies the Field-Level Encryption metadata annotation in Ent schemas.
+const AnnotationName = "FieldLevelEncryption"
 
-// Annotation defines ZeroKnowledge metadata for Ent schemas and fields.
+// Annotation defines Field-Level Encryption metadata for Ent schemas and fields.
 // It serves as declarative metadata for schema introspection, compliance tooling (LGPD/GDPR),
 // and Ent code generation extensions.
 type Annotation struct {
