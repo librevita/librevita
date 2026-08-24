@@ -36,6 +36,9 @@ func runCodegen(schemaDir, targetDir string) error {
 		Storage: driver,
 		Package: "librevita.org/ent",
 		Target:  targetDir,
+		Templates: []*gen.Template{
+			fle.Template,
+		},
 		Features: []gen.Feature{
 			{Name: "sql/versioned-migration"},
 			{Name: "intercept"},

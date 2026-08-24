@@ -36,21 +36,21 @@ func (Patient) Fields() []ent.Field {
 			SchemaType(blobType).
 			ValueScanner(fle.EncryptedString()).
 			NotEmpty().
-			Annotations(fle.Searchable()).
+			Annotations(fle.SearchableText()).
 			Comment("Patient full / social name (stored as BLOB/BYTEA in DB)"),
 
 		field.String("phone").
 			SchemaType(blobType).
 			ValueScanner(fle.EncryptedString()).
 			NotEmpty().
-			Annotations(fle.Searchable()).
+			Annotations(fle.SearchablePhone()).
 			Comment("Patient contact phone (stored as BLOB/BYTEA in DB)"),
 
 		field.String("email").
 			SchemaType(blobType).
 			ValueScanner(fle.EncryptedString()).
 			NotEmpty().
-			Annotations(fle.Searchable()).
+			Annotations(fle.SearchableEmail()).
 			Comment("Patient email address (stored as BLOB/BYTEA in DB)"),
 
 		field.String("birth_date").

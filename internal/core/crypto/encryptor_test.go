@@ -201,6 +201,38 @@ func TestEncryptorKeyIsolation(t *testing.T) {
 	assert.ErrorIs(t, err, crypto.ErrDecryptionFailed)
 }
 
+func TestIsCiphertext(t *testing.T) {
+	k := mustEncryptorKey(t)
+	enc, err := crypto.NewEncryptor(k)
+	require.NoError(t, err)
+
+	plaintext := "John Doe"
+	ct, err := enc.Encrypt([]byte(plaintext), nil)
+	require.NoError(t, err)
+
+	// Valid ciphertext
+	assert.True(t, crypto.IsCiphertext(ct))
+	assert.True(t, crypto.IsCiphertextString(string(ct)))
+	assert.True(t, enc.IsCiphertext(ct))
+
+	// Plaintext
+	assert.False(t, crypto.IsCiphertext([]byte(plaintext)))
+	assert.False(t, crypto.IsCiphertextString(plaintext))
+	assert.False(t, enc.IsCiphertext([]byte(plaintext)))
+
+	// Empty / Short
+	assert.False(t, crypto.IsCiphertext(nil))
+	assert.False(t, crypto.IsCiphertext([]byte{}))
+	assert.False(t, crypto.IsCiphertextString(""))
+	assert.False(t, crypto.IsCiphertext([]byte{0x01, 0x02, 0x03}))
+
+	// Corrupt / Unsupported version
+	fake := make([]byte, 50)
+	fake[0] = 0xFF
+	assert.False(t, crypto.IsCiphertext(fake))
+	assert.False(t, crypto.IsCiphertextString(string(fake)))
+}
+
 func BenchmarkEncryptor_XChaCha20Poly1305_Encrypt(b *testing.B) {
 	k := []byte("01234567890123456789012345678901")
 	enc, err := crypto.NewEncryptor(k, crypto.WithEncryptionVersion(crypto.MagicByteXChaCha20Poly1305))

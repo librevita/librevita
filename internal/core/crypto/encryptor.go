@@ -25,6 +25,20 @@ const (
 	DefaultEncryptionVersion = MagicByteXChaCha20Poly1305
 )
 
+type cipherSpec struct {
+	name      string
+	nonceSize int
+	tagSize   int
+}
+
+var supportedCiphers = map[byte]cipherSpec{
+	MagicByteXChaCha20Poly1305: {
+		name:      CipherXChaCha20Poly1305,
+		nonceSize: chacha20poly1305.NonceSizeX, // 24
+		tagSize:   16,
+	},
+}
+
 // Encryptor provides symmetric AEAD encryption and decryption with cryptographic agility.
 type Encryptor interface {
 	// Encrypt encrypts plaintext with authenticated associated data (AAD),
@@ -52,6 +66,9 @@ type Encryptor interface {
 
 	// Cipher returns the canonical cipher name configured for this Encryptor.
 	Cipher() string
+
+	// IsCiphertext reports whether the provided data begins with a recognized ciphertext envelope.
+	IsCiphertext(data []byte) bool
 }
 
 // EncryptorOption configures an Encryptor instance.
@@ -163,17 +180,25 @@ func (e *AEADEncryptor) Encrypt(plaintext, aad []byte) ([]byte, error) {
 
 // Decrypt inspects the Magic Byte at ciphertext[0] and decrypts the payload.
 func (e *AEADEncryptor) Decrypt(ciphertext, aad []byte) ([]byte, error) {
-	// Minimum possible payload: 1 byte version + 24 byte nonce + 16 byte tag = 41 bytes
-	if len(ciphertext) < 1+chacha20poly1305.NonceSizeX+16 {
+	if len(ciphertext) < 1 {
 		return nil, ErrCiphertextTooShort
 	}
 
 	magicByte := ciphertext[0]
+	spec, ok := supportedCiphers[magicByte]
+	if !ok {
+		return nil, ErrUnsupportedVersion
+	}
+
+	minSize := 1 + spec.nonceSize + spec.tagSize
+	if len(ciphertext) < minSize {
+		return nil, ErrCiphertextTooShort
+	}
+
 	switch magicByte {
 	case MagicByteXChaCha20Poly1305:
-		nonceSize := chacha20poly1305.NonceSizeX
-		nonce := ciphertext[1 : 1+nonceSize]
-		payload := ciphertext[1+nonceSize:]
+		nonce := ciphertext[1 : 1+spec.nonceSize]
+		payload := ciphertext[1+spec.nonceSize:]
 
 		aead, err := chacha20poly1305.NewX(e.key)
 		if err != nil {
@@ -220,26 +245,63 @@ func (e *AEADEncryptor) Cipher() string {
 	return e.cipher
 }
 
+// IsCiphertext reports whether the provided data is a recognized ciphertext payload.
+func (e *AEADEncryptor) IsCiphertext(data []byte) bool {
+	return IsCiphertext(data)
+}
+
+// MinCiphertextSizeForVersion returns the minimum ciphertext length for a specific magic byte version.
+func MinCiphertextSizeForVersion(version byte) (int, bool) {
+	spec, ok := supportedCiphers[version]
+	if !ok {
+		return 0, false
+	}
+	return 1 + spec.nonceSize + spec.tagSize, true
+}
+
+// IsCiphertext reports whether data begins with a recognized ciphertext Magic Byte
+// and satisfies the minimum payload length specific to that cipher version.
+func IsCiphertext(data []byte) bool {
+	if len(data) < 1 {
+		return false
+	}
+	minSize, ok := MinCiphertextSizeForVersion(data[0])
+	if !ok {
+		return false
+	}
+	return len(data) >= minSize
+}
+
+// IsCiphertextString reports whether a string represents a recognized ciphertext payload.
+func IsCiphertextString(s string) bool {
+	if len(s) < 1 {
+		return false
+	}
+	minSize, ok := MinCiphertextSizeForVersion(s[0])
+	if !ok {
+		return false
+	}
+	return len(s) >= minSize
+}
+
 func isValidVersion(v byte) bool {
-	// Active version in the current phase
-	return v == MagicByteXChaCha20Poly1305
+	_, ok := supportedCiphers[v]
+	return ok
 }
 
 func resolveCipherAndVersion(cipherName string, version byte) (byte, string, error) {
 	if cipherName != "" && cipherName != DefaultEncryptionCipher {
 		normalized := strings.ToLower(strings.TrimSpace(cipherName))
-		switch normalized {
-		case CipherXChaCha20Poly1305, "xchacha20poly1305":
-			return MagicByteXChaCha20Poly1305, CipherXChaCha20Poly1305, nil
-		default:
-			return 0, "", fmt.Errorf("%w: invalid encryption cipher %q", ErrUnsupportedVersion, cipherName)
+		for ver, spec := range supportedCiphers {
+			if strings.EqualFold(spec.name, normalized) || strings.EqualFold(strings.ReplaceAll(spec.name, "-", ""), normalized) {
+				return ver, spec.name, nil
+			}
 		}
+		return 0, "", fmt.Errorf("%w: invalid encryption cipher %q", ErrUnsupportedVersion, cipherName)
 	}
 
-	switch version {
-	case MagicByteXChaCha20Poly1305:
-		return MagicByteXChaCha20Poly1305, CipherXChaCha20Poly1305, nil
-	default:
-		return 0, "", ErrUnsupportedVersion
+	if spec, ok := supportedCiphers[version]; ok {
+		return version, spec.name, nil
 	}
+	return 0, "", ErrUnsupportedVersion
 }
