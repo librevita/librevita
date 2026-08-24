@@ -16,7 +16,7 @@ import (
 	"librevita.org/ent"
 	"librevita.org/ent/enttest"
 	"librevita.org/internal/core/crypto"
-	"librevita.org/internal/core/database/fle"
+	"librevita.org/internal/core/normalize"
 	patientmodel "librevita.org/internal/domain/patient/model"
 	"librevita.org/internal/domain/patient/repository"
 )
@@ -47,9 +47,9 @@ func setupTestRepository(t *testing.T) (patientmodel.PatientRepository, *ent.Cli
 	encryptor, err := crypto.NewEncryptor(key)
 	require.NoError(t, err)
 
-	// Set global encryptor for native ValueScanners and register blind index hook
-	fle.SetGlobalEncryptor(encryptor)
-	client.Use(fle.BlindIndexHook(hasher))
+	// Register compile-time typed FLE hook and context-aware decryption interceptor
+	client.Use(ent.FLEMutationHook(hasher, encryptor))
+	client.Intercept(ent.FLEDecryptionInterceptor(encryptor))
 
 	repo := repository.NewPatientRepository(client)
 
@@ -118,9 +118,9 @@ func TestPatientRepository_CRUD(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "Maria Joana", rawRow.DisplayName) // Transparently decrypted by interceptor!
 
-	expectedNameBlind, _ := hasher.BlindIndex("patient.display_name", "maria joana")
-	expectedEmailBlind, _ := hasher.BlindIndex("patient.email", "maria@example.org")
-	expectedPhoneBlind, _ := hasher.BlindIndex("patient.phone", "+55 11 98888-7777")
+	expectedNameBlind, _ := hasher.BlindIndex("patient.display_name", normalize.Text("Maria Joana"))
+	expectedEmailBlind, _ := hasher.BlindIndex("patient.email", normalize.Email("maria@example.org"))
+	expectedPhoneBlind, _ := hasher.BlindIndex("patient.phone", normalize.Phone("+55 11 98888-7777"))
 	assert.Equal(t, expectedNameBlind, rawRow.DisplayNameBlindIndex)
 	assert.Equal(t, expectedEmailBlind, rawRow.EmailBlindIndex)
 	assert.Equal(t, expectedPhoneBlind, rawRow.PhoneBlindIndex)

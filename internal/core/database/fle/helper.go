@@ -5,37 +5,19 @@ import (
 	"database/sql/driver"
 	"encoding/json"
 	"fmt"
-	"sync"
 
 	"entgo.io/ent/schema/field"
 	"librevita.org/internal/core/crypto"
 )
 
-var (
-	globalEncryptorMu sync.RWMutex
-	globalEncryptor   crypto.Encryptor
-)
-
-// SetGlobalEncryptor configures the global encryptor used by ValueScanners.
-func SetGlobalEncryptor(e crypto.Encryptor) {
-	globalEncryptorMu.Lock()
-	defer globalEncryptorMu.Unlock()
-	globalEncryptor = e
-}
-
-// GetGlobalEncryptor retrieves the active global encryptor.
-func GetGlobalEncryptor() crypto.Encryptor {
-	globalEncryptorMu.RLock()
-	defer globalEncryptorMu.RUnlock()
-	return globalEncryptor
-}
-
 // EncryptedValueScanner implements field.TypeValueScanner[string] for transparent field encryption.
+// In this stateless architecture, the scanner acts as a pass-through format converter,
+// while actual cryptographic operations with dynamic context keys are handled by Ent Hooks and Interceptors.
 type EncryptedValueScanner struct {
 	Domain string
 }
 
-// EncryptedString returns an Ent TypeValueScanner that transparently encrypts strings on write and decrypts on scan.
+// EncryptedString returns an Ent TypeValueScanner for encrypted string fields.
 func EncryptedString(domain ...string) EncryptedValueScanner {
 	d := ""
 	if len(domain) > 0 {
@@ -44,48 +26,26 @@ func EncryptedString(domain ...string) EncryptedValueScanner {
 	return EncryptedValueScanner{Domain: d}
 }
 
+// Value converts string to driver.Value.
 func (s EncryptedValueScanner) Value(v string) (driver.Value, error) {
-	if v == "" {
-		return "", nil
-	}
-	if v[0] == crypto.MagicByteXChaCha20Poly1305 {
-		return v, nil
-	}
-	enc := GetGlobalEncryptor()
-	if enc == nil {
-		return v, nil
-	}
-	aad := []byte("urn:librevita")
-	if s.Domain != "" {
-		aad = []byte("urn:librevita:" + s.Domain)
-	}
-	return EncryptString(enc, v, aad)
+	return v, nil
 }
 
+// ScanValue returns the destination scanner for database scanning.
 func (s EncryptedValueScanner) ScanValue() field.ValueScanner {
 	return &sql.NullString{}
 }
 
+// FromValue extracts string from scanned database driver.Value.
 func (s EncryptedValueScanner) FromValue(v driver.Value) (string, error) {
 	if v == nil {
 		return "", nil
 	}
 	nullStr, ok := v.(*sql.NullString)
-	if !ok || !nullStr.Valid || nullStr.String == "" {
+	if !ok || !nullStr.Valid {
 		return "", nil
 	}
-	raw := nullStr.String
-	if len(raw) > 0 && raw[0] == crypto.MagicByteXChaCha20Poly1305 {
-		enc := GetGlobalEncryptor()
-		if enc != nil {
-			aad := []byte("urn:librevita")
-			if s.Domain != "" {
-				aad = []byte("urn:librevita:" + s.Domain)
-			}
-			return DecryptString(enc, []byte(raw), aad)
-		}
-	}
-	return raw, nil
+	return nullStr.String, nil
 }
 
 // EncryptedPtrValueScanner implements field.TypeValueScanner[*string] for transparent nullable field encryption.
@@ -102,28 +62,20 @@ func EncryptedStringPtr(domain ...string) EncryptedPtrValueScanner {
 	return EncryptedPtrValueScanner{Domain: d}
 }
 
+// Value converts *string to driver.Value.
 func (s EncryptedPtrValueScanner) Value(v *string) (driver.Value, error) {
-	if v == nil || *v == "" {
+	if v == nil {
 		return nil, nil
 	}
-	if (*v)[0] == crypto.MagicByteXChaCha20Poly1305 {
-		return *v, nil
-	}
-	enc := GetGlobalEncryptor()
-	if enc == nil {
-		return *v, nil
-	}
-	aad := []byte("urn:librevita")
-	if s.Domain != "" {
-		aad = []byte("urn:librevita:" + s.Domain)
-	}
-	return EncryptString(enc, *v, aad)
+	return *v, nil
 }
 
+// ScanValue returns the destination scanner for database scanning.
 func (s EncryptedPtrValueScanner) ScanValue() field.ValueScanner {
 	return &sql.NullString{}
 }
 
+// FromValue extracts *string from scanned database driver.Value.
 func (s EncryptedPtrValueScanner) FromValue(v driver.Value) (*string, error) {
 	if v == nil {
 		return nil, nil
@@ -132,22 +84,8 @@ func (s EncryptedPtrValueScanner) FromValue(v driver.Value) (*string, error) {
 	if !ok || !nullStr.Valid {
 		return nil, nil
 	}
-	raw := nullStr.String
-	if len(raw) > 0 && raw[0] == crypto.MagicByteXChaCha20Poly1305 {
-		enc := GetGlobalEncryptor()
-		if enc != nil {
-			aad := []byte("urn:librevita")
-			if s.Domain != "" {
-				aad = []byte("urn:librevita:" + s.Domain)
-			}
-			dec, err := DecryptString(enc, []byte(raw), aad)
-			if err != nil {
-				return nil, err
-			}
-			return &dec, nil
-		}
-	}
-	return &raw, nil
+	str := nullStr.String
+	return &str, nil
 }
 
 // EncryptPayload serializes a domain struct to JSON, encrypts it via Encryptor,
@@ -200,6 +138,9 @@ func EncryptString(encryptor crypto.Encryptor, text string, aad []byte) ([]byte,
 	if text == "" {
 		return nil, nil
 	}
+	if crypto.IsCiphertextString(text) {
+		return []byte(text), nil
+	}
 	data := []byte(text)
 	defer crypto.ZeroBytes(data)
 	return encryptor.Encrypt(data, aad)
@@ -209,6 +150,9 @@ func EncryptString(encryptor crypto.Encryptor, text string, aad []byte) ([]byte,
 func DecryptString(encryptor crypto.Encryptor, ciphertext, aad []byte) (string, error) {
 	if len(ciphertext) == 0 {
 		return "", nil
+	}
+	if !crypto.IsCiphertext(ciphertext) {
+		return string(ciphertext), nil
 	}
 	plaintext, err := encryptor.Decrypt(ciphertext, aad)
 	if err != nil {
