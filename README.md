@@ -274,22 +274,27 @@ The backend is wired through the Fx module and injected as the `Store` interface
 concrete implementation.
 
 ## Cryptographic Core, AL-FLE & Envelope Encryption
- 
-LibreVita implements an enterprise-grade **Application-Layer Field-Level Encryption (AL-FLE) with Blind Indexing** architecture in `internal/core/crypto` and `internal/core/database/fle` (providing host-proof database persistence), column-level transparent authenticated encryption (AEAD), exact-match blind indexing, and per-patient envelope encryption with physical key vault storage:
- 
+
+LibreVita implements an enterprise-grade **Application-Layer Field-Level Encryption (AL-FLE) with Blind Indexing** architecture in `internal/core/crypto` and `internal/core/database/fle` (providing host-proof database persistence), column-level transparent authenticated encryption (AEAD), exact-match blind indexing, tokenized name search, and per-patient envelope encryption with physical key vault storage:
+
  - **Keyed Hasher (`crypto.Hasher`)** — provides keyed cryptographic hashing for blind indexing and session token verification with cryptographic agility:
    - Formatted prefixed output: `<algorithm>$<hex_hash>` (e.g. `blake2s$3f4a...`).
    - Active native-keyed engines: `blake2s` (default) and `blake2b`.
    - Constant-time verification (`subtle.ConstantTimeCompare`) with legacy raw-hex fallback.
-   - Deterministic blind index computation (`system || '\x00' || value`) ensuring cryptographic domain separation across entities (e.g. `patient.display_name`, `patient.phone`, `patient.email`).
+   - Deterministic blind index computation (`system || '\x00' || value`) ensuring cryptographic domain separation across entities (e.g. `patient.phone`, `patient.email`).
  - **Symmetric AEAD Encryptor (`crypto.Encryptor`)** — provides authenticated payload encryption for sensitive personal and clinical data:
    - Self-Contained Envelope format with Magic Byte versioning at `ciphertext[0]`: `0xA1` (`MagicByteXChaCha20Poly1305`) containing `[ Version (1B) | Nonce (24B) | Ciphertext + Poly1305 Tag ]`.
    - Cryptographic Agility: Future-proof architecture supporting algorithm migrations (e.g. AES-256-GCM with 12-byte nonces or Post-Quantum ciphers) without database migrations or schema alterations.
    - Memory security: transient plaintext buffers are securely zeroized with `ZeroBytes`.
- - **AL-FLE Ent Plugin & Column-Level Encryption (`fle.EncryptedString` & `fle.Searchable`)**:
-   - Declarative Schemas: Sensitive fields (`display_name`, `phone`, `email`, `notes`, `prescription`, `diagnostic`, `reason`) are defined cleanly with `ValueScanner(fle.EncryptedString())` and stored as binary `BLOB`/`BYTEA` in the database.
-   - Automatic Blind Indexing: An Ent CodeGen plugin (`fle.Generate`) automatically detects fields annotated with `fle.Searchable()`, dynamically injecting non-nullable `<field>_blind_index` columns and composite clinic-scoped indexes `("clinic_id", "<field>_blind_index")` for instant $O(1)$ tenant-isolated lookups.
-   - Lifecycle Mutation Hooks (`fle.BlindIndexHook`): Computes HMAC-BLAKE2s blind index hashes transparently before database persistence, and automatically clears hashes on updates when fields are emptied.
+ - **AL-FLE Ent Extension (`internal/core/database/fle`)** — a compile-time, zero-reflection encryption and indexing layer built on the canonical `entc.Extension` API:
+   - **Declarative Schema Annotations**: Sensitive fields are annotated once — `fle.SearchablePhone()`, `fle.SearchableEmail()`, `fle.SearchableDocument()`, `fle.SearchableName()`, or plain `fle.Searchable()` — stored as binary `BLOB`/`BYTEA` via `fle.EncryptedString()`.
+   - **Static Codegen (`fle.Template`)**: An Ent template extension generates 100% typed Go hooks (`encryptPatientMutation`) and decrypt interceptors at build time, with zero use of `reflect` or `interface{}` at runtime. Encryptors and hashers are resolved purely from `context.Context` — no global state, no mutex contention.
+   - **Tenant-Bound AAD**: Every ciphertext is authenticated with the tenant's AAD (`urn:librevita:tenant:<id>`), preventing cross-tenant ciphertext transplantation even if the database is shared.
+   - **Dynamic Schema Injection (`TransformSchemas`)**: For scalar searchable fields (`phone`, `email`, `document`), `TransformSchemas` automatically injects `<field>_blind_index TEXT` and a composite B-Tree index `(clinic_id, <field>_blind_index)` into the Ent AST — no boilerplate in schema files.
+   - **Tokenized Name Search (`SearchableName`)**: Name fields use prefix n-gram tokenization instead of a single exact-match blind index. `TransformSchemas` auto-injects a `<field>_token_index JSON` column. The generated hook calls `normalize.NameTokens(val)` and persists a hashed token array — enabling prefix and partial-word search (e.g. `"Car"` → `"Carlos"`) on fully encrypted data without leaking the plaintext. Queried with `json_each()` (SQLite) or `@>` on `JSONB` (PostgreSQL), always pre-filtered by the `clinic_id` B-Tree index.
+ - **Text Normalization (`internal/core/normalize`)** — a pure, zero-allocation normalization package:
+   - `normalize.Phone`, `normalize.Email`, `normalize.Text` — deterministic canonicalization before hashing, ensuring blind index collisions between `+55 11 98888-7777` and `5511988887777` are avoided.
+   - `normalize.NameTokens` — generates prefix n-grams (min 3 chars) of each word in a name, filtering Portuguese stop words via a compile-time `switch` jump table (`isStopWord`) with zero heap allocations. Used by the FLE template for tokenized name search.
 - **Envelope Encryption (`*crypto.Engine`)** — protects sensitive patient data (such as FHIR identification documents) with physical state separation:
   - **KEK (Key Encryption Key)** — derived via HKDF-BLAKE2b-256 from `LIBREVITA_MASTER_KEY` (`master_key`) using info string `librevita:kek:v1`. The KEK is kept strictly in memory and never written to disk.
   - **DEK (Data Encryption Key)** — a cryptographically random 32-byte key generated per patient (`urn:librevita:patient:<id>`). Patient data fields are encrypted using XChaCha20-Poly1305 with random 24-byte nonces under the patient's DEK.
