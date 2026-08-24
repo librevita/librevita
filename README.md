@@ -8,7 +8,7 @@
 > _"In quella parte del libro de la mia memoria dinanzi a la quale poco si potrebbe leggere, si trova una rubrica la quale dice: **Incipit vita nova**."_  
 > — **Dante Alighieri**, _Vita Nuova_ (c. 1294)
 
-**LibreVita** is a sovereign electronic health record (EHR) and clinic management platform built in Go with **Application-Layer Field-Level Encryption (AL-FLE)** and **Blind Indexing**. Uniting the principled tradition of **Libre Software** with Dante’s **_Vita Nuova_** (*"New Life"*), LibreVita marks a new beginning for clinical privacy, human dignity, and patient data sovereignty. The module path is `librevita.org`.
+**LibreVita** is a sovereign electronic health record (EHR) and clinic management platform built in Go with **Application-Layer Field-Level Encryption (AL-FLE)**, **Blind Indexing**, and **Tokenized Name Search**. Uniting the principled tradition of **Libre Software** with Dante’s **_Vita Nuova_** (*"New Life"*), LibreVita marks a new beginning for clinical privacy, human dignity, and patient data sovereignty. The module path is `librevita.org`.
 
 ## Requirements
 
@@ -482,7 +482,7 @@ HTTP errors use RFC 7807 `application/problem+json` responses.
 
 The clinical and administrative features are organized in `internal/domain`:
 
-- **Patients** — full registry CRUD with whole-word search (debounced server-side), status (active/archived), bulk
+- **Patients** — full registry CRUD with tokenized prefix search (debounced server-side, searching across encrypted `display_name_token_index` via blind n-gram hashes), status (active/archived), bulk
   archive, an audit-backed change history on the detail page, clinical attachments (uploads are checksummed into the
   audit chain, downloads are audited), and FHIR-style identification documents (system + value) protected via
   per-patient DEK Envelope Encryption with a keyed blind index for exact lookup and KeyVault Crypto-Shredding for
