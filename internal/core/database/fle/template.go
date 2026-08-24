@@ -16,9 +16,35 @@ var Template = gen.MustParse(gen.NewTemplate("fle_hooks").
 		"hasEncryptedFields": hasEncryptedFields,
 		"encryptedFields":    encryptedFieldsOf,
 		"isSearchable":       isSearchableField,
+		"isNameField":        isNameField,
+		"hasTokenIndex":      hasTokenIndex,
 		"normalizerFunc":     normalizerFunc,
 	}).
 	Parse(fleTemplate))
+
+func isNameField(f *gen.Field) bool {
+	if ann, ok := f.Annotations[AnnotationName]; ok {
+		if m, ok := ann.(map[string]any); ok {
+			if norm, ok := m["normalizer"].(string); ok && strings.ToLower(norm) == "name" {
+				return true
+			}
+			if norm, ok := m["Normalizer"].(string); ok && strings.ToLower(norm) == "name" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func hasTokenIndex(n *gen.Type, f *gen.Field) bool {
+	tokenName := f.Name + "_token_index"
+	for _, fld := range n.Fields {
+		if fld.Name == tokenName {
+			return true
+		}
+	}
+	return false
+}
 
 func normalizerFunc(f *gen.Field) string {
 	if ann, ok := f.Annotations[AnnotationName]; ok {
@@ -159,6 +185,18 @@ func encrypt{{ $n.Name }}Mutation(ctx context.Context, hasher crypto.Hasher, enc
 	{{- range $f := encryptedFields $n }}
 	{{- if isSearchable $f }}
 	if val, ok := m.{{ $f.MutationGet }}(); ok && val != "" && !crypto.IsCiphertextString(val) && hasher != nil {
+		{{- if isNameField $f }}
+		{{- if hasTokenIndex $n $f }}
+		tokens := normalize.NameTokens(val)
+		tokenHashes := make([]string, 0, len(tokens))
+		for _, tok := range tokens {
+			if h, err := hasher.BlindIndex("{{ lower $n.Name }}.token", tok); err == nil {
+				tokenHashes = append(tokenHashes, h)
+			}
+		}
+		m.Set{{ $f.StructField }}TokenIndex(tokenHashes)
+		{{- end }}
+		{{- else }}
 		domainTag := "{{ lower $n.Name }}.{{ $f.Name }}"
 		if customDomain, _, ok := fle.SearchableFieldFromContext(ctx); ok && customDomain != "" {
 			domainTag = customDomain
@@ -167,6 +205,7 @@ func encrypt{{ $n.Name }}Mutation(ctx context.Context, hasher crypto.Hasher, enc
 		if blindHash, err := hasher.BlindIndex(domainTag, normalized); err == nil {
 			m.Set{{ $f.StructField }}BlindIndex(blindHash)
 		}
+		{{- end }}
 	}
 	{{- end }}
 	if val, ok := m.{{ $f.MutationGet }}(); ok && val != "" && !crypto.IsCiphertextString(val) && enc != nil {

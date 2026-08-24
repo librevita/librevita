@@ -197,7 +197,7 @@ CREATE TABLE `patients` (
   `created_by` uuid NULL,
   `created_at` datetime NOT NULL,
   `updated_at` datetime NOT NULL,
-  `display_name_blind_index` text NULL,
+  `display_name_token_index` json NULL,
   `phone_blind_index` text NULL,
   `email_blind_index` text NULL,
   `clinic_id` uuid NOT NULL,
@@ -211,9 +211,6 @@ CREATE INDEX `patient_clinic_id` ON `patients` (`clinic_id`);
 
 -- create index "patient_status" to table: "patients"
 CREATE INDEX `patient_status` ON `patients` (`status`);
-
--- create index "patient_clinic_id_display_name_blind_index" to table: "patients"
-CREATE INDEX `patient_clinic_id_display_name_blind_index` ON `patients` (`clinic_id`, `display_name_blind_index`);
 
 -- create index "patient_clinic_id_phone_blind_index" to table: "patients"
 CREATE INDEX `patient_clinic_id_phone_blind_index` ON `patients` (`clinic_id`, `phone_blind_index`);
@@ -416,8 +413,6 @@ DROP TABLE `patient_identifiers`;
 DROP INDEX `patient_clinic_id_email_blind_index`;
 -- reverse: create index "patient_clinic_id_phone_blind_index" to table: "patients"
 DROP INDEX `patient_clinic_id_phone_blind_index`;
--- reverse: create index "patient_clinic_id_display_name_blind_index" to table: "patients"
-DROP INDEX `patient_clinic_id_display_name_blind_index`;
 -- reverse: create index "patient_status" to table: "patients"
 DROP INDEX `patient_status`;
 -- reverse: create index "patient_clinic_id" to table: "patients"

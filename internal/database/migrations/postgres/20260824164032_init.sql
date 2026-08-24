@@ -75,7 +75,7 @@ CREATE TABLE "patients" (
   "created_by" uuid NULL,
   "created_at" timestamptz NOT NULL,
   "updated_at" timestamptz NOT NULL,
-  "display_name_blind_index" character varying NULL,
+  "display_name_token_index" jsonb NULL,
   "phone_blind_index" character varying NULL,
   "email_blind_index" character varying NULL,
   "clinic_id" uuid NOT NULL,
@@ -86,9 +86,6 @@ CREATE TABLE "patients" (
 
 -- create index "patient_clinic_id" to table: "patients"
 CREATE INDEX "patient_clinic_id" ON "patients" ("clinic_id");
-
--- create index "patient_clinic_id_display_name_blind_index" to table: "patients"
-CREATE INDEX "patient_clinic_id_display_name_blind_index" ON "patients" ("clinic_id", "display_name_blind_index");
 
 -- create index "patient_clinic_id_email_blind_index" to table: "patients"
 CREATE INDEX "patient_clinic_id_email_blind_index" ON "patients" ("clinic_id", "email_blind_index");
@@ -454,8 +451,6 @@ DROP INDEX "patient_status";
 DROP INDEX "patient_clinic_id_phone_blind_index";
 -- reverse: create index "patient_clinic_id_email_blind_index" to table: "patients"
 DROP INDEX "patient_clinic_id_email_blind_index";
--- reverse: create index "patient_clinic_id_display_name_blind_index" to table: "patients"
-DROP INDEX "patient_clinic_id_display_name_blind_index";
 -- reverse: create index "patient_clinic_id" to table: "patients"
 DROP INDEX "patient_clinic_id";
 -- reverse: create "patients" table

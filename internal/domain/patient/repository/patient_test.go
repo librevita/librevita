@@ -118,12 +118,19 @@ func TestPatientRepository_CRUD(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "Maria Joana", rawRow.DisplayName) // Transparently decrypted by interceptor!
 
-	expectedNameBlind, _ := hasher.BlindIndex("patient.display_name", normalize.Text("Maria Joana"))
 	expectedEmailBlind, _ := hasher.BlindIndex("patient.email", normalize.Email("maria@example.org"))
 	expectedPhoneBlind, _ := hasher.BlindIndex("patient.phone", normalize.Phone("+55 11 98888-7777"))
-	assert.Equal(t, expectedNameBlind, rawRow.DisplayNameBlindIndex)
 	assert.Equal(t, expectedEmailBlind, rawRow.EmailBlindIndex)
 	assert.Equal(t, expectedPhoneBlind, rawRow.PhoneBlindIndex)
+
+	// Verify tokenized search n-grams generated in JSON column
+	expectedTokens := normalize.NameTokens("Maria Joana")
+	require.NotEmpty(t, rawRow.DisplayNameTokenIndex)
+	require.Equal(t, len(expectedTokens), len(rawRow.DisplayNameTokenIndex))
+	for _, tok := range expectedTokens {
+		h, _ := hasher.BlindIndex("patient.token", tok)
+		assert.Contains(t, rawRow.DisplayNameTokenIndex, h)
+	}
 
 	// 2. Get
 	fetched, err := repo.Get(ctx, clinicID, patientID)
