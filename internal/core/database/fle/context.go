@@ -212,4 +212,3 @@ func ResolveEncryptor(ctx context.Context, defaultEnc crypto.Encryptor) (crypto.
 	}
 	return defaultEnc, nil
 }
-
