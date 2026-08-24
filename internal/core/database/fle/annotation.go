@@ -96,5 +96,20 @@ func SearchableDocument(domain ...string) Annotation {
 	}
 }
 
+// SearchableName configures blind indexing for personal names, generating both an exact blind index
+// and prefix n-gram search tokens when a search_tokens field exists on the entity.
+func SearchableName(domain ...string) Annotation {
+	d := ""
+	if len(domain) > 0 {
+		d = domain[0]
+	}
+	return Annotation{
+		Encrypted:  true,
+		Searchable: true,
+		Domain:     d,
+		Normalizer: "name",
+	}
+}
+
 // Ensure Annotation implements schema.Annotation at compile time.
 var _ schema.Annotation = (*Annotation)(nil)

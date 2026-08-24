@@ -69,3 +69,19 @@ func TestText(t *testing.T) {
 		assert.Equal(t, tt.expected, normalize.Text(tt.input))
 	}
 }
+
+func TestNameTokens(t *testing.T) {
+	assert.Nil(t, normalize.NameTokens(""))
+	assert.Nil(t, normalize.NameTokens("   "))
+
+	tokens := normalize.NameTokens("Carlos Eduardo da Silva")
+	expected := []string{
+		"car", "carl", "carlo", "carlos",
+		"edu", "edua", "eduar", "eduard", "eduardo",
+		"sil", "silv", "silva",
+	}
+	assert.Equal(t, expected, tokens)
+
+	shortTokens := normalize.NameTokens("Ana Li")
+	assert.Equal(t, []string{"ana", "li"}, shortTokens)
+}

@@ -72,6 +72,38 @@ func TransformSchemas(schemas []*load.Schema) error {
 				continue
 			}
 
+			var normalizer string
+			if n, ok := m["normalizer"].(string); ok {
+				normalizer = n
+			} else if n, ok := m["Normalizer"].(string); ok {
+				normalizer = n
+			}
+
+			if normalizer == "name" {
+				tokenFieldName := f.Name + "_token_index"
+				var hasTokens bool
+				for _, existing := range schema.Fields {
+					if existing.Name == tokenFieldName {
+						hasTokens = true
+						break
+					}
+				}
+				if !hasTokens {
+					tokensDesc := field.JSON(tokenFieldName, []string{}).
+						Optional().
+						Comment("Blind index token hashes of n-grams for fast tokenized search on " + f.Name).
+						Descriptor()
+
+					loadTokensFld, err := load.NewField(tokensDesc)
+					if err != nil {
+						return fmt.Errorf("fle codegen: create %s field: %w", tokenFieldName, err)
+					}
+					loadTokensFld.Position = &load.Position{}
+					schema.Fields = append(schema.Fields, loadTokensFld)
+				}
+				continue
+			}
+
 			blindFieldName := f.Name + "_blind_index"
 			var exists bool
 			for _, existing := range schema.Fields {

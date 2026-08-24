@@ -55,3 +55,68 @@ func Text(s string) string {
 	}
 	return strings.ToLower(strings.TrimSpace(s))
 }
+
+func isStopWord(w string) bool {
+	switch w {
+	case "da", "de", "do", "das", "dos", "e",
+		"del", "van", "von", "der", "the", "and", "of":
+		return true
+	default:
+		return false
+	}
+}
+
+// NameTokens extracts search tokens (words and prefix n-grams >= 3 chars) from a person's name.
+// For example: "Carlos Silva" -> ["car", "carl", "carlo", "carlos", "sil", "silv", "silva"].
+func NameTokens(name string) []string {
+	return NameTokensWithMinLen(name, 3)
+}
+
+// NameTokensWithMinLen extracts unique words and prefix n-grams starting from minPrefixLen characters.
+func NameTokensWithMinLen(name string, minPrefixLen int) []string {
+	if name == "" {
+		return nil
+	}
+	clean := strings.ToLower(strings.TrimSpace(name))
+	words := strings.Fields(clean)
+	if len(words) == 0 {
+		return nil
+	}
+
+	seen := make(map[string]struct{})
+	var tokens []string
+
+	addToken := func(t string) {
+		t = strings.TrimSpace(t)
+		if t == "" {
+			return
+		}
+		if _, ok := seen[t]; !ok {
+			seen[t] = struct{}{}
+			tokens = append(tokens, t)
+		}
+	}
+
+	for _, w := range words {
+		w = strings.TrimFunc(w, func(r rune) bool {
+			return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+		})
+		if w == "" || isStopWord(w) {
+			continue
+		}
+
+		runes := []rune(w)
+		wLen := len(runes)
+
+		if wLen < minPrefixLen {
+			addToken(w)
+			continue
+		}
+
+		for i := minPrefixLen; i <= wLen; i++ {
+			addToken(string(runes[:i]))
+		}
+	}
+
+	return tokens
+}
