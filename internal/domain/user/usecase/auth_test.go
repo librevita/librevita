@@ -452,4 +452,3 @@ func TestSetupMarkerGuardsDeletedMarkerEdgeCase(t *testing.T) {
 	_, _, err = env.svc.Onboard(ctx, validInput(), nil)
 	require.ErrorIs(t, err, usecase.ErrAlreadyOnboarded)
 }
-

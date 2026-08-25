@@ -138,18 +138,18 @@ func (s *PlatformService) Provision(ctx context.Context, in ProvisionInput) (*mo
 		country = "BR"
 	}
 	shell, err := s.clinics.CreateShell(ctx, &model.Clinic{
-		ID:       id,
-		Slug:     slug,
-		Name:     name,
-		TaxID:    strings.TrimSpace(in.TaxID),
-		Phone:    strings.TrimSpace(in.Phone),
-		Email:    strings.ToLower(strings.TrimSpace(in.Email)),
-		Street:   strings.TrimSpace(in.Street),
-		City:     strings.TrimSpace(in.City),
-		State:    strings.TrimSpace(in.State),
+		ID:         id,
+		Slug:       slug,
+		Name:       name,
+		TaxID:      strings.TrimSpace(in.TaxID),
+		Phone:      strings.TrimSpace(in.Phone),
+		Email:      strings.ToLower(strings.TrimSpace(in.Email)),
+		Street:     strings.TrimSpace(in.Street),
+		City:       strings.TrimSpace(in.City),
+		State:      strings.TrimSpace(in.State),
 		PostalCode: strings.TrimSpace(in.Postal),
-		Country:  country,
-		Timezone: tz,
+		Country:    country,
+		Timezone:   tz,
 	})
 	if err != nil {
 		if strings.Contains(err.Error(), "slug taken") {
