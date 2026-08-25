@@ -15,17 +15,17 @@ import (
 )
 
 var clinicScopedTypes = map[string]struct{}{
-	entgen.TypeUser:                    {},
-	entgen.TypeRole:                    {},
-	entgen.TypeAccessPolicy:            {},
-	entgen.TypePatient:                 {},
-	entgen.TypeSpecialty:               {},
-	entgen.TypeAppointment:             {},
-	entgen.TypeEpisode:                 {},
-	entgen.TypePatientIdentifier:       {},
-	entgen.TypeStaffChangeRequest:      {},
-	entgen.TypeStorageObject:           {},
-	entgen.TypeClinicIdentifierSystem:  {},
+	entgen.TypeUser:                   {},
+	entgen.TypeRole:                   {},
+	entgen.TypeAccessPolicy:           {},
+	entgen.TypePatient:                {},
+	entgen.TypeSpecialty:              {},
+	entgen.TypeAppointment:            {},
+	entgen.TypeEpisode:                {},
+	entgen.TypePatientIdentifier:      {},
+	entgen.TypeStaffChangeRequest:     {},
+	entgen.TypeStorageObject:          {},
+	entgen.TypeClinicIdentifierSystem: {},
 }
 
 type clinicIDMutation interface {

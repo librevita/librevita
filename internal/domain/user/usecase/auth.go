@@ -14,7 +14,6 @@ import (
 	"librevita.org/internal/core/audit"
 	"librevita.org/internal/core/auth"
 	"librevita.org/internal/core/clinicctx"
-	clinicmodel "librevita.org/internal/domain/clinic/model"
 )
 
 // Input field limits.
@@ -23,16 +22,6 @@ const (
 	maxEmailLen    = 254
 	minPasswordLen = 8
 	maxPasswordLen = 128
-
-	maxClinicNameLen = 200
-	maxTaxIDLen      = 30
-	maxPhoneLen      = 30
-	maxStreetLen     = 200
-	maxCityLen       = 100
-	maxStateLen      = 50
-	maxPostalCodeLen = 20
-	maxCountryLen    = 2
-	maxTimezoneLen   = 64
 )
 
 // ValidationError reports invalid registration input.
@@ -46,20 +35,6 @@ type RegisterInput struct {
 	Email     string
 	Password  string
 	PatientID string
-}
-
-// ClinicInput is the clinic profile collected during onboarding.
-type ClinicInput struct {
-	Name       string
-	TaxID      string
-	Phone      string
-	Email      string
-	Street     string
-	City       string
-	State      string
-	PostalCode string
-	Country    string
-	Timezone   string
 }
 
 // Credentials is the login request.
@@ -382,47 +357,4 @@ func (s *Service) auditOnboard(ctx context.Context, failure string) {
 	s.audit.Record(ctx, audit.Event{
 		Action: "onboard", Resource: "setup", Result: audit.AuditResultFailure, Detail: failure,
 	})
-}
-
-func validateClinic(c ClinicInput) error {
-	name := strings.TrimSpace(c.Name)
-	if name == "" {
-		return &ValidationError{Msg: "clinic name is required"}
-	}
-	if len(name) > maxClinicNameLen {
-		return &ValidationError{Msg: "clinic name is too long"}
-	}
-	if len(c.TaxID) > maxTaxIDLen {
-		return &ValidationError{Msg: "tax id is too long"}
-	}
-	if len(c.Phone) > maxPhoneLen {
-		return &ValidationError{Msg: "phone is too long"}
-	}
-	if email := normalizeEmail(c.Email); email != "" {
-		addr, err := mail.ParseAddress(email)
-		if err != nil || addr.Address != email {
-			return &ValidationError{Msg: "enter a valid clinic email address"}
-		}
-	}
-	if len(c.Street) > maxStreetLen || len(c.City) > maxCityLen ||
-		len(c.State) > maxStateLen || len(c.PostalCode) > maxPostalCodeLen {
-		return &ValidationError{Msg: "address fields are too long"}
-	}
-	if country := strings.ToUpper(strings.TrimSpace(c.Country)); country != "" && len(country) > maxCountryLen {
-		return &ValidationError{Msg: "country must be a two-letter code"}
-	}
-	if len(c.Timezone) > maxTimezoneLen {
-		return &ValidationError{Msg: "timezone is too long"}
-	}
-	if tz := strings.TrimSpace(c.Timezone); tz != "" && !clinicmodel.ValidTimezone(tz) {
-		return &ValidationError{Msg: "pick a timezone from the list"}
-	}
-	return nil
-}
-
-func orDefault(value, fallback string) string {
-	if strings.TrimSpace(value) == "" {
-		return fallback
-	}
-	return value
 }
