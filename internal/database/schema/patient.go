@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"entgo.io/ent"
+	"entgo.io/ent/dialect/entsql"
 	"entgo.io/ent/schema/edge"
 	"entgo.io/ent/schema/field"
 	"entgo.io/ent/schema/index"
@@ -26,6 +27,10 @@ func (Patient) Fields() []ent.Field {
 			Comment("Primary unique identifier (UUIDv7)"),
 		field.UUID("clinic_id", uuid.UUID{}).
 			Comment("Tenant isolation: clinic ID reference"),
+		field.UUID("user_id", uuid.UUID{}).
+			Optional().
+			Nillable().
+			Comment("Optional portal login (users.clinic_id must match); unique per clinic when set"),
 		field.Enum("status").
 			Values("active", "inactive", "archived").
 			Default("active").
@@ -118,6 +123,10 @@ func (Patient) Edges() []ent.Edge {
 			Field("clinic_id").
 			Unique().
 			Required(),
+		edge.From("portal_user", User.Type).
+			Ref("portal_patient").
+			Field("user_id").
+			Unique(),
 		edge.To("identifiers", PatientIdentifier.Type),
 		edge.To("appointments", Appointment.Type),
 		edge.To("episodes", Episode.Type),
@@ -129,5 +138,8 @@ func (Patient) Indexes() []ent.Index {
 	return []ent.Index{
 		index.Fields("clinic_id"),
 		index.Fields("status"),
+		index.Fields("clinic_id", "user_id").
+			Unique().
+			Annotations(entsql.IndexWhere("user_id IS NOT NULL")),
 	}
 }

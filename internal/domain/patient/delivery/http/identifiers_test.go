@@ -9,15 +9,19 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 
 	"librevita.org/ent"
 	"librevita.org/ent/patientidentifier"
 	"librevita.org/internal/core/audit"
 	"librevita.org/internal/core/auth"
+	"librevita.org/internal/core/clinicctx"
 	"librevita.org/internal/core/config"
 	"librevita.org/internal/core/crypto"
+	"librevita.org/internal/core/database/fle"
 	"librevita.org/internal/core/policy"
 	"librevita.org/internal/core/server"
 	"librevita.org/internal/core/storage"
@@ -31,6 +35,25 @@ import (
 )
 
 var testClinic = "01990000-0000-7000-8000-0000000000d0"
+
+func attachSeededClinic() echo.MiddlewareFunc {
+	id := uuid.MustParse(testClinic)
+	now := time.Now()
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			ctx := clinicctx.WithClinic(c.Request().Context(), &clinicctx.Clinic{
+				ID:          id,
+				Slug:        "test-clinic",
+				Name:        "Test Clinic",
+				Timezone:    "America/Sao_Paulo",
+				OnboardedAt: &now,
+			})
+			ctx = fle.WithClinicID(ctx, id.String())
+			c.SetRequest(c.Request().WithContext(ctx))
+			return next(c)
+		}
+	}
+}
 
 // newIdentEnv mounts the identifier routes with real middlewares and a
 // migrated database.
@@ -80,6 +103,7 @@ func newIdentEnv(t *testing.T) (*echo.Echo, *auth.SessionManager, *usecase.Servi
 	h := NewHandler(svc, clinicusecase.NewClockProvider(clinicrepo.NewClinicRepository(client)), csrf, auditLogger, files, ids, systems)
 
 	e := echo.New()
+	e.Use(attachSeededClinic())
 	view := []echo.MiddlewareFunc{
 		server.RequireAuth(sessions, log),
 		server.RequirePolicy(policies, auditLogger, log, "patient.view"),

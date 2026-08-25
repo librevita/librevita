@@ -9,6 +9,7 @@ import (
 	"librevita.org/ent"
 	"librevita.org/ent/role"
 	"librevita.org/ent/user"
+	"librevita.org/internal/core/clinicctx"
 	usermodel "librevita.org/internal/domain/user/model"
 )
 
@@ -63,6 +64,9 @@ func (r *roleRepository) Create(ctx context.Context, roleModel *usermodel.Role) 
 		SetID(roleModel.ID).
 		SetName(roleModel.Name).
 		SetIsClinical(roleModel.IsClinical)
+	if clinicID, ok := clinicctx.ClinicID(ctx); ok {
+		create.SetClinicID(clinicID)
+	}
 
 	saved, err := create.Save(ctx)
 	if err != nil {
@@ -106,6 +110,10 @@ func (r *roleRepository) CountUsersWithRole(ctx context.Context, roleID uuid.UUI
 }
 
 func (r *roleRepository) SeedDefaults(ctx context.Context) error {
+	clinicID, err := clinicctx.MustClinicID(ctx)
+	if err != nil {
+		return err
+	}
 	defaultRoles := []struct {
 		name       string
 		isClinical bool
@@ -130,6 +138,7 @@ func (r *roleRepository) SeedDefaults(ctx context.Context) error {
 		}
 		if err := r.client.Role.Create().
 			SetID(rID).
+			SetClinicID(clinicID).
 			SetName(dr.name).
 			SetSystem(true).
 			SetIsClinical(dr.isClinical).

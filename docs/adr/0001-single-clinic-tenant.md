@@ -1,6 +1,6 @@
 # ADR 0001 — Single-clinic tenant model
 
-- Status: accepted
+- Status: superseded by [ADR 0002](0002-multi-clinic-shared-schema.md)
 - Date: 2026-08-12
 
 ## Context

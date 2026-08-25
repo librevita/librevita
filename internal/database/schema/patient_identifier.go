@@ -21,6 +21,8 @@ func (PatientIdentifier) Fields() []ent.Field {
 		field.UUID("id", uuid.UUID{}).
 			Default(newUUIDv7).
 			Immutable(),
+		field.UUID("clinic_id", uuid.UUID{}).
+			Comment("Denormalized clinic_id for UNIQUE(clinic_id, blind_index)"),
 		field.UUID("patient_id", uuid.UUID{}).
 			Comment("Belonging patient ID"),
 		field.String("system").
@@ -36,7 +38,6 @@ func (PatientIdentifier) Fields() []ent.Field {
 		field.String("blind_index").
 			MaxLen(64).
 			NotEmpty().
-			Unique().
 			Comment("Hex BLAKE2b-256 keyed blind index for exact search"),
 		field.UUID("created_by", uuid.UUID{}).
 			Optional().
@@ -53,6 +54,11 @@ func (PatientIdentifier) Fields() []ent.Field {
 // Edges of the PatientIdentifier.
 func (PatientIdentifier) Edges() []ent.Edge {
 	return []ent.Edge{
+		edge.From("clinic", Clinic.Type).
+			Ref("patient_identifiers").
+			Field("clinic_id").
+			Unique().
+			Required(),
 		edge.From("patient", Patient.Type).
 			Ref("identifiers").
 			Field("patient_id").
@@ -68,5 +74,7 @@ func (PatientIdentifier) Indexes() []ent.Index {
 	return []ent.Index{
 		index.Fields("patient_id"),
 		index.Fields("system"),
+		index.Fields("clinic_id", "blind_index").
+			Unique(),
 	}
 }

@@ -11,6 +11,7 @@ var (
 	ErrSystemImmutable     = errors.New("identifier: cannot modify system identifier")
 	ErrNotFound            = errors.New("identifier: identifier not found")
 	ErrValueRequired       = errors.New("identifier: value is required")
+	ErrSystemNotAllowed    = errors.New("identifier: system is not enabled for this clinic")
 )
 
 // ValidationError is returned for values that do not fit the system's

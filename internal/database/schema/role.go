@@ -6,6 +6,7 @@ import (
 	"entgo.io/ent"
 	"entgo.io/ent/schema/edge"
 	"entgo.io/ent/schema/field"
+	"entgo.io/ent/schema/index"
 	"github.com/google/uuid"
 )
 
@@ -20,10 +21,11 @@ func (Role) Fields() []ent.Field {
 		field.UUID("id", uuid.UUID{}).
 			Default(newUUIDv7).
 			Immutable(),
+		field.UUID("clinic_id", uuid.UUID{}).
+			Comment("Owning clinic; system roles are copied at clinic onboard"),
 		field.String("name").
 			NotEmpty().
-			Unique().
-			Comment("Unique role name: admin, physician, receptionist, patient"),
+			Comment("Role name unique per clinic: admin, physician, receptionist, patient"),
 		field.Bool("system").
 			Default(false).
 			Comment("System roles cannot be modified or deleted"),
@@ -39,6 +41,19 @@ func (Role) Fields() []ent.Field {
 // Edges of the Role.
 func (Role) Edges() []ent.Edge {
 	return []ent.Edge{
+		edge.From("clinic", Clinic.Type).
+			Ref("roles").
+			Field("clinic_id").
+			Unique().
+			Required(),
 		edge.To("users", User.Type),
+	}
+}
+
+// Indexes of the Role.
+func (Role) Indexes() []ent.Index {
+	return []ent.Index{
+		index.Fields("clinic_id", "name").
+			Unique(),
 	}
 }

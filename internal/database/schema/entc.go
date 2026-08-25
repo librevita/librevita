@@ -42,6 +42,7 @@ func runCodegen(schemaDir, targetDir string) error {
 		Features: []gen.Feature{
 			{Name: "sql/versioned-migration"},
 			{Name: "intercept"},
+			{Name: "privacy"},
 		},
 	}
 

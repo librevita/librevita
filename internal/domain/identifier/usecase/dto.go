@@ -44,6 +44,7 @@ var (
 	ErrSystemImmutable     = identifiermodel.ErrSystemImmutable
 	ErrNotFound            = identifiermodel.ErrNotFound
 	ErrValueRequired       = identifiermodel.ErrValueRequired
+	ErrSystemNotAllowed    = identifiermodel.ErrSystemNotAllowed
 )
 
 // Input is a document as typed at reception.

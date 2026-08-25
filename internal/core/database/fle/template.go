@@ -231,12 +231,13 @@ func FLEMutationHook(hasher crypto.Hasher, defaultEnc crypto.Encryptor) Hook {
 			if err != nil {
 				return nil, err
 			}
+			h := fle.ResolveHasher(ctx, hasher)
 
 			switch mut := m.(type) {
 			{{- range $n := $nodes }}
 			{{- if hasEncryptedFields $n }}
 			case *{{ $n.MutationName }}:
-				_ = encrypt{{ $n.Name }}Mutation(ctx, hasher, enc, mut)
+				_ = encrypt{{ $n.Name }}Mutation(ctx, h, enc, mut)
 			{{- end }}
 			{{- end }}
 			}

@@ -8,47 +8,19 @@ import (
 
 	"librevita.org/ent"
 	"librevita.org/ent/identifiersystem"
-	"librevita.org/ent/role"
+	"librevita.org/internal/core/clinicctx"
 	"librevita.org/internal/core/config"
 )
 
-// SeedInitialData seeds default roles and identifier systems using Ent ORM.
+// SeedInitialData seeds global identifier systems using Ent ORM.
+// Roles and CEL policies are copied per clinic at onboard, not at process boot.
 func SeedInitialData(ctx context.Context, client *ent.Client) error {
 	if client == nil {
 		return nil
 	}
 
-	// 1. Seed Roles via Ent
-	roles := []struct {
-		ID         uuid.UUID
-		Name       string
-		System     bool
-		IsClinical bool
-	}{
-		{uuid.MustParse("00000000-0000-7000-8000-000000000001"), "admin", true, false},
-		{uuid.MustParse("00000000-0000-7000-8000-000000000002"), "physician", true, true},
-		{uuid.MustParse("00000000-0000-7000-8000-000000000003"), "receptionist", true, false},
-		{uuid.MustParse("00000000-0000-7000-8000-000000000004"), "patient", true, false},
-	}
+	ctx = clinicctx.WithSkipIsolation(ctx)
 
-	for _, r := range roles {
-		exists, err := client.Role.Query().Where(role.NameEQ(r.Name)).Exist(ctx)
-		if err != nil {
-			return err
-		}
-		if !exists {
-			if _, err := client.Role.Create().
-				SetID(r.ID).
-				SetName(r.Name).
-				SetSystem(r.System).
-				SetIsClinical(r.IsClinical).
-				Save(ctx); err != nil {
-				return err
-			}
-		}
-	}
-
-	// 2. Seed Identifier Systems via Ent
 	systems := []struct {
 		ID               uuid.UUID
 		System           string

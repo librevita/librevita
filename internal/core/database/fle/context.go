@@ -17,7 +17,8 @@ const (
 	decryptedRegistryKey
 	encryptorKey
 	encryptorResolverKey
-	tenantIDKey
+	hasherKey
+	clinicIDKey
 )
 
 type searchableField struct {
@@ -97,14 +98,14 @@ func AADFromContext(ctx context.Context) []byte {
 // ResolveAAD derives the Authenticated Associated Data (AAD) from the context.
 // Priority:
 // 1. Explicit custom AAD set via WithAAD
-// 2. Tenant-scoped AAD ("urn:librevita:tenant:<tenant_id>") if WithTenantID is present
-// 3. Default application AAD ("urn:librevita")
+// 2. Clinic-scoped AAD ("urn:librevita:clinic:<clinic_id>") if WithClinicID is present
+// 3. Default application AAD ("urn:librevita") for legacy ciphertext
 func ResolveAAD(ctx context.Context) []byte {
 	if customAAD := AADFromContext(ctx); len(customAAD) > 0 {
 		return customAAD
 	}
-	if tenantID, ok := TenantIDFromContext(ctx); ok && tenantID != "" {
-		return []byte("urn:librevita:tenant:" + tenantID)
+	if clinicID, ok := ClinicIDFromContext(ctx); ok && clinicID != "" {
+		return []byte("urn:librevita:clinic:" + clinicID)
 	}
 	return []byte("urn:librevita")
 }
@@ -182,15 +183,35 @@ func EncryptorResolverFromContext(ctx context.Context) (EncryptorResolver, bool)
 	return r, ok && r != nil
 }
 
-// WithTenantID attaches a dynamic tenant ID string to the context.
-func WithTenantID(ctx context.Context, tenantID string) context.Context {
-	return context.WithValue(ctx, tenantIDKey, tenantID)
+// WithClinicID attaches the clinic UUID used as FLE AAD
+// (urn:librevita:clinic:<id>).
+func WithClinicID(ctx context.Context, clinicID string) context.Context {
+	return context.WithValue(ctx, clinicIDKey, clinicID)
 }
 
-// TenantIDFromContext retrieves the tenant ID string from context if present.
-func TenantIDFromContext(ctx context.Context) (string, bool) {
-	val, ok := ctx.Value(tenantIDKey).(string)
+// ClinicIDFromContext retrieves the clinic ID string from context if present.
+func ClinicIDFromContext(ctx context.Context) (string, bool) {
+	val, ok := ctx.Value(clinicIDKey).(string)
 	return val, ok && val != ""
+}
+
+// WithHasher attaches a clinic-scoped Hasher (blind index key from Clinic DEK).
+func WithHasher(ctx context.Context, h crypto.Hasher) context.Context {
+	return context.WithValue(ctx, hasherKey, h)
+}
+
+// HasherFromContext retrieves the Hasher from context if present.
+func HasherFromContext(ctx context.Context) (crypto.Hasher, bool) {
+	h, ok := ctx.Value(hasherKey).(crypto.Hasher)
+	return h, ok && h != nil
+}
+
+// ResolveHasher returns the context Hasher, or defaultHasher when absent.
+func ResolveHasher(ctx context.Context, defaultHasher crypto.Hasher) crypto.Hasher {
+	if h, ok := HasherFromContext(ctx); ok {
+		return h
+	}
+	return defaultHasher
 }
 
 // ResolveEncryptor dynamically resolves the active crypto.Encryptor using:

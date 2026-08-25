@@ -51,7 +51,9 @@ func New(csrf *auth.CSRF, cfg *config.Config, log *slog.Logger) *echo.Echo {
 		}
 	}
 
-	// Middleware order is significant.
+	// Middleware order is significant. Clinic Host resolution is
+	// registered with Echo.Pre from the clinic domain so this package
+	// does not import domain repositories.
 	e.Use(middleware.RequestID())
 	// RequestLog sits outside Recover so recovered panics surface as 500s.
 	e.Use(RequestLog(log))

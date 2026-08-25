@@ -99,6 +99,18 @@ func NewHasher(key []byte, opts ...HasherOption) (*KeyedHasher, error) {
 	}, nil
 }
 
+// NewHasherFromDEK derives the blind-index key from a clinic DEK via HKDF
+// (InfoBlindIndex) and returns a Hasher. Isolation between clinics is this key,
+// not a per-clinic catalog URN.
+func NewHasherFromDEK(dek []byte, opts ...HasherOption) (*KeyedHasher, error) {
+	if len(dek) < SizeDEK {
+		return nil, ErrWeakKey
+	}
+	blindKey := hkdfExpand(dek, InfoBlindIndex)
+	defer ZeroBytes(blindKey)
+	return NewHasher(blindKey, opts...)
+}
+
 // NewHasherFromBase64 creates a new KeyedHasher from a base64-encoded key string.
 func NewHasherFromBase64(keyB64 string, opts ...HasherOption) (*KeyedHasher, error) {
 	if keyB64 == "" {

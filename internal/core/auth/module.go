@@ -6,17 +6,29 @@ import (
 	"time"
 
 	"go.uber.org/fx"
+
+	"librevita.org/internal/core/config"
 )
 
 // Module provides session management, password hashing, and authentication services.
 var Module = fx.Module("auth",
 	fx.Provide(
 		NewSessionRepository,
-		NewSessionManager,
+		NewPlatformSessionRepository,
+		provideSessionManager,
 		NewCSRF,
 	),
 	fx.Invoke(registerSessionCleaner),
 )
+
+func provideSessionManager(repo SessionRepository, platform PlatformSessionRepository, cfg *config.Config, log *slog.Logger) (*SessionManager, error) {
+	m, err := NewSessionManager(repo, cfg, log)
+	if err != nil {
+		return nil, err
+	}
+	m.SetPlatformRepository(platform)
+	return m, nil
+}
 
 func registerSessionCleaner(lc fx.Lifecycle, sessions *SessionManager, log *slog.Logger) {
 	lc.Append(fx.Hook{

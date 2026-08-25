@@ -19,6 +19,7 @@ import (
 	_ "modernc.org/sqlite"
 
 	"librevita.org/ent"
+	"librevita.org/internal/core/clinicctx"
 	"librevita.org/internal/core/config"
 	"librevita.org/internal/core/database"
 	"librevita.org/internal/testutil"
@@ -81,6 +82,30 @@ func TestSessionLifecycle(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = m.Authenticate(context.Background(), token)
+	assert.Equal(t, ErrNoSession, err)
+}
+
+func TestAuthenticateRejectsOtherClinic(t *testing.T) {
+	client := openSessionTest(t)
+	seedUser(t, client, testUserID)
+	m := newManager(t, client, time.Hour)
+
+	home := clinicctx.WithTestClinic(context.Background())
+	token, err := m.Create(home, Principal{ID: testUserID, Email: "user@example.org", Name: "Test User", Role: RoleAdmin})
+	require.NoError(t, err)
+
+	p, err := m.Authenticate(home, token)
+	require.NoError(t, err)
+	assert.Equal(t, testUserID, p.ID)
+	assert.Equal(t, clinicctx.TestClinicID.String(), p.ClinicID)
+
+	other := clinicctx.WithClinic(context.Background(), &clinicctx.Clinic{
+		ID:       uuid.MustParse("01990000-0000-7000-8000-0000000000c2"),
+		Slug:     "other",
+		Name:     "Other",
+		Timezone: "America/Sao_Paulo",
+	})
+	_, err = m.Authenticate(other, token)
 	assert.Equal(t, ErrNoSession, err)
 }
 
@@ -219,6 +244,7 @@ func TestSessionCookieAttributes(t *testing.T) {
 		for _, c := range []*http.Cookie{m.Cookie("token"), m.ClearCookie()} {
 			assert.True(t, c.HttpOnly, "%s: session cookie must be HttpOnly", name)
 			assert.Equal(t, http.SameSiteLaxMode, c.SameSite, "%s: session cookie must be SameSite=Lax", name)
+			assert.Empty(t, c.Domain, "%s: session cookie must be host-only", name)
 			wantSecure := name == "production"
 			assert.Equal(t, wantSecure, c.Secure, "%s: Secure mismatch", name)
 		}

@@ -10,6 +10,7 @@ import (
 	"librevita.org/ent"
 	"librevita.org/ent/accesspolicy"
 	"librevita.org/ent/accesspolicyversion"
+	"librevita.org/internal/core/clinicctx"
 )
 
 type policyRepository struct {
@@ -22,9 +23,13 @@ func NewPolicyRepository(client *ent.Client) Repository {
 }
 
 func (r *policyRepository) SeedDefaults(ctx context.Context, defaults map[string]string) error {
+	clinicID, err := clinicctx.MustClinicID(ctx)
+	if err != nil {
+		return err
+	}
 	for name, expr := range defaults {
 		exists, err := r.client.AccessPolicy.Query().
-			Where(accesspolicy.NameEQ(name)).
+			Where(accesspolicy.NameEQ(name), accesspolicy.ClinicIDEQ(clinicID)).
 			Exist(ctx)
 		if err != nil {
 			return fmt.Errorf("policy repository: check %q: %w", name, err)
@@ -45,6 +50,7 @@ func (r *policyRepository) SeedDefaults(ctx context.Context, defaults map[string
 
 		pol, err := tx.AccessPolicy.Create().
 			SetID(pID).
+			SetClinicID(clinicID).
 			SetName(name).
 			SetExpression(expr).
 			Save(ctx)
@@ -111,11 +117,14 @@ func (r *policyRepository) Set(ctx context.Context, name, expression string, act
 			_ = tx.Rollback()
 			return fmt.Errorf("policy repository: uuid: %w", err)
 		}
-		pol, err := tx.AccessPolicy.Create().
+		create := tx.AccessPolicy.Create().
 			SetID(pID).
 			SetName(name).
-			SetExpression(expression).
-			Save(ctx)
+			SetExpression(expression)
+		if clinicID, ok := clinicctx.ClinicID(ctx); ok {
+			create.SetClinicID(clinicID)
+		}
+		pol, err := create.Save(ctx)
 		if err != nil {
 			_ = tx.Rollback()
 			return fmt.Errorf("policy repository: create: %w", err)

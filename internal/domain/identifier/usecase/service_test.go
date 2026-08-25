@@ -87,6 +87,7 @@ func setupTestServices(t *testing.T) (
 	log := slog.New(slog.DiscardHandler)
 
 	svc := usecase.NewService(idRepoMock, key, reg, log)
+	idRepoMock.EXPECT().AllowsSystem(mock.Anything, mock.Anything, mock.Anything).Return(true, nil).Maybe()
 	systemsSvc := usecase.NewSystemsService(sysRepoMock, reg, log)
 
 	return idRepoMock, sysRepoMock, vaultMock, svc, systemsSvc, reg

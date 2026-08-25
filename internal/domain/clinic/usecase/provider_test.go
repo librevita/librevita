@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"librevita.org/internal/core/clinicctx"
 	"librevita.org/internal/domain/clinic/model"
 	"librevita.org/internal/domain/clinic/usecase"
 	mocks "librevita.org/tests/mocks/domain/clinic/model"
@@ -16,12 +17,12 @@ import (
 
 func TestClockProviderReadsClinicZone(t *testing.T) {
 	repoMock := mocks.NewMockRepository(t)
-	repoMock.EXPECT().First(context.Background()).Return(&model.Clinic{
+	ctx := clinicctx.WithClinic(context.Background(), &clinicctx.Clinic{
 		ID:       uuid.MustParse("01990000-0000-7000-8000-000000000001"),
 		Timezone: "America/New_York",
-	}, nil).Once()
+	})
 
-	clock, err := usecase.NewClockProvider(repoMock).Clock(context.Background())
+	clock, err := usecase.NewClockProvider(repoMock).Clock(ctx)
 	require.NoError(t, err)
 
 	utc := time.Date(2026, 8, 6, 21, 4, 5, 0, time.UTC)
@@ -30,7 +31,6 @@ func TestClockProviderReadsClinicZone(t *testing.T) {
 
 func TestClockProviderFallsBackBeforeOnboarding(t *testing.T) {
 	repoMock := mocks.NewMockRepository(t)
-	repoMock.EXPECT().First(context.Background()).Return(nil, nil).Once()
 
 	clock, err := usecase.NewClockProvider(repoMock).Clock(context.Background())
 	require.NoError(t, err)
@@ -40,35 +40,40 @@ func TestClockProviderFallsBackBeforeOnboarding(t *testing.T) {
 }
 
 func TestClockProviderRefreshesAfterTTL(t *testing.T) {
-	repoMock := mocks.NewMockRepository(t)
-	repoMock.EXPECT().First(context.Background()).Return(&model.Clinic{
-		ID:       uuid.MustParse("01990000-0000-7000-8000-000000000001"),
+	clinicID := uuid.MustParse("01990000-0000-7000-8000-000000000001")
+	ctx := clinicctx.WithClinic(context.Background(), &clinicctx.Clinic{
+		ID:       clinicID,
 		Timezone: "America/New_York",
+		Name:     "NY",
+	})
+
+	repoMock := mocks.NewMockRepository(t)
+	repoMock.EXPECT().GetByID(ctx, clinicID).Return(&model.Clinic{
+		ID:       clinicID,
+		Timezone: "America/New_York",
+		Name:     "NY",
 	}, nil).Once()
 
 	provider := usecase.NewClockProvider(repoMock)
-	clock, err := provider.Clock(context.Background())
+	prof, err := provider.Profile(ctx)
 	require.NoError(t, err)
+	assert.Equal(t, "America/New_York", prof.Timezone)
 
-	utc := time.Date(2026, 8, 6, 18, 4, 5, 0, time.UTC)
-	assert.Equal(t, "2026-08-06 14:04", clock.FormatUI(utc))
-
-	// Second call within TTL should use cached result and not call First again
-	clockCached, err := provider.Clock(context.Background())
+	profCached, err := provider.Profile(ctx)
 	require.NoError(t, err)
-	assert.Equal(t, "2026-08-06 14:04", clockCached.FormatUI(utc))
+	assert.Equal(t, "NY", profCached.Name)
 
-	// New provider instance fetches fresh data from repo
 	repoMock2 := mocks.NewMockRepository(t)
-	repoMock2.EXPECT().First(context.Background()).Return(&model.Clinic{
-		ID:       uuid.MustParse("01990000-0000-7000-8000-000000000001"),
+	repoMock2.EXPECT().GetByID(ctx, clinicID).Return(&model.Clinic{
+		ID:       clinicID,
 		Timezone: "Asia/Tokyo",
+		Name:     "Tokyo",
 	}, nil).Once()
 
 	providerNew := usecase.NewClockProvider(repoMock2)
-	clockRefreshed, err := providerNew.Clock(context.Background())
+	profRefreshed, err := providerNew.Profile(ctx)
 	require.NoError(t, err)
-	assert.Equal(t, "2026-08-07 03:04", clockRefreshed.FormatUI(utc))
+	assert.Equal(t, "Asia/Tokyo", profRefreshed.Timezone)
 }
 
 func TestClockProviderClinicIDAndProfile(t *testing.T) {
@@ -78,21 +83,25 @@ func TestClockProviderClinicIDAndProfile(t *testing.T) {
 		Name:     "Test Clinic",
 		Timezone: "America/Sao_Paulo",
 	}
+	ctx := clinicctx.WithClinic(context.Background(), &clinicctx.Clinic{
+		ID:       clinicID,
+		Name:     clinic.Name,
+		Timezone: clinic.Timezone,
+	})
 
 	repoMock := mocks.NewMockRepository(t)
-	repoMock.EXPECT().First(context.Background()).Return(clinic, nil).Once()
+	repoMock.EXPECT().GetByID(ctx, clinicID).Return(clinic, nil).Once()
 
 	provider := usecase.NewClockProvider(repoMock)
-	id, err := provider.ClinicID(context.Background())
+	id, err := provider.ClinicID(ctx)
 	require.NoError(t, err)
 	assert.Equal(t, clinicID.String(), id)
 
-	prof, err := provider.Profile(context.Background())
+	prof, err := provider.Profile(ctx)
 	require.NoError(t, err)
 	assert.Equal(t, clinic, prof)
 
-	// ClockFor with specific timezone
-	userClock, err := provider.ClockFor(context.Background(), "Asia/Tokyo")
+	userClock, err := provider.ClockFor(ctx, "Asia/Tokyo")
 	require.NoError(t, err)
 	utc := time.Date(2026, 8, 6, 18, 4, 5, 0, time.UTC)
 	assert.Equal(t, "2026-08-07 03:04", userClock.FormatUI(utc))

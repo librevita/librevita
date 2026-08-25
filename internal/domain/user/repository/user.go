@@ -10,10 +10,12 @@ import (
 	"github.com/google/uuid"
 
 	"librevita.org/ent"
+	"librevita.org/ent/patient"
 	"librevita.org/ent/role"
 	"librevita.org/ent/specialty"
 	"librevita.org/ent/staffchangerequest"
 	"librevita.org/ent/user"
+	"librevita.org/internal/core/clinicctx"
 	usermodel "librevita.org/internal/domain/user/model"
 )
 
@@ -27,8 +29,17 @@ func NewUserRepository(client *ent.Client) usermodel.UserRepository {
 }
 
 func (r *userRepository) Create(ctx context.Context, u *usermodel.User) (*usermodel.User, error) {
+	clinicID := u.ClinicID
+	if clinicID == uuid.Nil {
+		var err error
+		clinicID, err = clinicctx.MustClinicID(ctx)
+		if err != nil {
+			return nil, err
+		}
+	}
 	create := r.client.User.Create().
 		SetID(u.ID).
+		SetClinicID(clinicID).
 		SetEmail(u.Email).
 		SetPasswordHash(u.PasswordHash).
 		SetDisplayName(u.DisplayName).
@@ -51,6 +62,23 @@ func (r *userRepository) Create(ctx context.Context, u *usermodel.User) (*usermo
 	}
 
 	return toUserDomain(saved, roleName), nil
+}
+
+func (r *userRepository) BindPortalPatient(ctx context.Context, userID, patientID uuid.UUID) error {
+	n, err := r.client.Patient.Update().
+		Where(patient.IDEQ(patientID), patient.UserIDIsNil()).
+		SetUserID(userID).
+		Save(ctx)
+	if err != nil {
+		if ent.IsConstraintError(err) {
+			return usermodel.ErrEmailTaken
+		}
+		return fmt.Errorf("user repository: bind portal patient: %w", err)
+	}
+	if n == 0 {
+		return usermodel.ErrUserNotFound
+	}
+	return nil
 }
 
 func (r *userRepository) GetByID(ctx context.Context, id uuid.UUID) (*usermodel.GetUserByIDRow, error) {
@@ -371,6 +399,7 @@ func toUserDomain(u *ent.User, roleName string) *usermodel.User {
 	}
 	return &usermodel.User{
 		ID:           u.ID,
+		ClinicID:     u.ClinicID,
 		Email:        u.Email,
 		PasswordHash: u.PasswordHash,
 		DisplayName:  u.DisplayName,

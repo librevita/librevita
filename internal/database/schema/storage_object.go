@@ -21,6 +21,8 @@ func (StorageObject) Fields() []ent.Field {
 		field.UUID("id", uuid.UUID{}).
 			Default(newUUIDv7).
 			Immutable(),
+		field.UUID("clinic_id", uuid.UUID{}).
+			Comment("Owning clinic"),
 		field.String("key").
 			NotEmpty().
 			Unique().
@@ -57,6 +59,11 @@ func (StorageObject) Fields() []ent.Field {
 // Edges of the StorageObject.
 func (StorageObject) Edges() []ent.Edge {
 	return []ent.Edge{
+		edge.From("clinic", Clinic.Type).
+			Ref("storage_objects").
+			Field("clinic_id").
+			Unique().
+			Required(),
 		edge.To("creator", User.Type).
 			Field("created_by").
 			Unique().
@@ -67,6 +74,7 @@ func (StorageObject) Edges() []ent.Edge {
 // Indexes of the StorageObject.
 func (StorageObject) Indexes() []ent.Index {
 	return []ent.Index{
+		index.Fields("clinic_id"),
 		index.Fields("domain", "resource_id", "created_at"),
 	}
 }

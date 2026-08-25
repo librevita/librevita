@@ -90,7 +90,7 @@ func newUserHandlerEnv(t *testing.T) *userHandlerTestEnv {
 	_ = fileStore
 	_ = fileIndex
 
-	h := httphandler.NewHandler(svc, nil, csrf, sessions, policies, auditLogger, clocks, nil, log)
+	h := httphandler.NewHandler(svc, nil, nil, nil, csrf, sessions, policies, auditLogger, clocks, nil, &config.Config{Mode: "development"}, log)
 	return &userHandlerTestEnv{
 		handler:     h,
 		sessions:    sessions,

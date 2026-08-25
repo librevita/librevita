@@ -3,10 +3,12 @@ package repository
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 
 	"librevita.org/ent"
+	"librevita.org/ent/clinic"
 	"librevita.org/internal/domain/clinic/model"
 )
 
@@ -17,17 +19,6 @@ type clinicRepository struct {
 // NewClinicRepository creates a clinic repository adapter.
 func NewClinicRepository(client *ent.Client) model.Repository {
 	return &clinicRepository{client: client}
-}
-
-func (r *clinicRepository) First(ctx context.Context) (*model.Clinic, error) {
-	row, err := r.client.Clinic.Query().First(ctx)
-	if err != nil {
-		if ent.IsNotFound(err) {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("clinic repository: first: %w", err)
-	}
-	return toClinicDomain(row), nil
 }
 
 func (r *clinicRepository) GetByID(ctx context.Context, id uuid.UUID) (*model.Clinic, error) {
@@ -41,23 +32,94 @@ func (r *clinicRepository) GetByID(ctx context.Context, id uuid.UUID) (*model.Cl
 	return toClinicDomain(row), nil
 }
 
+func (r *clinicRepository) GetBySlug(ctx context.Context, slug string) (*model.Clinic, error) {
+	row, err := r.client.Clinic.Query().Where(clinic.SlugEQ(slug)).Only(ctx)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("clinic repository: get by slug: %w", err)
+	}
+	return toClinicDomain(row), nil
+}
+
+func (r *clinicRepository) CreateShell(ctx context.Context, c *model.Clinic) (*model.Clinic, error) {
+	create := r.client.Clinic.Create().
+		SetID(c.ID).
+		SetSlug(c.Slug).
+		SetName(c.Name).
+		SetCountry(c.Country).
+		SetTimezone(c.Timezone)
+	if c.TaxID != "" {
+		create.SetTaxID(c.TaxID)
+	}
+	if c.Phone != "" {
+		create.SetPhone(c.Phone)
+	}
+	if c.Email != "" {
+		create.SetEmail(c.Email)
+	}
+	if c.Street != "" {
+		create.SetStreet(c.Street)
+	}
+	if c.City != "" {
+		create.SetCity(c.City)
+	}
+	if c.State != "" {
+		create.SetState(c.State)
+	}
+	if c.PostalCode != "" {
+		create.SetPostalCode(c.PostalCode)
+	}
+	row, err := create.Save(ctx)
+	if err != nil {
+		if ent.IsConstraintError(err) {
+			return nil, fmt.Errorf("clinic repository: slug taken")
+		}
+		return nil, fmt.Errorf("clinic repository: create shell: %w", err)
+	}
+	return toClinicDomain(row), nil
+}
+
+func (r *clinicRepository) MarkOnboarded(ctx context.Context, id uuid.UUID, at time.Time) error {
+	err := r.client.Clinic.UpdateOneID(id).SetOnboardedAt(at).Exec(ctx)
+	if err != nil {
+		return fmt.Errorf("clinic repository: mark onboarded: %w", err)
+	}
+	return nil
+}
+
+func (r *clinicRepository) List(ctx context.Context) ([]*model.Clinic, error) {
+	rows, err := r.client.Clinic.Query().Order(ent.Asc(clinic.FieldName)).All(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("clinic repository: list: %w", err)
+	}
+	out := make([]*model.Clinic, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, toClinicDomain(row))
+	}
+	return out, nil
+}
+
 func toClinicDomain(row *ent.Clinic) *model.Clinic {
 	if row == nil {
 		return nil
 	}
 	return &model.Clinic{
-		ID:         row.ID,
-		Name:       row.Name,
-		TaxID:      row.TaxID,
-		Phone:      row.Phone,
-		Email:      row.Email,
-		Street:     row.Street,
-		City:       row.City,
-		State:      row.State,
-		PostalCode: row.PostalCode,
-		Country:    row.Country,
-		Timezone:   row.Timezone,
-		CreatedAt:  row.CreatedAt,
-		UpdatedAt:  row.UpdatedAt,
+		ID:          row.ID,
+		Slug:        row.Slug,
+		Name:        row.Name,
+		TaxID:       row.TaxID,
+		Phone:       row.Phone,
+		Email:       row.Email,
+		Street:      row.Street,
+		City:        row.City,
+		State:       row.State,
+		PostalCode:  row.PostalCode,
+		Country:     row.Country,
+		Timezone:    row.Timezone,
+		OnboardedAt: row.OnboardedAt,
+		CreatedAt:   row.CreatedAt,
+		UpdatedAt:   row.UpdatedAt,
 	}
 }

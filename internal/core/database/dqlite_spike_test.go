@@ -16,7 +16,6 @@ import (
 
 	"librevita.org/ent"
 	"librevita.org/ent/clinic"
-	"librevita.org/ent/role"
 	"librevita.org/internal/core/crypto"
 	"librevita.org/internal/core/vault"
 	identifiermodel "librevita.org/internal/domain/identifier/model"
@@ -55,6 +54,7 @@ func TestDqliteSpike(t *testing.T) {
 
 	_, err = tx.Clinic.Create().
 		SetID(uuid.MustParse("00000000-0000-0000-0000-0000000000d1")).
+		SetSlug("dqlite").
 		SetName("Dqlite").
 		SetTaxID("1").
 		SetCountry("BR").
@@ -69,6 +69,7 @@ func TestDqliteSpike(t *testing.T) {
 
 	_, err = tx.Clinic.Create().
 		SetID(uuid.MustParse("00000000-0000-0000-0000-0000000000d2")).
+		SetSlug("rolled").
 		SetName("Rolled").
 		SetTaxID("2").
 		SetCountry("BR").
@@ -84,11 +85,16 @@ func TestDqliteSpike(t *testing.T) {
 	// FLE round trip: encrypted identifier + blind index + duplicate.
 	clinicID := "00000000-0000-0000-0000-0000000000d1"
 	adminID := "00000000-0000-0000-0000-0000000000d5"
-	adminRole, err := client.Role.Query().Where(role.NameEQ("admin")).Only(context.Background())
+	adminRole, err := client.Role.Create().
+		SetClinicID(uuid.MustParse(clinicID)).
+		SetName("admin").
+		SetSystem(true).
+		Save(context.Background())
 	require.NoError(t, err)
 
 	_, err = client.User.Create().
 		SetID(uuid.MustParse(adminID)).
+		SetClinicID(uuid.MustParse(clinicID)).
 		SetEmail("admin@dqlite.test").
 		SetPasswordHash("x").
 		SetDisplayName("Admin").
@@ -114,6 +120,15 @@ func TestDqliteSpike(t *testing.T) {
 	rows, err := sysRepo.ListActive(context.Background())
 	require.NoError(t, err)
 	require.NoError(t, reg.Reload(rows))
+
+	clinicUUID := uuid.MustParse(clinicID)
+	for _, row := range rows {
+		_, err = client.ClinicIdentifierSystem.Create().
+			SetClinicID(clinicUUID).
+			SetIdentifierSystemID(row.ID).
+			Save(context.Background())
+		require.NoError(t, err)
+	}
 
 	masterKey, err := crypto.NewMasterKey("nAmIvOXVc0vb6M9G7P9q2j2yK1WxP3sJ8q5dR4tU6wA=", v)
 	require.NoError(t, err)

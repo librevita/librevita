@@ -154,7 +154,7 @@ func (e *Engine) DecryptPatientData(ctx context.Context, patientURN string, aad,
 // EncryptPayload encrypts any domain payload using the entity/patient DEK from vault under XChaCha20-Poly1305.
 // Ensures that ephemeral keys in memory are wiped with ZeroBytes upon completion.
 func (e *Engine) EncryptPayload(ctx context.Context, urn string, aad, plaintext []byte) (ciphertext, nonce []byte, err error) {
-	dek, err := e.EnsurePatientDEK(ctx, urn)
+	dek, err := e.dekForURN(ctx, urn, true)
 	if err != nil {
 		return nil, nil, fmt.Errorf("crypto: get dek for encrypt: %w", err)
 	}
@@ -177,7 +177,7 @@ func (e *Engine) EncryptPayload(ctx context.Context, urn string, aad, plaintext 
 // DecryptPayload decrypts any domain payload using the entity/patient DEK from vault under XChaCha20-Poly1305.
 // Ensures that ephemeral keys in memory are wiped with ZeroBytes upon completion.
 func (e *Engine) DecryptPayload(ctx context.Context, urn string, aad, ciphertext, nonce []byte) ([]byte, error) {
-	dek, err := e.GetPatientDEK(ctx, urn)
+	dek, err := e.dekForURN(ctx, urn, false)
 	if err != nil {
 		return nil, fmt.Errorf("crypto: get dek for decrypt: %w", err)
 	}
@@ -194,6 +194,19 @@ func (e *Engine) DecryptPayload(ctx context.Context, urn string, aad, ciphertext
 	}
 
 	return plaintext, nil
+}
+
+func (e *Engine) dekForURN(ctx context.Context, urn string, ensure bool) ([]byte, error) {
+	if clinicID, patientID, ok := ParsePatientURN(urn); ok {
+		if ensure {
+			return e.EnsurePatientDEKForClinic(ctx, clinicID, patientID)
+		}
+		return e.GetPatientDEKForClinic(ctx, clinicID, patientID)
+	}
+	if ensure {
+		return e.EnsurePatientDEK(ctx, urn)
+	}
+	return e.GetPatientDEK(ctx, urn)
 }
 
 // EncryptStruct serializes a Go struct to JSON and encrypts it using the entity's DEK.

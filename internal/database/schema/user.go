@@ -6,6 +6,7 @@ import (
 	"entgo.io/ent"
 	"entgo.io/ent/schema/edge"
 	"entgo.io/ent/schema/field"
+	"entgo.io/ent/schema/index"
 	"github.com/google/uuid"
 )
 
@@ -20,10 +21,11 @@ func (User) Fields() []ent.Field {
 		field.UUID("id", uuid.UUID{}).
 			Default(newUUIDv7).
 			Immutable(),
+		field.UUID("clinic_id", uuid.UUID{}).
+			Comment("Owning clinic; users are never shared across clinics"),
 		field.String("email").
 			NotEmpty().
-			Unique().
-			Comment("Unique email address for authentication"),
+			Comment("Email unique per clinic (clinic_id, email)"),
 		field.String("password_hash").
 			NotEmpty().
 			Sensitive().
@@ -55,6 +57,11 @@ func (User) Fields() []ent.Field {
 // Edges of the User.
 func (User) Edges() []ent.Edge {
 	return []ent.Edge{
+		edge.From("clinic", Clinic.Type).
+			Ref("users").
+			Field("clinic_id").
+			Unique().
+			Required(),
 		edge.From("role", Role.Type).
 			Ref("users").
 			Field("role_id").
@@ -65,5 +72,14 @@ func (User) Edges() []ent.Edge {
 		edge.To("staff_requests", StaffChangeRequest.Type),
 		edge.To("appointments", Appointment.Type),
 		edge.To("episodes", Episode.Type),
+		edge.To("portal_patient", Patient.Type),
+	}
+}
+
+// Indexes of the User.
+func (User) Indexes() []ent.Index {
+	return []ent.Index{
+		index.Fields("clinic_id", "email").
+			Unique(),
 	}
 }

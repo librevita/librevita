@@ -57,6 +57,7 @@ func setupTestRepository(t *testing.T) (patientmodel.PatientRepository, *ent.Cli
 	clinicID := uuid.New()
 	_, err = client.Clinic.Create().
 		SetID(clinicID).
+		SetSlug("clinica-central").
 		SetName("Clínica Central").
 		Save(context.Background())
 	require.NoError(t, err)
@@ -64,6 +65,7 @@ func setupTestRepository(t *testing.T) (patientmodel.PatientRepository, *ent.Cli
 	roleID := uuid.New()
 	_, err = client.Role.Create().
 		SetID(roleID).
+		SetClinicID(clinicID).
 		SetName("Doctor").
 		Save(context.Background())
 	require.NoError(t, err)
@@ -71,6 +73,7 @@ func setupTestRepository(t *testing.T) (patientmodel.PatientRepository, *ent.Cli
 	userID := uuid.New()
 	_, err = client.User.Create().
 		SetID(userID).
+		SetClinicID(clinicID).
 		SetRoleID(roleID).
 		SetEmail("dr.silva@example.org").
 		SetDisplayName("Dr. Silva").

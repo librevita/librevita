@@ -7,60 +7,75 @@ import (
 
 	"github.com/google/uuid"
 
+	"librevita.org/internal/core/clinicctx"
 	"librevita.org/internal/domain/clinic/model"
 )
 
-// clockCacheTTL bounds how stale a cached clinic profile can be. The
-// profile changes rarely; a short TTL keeps the UI honest without a query
-// per request.
+// clockCacheTTL bounds how stale a cached clinic profile can be.
 const clockCacheTTL = time.Minute
 
-// ClockProvider resolves the clinic profile (id, timezone, and the full
-// row) into cached values shared by every request.
+type cachedClinic struct {
+	row *model.Clinic
+	exp time.Time
+}
+
+// ClockProvider resolves the request clinic (id, timezone, and the full
+// row) into cached values keyed by clinic id.
 type ClockProvider struct {
-	repo model.Repository
-	mu   sync.Mutex
-	row  *model.Clinic
-	exp  time.Time
+	repo  model.Repository
+	mu    sync.Mutex
+	cache map[uuid.UUID]cachedClinic
 }
 
 // NewClockProvider is the Fx provider.
 func NewClockProvider(repo model.Repository) *ClockProvider {
-	return &ClockProvider{repo: repo}
+	return &ClockProvider{repo: repo, cache: make(map[uuid.UUID]cachedClinic)}
 }
 
-// load returns the cached clinic row, refreshing it after the TTL.
-// Systems without a clinic profile yet (pre-onboarding) fall back to the
-// default zone and an empty id.
-func (p *ClockProvider) load(ctx context.Context) (*model.Clinic, error) {
+func (p *ClockProvider) loadByID(ctx context.Context, id uuid.UUID) (*model.Clinic, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	if p.row != nil && time.Now().Before(p.exp) {
-		return p.row, nil
+	if entry, ok := p.cache[id]; ok && time.Now().Before(entry.exp) {
+		return entry.row, nil
 	}
 
-	row, err := p.repo.First(ctx)
+	row, err := p.repo.GetByID(ctx, id)
 	if err != nil {
 		return nil, err
 	}
 	if row == nil {
-		row = &model.Clinic{Timezone: model.DefaultTimezone}
+		row = &model.Clinic{ID: id, Timezone: model.DefaultTimezone}
 	}
-
-	p.row = row
-	p.exp = time.Now().Add(clockCacheTTL)
-	return p.row, nil
+	p.cache[id] = cachedClinic{row: row, exp: time.Now().Add(clockCacheTTL)}
+	return row, nil
 }
 
-// Clock returns the clinic's clock. Systems without a clinic profile yet
-// (pre-onboarding) fall back to the default zone.
-func (p *ClockProvider) Clock(ctx context.Context) (*model.Clock, error) {
-	row, err := p.load(ctx)
-	if err != nil {
-		return nil, err
+func (p *ClockProvider) fromContext(ctx context.Context) (*model.Clinic, bool) {
+	c, ok := clinicctx.FromContext(ctx)
+	if !ok {
+		return nil, false
 	}
-	return model.NewClock(row.Timezone), nil
+	return &model.Clinic{
+		ID:          c.ID,
+		Slug:        c.Slug,
+		Name:        c.Name,
+		Timezone:    c.Timezone,
+		OnboardedAt: c.OnboardedAt,
+	}, true
+}
+
+// Clock returns the clinic's clock. Apex and pre-onboarding fall back
+// to the default zone.
+func (p *ClockProvider) Clock(ctx context.Context) (*model.Clock, error) {
+	if c, ok := p.fromContext(ctx); ok {
+		tz := c.Timezone
+		if tz == "" {
+			tz = model.DefaultTimezone
+		}
+		return model.NewClock(tz), nil
+	}
+	return model.NewClock(model.DefaultTimezone), nil
 }
 
 // ClockFor returns the clock for the user's personal timezone, falling
@@ -72,19 +87,20 @@ func (p *ClockProvider) ClockFor(ctx context.Context, tz string) (*model.Clock, 
 	return p.Clock(ctx)
 }
 
-// ClinicID returns the clinic's id, cached briefly.
+// ClinicID returns the clinic's id from request context.
 func (p *ClockProvider) ClinicID(ctx context.Context) (string, error) {
-	row, err := p.load(ctx)
-	if err != nil {
-		return "", err
+	if id, ok := clinicctx.ClinicID(ctx); ok {
+		return id.String(), nil
 	}
-	if row.ID == uuid.Nil {
-		return "", nil
-	}
-	return row.ID.String(), nil
+	return "", nil
 }
 
-// Profile returns the clinic profile row, cached briefly.
+// Profile returns the full clinic row, cached by id. Apex returns an
+// empty profile with the default timezone.
 func (p *ClockProvider) Profile(ctx context.Context) (*model.Clinic, error) {
-	return p.load(ctx)
+	id, ok := clinicctx.ClinicID(ctx)
+	if !ok {
+		return &model.Clinic{Timezone: model.DefaultTimezone}, nil
+	}
+	return p.loadByID(ctx, id)
 }

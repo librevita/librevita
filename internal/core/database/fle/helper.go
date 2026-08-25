@@ -1,6 +1,7 @@
 package fle
 
 import (
+	"bytes"
 	"database/sql"
 	"database/sql/driver"
 	"encoding/json"
@@ -156,7 +157,13 @@ func DecryptString(encryptor crypto.Encryptor, ciphertext, aad []byte) (string, 
 	}
 	plaintext, err := encryptor.Decrypt(ciphertext, aad)
 	if err != nil {
-		return "", err
+		legacy := crypto.LegacyAAD()
+		if len(aad) == 0 || !bytes.Equal(aad, legacy) {
+			plaintext, err = encryptor.Decrypt(ciphertext, legacy)
+		}
+		if err != nil {
+			return "", err
+		}
 	}
 	defer crypto.ZeroBytes(plaintext)
 	return string(plaintext), nil

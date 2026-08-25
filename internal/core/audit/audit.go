@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"golang.org/x/crypto/blake2b"
+
+	"librevita.org/internal/core/clinicctx"
 )
 
 // Event is the structured audit payload recorded for an operation.
@@ -27,6 +29,7 @@ type Event struct {
 	IP           string
 	RequestID    string
 	Detail       string
+	ClinicID     string
 }
 
 // EventRow is a stored audit event with its cursor id.
@@ -58,6 +61,7 @@ type StoredEntry struct {
 	RequestID    *string
 	Detail       *string
 	Signature    string
+	ClinicID     *string
 }
 
 // Repository defines the persistence interface for audit records.
@@ -113,6 +117,11 @@ func (l *Logger) Record(ctx context.Context, ev Event) {
 	}
 
 	createdAt := time.Now().UTC()
+	if ev.ClinicID == "" {
+		if id, ok := clinicctx.ClinicID(ctx); ok {
+			ev.ClinicID = id.String()
+		}
+	}
 	prev, err := l.repo.LastSignature(ctx)
 	if err != nil {
 		l.log.Error("audit record failed", "action", ev.Action, "error", err)
@@ -149,6 +158,7 @@ func (l *Logger) VerifyChain(ctx context.Context) (int64, error) {
 			IP:           orEmpty(r.IP),
 			RequestID:    orEmpty(r.RequestID),
 			Detail:       orEmpty(r.Detail),
+			ClinicID:     orEmpty(r.ClinicID),
 		}
 		want := chainHash(prev, ev, r.CreatedAt)
 		if r.Signature != want {
@@ -178,6 +188,7 @@ func chainPayload(ev Event, createdAt time.Time) string {
 		esc(ev.IP),
 		esc(ev.RequestID),
 		esc(ev.Detail),
+		esc(ev.ClinicID),
 	}, "|")
 }
 

@@ -53,6 +53,7 @@ const (
 	defaultLogAgeDays     = 28
 
 	defaultMaxConcurrentHashes = 4
+	defaultBaseDomain          = "lv.test"
 )
 
 // Config is the application configuration root.
@@ -71,6 +72,12 @@ type Config struct {
 
 	// HTTPPort is the TCP port the HTTP server listens on.
 	HTTPPort int `koanf:"http_port"`
+
+	// BaseDomain is the DNS suffix used to resolve clinics from Host
+	// (`{slug}.{base_domain}`). Apex is this value or `www.` plus this
+	// value. Required outside development; defaults to lv.test in
+	// development.
+	BaseDomain string `koanf:"base_domain"`
 
 	// TrustedProxies is a comma-separated list of proxy addresses whose
 	// X-Forwarded-For header is trusted for rate limiting and audit IPs.
@@ -361,6 +368,7 @@ func RegisterFlags(fs *pflag.FlagSet) {
 	stringFlag(fs, "mode", defaultMode, "runtime mode: development or production")
 	stringFlag(fs, "http-bind", defaultHTTPBind, "HTTP bind address (0.0.0.0, 127.0.0.1, ...)")
 	intFlag(fs, "http-port", defaultHTTPPort, "HTTP listen port")
+	stringFlag(fs, "base-domain", "", "DNS suffix for clinic hosts ({slug}.{base-domain}; default lv.test in development)")
 	stringFlag(fs, "trusted-proxies", "", "comma-separated proxy IPs allowed to set X-Forwarded-For")
 	intFlag(fs, "hsts-max-age", 0, "Strict-Transport-Security max-age in seconds (0 disables; HTTPS deployments only)")
 	stringFlag(fs, "data-dir", defaultDataDir, "base directory for database and logs")
@@ -516,6 +524,11 @@ func (c *Config) normalize() {
 		c.HTTPPort = defaultHTTPPort
 	}
 
+	c.BaseDomain = strings.ToLower(strings.TrimSpace(c.BaseDomain))
+	if c.BaseDomain == "" && !c.IsProduction() {
+		c.BaseDomain = defaultBaseDomain
+	}
+
 	c.DataDir = strings.TrimSpace(c.DataDir)
 	if c.DataDir == "" {
 		c.DataDir = defaultDataDir
@@ -593,6 +606,10 @@ func (c *Config) normalize() {
 }
 
 func (c *Config) validate() error {
+	if c.IsProduction() && strings.TrimSpace(c.BaseDomain) == "" {
+		return fmt.Errorf("config: base_domain is required in production (LIBREVITA_BASE_DOMAIN)")
+	}
+
 	switch c.Crypto.HashAlgorithm {
 	case "", "blake2s", "blake2b":
 	default:
@@ -687,6 +704,8 @@ func mapFlagKey(name string) string {
 		return "http_bind"
 	case "http-port", "http_port":
 		return "http_port"
+	case "base-domain", "base_domain":
+		return "base_domain"
 	case "data-dir", "data_dir":
 		return "data_dir"
 	case "db-driver", "db_driver":
@@ -789,6 +808,8 @@ func mapEnvironmentKey(key string) string {
 		return "http_bind"
 	case "http_port":
 		return "http_port"
+	case "base_domain":
+		return "base_domain"
 	case "data_dir":
 		return "data_dir"
 	case "database_driver":

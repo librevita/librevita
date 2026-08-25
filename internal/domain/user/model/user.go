@@ -40,6 +40,7 @@ var (
 // User represents a user account domain model.
 type User struct {
 	ID           uuid.UUID
+	ClinicID     uuid.UUID
 	Email        string
 	PasswordHash string
 	DisplayName  string

@@ -13,6 +13,7 @@ import (
 
 	"librevita.org/internal/core/audit"
 	"librevita.org/internal/core/auth"
+	"librevita.org/internal/core/clinicctx"
 	clinicmodel "librevita.org/internal/domain/clinic/model"
 )
 
@@ -41,9 +42,10 @@ func (e *ValidationError) Error() string { return "usecase: " + e.Msg }
 
 // RegisterInput is the account creation request.
 type RegisterInput struct {
-	Name     string
-	Email    string
-	Password string
+	Name      string
+	Email     string
+	Password  string
+	PatientID string
 }
 
 // ClinicInput is the clinic profile collected during onboarding.
@@ -121,6 +123,15 @@ func (s *Service) Register(ctx context.Context, in RegisterInput) (*auth.Princip
 		return nil, "", err
 	}
 
+	patientUUID, err := uuid.Parse(strings.TrimSpace(in.PatientID))
+	if err != nil {
+		s.audit.Record(ctx, audit.Event{
+			Action: "register", Resource: "user", Result: audit.AuditResultFailure,
+			Detail: "patient is required",
+		})
+		return nil, "", &ValidationError{Msg: "patient is required"}
+	}
+
 	hash, err := auth.HashPassword(password)
 	if err != nil {
 		return nil, "", err
@@ -146,6 +157,9 @@ func (s *Service) Register(ctx context.Context, in RegisterInput) (*auth.Princip
 	})
 	if err != nil {
 		return nil, "", ErrEmailTaken
+	}
+	if err := s.userRepo.BindPortalPatient(ctx, u.ID, patientUUID); err != nil {
+		return nil, "", &ValidationError{Msg: "could not link the patient portal"}
 	}
 
 	principal, token, err := s.startSession(ctx, u.ID.String(), u.Email, u.DisplayName, auth.RolePatient.String())
@@ -191,8 +205,9 @@ func (s *Service) UserByID(ctx context.Context, id string) (*GetUserByIDRow, err
 	return s.userRepo.GetByID(ctx, uUUID)
 }
 
-// Onboard creates the initial admin account and the clinic profile in one transaction.
-func (s *Service) Onboard(ctx context.Context, admin RegisterInput, c ClinicInput) (*auth.Principal, string, error) {
+// Onboard creates the first clinic admin, system roles, and policies for the
+// clinic already in context (the Host shell).
+func (s *Service) Onboard(ctx context.Context, admin RegisterInput, systemIDs []uuid.UUID) (*auth.Principal, string, error) {
 	name := strings.TrimSpace(admin.Name)
 	email := normalizeEmail(admin.Email)
 
@@ -200,7 +215,7 @@ func (s *Service) Onboard(ctx context.Context, admin RegisterInput, c ClinicInpu
 		s.auditOnboard(ctx, err.Error())
 		return nil, "", err
 	}
-	if err := validateClinic(c); err != nil {
+	if _, err := clinicctx.MustClinicID(ctx); err != nil {
 		s.auditOnboard(ctx, err.Error())
 		return nil, "", err
 	}
@@ -215,34 +230,15 @@ func (s *Service) Onboard(ctx context.Context, admin RegisterInput, c ClinicInpu
 		return nil, "", fmt.Errorf("usecase: generate admin id: %w", err)
 	}
 
-	clinicID, err := uuid.NewV7()
-	if err != nil {
-		return nil, "", fmt.Errorf("usecase: generate clinic id: %w", err)
-	}
-
-	adminRole, err := s.roleRepo.GetByName(ctx, auth.RoleAdmin.String())
-	if err != nil {
-		return nil, "", fmt.Errorf("usecase: resolve admin role: %w", err)
-	}
-
 	adminUser := &User{
 		ID:           adminID,
 		Email:        email,
 		PasswordHash: hash,
 		DisplayName:  name,
-		RoleID:       adminRole.ID,
 		Active:       true,
 	}
 
-	clinicProfile := &clinicmodel.Clinic{
-		ID:       clinicID,
-		Name:     strings.TrimSpace(c.Name),
-		TaxID:    c.TaxID,
-		Country:  strings.ToUpper(strings.TrimSpace(orDefault(c.Country, "BR"))),
-		Timezone: strings.TrimSpace(orDefault(c.Timezone, clinicmodel.DefaultTimezone)),
-	}
-
-	createdUser, err := s.setupRepo.Onboard(ctx, adminUser, clinicProfile)
+	createdUser, err := s.setupRepo.Onboard(ctx, adminUser, systemIDs)
 	if err != nil {
 		if errors.Is(err, ErrAlreadyOnboarded) {
 			return nil, "", ErrAlreadyOnboarded
@@ -324,6 +320,9 @@ func (s *Service) startSession(ctx context.Context, id, email, name, roleName st
 		Email: email,
 		Name:  name,
 		Role:  auth.Role(roleName),
+	}
+	if cid, ok := clinicctx.ClinicID(ctx); ok {
+		principal.ClinicID = cid.String()
 	}
 
 	token, err := s.sessions.Create(ctx, *principal)

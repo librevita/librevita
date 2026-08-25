@@ -22,6 +22,7 @@ func TestCSRFCookieAttributes(t *testing.T) {
 		cookie := c.Cookie("token")
 		assert.True(t, cookie.HttpOnly, "%s: CSRF cookie must be HttpOnly", name)
 		assert.Equal(t, http.SameSiteLaxMode, cookie.SameSite, "%s: CSRF cookie must be SameSite=Lax", name)
+		assert.Empty(t, cookie.Domain, "%s: CSRF cookie must be host-only", name)
 		wantSecure := name == "production"
 		assert.Equal(t, wantSecure, cookie.Secure, "%s: Secure mismatch", name)
 	}

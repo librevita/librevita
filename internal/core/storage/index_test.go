@@ -16,6 +16,7 @@ import (
 
 	"librevita.org/ent"
 	"librevita.org/ent/storageobject"
+	"librevita.org/internal/core/clinicctx"
 	"librevita.org/internal/core/database"
 )
 
@@ -35,14 +36,27 @@ func openIndexDB(t *testing.T) (*sql.DB, *ent.Client) {
 	client := ent.NewClient(ent.Driver(drv))
 	t.Cleanup(func() { _ = client.Close() })
 
+	_, err = client.Clinic.Create().
+		SetID(clinicctx.TestClinicID).
+		SetSlug("test").
+		SetName("Test Clinic").
+		SetCountry("BR").
+		SetTimezone("UTC").
+		Save(context.Background())
+	require.NoError(t, err)
+
 	return db, client
+}
+
+func storageCtx() context.Context {
+	return clinicctx.WithTestClinic(context.Background())
 }
 
 // TestStorageIndexWire validates the master index end to end: the blob
 // goes to the Store, the metadata row goes to storage_objects, and the
 // index queries resolve it back.
 func TestStorageIndexWire(t *testing.T) {
-	ctx := context.Background()
+	ctx := storageCtx()
 	store := newTestLocal(t)
 	_, client := openIndexDB(t)
 
@@ -57,6 +71,7 @@ func TestStorageIndexWire(t *testing.T) {
 
 	created, err := client.StorageObject.Create().
 		SetID(id).
+		SetClinicID(clinicctx.TestClinicID).
 		SetKey(key).
 		SetDomain("patient_document").
 		SetResourceID(resource.String()).
@@ -107,6 +122,7 @@ func TestStorageIndexRejectsNegativeSize(t *testing.T) {
 
 	_, err = client.StorageObject.Create().
 		SetID(badID).
+		SetClinicID(clinicctx.TestClinicID).
 		SetKey("k/1").
 		SetDomain("d").
 		SetResourceID(uuid.MustParse("01990000-0000-7000-8000-000000000001").String()).

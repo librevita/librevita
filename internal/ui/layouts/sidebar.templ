@@ -61,6 +61,12 @@ func navSections(principal *auth.Principal) []navSection {
 		{"/", "Dashboard", "home", "dashboard"},
 		{"/patients", "Patients", "person", "patients"},
 	}
+	if principal != nil && principal.Platform {
+		return []navSection{{"General", []navItem{
+			{"/", "Clinics", "home", "dashboard"},
+			{"/clinics/new", "New clinic", "medical_services", "clinics"},
+		}}}
+	}
 	if principal != nil && principal.Role != auth.RolePatient {
 		general = append(general, navItem{"/calendar", "Calendar", "calendar_month", "calendar"})
 		general = append(general, navItem{"/staff", "Physicians", "stethoscope", "physicians"})

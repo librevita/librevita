@@ -81,6 +81,7 @@ type IdentifierSystem struct {
 // IdentifierRecord is the encrypted physical record of an identifier.
 type IdentifierRecord struct {
 	ID              uuid.UUID
+	ClinicID        uuid.UUID
 	PatientID       uuid.UUID
 	System          string
 	ValueCiphertext []byte

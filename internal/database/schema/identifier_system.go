@@ -64,5 +64,6 @@ func (IdentifierSystem) Fields() []ent.Field {
 func (IdentifierSystem) Edges() []ent.Edge {
 	return []ent.Edge{
 		edge.To("identifiers", PatientIdentifier.Type),
+		edge.To("clinic_opt_ins", ClinicIdentifierSystem.Type),
 	}
 }

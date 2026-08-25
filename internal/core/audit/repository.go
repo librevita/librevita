@@ -5,8 +5,11 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
+
 	"librevita.org/ent"
 	"librevita.org/ent/auditlog"
+	"librevita.org/internal/core/clinicctx"
 )
 
 type auditRepository struct {
@@ -20,6 +23,9 @@ func NewAuditRepository(client *ent.Client) Repository {
 
 func (r *auditRepository) Recent(ctx context.Context, limit int, before int64) ([]EventRow, error) {
 	query := r.client.AuditLog.Query()
+	if id, ok := clinicctx.ClinicID(ctx); ok {
+		query = query.Where(auditlog.ClinicIDEQ(id))
+	}
 	if before > 0 {
 		query = query.Where(auditlog.IDLT(int(before)))
 	}
@@ -48,8 +54,11 @@ func (r *auditRepository) Recent(ctx context.Context, limit int, before int64) (
 }
 
 func (r *auditRepository) ForResource(ctx context.Context, resource string, limit int) ([]EventRow, error) {
-	rows, err := r.client.AuditLog.Query().
-		Where(auditlog.ResourceEQ(resource)).
+	query := r.client.AuditLog.Query().Where(auditlog.ResourceEQ(resource))
+	if id, ok := clinicctx.ClinicID(ctx); ok {
+		query = query.Where(auditlog.ClinicIDEQ(id))
+	}
+	rows, err := query.
 		Order(ent.Desc(auditlog.FieldID)).
 		Limit(limit).
 		All(ctx)
@@ -74,6 +83,7 @@ func (r *auditRepository) ForResource(ctx context.Context, resource string, limi
 }
 
 func (r *auditRepository) LastSignature(ctx context.Context) (string, error) {
+	ctx = clinicctx.WithSkipIsolation(ctx)
 	last, err := r.client.AuditLog.Query().
 		Order(ent.Desc(auditlog.FieldID)).
 		First(ctx)
@@ -87,6 +97,7 @@ func (r *auditRepository) LastSignature(ctx context.Context) (string, error) {
 }
 
 func (r *auditRepository) Record(ctx context.Context, ev Event, createdAt time.Time, signature string) error {
+	ctx = clinicctx.WithSkipIsolation(ctx)
 	create := r.client.AuditLog.Create().
 		SetAction(ev.Action).
 		SetResource(ev.Resource).
@@ -97,6 +108,12 @@ func (r *auditRepository) Record(ctx context.Context, ev Event, createdAt time.T
 		SetUserAgent(ev.UserAgent).
 		SetSignature(signature).
 		SetCreatedAt(createdAt)
+
+	if ev.ClinicID != "" {
+		if id, err := uuid.Parse(ev.ClinicID); err == nil {
+			create.SetClinicID(id)
+		}
+	}
 
 	if ev.ActorID != "" {
 		create.SetActorID(ev.ActorID)
@@ -122,6 +139,7 @@ func (r *auditRepository) Record(ctx context.Context, ev Event, createdAt time.T
 }
 
 func (r *auditRepository) All(ctx context.Context) ([]StoredEntry, error) {
+	ctx = clinicctx.WithSkipIsolation(ctx)
 	rows, err := r.client.AuditLog.Query().
 		Order(ent.Asc(auditlog.FieldID)).
 		All(ctx)
@@ -147,7 +165,16 @@ func (r *auditRepository) All(ctx context.Context) ([]StoredEntry, error) {
 			RequestID:    row.RequestID,
 			Detail:       row.Detail,
 			Signature:    row.Signature,
+			ClinicID:     uuidString(row.ClinicID),
 		})
 	}
 	return out, nil
+}
+
+func uuidString(id *uuid.UUID) *string {
+	if id == nil {
+		return nil
+	}
+	s := id.String()
+	return &s
 }
