@@ -49,6 +49,7 @@ func TestStoreSQLiteAndEntClient(t *testing.T) {
 	clinicID := uuid.New()
 	_, err = store.Ent().Clinic.Create().
 		SetID(clinicID).
+		SetSlug("test-clinic").
 		SetName("Test Clinic").
 		SetCountry("BR").
 		SetTimezone("UTC").

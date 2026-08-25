@@ -16,14 +16,19 @@ import (
 
 	"librevita.org/ent"
 	"librevita.org/internal/core/auth"
+	"librevita.org/internal/core/clinicctx"
 	"librevita.org/internal/core/database"
 )
+
+func pctx() context.Context {
+	return clinicctx.WithTestClinic(context.Background())
+}
 
 func testPolicyEngine(t *testing.T) *PolicyEngine {
 	t.Helper()
 	pe, err := NewPolicyEngine(openPolicyDB(t), slog.New(slog.DiscardHandler))
 	require.NoError(t, err)
-	err = pe.Load(context.Background())
+	err = pe.Load(pctx())
 	require.NoError(t, err)
 	return pe
 }
@@ -43,14 +48,23 @@ func openPolicyDB(t *testing.T) Repository {
 	client := ent.NewClient(ent.Driver(drv))
 	t.Cleanup(func() { _ = client.Close() })
 
+	_, err = client.Clinic.Create().
+		SetID(clinicctx.TestClinicID).
+		SetSlug("test").
+		SetName("Test Clinic").
+		SetCountry("BR").
+		SetTimezone("America/Sao_Paulo").
+		Save(context.Background())
+	require.NoError(t, err)
+
 	return NewPolicyRepository(client)
 }
 
 func TestPolicyCompilesAtStartup(t *testing.T) {
 	pe := testPolicyEngine(t)
 	for name := range DefaultPolicies {
-		_, ok := pe.progs[name]
-		assert.True(t, ok, "policy %q was not compiled", name)
+		_, err := pe.Allowed(pctx(), name, &auth.Principal{Role: auth.RoleAdmin}, RequestInfo{})
+		assert.NoError(t, err, "policy %q was not compiled", name)
 	}
 }
 
@@ -79,7 +93,7 @@ func TestPolicyEvaluation(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			p := &auth.Principal{ID: "01990000-0000-7000-8000-000000000001", Email: "u@example.org", Name: "User", Role: tc.role}
-			got, err := pe.Allowed(context.Background(), tc.policy, p, RequestInfo{Method: "GET", Path: "/"})
+			got, err := pe.Allowed(pctx(), tc.policy, p, RequestInfo{Method: "GET", Path: "/"})
 			require.NoError(t, err)
 			assert.Equal(t, tc.expected, got)
 		})
@@ -90,7 +104,7 @@ func TestPolicyUnknown(t *testing.T) {
 	pe := testPolicyEngine(t)
 	p := &auth.Principal{ID: "01990000-0000-7000-8000-000000000001", Email: "u@example.org", Name: "User", Role: auth.RoleAdmin}
 
-	_, err := pe.Allowed(context.Background(), "does.not.exist", p, RequestInfo{})
+	_, err := pe.Allowed(pctx(), "does.not.exist", p, RequestInfo{})
 	assert.ErrorIs(t, err, ErrPolicyNotFound)
 }
 
@@ -108,7 +122,7 @@ func TestPolicyRejectsNonBoolean(t *testing.T) {
 	prog, err := env.Program(ast)
 	require.NoError(t, err)
 
-	pe := &PolicyEngine{progs: map[string]cel.Program{"weird": prog}, log: slog.New(slog.DiscardHandler)}
+	pe := &PolicyEngine{progs: map[uuid.UUID]map[string]cel.Program{uuid.Nil: {"weird": prog}}, log: slog.New(slog.DiscardHandler)}
 	p := &auth.Principal{ID: "01990000-0000-7000-8000-000000000001", Email: "u@example.org", Name: "User", Role: auth.RoleAdmin}
 
 	_, err = pe.Allowed(context.Background(), "weird", p, RequestInfo{})
@@ -119,17 +133,17 @@ func TestPoliciesSeededFromDefaults(t *testing.T) {
 	db := openPolicyDB(t)
 	pe, err := NewPolicyEngine(db, slog.New(slog.DiscardHandler))
 	require.NoError(t, err)
-	err = pe.Load(context.Background())
+	err = pe.Load(pctx())
 	require.NoError(t, err)
-	assert.Len(t, pe.progs, len(DefaultPolicies))
+	assert.Len(t, pe.progs[clinicctx.TestClinicID], len(DefaultPolicies))
 
-	rows, err := pe.List(context.Background())
+	rows, err := pe.List(pctx())
 	require.NoError(t, err)
 	assert.Len(t, rows, len(DefaultPolicies))
 
 	// Every seeded policy must have exactly one seed version.
 	for _, row := range rows {
-		history, err := pe.History(context.Background(), row.Name, 10)
+		history, err := pe.History(pctx(), row.Name, 10)
 		require.NoError(t, err)
 		require.Len(t, history, 1)
 		assert.Equal(t, "seed", history[0].Origin)
@@ -142,13 +156,13 @@ func TestSetUpdatesPolicy(t *testing.T) {
 	require.NoError(t, err)
 
 	p := &auth.Principal{ID: "id", Email: "u@example.org", Name: "User", Role: auth.RolePatient}
-	allowed, _ := pe.Allowed(context.Background(), "admin.view", p, RequestInfo{})
+	allowed, _ := pe.Allowed(pctx(), "admin.view", p, RequestInfo{})
 	assert.False(t, allowed, "patient must not access admin.view by default")
 
 	// Open admin.view to every role.
-	err = pe.Set(context.Background(), "admin.view", `principal.role in ['admin','patient']`, Actor{ID: "u1", Email: "admin@example.org"})
+	err = pe.Set(pctx(), "admin.view", `principal.role in ['admin','patient']`, Actor{ID: "u1", Email: "admin@example.org"})
 	require.NoError(t, err)
-	allowed, _ = pe.Allowed(context.Background(), "admin.view", p, RequestInfo{})
+	allowed, _ = pe.Allowed(pctx(), "admin.view", p, RequestInfo{})
 	assert.True(t, allowed, "patient must access admin.view after policy change")
 }
 
@@ -158,16 +172,16 @@ func TestSetRejectsInvalidExpression(t *testing.T) {
 	require.NoError(t, err)
 
 	// Broken CEL.
-	err = pe.Set(context.Background(), "admin.view", `principal.role ==`, Actor{ID: "u1", Email: "admin@example.org"})
+	err = pe.Set(pctx(), "admin.view", `principal.role ==`, Actor{ID: "u1", Email: "admin@example.org"})
 	assert.Error(t, err, "Set with broken CEL must fail")
 
 	// Compiles but does not evaluate to a boolean.
-	err = pe.Set(context.Background(), "admin.view", `principal.role`, Actor{ID: "u1", Email: "admin@example.org"})
+	err = pe.Set(pctx(), "admin.view", `principal.role`, Actor{ID: "u1", Email: "admin@example.org"})
 	assert.Error(t, err, "Set with non-boolean policy must fail")
 
 	// The previous program must stay active.
 	p := &auth.Principal{ID: "id", Email: "u@example.org", Name: "User", Role: auth.RolePatient}
-	allowed, _ := pe.Allowed(context.Background(), "admin.view", p, RequestInfo{})
+	allowed, _ := pe.Allowed(pctx(), "admin.view", p, RequestInfo{})
 	assert.False(t, allowed, "failed Set must not activate a new policy")
 }
 
@@ -176,17 +190,17 @@ func TestSetPersistsAcrossRestart(t *testing.T) {
 	pe, err := NewPolicyEngine(db, slog.New(slog.DiscardHandler))
 	require.NoError(t, err)
 
-	err = pe.Set(context.Background(), "users.register", `false`, Actor{ID: "u1", Email: "admin@example.org"})
+	err = pe.Set(pctx(), "users.register", `false`, Actor{ID: "u1", Email: "admin@example.org"})
 	require.NoError(t, err)
 
 	// A new engine over the same database must pick up the stored value.
 	pe2, err := NewPolicyEngine(db, slog.New(slog.DiscardHandler))
 	require.NoError(t, err)
-	err = pe2.Load(context.Background())
+	err = pe2.Load(pctx())
 	require.NoError(t, err)
 
 	p := &auth.Principal{ID: "id", Email: "u@example.org", Name: "User", Role: auth.RoleAdmin}
-	allowed, _ := pe2.Allowed(context.Background(), "users.register", p, RequestInfo{})
+	allowed, _ := pe2.Allowed(pctx(), "users.register", p, RequestInfo{})
 	assert.False(t, allowed, "stored policy `false` must survive a restart")
 }
 
@@ -194,7 +208,7 @@ func TestConcurrentReadsDuringSet(t *testing.T) {
 	db := openPolicyDB(t)
 	pe, err := NewPolicyEngine(db, slog.New(slog.DiscardHandler))
 	require.NoError(t, err)
-	err = pe.Load(context.Background())
+	err = pe.Load(pctx())
 	require.NoError(t, err)
 
 	p := &auth.Principal{ID: "id", Email: "u@example.org", Name: "User", Role: auth.RoleAdmin}
@@ -202,12 +216,12 @@ func TestConcurrentReadsDuringSet(t *testing.T) {
 	go func() {
 		defer close(done)
 		for i := 0; i < 200; i++ {
-			err := pe.Set(context.Background(), "admin.view", `principal.role == 'admin'`, Actor{ID: "u1", Email: "admin@example.org"})
+			err := pe.Set(pctx(), "admin.view", `principal.role == 'admin'`, Actor{ID: "u1", Email: "admin@example.org"})
 			assert.NoError(t, err)
 		}
 	}()
 	for i := 0; i < 2000; i++ {
-		_, err := pe.Allowed(context.Background(), "admin.view", p, RequestInfo{})
+		_, err := pe.Allowed(pctx(), "admin.view", p, RequestInfo{})
 		require.NoError(t, err)
 	}
 	<-done
@@ -217,22 +231,22 @@ func TestSetRecordsVersionWithActor(t *testing.T) {
 	db := openPolicyDB(t)
 	pe, err := NewPolicyEngine(db, slog.New(slog.DiscardHandler))
 	require.NoError(t, err)
-	err = pe.Load(context.Background())
+	err = pe.Load(pctx())
 	require.NoError(t, err)
 
 	// Seeding records one initial version with origin "seed".
-	rows, err := pe.History(context.Background(), "users.register", 10)
+	rows, err := pe.History(pctx(), "users.register", 10)
 	require.NoError(t, err)
 	require.Len(t, rows, 1)
 	assert.Equal(t, PolicyOriginSeed.String(), rows[0].Origin)
 	assert.Nil(t, rows[0].ChangedByEmail)
 
-	err = pe.Set(context.Background(), "users.register", `principal.role == 'admin'`, Actor{ID: "u-1", Email: "ana@example.org"})
+	err = pe.Set(pctx(), "users.register", `principal.role == 'admin'`, Actor{ID: "u-1", Email: "ana@example.org"})
 	require.NoError(t, err)
-	err = pe.Set(context.Background(), "users.register", `false`, Actor{ID: "u-2", Email: "bruno@example.org"})
+	err = pe.Set(pctx(), "users.register", `false`, Actor{ID: "u-2", Email: "bruno@example.org"})
 	require.NoError(t, err)
 
-	rows, err = pe.History(context.Background(), "users.register", 10)
+	rows, err = pe.History(pctx(), "users.register", 10)
 	require.NoError(t, err)
 	require.Len(t, rows, 3)
 
@@ -255,13 +269,13 @@ func TestSetRejectedChangeHasNoVersion(t *testing.T) {
 	db := openPolicyDB(t)
 	pe, err := NewPolicyEngine(db, slog.New(slog.DiscardHandler))
 	require.NoError(t, err)
-	err = pe.Load(context.Background())
+	err = pe.Load(pctx())
 	require.NoError(t, err)
 
-	err = pe.Set(context.Background(), "admin.view", `principal.role ==`, Actor{ID: "u-1", Email: "ana@example.org"})
+	err = pe.Set(pctx(), "admin.view", `principal.role ==`, Actor{ID: "u-1", Email: "ana@example.org"})
 	assert.Error(t, err, "Set with broken CEL must fail")
 
-	rows, err := pe.History(context.Background(), "admin.view", 10)
+	rows, err := pe.History(pctx(), "admin.view", 10)
 	require.NoError(t, err)
 	assert.Len(t, rows, 1, "rejected change created unexpected version rows")
 }
@@ -270,15 +284,15 @@ func TestPolicyIDIsStableUUIDv7(t *testing.T) {
 	db := openPolicyDB(t)
 	pe, err := NewPolicyEngine(db, slog.New(slog.DiscardHandler))
 	require.NoError(t, err)
-	err = pe.Load(context.Background())
+	err = pe.Load(pctx())
 	require.NoError(t, err)
 
-	err = pe.Set(context.Background(), "admin.view", `principal.role == 'admin'`, Actor{ID: "u-1", Email: "a@example.org"})
+	err = pe.Set(pctx(), "admin.view", `principal.role == 'admin'`, Actor{ID: "u-1", Email: "a@example.org"})
 	require.NoError(t, err)
-	err = pe.Set(context.Background(), "admin.view", `principal.role in ['admin','physician']`, Actor{ID: "u-1", Email: "a@example.org"})
+	err = pe.Set(pctx(), "admin.view", `principal.role in ['admin','physician']`, Actor{ID: "u-1", Email: "a@example.org"})
 	require.NoError(t, err)
 
-	rows, err := pe.List(context.Background())
+	rows, err := pe.List(pctx())
 	require.NoError(t, err)
 
 	var firstID string
@@ -295,10 +309,10 @@ func TestPolicyIDIsStableUUIDv7(t *testing.T) {
 	assert.Equal(t, 7, int(id.Version()), "policy id %q is not UUIDv7", firstID)
 
 	// Updates must not change the id.
-	err = pe.Set(context.Background(), "admin.view", `true`, Actor{ID: "u-1", Email: "a@example.org"})
+	err = pe.Set(pctx(), "admin.view", `true`, Actor{ID: "u-1", Email: "a@example.org"})
 	require.NoError(t, err)
 
-	rows, err = pe.List(context.Background())
+	rows, err = pe.List(pctx())
 	require.NoError(t, err)
 	for _, row := range rows {
 		if row.Name == "admin.view" {
@@ -311,25 +325,25 @@ func TestSetRejectsSelfLockout(t *testing.T) {
 	db := openPolicyDB(t)
 	pe, err := NewPolicyEngine(db, slog.New(slog.DiscardHandler))
 	require.NoError(t, err)
-	err = pe.Load(context.Background())
+	err = pe.Load(pctx())
 	require.NoError(t, err)
 
 	actor := Actor{ID: "u-1", Email: "admin@example.org"}
 
 	// Deny-everything and deny-admin expressions must be rejected.
 	for _, expr := range []string{`false`, `principal.role == 'physician'`, `principal.email == 'other@example.org'`} {
-		err := pe.Set(context.Background(), "admin.view", expr, actor)
+		err := pe.Set(pctx(), "admin.view", expr, actor)
 		assert.Error(t, err, "Set(admin.view, %q) must be rejected as self-lockout", expr)
 	}
 
 	// Expressions that keep allowing the admin role are fine.
 	for _, expr := range []string{`principal.role == 'admin'`, `principal.role in ['admin','physician']`, `true`} {
-		err := pe.Set(context.Background(), "admin.view", expr, actor)
+		err := pe.Set(pctx(), "admin.view", expr, actor)
 		assert.NoError(t, err, "Set(admin.view, %q) failed", expr)
 	}
 
 	// Non-critical policies are not guarded.
-	err = pe.Set(context.Background(), "users.register", `false`, actor)
+	err = pe.Set(pctx(), "users.register", `false`, actor)
 	assert.NoError(t, err, "Set(users.register, false) must be allowed")
 }
 
@@ -337,14 +351,14 @@ func TestRejectedSelfLockoutKeepsPreviousPolicy(t *testing.T) {
 	db := openPolicyDB(t)
 	pe, err := NewPolicyEngine(db, slog.New(slog.DiscardHandler))
 	require.NoError(t, err)
-	err = pe.Load(context.Background())
+	err = pe.Load(pctx())
 	require.NoError(t, err)
 
-	err = pe.Set(context.Background(), "admin.view", `false`, Actor{ID: "u-1", Email: "a@example.org"})
+	err = pe.Set(pctx(), "admin.view", `false`, Actor{ID: "u-1", Email: "a@example.org"})
 	assert.Error(t, err, "self-lockout must be rejected")
 
 	p := &auth.Principal{ID: "id", Email: "u@example.org", Name: "User", Role: auth.RoleAdmin}
-	allowed, _ := pe.Allowed(context.Background(), "admin.view", p, RequestInfo{})
+	allowed, _ := pe.Allowed(pctx(), "admin.view", p, RequestInfo{})
 	assert.True(t, allowed, "rejected change must keep the admin allowed")
 }
 
@@ -371,7 +385,7 @@ func TestPatientEditResourcePolicy(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := pe.AllowedResource(context.Background(), "patient.edit", tc.principal, req, resource, nil)
+			got, err := pe.AllowedResource(pctx(), "patient.edit", tc.principal, req, resource, nil)
 			require.NoError(t, err)
 			assert.Equal(t, tc.want, got)
 		})
@@ -388,23 +402,23 @@ func TestContextClinicID(t *testing.T) {
 	admin := &auth.Principal{ID: "u1", Email: "a@example.org", Name: "A", Role: auth.RoleAdmin}
 	req := RequestInfo{Method: "GET", Path: "/x"}
 
-	err := pe.Set(context.Background(), "test.clinic", `context.clinic_id == 'clinic-123'`, Actor{ID: "u1", Email: "a@example.org"})
+	err := pe.Set(pctx(), "test.clinic", `context.clinic_id == 'clinic-123'`, Actor{ID: "u1", Email: "a@example.org"})
 	require.NoError(t, err)
 
 	// Without a resolver the context variable is empty and the policy must deny.
-	allowed, err := pe.Allowed(context.Background(), "test.clinic", admin, req)
+	allowed, err := pe.Allowed(pctx(), "test.clinic", admin, req)
 	require.NoError(t, err)
 	assert.False(t, allowed, "policy must deny without a clinic resolver")
 
 	// With the resolver wired, the clinic id arrives automatically.
 	pe.SetClockProvider(fakeClinicID{id: "clinic-123"})
-	allowed, err = pe.Allowed(context.Background(), "test.clinic", admin, req)
+	allowed, err = pe.Allowed(pctx(), "test.clinic", admin, req)
 	require.NoError(t, err)
 	assert.True(t, allowed, "policy must allow when the resolver matches")
 
 	// A caller-provided value wins over the resolver.
 	pe.SetClockProvider(fakeClinicID{id: "other-clinic"})
-	allowed, err = pe.AllowedResource(context.Background(), "test.clinic", admin, req, nil,
+	allowed, err = pe.AllowedResource(pctx(), "test.clinic", admin, req, nil,
 		map[string]any{"clinic_id": "clinic-123"})
 	require.NoError(t, err)
 	assert.True(t, allowed, "explicit clinic_id must not be overwritten by the resolver")

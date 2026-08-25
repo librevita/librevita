@@ -9,7 +9,9 @@ import (
 
 	"github.com/google/uuid"
 
+	"librevita.org/internal/core/clinicctx"
 	"librevita.org/internal/core/crypto"
+	"librevita.org/internal/core/database/fle"
 	identifiermodel "librevita.org/internal/domain/identifier/model"
 )
 
@@ -25,20 +27,53 @@ func NewService(repo identifiermodel.IdentifierRepository, key *crypto.MasterKey
 	return &service{repo: repo, key: key, reg: reg, log: log}
 }
 
+func (s *service) blindIndex(ctx context.Context, system, value string) (string, error) {
+	if h, ok := fle.HasherFromContext(ctx); ok {
+		return h.BlindIndex(system, value)
+	}
+	return s.key.BlindIndex(system, value)
+}
+
+func (s *service) decryptValue(ctx context.Context, clinicID, patientID uuid.UUID, system string, ciphertext, nonce []byte) ([]byte, error) {
+	pURN := crypto.PatientURN(clinicID, patientID)
+	value, err := s.key.DecryptPatientData(ctx, pURN, []byte(pURN), ciphertext, nonce)
+	if err == nil {
+		return value, nil
+	}
+	legacy, legacyErr := s.key.DecryptPatientData(ctx, crypto.LegacyPatientURN(patientID), []byte(system), ciphertext, nonce)
+	if legacyErr == nil {
+		return legacy, nil
+	}
+	return nil, err
+}
+
 // AddIdentifier normalizes, validates, encrypts, and stores in.
 func (s *service) AddIdentifier(ctx context.Context, clinicID, createdBy string, in Input) (*identifiermodel.Identifier, error) {
+	cUUID, err := uuid.Parse(clinicID)
+	if err != nil {
+		return nil, fmt.Errorf("identifier: invalid clinic id: %w", err)
+	}
 	strategy := s.resolve(in)
 	normalized, err := strategy.Normalize(in.Value)
 	if err != nil {
 		return nil, err
 	}
 
-	blind, err := s.key.BlindIndex(strategy.System(), normalized)
+	ok, err := s.repo.AllowsSystem(ctx, cUUID, strategy.System())
 	if err != nil {
 		return nil, err
 	}
-	pURN := patientURN(in.PatientID)
-	ciphertext, nonce, err := s.key.EncryptPatientData(ctx, pURN, []byte(strategy.System()), []byte(normalized))
+	if !ok {
+		return nil, identifiermodel.ErrSystemNotAllowed
+	}
+
+	blind, err := s.blindIndex(ctx, strategy.System(), normalized)
+	if err != nil {
+		return nil, err
+	}
+	pUUID := uuid.MustParse(in.PatientID)
+	pURN := crypto.PatientURN(cUUID, pUUID)
+	ciphertext, nonce, err := s.key.EncryptPatientData(ctx, pURN, []byte(pURN), []byte(normalized))
 	if err != nil {
 		return nil, err
 	}
@@ -56,7 +91,8 @@ func (s *service) AddIdentifier(ctx context.Context, clinicID, createdBy string,
 
 	rec := identifiermodel.IdentifierRecord{
 		ID:              id,
-		PatientID:       uuid.MustParse(in.PatientID),
+		ClinicID:        cUUID,
+		PatientID:       pUUID,
 		System:          strategy.System(),
 		ValueCiphertext: ciphertext,
 		Nonce:           nonce,
@@ -90,7 +126,7 @@ func (s *service) FindByValue(ctx context.Context, clinicID, raw string) ([]*ide
 		if err != nil {
 			continue
 		}
-		blind, err := s.key.BlindIndex(strategy.System(), normalized)
+		blind, err := s.blindIndex(ctx, strategy.System(), normalized)
 		if err != nil {
 			return nil, err
 		}
@@ -101,8 +137,7 @@ func (s *service) FindByValue(ctx context.Context, clinicID, raw string) ([]*ide
 		if err != nil {
 			return nil, fmt.Errorf("identifier: find by value: %w", err)
 		}
-		pURN := patientURN(row.PatientID.String())
-		value, err := s.key.DecryptPatientData(ctx, pURN, []byte(row.System), row.ValueCiphertext, row.Nonce)
+		value, err := s.decryptValue(ctx, cUUID, row.PatientID, row.System, row.ValueCiphertext, row.Nonce)
 		if err != nil {
 			s.log.Error("identifier: blind index hit failed to decrypt", "system", row.System)
 			continue
@@ -145,10 +180,13 @@ func (s *service) List(ctx context.Context, clinicID, patientID string) ([]*iden
 	if err != nil {
 		return nil, fmt.Errorf("identifier: list: %w", err)
 	}
-	pURN := patientURN(patientID)
 	out := make([]*identifiermodel.Identifier, 0, len(rows))
 	for _, row := range rows {
-		value, err := s.key.DecryptPatientData(ctx, pURN, []byte(row.System), row.ValueCiphertext, row.Nonce)
+		cid := row.ClinicID
+		if cid == uuid.Nil {
+			cid = cUUID
+		}
+		value, err := s.decryptValue(ctx, cid, row.PatientID, row.System, row.ValueCiphertext, row.Nonce)
 		if err != nil {
 			s.log.Error("identifier: failed to decrypt", "id", row.ID, "system", row.System, "error", err)
 			continue
@@ -185,9 +223,13 @@ func (s *service) ListByPatients(ctx context.Context, patientIDs []string) (map[
 	if err != nil {
 		return nil, fmt.Errorf("identifier: list by patients: %w", err)
 	}
+	clinicID, _ := clinicctx.ClinicID(ctx)
 	for _, row := range rows {
-		pURN := patientURN(row.PatientID.String())
-		value, err := s.key.DecryptPatientData(ctx, pURN, []byte(row.System), row.ValueCiphertext, row.Nonce)
+		cid := row.ClinicID
+		if cid == uuid.Nil {
+			cid = clinicID
+		}
+		value, err := s.decryptValue(ctx, cid, row.PatientID, row.System, row.ValueCiphertext, row.Nonce)
 		if err != nil {
 			s.log.Error("identifier: failed to decrypt", "patient_id", row.PatientID, "system", row.System, "error", err)
 			continue
@@ -196,10 +238,6 @@ func (s *service) ListByPatients(ctx context.Context, patientIDs []string) (map[
 		out[patientKey] = append(out[patientKey], string(value))
 	}
 	return out, nil
-}
-
-func patientURN(patientID string) string {
-	return "urn:librevita:patient:" + patientID
 }
 
 // Remove deletes one identifier of the patient, scoped to the clinic.

@@ -2,7 +2,6 @@
 package user
 
 import (
-	"context"
 	"log/slog"
 	"time"
 
@@ -43,20 +42,7 @@ var Module = fx.Module("user",
 		return h.SetupGate
 	}),
 	fx.Invoke(registerRoutes),
-	fx.Invoke(seedRoles),
 )
-
-func seedRoles(lc fx.Lifecycle, roleRepo usecase.RoleRepository, log *slog.Logger) {
-	lc.Append(fx.Hook{
-		OnStart: func(ctx context.Context) error {
-			if err := roleRepo.SeedDefaults(ctx); err != nil {
-				log.Error("failed to seed default roles", "error", err)
-				return err
-			}
-			return nil
-		},
-	})
-}
 
 func registerRoutes(e *echo.Echo, h *httphandler.Handler, sessions *auth.SessionManager,
 	policies *policy.PolicyEngine, auditLogger *audit.Logger, log *slog.Logger) {
@@ -68,6 +54,8 @@ func registerRoutes(e *echo.Echo, h *httphandler.Handler, sessions *auth.Session
 
 	e.GET("/setup", h.SetupPage)
 	e.POST("/setup", h.Setup, server.RateLimit(setupLimiter))
+	e.GET("/clinics/new", h.ProvisionPage, server.RequireAuth(sessions, log))
+	e.POST("/clinics", h.Provision, server.RequireAuth(sessions, log), server.RateLimit(setupLimiter))
 	e.GET("/auth/login", h.LoginPage, gate)
 	e.POST("/auth/login", h.Login, gate, server.RateLimit(loginLimiter))
 	// Registration is never public; the users.register policy decides who

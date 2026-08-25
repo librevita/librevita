@@ -21,8 +21,10 @@ import (
 
 	"github.com/google/cel-go/cel"
 	"github.com/google/cel-go/common/types"
+	"github.com/google/uuid"
 
 	"librevita.org/internal/core/auth"
+	"librevita.org/internal/core/clinicctx"
 )
 
 // Every expression receives the same variables:
@@ -70,22 +72,22 @@ var DefaultPolicies = map[string]string{
 	"staff.request": `principal.role in ['admin', 'receptionist']`,
 	"staff.approve": `principal.role == 'admin'`,
 
-	// Clinic calendar: the schedule is open to the clinical staff.
-	"calendar.view": `principal.role in ['admin', 'physician', 'receptionist']`,
+	// Clinic calendar: staff see the clinic schedule; a patient only sees
+	// their own appointments when resource.patient_id is set.
+	"calendar.view": `principal.role in ['admin', 'physician', 'receptionist'] || (principal.role == 'patient' && resource.patient_id == principal.patient_id && principal.patient_id != '')`,
 
-	// Patient registry, available to the clinical roles.
-	"patient.view": `principal.role in ['admin', 'physician', 'receptionist']`,
+	// Patient registry: staff list and open any record in the clinic; a
+	// patient opens only their own chart (resource.id from the route).
+	"patient.view": `principal.role in ['admin', 'physician', 'receptionist'] || (principal.role == 'patient' && resource.id == principal.patient_id && principal.patient_id != '')`,
 
 	// Patient record changes, evaluated against the record itself: an
 	// admin edits anything, a physician only the patients they registered
 	// (resource.created_by). Enforced in the patient use cases.
 	"patient.edit": `principal.role == 'admin' || (principal.role == 'physician' && resource.created_by == principal.id)`,
 
-	// Clinical file attachments: reading is open to the clinical roles,
-	// writing is restricted to admins and physicians. Belonging to the
-	// patient is enforced per request (domain + resource), so a bare
-	// file id never resolves an attachment of another patient.
-	"patient.document.read":  `principal.role in ['admin', 'physician', 'receptionist']`,
+	// Clinical file attachments: staff read any file of a clinic patient;
+	// a patient reads their own. Write stays admin/physician.
+	"patient.document.read":  `principal.role in ['admin', 'physician', 'receptionist'] || (principal.role == 'patient' && resource.patient_id == principal.patient_id && principal.patient_id != '')`,
 	"patient.document.write": `principal.role in ['admin', 'physician']`,
 }
 
@@ -136,7 +138,7 @@ type Repository interface {
 type PolicyEngine struct {
 	env   *cel.Env
 	mu    sync.RWMutex
-	progs map[string]cel.Program
+	progs map[uuid.UUID]map[string]cel.Program
 	repo  Repository
 	log   *slog.Logger
 
@@ -177,32 +179,76 @@ func NewPolicyEngine(repo Repository, log *slog.Logger) (*PolicyEngine, error) {
 
 	return &PolicyEngine{
 		env:   env,
-		progs: make(map[string]cel.Program),
+		progs: make(map[uuid.UUID]map[string]cel.Program),
 		repo:  repo,
 		log:   log,
 	}, nil
 }
 
-// Load seeds DefaultPolicies that are missing from the database and compiles
-// every stored policy.
+// Load compiles policies for the clinic in context. At process boot there
+// is no clinic; SeedDefaults runs at clinic onboard instead.
 func (pe *PolicyEngine) Load(ctx context.Context) error {
+	id, ok := clinicctx.ClinicID(ctx)
+	if !ok {
+		return nil
+	}
+	return pe.loadClinic(ctx, id)
+}
+
+func (pe *PolicyEngine) loadClinic(ctx context.Context, id uuid.UUID) error {
 	if err := pe.repo.SeedDefaults(ctx, DefaultPolicies); err != nil {
 		return err
 	}
-
 	rows, err := pe.repo.List(ctx)
 	if err != nil {
 		return fmt.Errorf("policy: list: %w", err)
 	}
+	compiled := make(map[string]cel.Program, len(rows))
 	for _, row := range rows {
 		prog, err := pe.compile(row.Name, row.Expression)
 		if err != nil {
 			return err
 		}
-		pe.mu.Lock()
-		pe.progs[row.Name] = prog
-		pe.mu.Unlock()
+		compiled[row.Name] = prog
 	}
+	pe.mu.Lock()
+	pe.progs[id] = compiled
+	pe.mu.Unlock()
+	return nil
+}
+
+func (pe *PolicyEngine) ensureLoaded(ctx context.Context) (uuid.UUID, error) {
+	id, ok := clinicctx.ClinicID(ctx)
+	if !ok {
+		id = uuid.Nil
+	}
+	pe.mu.RLock()
+	_, loaded := pe.progs[id]
+	pe.mu.RUnlock()
+	if loaded {
+		return id, nil
+	}
+	if id == uuid.Nil {
+		return id, pe.compileDefaults(id)
+	}
+	if err := pe.loadClinic(ctx, id); err != nil {
+		return uuid.Nil, err
+	}
+	return id, nil
+}
+
+func (pe *PolicyEngine) compileDefaults(id uuid.UUID) error {
+	compiled := make(map[string]cel.Program, len(DefaultPolicies))
+	for name, expr := range DefaultPolicies {
+		prog, err := pe.compile(name, expr)
+		if err != nil {
+			return err
+		}
+		compiled[name] = prog
+	}
+	pe.mu.Lock()
+	pe.progs[id] = compiled
+	pe.mu.Unlock()
 	return nil
 }
 
@@ -236,8 +282,15 @@ func (pe *PolicyEngine) Set(ctx context.Context, name, expression string, actor 
 		return err
 	}
 
+	id, ok := clinicctx.ClinicID(ctx)
+	if !ok {
+		id = uuid.Nil
+	}
 	pe.mu.Lock()
-	pe.progs[name] = prog
+	if pe.progs[id] == nil {
+		pe.progs[id] = make(map[string]cel.Program)
+	}
+	pe.progs[id][name] = prog
 	pe.mu.Unlock()
 	return nil
 }
@@ -259,30 +312,35 @@ func (pe *PolicyEngine) Count(ctx context.Context) (int64, error) {
 
 // Allowed evaluates the named policy for p and req.
 func (pe *PolicyEngine) Allowed(ctx context.Context, name string, p *auth.Principal, req RequestInfo) (bool, error) {
-	pe.mu.RLock()
-	prog, ok := pe.progs[name]
-	pe.mu.RUnlock()
-	if !ok {
-		return false, fmt.Errorf("%w: %q", ErrPolicyNotFound, name)
-	}
-	ctxMap := pe.contextMap(ctx)
-	return evaluate(prog, p, req, nil, ctxMap)
+	return pe.AllowedResource(ctx, name, p, req, nil, nil)
 }
 
 // AllowedResource evaluates the named policy with an object payload in
 // resource (e.g. `created_by`, `patient_id`) and optional explicit context.
 func (pe *PolicyEngine) AllowedResource(ctx context.Context, name string, p *auth.Principal, req RequestInfo, resource, explicitCtx map[string]any) (bool, error) {
-	pe.mu.RLock()
-	prog, ok := pe.progs[name]
-	pe.mu.RUnlock()
-	if !ok {
-		return false, fmt.Errorf("%w: %q", ErrPolicyNotFound, name)
+	prog, err := pe.program(ctx, name)
+	if err != nil {
+		return false, err
 	}
 	ctxMap := pe.contextMap(ctx)
 	for k, v := range explicitCtx {
 		ctxMap[k] = v
 	}
 	return evaluate(prog, p, req, resource, ctxMap)
+}
+
+func (pe *PolicyEngine) program(ctx context.Context, name string) (cel.Program, error) {
+	id, err := pe.ensureLoaded(ctx)
+	if err != nil {
+		return nil, err
+	}
+	pe.mu.RLock()
+	prog, ok := pe.progs[id][name]
+	pe.mu.RUnlock()
+	if !ok {
+		return nil, fmt.Errorf("%w: %q", ErrPolicyNotFound, name)
+	}
+	return prog, nil
 }
 
 func (pe *PolicyEngine) contextMap(ctx context.Context) map[string]any {
@@ -326,16 +384,20 @@ func (pe *PolicyEngine) ValidateSyntax(expression string) error {
 
 func evaluate(prog cel.Program, p *auth.Principal, req RequestInfo, resource, ctx map[string]any) (bool, error) {
 	principalMap := map[string]any{
-		"id":    "",
-		"email": "",
-		"name":  "",
-		"role":  "",
+		"id":         "",
+		"email":      "",
+		"name":       "",
+		"role":       "",
+		"clinic_id":  "",
+		"patient_id": "",
 	}
 	if p != nil {
 		principalMap["id"] = p.ID
 		principalMap["email"] = p.Email
 		principalMap["name"] = p.Name
 		principalMap["role"] = string(p.Role)
+		principalMap["clinic_id"] = p.ClinicID
+		principalMap["patient_id"] = p.PatientID
 	}
 
 	requestMap := map[string]any{
@@ -344,7 +406,17 @@ func evaluate(prog cel.Program, p *auth.Principal, req RequestInfo, resource, ct
 	}
 
 	if resource == nil {
-		resource = map[string]any{}
+		resource = map[string]any{
+			"id":         "",
+			"patient_id": "",
+		}
+	} else {
+		if _, ok := resource["id"]; !ok {
+			resource["id"] = ""
+		}
+		if _, ok := resource["patient_id"]; !ok {
+			resource["patient_id"] = ""
+		}
 	}
 	if ctx == nil {
 		ctx = map[string]any{}

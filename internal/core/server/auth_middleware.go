@@ -86,11 +86,17 @@ func RequirePolicy(pe *policy.PolicyEngine, auditLogger *audit.Logger, log *slog
 			if p == nil {
 				return redirectLogin(ctx)
 			}
+			if p.Platform {
+				if name == "dashboard.view" {
+					return next(ctx)
+				}
+				return echo.NewHTTPError(http.StatusForbidden, "insufficient permissions")
+			}
 
-			allowed, err := pe.Allowed(ctx.Request().Context(), name, p, policy.RequestInfo{
+			allowed, err := pe.AllowedResource(ctx.Request().Context(), name, p, policy.RequestInfo{
 				Method: ctx.Request().Method,
 				Path:   ctx.Request().URL.Path,
-			})
+			}, policyResource(ctx), nil)
 			if err != nil {
 				log.Error("policy evaluation failed", "policy", name, "error", err)
 				return echo.NewHTTPError(http.StatusInternalServerError, "authorization failure")
@@ -102,6 +108,14 @@ func RequirePolicy(pe *policy.PolicyEngine, auditLogger *audit.Logger, log *slog
 			}
 			return next(ctx)
 		}
+	}
+}
+
+func policyResource(ctx echo.Context) map[string]any {
+	id := ctx.Param("id")
+	return map[string]any{
+		"id":         id,
+		"patient_id": id,
 	}
 }
 

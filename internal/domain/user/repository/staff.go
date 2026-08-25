@@ -10,6 +10,7 @@ import (
 	"librevita.org/ent"
 	"librevita.org/ent/staffchangerequest"
 	"librevita.org/ent/user"
+	"librevita.org/internal/core/clinicctx"
 	usermodel "librevita.org/internal/domain/user/model"
 )
 
@@ -23,12 +24,15 @@ func NewStaffRequestRepository(client *ent.Client) usermodel.StaffRequestReposit
 }
 
 func (r *staffRequestRepository) Create(ctx context.Context, req *usermodel.StaffChangeRequest) (*usermodel.StaffChangeRequest, error) {
-	saved, err := r.client.StaffChangeRequest.Create().
+	create := r.client.StaffChangeRequest.Create().
 		SetID(req.ID).
 		SetUserID(req.UserID).
 		SetRequestedBy(req.RequestedBy).
-		SetChanges(req.Changes).
-		Save(ctx)
+		SetChanges(req.Changes)
+	if clinicID, ok := clinicctx.ClinicID(ctx); ok {
+		create.SetClinicID(clinicID)
+	}
+	saved, err := create.Save(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("staff request repository: create: %w", err)
 	}

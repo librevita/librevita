@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/fx"
@@ -203,6 +204,64 @@ func TestFxModuleIntegration(t *testing.T) {
 	pURN := "urn:librevita:patient:fx-test"
 	_, err = eng.SetupPatientDEK(ctx, pURN)
 	require.NoError(t, err)
+}
+
+func TestClinicDEKEnvelopeAndCryptoShred(t *testing.T) {
+	ctx := context.Background()
+	eng := mustEngine(t)
+
+	clinicA := uuid.MustParse("01990000-0000-7000-8000-0000000000a1")
+	clinicB := uuid.MustParse("01990000-0000-7000-8000-0000000000a2")
+	patientID := uuid.MustParse("01990000-0000-7000-8000-0000000000b1")
+
+	dekA, err := eng.EnsureClinicDEK(ctx, clinicA)
+	require.NoError(t, err)
+	dekB, err := eng.EnsureClinicDEK(ctx, clinicB)
+	require.NoError(t, err)
+	assert.NotEqual(t, dekA, dekB)
+
+	hA, err := crypto.NewHasherFromDEK(dekA)
+	require.NoError(t, err)
+	hB, err := crypto.NewHasherFromDEK(dekB)
+	require.NoError(t, err)
+	idxA, err := hA.BlindIndex("urn:librevita:id:br:cpf", "12345678900")
+	require.NoError(t, err)
+	idxB, err := hB.BlindIndex("urn:librevita:id:br:cpf", "12345678900")
+	require.NoError(t, err)
+	assert.NotEqual(t, idxA, idxB, "same catalog URN must not share a blind index across clinics")
+
+	pURN := crypto.PatientURN(clinicA, patientID)
+	aad := []byte(pURN)
+	plaintext := []byte("PHI-norte")
+
+	ct, nonce, err := eng.EncryptPatientData(ctx, pURN, aad, plaintext)
+	require.NoError(t, err)
+	got, err := eng.DecryptPatientData(ctx, pURN, aad, ct, nonce)
+	require.NoError(t, err)
+	assert.Equal(t, plaintext, got)
+
+	_, err = eng.GetPatientDEKForClinic(ctx, clinicB, patientID)
+	assert.Error(t, err, "clinic B must not hold clinic A's patient DEK")
+
+	require.NoError(t, eng.DeleteClinicDEK(ctx, clinicA))
+	_, err = eng.DecryptPatientData(ctx, pURN, aad, ct, nonce)
+	assert.Error(t, err)
+}
+
+func TestReenvelopePatientDEKFromLegacyKEK(t *testing.T) {
+	ctx := context.Background()
+	eng := mustEngine(t)
+	clinicID := uuid.MustParse("01990000-0000-7000-8000-0000000000a1")
+	patientID := uuid.MustParse("01990000-0000-7000-8000-0000000000b2")
+
+	legacyURN := crypto.LegacyPatientURN(patientID)
+	legacyDEK, err := eng.SetupPatientDEK(ctx, legacyURN)
+	require.NoError(t, err)
+
+	require.NoError(t, eng.ReenvelopePatientDEK(ctx, clinicID, patientID))
+	got, err := eng.GetPatientDEKForClinic(ctx, clinicID, patientID)
+	require.NoError(t, err)
+	assert.Equal(t, legacyDEK, got)
 }
 
 func isHex(s string) bool {

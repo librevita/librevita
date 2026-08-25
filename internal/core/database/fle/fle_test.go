@@ -119,11 +119,11 @@ func TestFLE_MultiTenant_DynamicKey_Concurrency(t *testing.T) {
 
 	// Create 2 clinics (tenants)
 	clinic1ID := uuid.New()
-	_, err = client.Clinic.Create().SetID(clinic1ID).SetName("Clínica Tenant A").Save(context.Background())
+	_, err = client.Clinic.Create().SetID(clinic1ID).SetSlug("tenant-a").SetName("Clínica Tenant A").Save(context.Background())
 	require.NoError(t, err)
 
 	clinic2ID := uuid.New()
-	_, err = client.Clinic.Create().SetID(clinic2ID).SetName("Clínica Tenant B").Save(context.Background())
+	_, err = client.Clinic.Create().SetID(clinic2ID).SetSlug("tenant-b").SetName("Clínica Tenant B").Save(context.Background())
 	require.NoError(t, err)
 
 	// Distinct keys for each tenant
@@ -144,7 +144,7 @@ func TestFLE_MultiTenant_DynamicKey_Concurrency(t *testing.T) {
 		defer wg.Done()
 		for i := 0; i < iterations; i++ {
 			ctx := fle.WithEncryptor(context.Background(), encTenant1)
-			ctx = fle.WithTenantID(ctx, clinic1ID.String())
+			ctx = fle.WithClinicID(ctx, clinic1ID.String())
 
 			pID := uuid.New()
 			name := fmt.Sprintf("Patient Tenant A %d", i)
@@ -177,7 +177,7 @@ func TestFLE_MultiTenant_DynamicKey_Concurrency(t *testing.T) {
 		defer wg.Done()
 		for i := 0; i < iterations; i++ {
 			ctx := fle.WithEncryptor(context.Background(), encTenant2)
-			ctx = fle.WithTenantID(ctx, clinic2ID.String())
+			ctx = fle.WithClinicID(ctx, clinic2ID.String())
 
 			pID := uuid.New()
 			name := fmt.Sprintf("Patient Tenant B %d", i)

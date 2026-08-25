@@ -39,7 +39,7 @@ func (r *sessionRepository) GetActive(ctx context.Context, id string, now time.T
 			session.ExpiresAtGT(now),
 		).
 		WithUser(func(uq *ent.UserQuery) {
-			uq.WithRole()
+			uq.WithRole().WithPortalPatient()
 		}).
 		Only(ctx)
 	if err != nil {
@@ -64,6 +64,10 @@ func (r *sessionRepository) GetActive(ctx context.Context, id string, now time.T
 			Active:   usr.Active,
 			Timezone: usr.Timezone,
 			UITheme:  UITheme(usr.UITheme),
+			ClinicID: usr.ClinicID,
+		}
+		if len(usr.Edges.PortalPatient) > 0 && usr.Edges.PortalPatient[0] != nil {
+			u.PatientID = usr.Edges.PortalPatient[0].ID
 		}
 	}
 

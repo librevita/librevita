@@ -14,8 +14,8 @@ import (
 
 	"librevita.org/internal/core/audit"
 	"librevita.org/internal/core/auth"
+	"librevita.org/internal/core/clinicctx"
 	"librevita.org/internal/core/config"
-	clinicmodel "librevita.org/internal/domain/clinic/model"
 	usermodel "librevita.org/internal/domain/user/model"
 	"librevita.org/internal/domain/user/usecase"
 	auditmocks "librevita.org/tests/mocks/core/audit"
@@ -73,19 +73,10 @@ func newTestEnv(t *testing.T) *testEnv {
 
 func validInput() usecase.RegisterInput {
 	return usecase.RegisterInput{
-		Name:     "Ana Souza",
-		Email:    "ana@example.org",
-		Password: "password-123",
-	}
-}
-
-func validClinicInput() usecase.ClinicInput {
-	return usecase.ClinicInput{
-		Name:    "Clínica Exemplo",
-		TaxID:   "12.345.678/0001-90",
-		City:    "São Paulo",
-		State:   "SP",
-		Country: "BR",
+		Name:      "Ana Souza",
+		Email:     "ana@example.org",
+		Password:  "password-123",
+		PatientID: "01990000-0000-7000-8000-0000000000aa",
 	}
 }
 
@@ -103,6 +94,7 @@ func TestRegisterCreatesPatient(t *testing.T) {
 		createdUser = u
 		return u, nil
 	}).Once()
+	env.userRepo.EXPECT().BindPortalPatient(mock.Anything, mock.Anything, uuid.MustParse("01990000-0000-7000-8000-0000000000aa")).Return(nil).Once()
 
 	env.sessionRepo.EXPECT().Create(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
 
@@ -127,6 +119,7 @@ func TestRegisterSecondUserBecomesPatient(t *testing.T) {
 	env.userRepo.EXPECT().Create(mock.Anything, mock.Anything).RunAndReturn(func(ctx context.Context, u *usermodel.User) (*usermodel.User, error) {
 		return u, nil
 	}).Once()
+	env.userRepo.EXPECT().BindPortalPatient(mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
 
 	env.sessionRepo.EXPECT().Create(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
 
@@ -149,6 +142,7 @@ func TestRegisterValidation(t *testing.T) {
 		{"missing email", func(in *usecase.RegisterInput) { in.Email = "" }, "valid email"},
 		{"invalid email", func(in *usecase.RegisterInput) { in.Email = "not-an-email" }, "valid email"},
 		{"short password", func(in *usecase.RegisterInput) { in.Password = "short" }, "at least 8"},
+		{"missing patient", func(in *usecase.RegisterInput) { in.PatientID = "" }, "patient is required"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -252,6 +246,7 @@ func TestConcurrentRegistrationsProduceOnlyPatients(t *testing.T) {
 		assert.Equal(t, patientRoleID, u.RoleID)
 		return u, nil
 	}).Maybe()
+	env.userRepo.EXPECT().BindPortalPatient(mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
 
 	env.sessionRepo.EXPECT().Create(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
 
@@ -305,6 +300,7 @@ func TestRegisterUsesUUIDv7ID(t *testing.T) {
 		createdID = u.ID
 		return u, nil
 	}).Once()
+	env.userRepo.EXPECT().BindPortalPatient(mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
 
 	env.sessionRepo.EXPECT().Create(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
 
@@ -328,26 +324,20 @@ func TestIsOnboarded(t *testing.T) {
 	assert.True(t, ok)
 }
 
-func TestOnboardCreatesAdminAndClinic(t *testing.T) {
+func TestOnboardCreatesAdmin(t *testing.T) {
 	env := newTestEnv(t)
-	adminRoleID := uuid.MustParse("01990000-0000-7000-8000-000000000002")
 	adminUserID := uuid.MustParse("01990000-0000-7000-8000-000000000003")
+	ctx := clinicctx.WithTestClinic(context.Background())
 
-	env.roleRepo.EXPECT().GetByName(mock.Anything, "admin").Return(&usermodel.Role{
-		ID:   adminRoleID,
-		Name: "admin",
-	}, nil).Once()
-
-	env.setupRepo.EXPECT().Onboard(mock.Anything, mock.Anything, mock.Anything).RunAndReturn(func(ctx context.Context, adminUser *usermodel.User, clinic *clinicmodel.Clinic) (*usermodel.User, error) {
-		assert.Equal(t, adminRoleID, adminUser.RoleID)
-		assert.Equal(t, "Clínica Exemplo", clinic.Name)
+	env.setupRepo.EXPECT().Onboard(mock.Anything, mock.Anything, mock.Anything).RunAndReturn(func(ctx context.Context, adminUser *usermodel.User, systemIDs []uuid.UUID) (*usermodel.User, error) {
 		adminUser.ID = adminUserID
+		adminUser.RoleName = "admin"
 		return adminUser, nil
 	}).Once()
 
 	env.sessionRepo.EXPECT().Create(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
 
-	p, token, err := env.svc.Onboard(context.Background(), validInput(), validClinicInput())
+	p, token, err := env.svc.Onboard(ctx, validInput(), nil)
 	require.NoError(t, err)
 	assert.Equal(t, auth.RoleAdmin, p.Role)
 	assert.NotEmpty(t, token)
@@ -355,34 +345,24 @@ func TestOnboardCreatesAdminAndClinic(t *testing.T) {
 
 func TestOnboardFailsWhenAlreadyOnboarded(t *testing.T) {
 	env := newTestEnv(t)
-	adminRoleID := uuid.MustParse("01990000-0000-7000-8000-000000000002")
-
-	env.roleRepo.EXPECT().GetByName(mock.Anything, "admin").Return(&usermodel.Role{
-		ID:   adminRoleID,
-		Name: "admin",
-	}, nil).Once()
+	ctx := clinicctx.WithTestClinic(context.Background())
 
 	env.setupRepo.EXPECT().Onboard(mock.Anything, mock.Anything, mock.Anything).Return(nil, usecase.ErrAlreadyOnboarded).Once()
 
 	input := validInput()
 	input.Email = "outro@example.org"
-	_, _, err := env.svc.Onboard(context.Background(), input, validClinicInput())
+	_, _, err := env.svc.Onboard(ctx, input, nil)
 	require.ErrorIs(t, err, usecase.ErrAlreadyOnboarded)
 }
 
 func TestConcurrentOnboardSingleWinner(t *testing.T) {
 	env := newTestEnv(t)
-	adminRoleID := uuid.MustParse("01990000-0000-7000-8000-000000000002")
-
-	env.roleRepo.EXPECT().GetByName(mock.Anything, "admin").Return(&usermodel.Role{
-		ID:   adminRoleID,
-		Name: "admin",
-	}, nil).Maybe()
+	ctx := clinicctx.WithTestClinic(context.Background())
 
 	var setupMu sync.Mutex
 	setupDone := false
 
-	env.setupRepo.EXPECT().Onboard(mock.Anything, mock.Anything, mock.Anything).RunAndReturn(func(ctx context.Context, u *usermodel.User, c *clinicmodel.Clinic) (*usermodel.User, error) {
+	env.setupRepo.EXPECT().Onboard(mock.Anything, mock.Anything, mock.Anything).RunAndReturn(func(ctx context.Context, u *usermodel.User, systemIDs []uuid.UUID) (*usermodel.User, error) {
 		setupMu.Lock()
 		defer setupMu.Unlock()
 		if setupDone {
@@ -403,7 +383,7 @@ func TestConcurrentOnboardSingleWinner(t *testing.T) {
 			defer wg.Done()
 			input := validInput()
 			input.Email = fmt.Sprintf("admin%d@example.org", i)
-			_, _, errs[i] = env.svc.Onboard(context.Background(), input, validClinicInput())
+			_, _, errs[i] = env.svc.Onboard(ctx, input, nil)
 		}(i)
 	}
 	wg.Wait()
@@ -421,24 +401,21 @@ func TestConcurrentOnboardSingleWinner(t *testing.T) {
 
 func TestOnboardValidation(t *testing.T) {
 	env := newTestEnv(t)
+	ctx := clinicctx.WithTestClinic(context.Background())
 
 	cases := []struct {
 		name    string
-		mutate  func(*usecase.RegisterInput, *usecase.ClinicInput)
+		mutate  func(*usecase.RegisterInput)
 		message string
 	}{
-		{"missing admin name", func(a *usecase.RegisterInput, c *usecase.ClinicInput) { a.Name = " " }, "display name"},
-		{"short password", func(a *usecase.RegisterInput, c *usecase.ClinicInput) { a.Password = "short" }, "at least 8"},
-		{"missing clinic name", func(a *usecase.RegisterInput, c *usecase.ClinicInput) { c.Name = "" }, "clinic name"},
-		{"bad clinic email", func(a *usecase.RegisterInput, c *usecase.ClinicInput) { c.Email = "not-an-email" }, "clinic email"},
-		{"invalid timezone", func(a *usecase.RegisterInput, c *usecase.ClinicInput) { c.Timezone = "Mars/Olympus" }, "from the list"},
+		{"missing admin name", func(a *usecase.RegisterInput) { a.Name = " " }, "display name"},
+		{"short password", func(a *usecase.RegisterInput) { a.Password = "short" }, "at least 8"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			admin := validInput()
-			clinic := validClinicInput()
-			tc.mutate(&admin, &clinic)
-			_, _, err := env.svc.Onboard(context.Background(), admin, clinic)
+			tc.mutate(&admin)
+			_, _, err := env.svc.Onboard(ctx, admin, nil)
 			require.Error(t, err)
 			var v *usecase.ValidationError
 			require.ErrorAs(t, err, &v)
@@ -448,38 +425,31 @@ func TestOnboardValidation(t *testing.T) {
 
 func TestSetupCannotBeReexecutedAfterDataRemoval(t *testing.T) {
 	env := newTestEnv(t)
-	adminRoleID := uuid.MustParse("01990000-0000-7000-8000-000000000002")
+	ctx := clinicctx.WithTestClinic(context.Background())
 
 	env.setupRepo.EXPECT().IsOnboarded(mock.Anything).Return(true, nil).Once()
-	ok, err := env.svc.IsOnboarded(context.Background())
+	ok, err := env.svc.IsOnboarded(ctx)
 	require.NoError(t, err)
 	assert.True(t, ok)
 
-	env.roleRepo.EXPECT().GetByName(mock.Anything, "admin").Return(&usermodel.Role{
-		ID:   adminRoleID,
-		Name: "admin",
-	}, nil).Once()
 	env.setupRepo.EXPECT().Onboard(mock.Anything, mock.Anything, mock.Anything).Return(nil, usecase.ErrAlreadyOnboarded).Once()
 
-	_, _, err = env.svc.Onboard(context.Background(), validInput(), validClinicInput())
+	_, _, err = env.svc.Onboard(ctx, validInput(), nil)
 	require.ErrorIs(t, err, usecase.ErrAlreadyOnboarded)
 }
 
 func TestSetupMarkerGuardsDeletedMarkerEdgeCase(t *testing.T) {
 	env := newTestEnv(t)
-	adminRoleID := uuid.MustParse("01990000-0000-7000-8000-000000000002")
+	ctx := clinicctx.WithTestClinic(context.Background())
 
 	env.setupRepo.EXPECT().IsOnboarded(mock.Anything).Return(true, nil).Once()
-	ok, err := env.svc.IsOnboarded(context.Background())
+	ok, err := env.svc.IsOnboarded(ctx)
 	require.NoError(t, err)
 	assert.True(t, ok)
 
-	env.roleRepo.EXPECT().GetByName(mock.Anything, "admin").Return(&usermodel.Role{
-		ID:   adminRoleID,
-		Name: "admin",
-	}, nil).Once()
 	env.setupRepo.EXPECT().Onboard(mock.Anything, mock.Anything, mock.Anything).Return(nil, usecase.ErrAlreadyOnboarded).Once()
 
-	_, _, err = env.svc.Onboard(context.Background(), validInput(), validClinicInput())
+	_, _, err = env.svc.Onboard(ctx, validInput(), nil)
 	require.ErrorIs(t, err, usecase.ErrAlreadyOnboarded)
 }
+

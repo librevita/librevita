@@ -21,6 +21,8 @@ func (StaffChangeRequest) Fields() []ent.Field {
 		field.UUID("id", uuid.UUID{}).
 			Default(newUUIDv7).
 			Immutable(),
+		field.UUID("clinic_id", uuid.UUID{}).
+			Comment("Owning clinic"),
 		field.UUID("user_id", uuid.UUID{}).
 			Comment("Target staff user account ID"),
 		field.UUID("requested_by", uuid.UUID{}).
@@ -51,6 +53,11 @@ func (StaffChangeRequest) Fields() []ent.Field {
 // Edges of the StaffChangeRequest.
 func (StaffChangeRequest) Edges() []ent.Edge {
 	return []ent.Edge{
+		edge.From("clinic", Clinic.Type).
+			Ref("staff_requests").
+			Field("clinic_id").
+			Unique().
+			Required(),
 		edge.From("user", User.Type).
 			Ref("staff_requests").
 			Field("user_id").
@@ -69,6 +76,7 @@ func (StaffChangeRequest) Edges() []ent.Edge {
 // Indexes of the StaffChangeRequest.
 func (StaffChangeRequest) Indexes() []ent.Index {
 	return []ent.Index{
+		index.Fields("clinic_id"),
 		index.Fields("status", "created_at"),
 		index.Fields("user_id"),
 		index.Fields("requested_by", "created_at"),

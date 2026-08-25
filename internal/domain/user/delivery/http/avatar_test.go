@@ -22,8 +22,10 @@ import (
 	"librevita.org/ent"
 	"librevita.org/internal/core/audit"
 	"librevita.org/internal/core/auth"
+	"librevita.org/internal/core/clinicctx"
 	"librevita.org/internal/core/config"
 	"librevita.org/internal/core/database"
+	"librevita.org/internal/core/database/fle"
 	"librevita.org/internal/core/policy"
 	"librevita.org/internal/core/server"
 	"librevita.org/internal/core/storage"
@@ -83,9 +85,17 @@ func newAvatarEnv(t *testing.T) (*echo.Echo, *auth.SessionManager, *storage.File
 	}
 	files := mustFileManager(t, client)
 	csrf := auth.NewCSRF(&config.Config{Mode: "development"})
-	h := NewHandler(svc, nil, csrf, sessions, policies, auditLogger, clinicusecase.NewClockProvider(clinicrepo.NewClinicRepository(client)), files, log)
+	h := NewHandler(svc, nil, nil, nil, csrf, sessions, policies, auditLogger, clinicusecase.NewClockProvider(clinicrepo.NewClinicRepository(client)), files, &config.Config{Mode: "development"}, log)
 
 	e := echo.New()
+	e.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			ctx := clinicctx.WithTestClinic(c.Request().Context())
+			ctx = fle.WithClinicID(ctx, clinicctx.TestClinicID.String())
+			c.SetRequest(c.Request().WithContext(ctx))
+			return next(c)
+		}
+	})
 	e.GET("/profile/avatar", h.Avatar, server.RequireAuth(sessions, log))
 	e.POST("/profile/avatar", h.AvatarUpload,
 		server.RequireAuth(sessions, log),

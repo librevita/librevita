@@ -8,6 +8,7 @@ import (
 
 	"librevita.org/ent"
 	"librevita.org/ent/storageobject"
+	"librevita.org/internal/core/clinicctx"
 )
 
 type indexRepository struct {
@@ -20,8 +21,13 @@ func NewIndexRepository(client *ent.Client) IndexRepository {
 }
 
 func (r *indexRepository) Insert(ctx context.Context, f StoredFile) (*StoredFile, error) {
+	clinicID, err := clinicctx.MustClinicID(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("storage repository: insert: %w", err)
+	}
 	created, err := r.client.StorageObject.Create().
 		SetID(f.ID).
+		SetClinicID(clinicID).
 		SetKey(f.Key).
 		SetDomain(f.Domain).
 		SetResourceID(f.ResourceID.String()).

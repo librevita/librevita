@@ -8,7 +8,9 @@ import (
 	"go.uber.org/fx"
 
 	"librevita.org/ent"
+	"librevita.org/internal/core/clinicctx"
 	"librevita.org/internal/core/crypto"
+	"librevita.org/internal/core/database/isolation"
 )
 
 // Module provides the main store, raw database handle, and Ent ORM client,
@@ -28,7 +30,9 @@ func sqlDB(store *Store) *sql.DB { return store.SQL() }
 // with compile-time typed blind indexing hooks and context-aware decryption interceptors.
 func entClient(store *Store, hasher crypto.Hasher, encryptor crypto.Encryptor) *ent.Client {
 	client := store.Ent()
+	client.Use(isolation.MutationHook())
 	client.Use(ent.FLEMutationHook(hasher, encryptor))
+	client.Intercept(isolation.QueryInterceptor())
 	client.Intercept(ent.FLEDecryptionInterceptor(encryptor))
 	return client
 }
@@ -45,7 +49,7 @@ func registerLifecycle(lc fx.Lifecycle, store *Store, log *slog.Logger) {
 				log.Info("Goose migrations applied", "driver", store.Driver())
 			}
 			if client := store.Ent(); client != nil {
-				if err := SeedInitialData(ctx, client); err != nil {
+				if err := SeedInitialData(clinicctx.WithSkipIsolation(ctx), client); err != nil {
 					return err
 				}
 			}

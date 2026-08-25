@@ -21,6 +21,7 @@ type SystemRepository interface {
 // IdentifierRepository defines the persistence contract for identifiers.
 type IdentifierRepository interface {
 	Add(ctx context.Context, rec IdentifierRecord) (*IdentifierRecord, error)
+	AllowsSystem(ctx context.Context, clinicID uuid.UUID, system string) (bool, error)
 	FindByBlindIndex(ctx context.Context, clinicID uuid.UUID, blindIndex string) (*IdentifierRecord, error)
 	ListByPatient(ctx context.Context, patientID uuid.UUID) ([]IdentifierRecord, error)
 	ListByPatients(ctx context.Context, patientIDs []uuid.UUID) ([]IdentifierRecord, error)

@@ -14,6 +14,7 @@ import (
 
 func TestLoadPrecedence(t *testing.T) {
 	t.Setenv("LIBREVITA_MODE", "production")
+	t.Setenv("LIBREVITA_BASE_DOMAIN", "lv.example")
 	t.Setenv("LIBREVITA_DATABASE_SQLITE_PATH", "env.db")
 
 	configFile := filepath.Join(t.TempDir(), "config.yaml")

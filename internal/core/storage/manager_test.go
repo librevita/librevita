@@ -1,7 +1,6 @@
 package storage
 
 import (
-	"context"
 	"io"
 	"log/slog"
 	"os"
@@ -62,7 +61,7 @@ func uploadInput() UploadInput {
 // index row registered, metadata resolvable, and delete removing both.
 func TestFileManagerUploadGetListDelete(t *testing.T) {
 	m, _ := testManager(t)
-	ctx := context.Background()
+	ctx := storageCtx()
 
 	meta, err := m.Upload(ctx, uploadInput(), strings.NewReader("pdf"), 3)
 	require.NoError(t, err)
@@ -103,7 +102,7 @@ func TestFileManagerUploadGetListDelete(t *testing.T) {
 // (duplicate key) and asserts the saga removes the orphan blob.
 func TestFileManagerUploadCompensation(t *testing.T) {
 	m, store := testManager(t)
-	ctx := context.Background()
+	ctx := storageCtx()
 
 	fixed := uuid.MustParse("01990000-0000-7000-8000-0000000000c1")
 	m.newID = func() (uuid.UUID, error) { return fixed, nil }
@@ -134,7 +133,7 @@ func TestFileManagerUploadCompensation(t *testing.T) {
 // (the crash window between blob write and index write).
 func TestFileManagerReconcile(t *testing.T) {
 	m, store := testManager(t)
-	ctx := context.Background()
+	ctx := storageCtx()
 
 	meta, err := m.Upload(ctx, uploadInput(), strings.NewReader("keep"), 4)
 	require.NoError(t, err)
@@ -162,7 +161,7 @@ func TestFileManagerReconcile(t *testing.T) {
 // TestFileManagerGetUnknown exercises the not-found mapping.
 func TestFileManagerGetUnknown(t *testing.T) {
 	m, _ := testManager(t)
-	ctx := context.Background()
+	ctx := storageCtx()
 
 	_, err := m.Get(ctx, uuid.Must(uuid.NewV7()))
 	assert.True(t, IsNotFound(err))
@@ -177,7 +176,7 @@ func TestFileManagerGetUnknown(t *testing.T) {
 // period are removed.
 func TestFileManagerReconcileGracePeriod(t *testing.T) {
 	m, store := testManager(t)
-	ctx := context.Background()
+	ctx := storageCtx()
 
 	freshKey := privateKey("patient_document", testResource, uuid.Must(uuid.NewV7()))
 	oldKey := privateKey("patient_document", testResource, uuid.Must(uuid.NewV7()))
@@ -202,7 +201,7 @@ func TestFileManagerReconcileGracePeriod(t *testing.T) {
 // as fresh (the safe direction): it must never be deleted.
 func TestFileManagerReconcileZeroTimestamp(t *testing.T) {
 	m, store := testManager(t)
-	ctx := context.Background()
+	ctx := storageCtx()
 
 	key := privateKey("patient_document", testResource, uuid.Must(uuid.NewV7()))
 	_, err := store.Put(ctx, key, strings.NewReader("x"), 1, "text/plain")
@@ -224,7 +223,7 @@ func TestFileManagerReconcileZeroTimestamp(t *testing.T) {
 // domain: avatars are public, clinical attachments private.
 func TestFileManagerAccessClass(t *testing.T) {
 	m, _ := testManager(t)
-	ctx := context.Background()
+	ctx := storageCtx()
 
 	avatar, err := m.Upload(ctx, UploadInput{
 		Domain: "avatar", ResourceID: testResource,
@@ -242,7 +241,7 @@ func TestFileManagerAccessClass(t *testing.T) {
 // must never resolve a file of another resource (IDOR protection).
 func TestFileManagerGetForResource(t *testing.T) {
 	m, _ := testManager(t)
-	ctx := context.Background()
+	ctx := storageCtx()
 
 	other := uuid.MustParse("01990000-0000-7000-8000-0000000000c0")
 	meta, err := m.Upload(ctx, uploadInput(), strings.NewReader("pdf"), 3)

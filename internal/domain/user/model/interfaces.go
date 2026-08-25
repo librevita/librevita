@@ -4,13 +4,12 @@ import (
 	"context"
 
 	"github.com/google/uuid"
-
-	clinicmodel "librevita.org/internal/domain/clinic/model"
 )
 
 // UserRepository defines the persistence contract for user accounts.
 type UserRepository interface {
 	Create(ctx context.Context, u *User) (*User, error)
+	BindPortalPatient(ctx context.Context, userID, patientID uuid.UUID) error
 	GetByID(ctx context.Context, id uuid.UUID) (*GetUserByIDRow, error)
 	GetByEmail(ctx context.Context, email string) (*GetUserByIDRow, error)
 	Update(ctx context.Context, u *User) (*User, error)
@@ -60,5 +59,5 @@ type StaffRequestRepository interface {
 // SetupRepository defines the persistence contract for initial clinic onboarding.
 type SetupRepository interface {
 	IsOnboarded(ctx context.Context) (bool, error)
-	Onboard(ctx context.Context, admin *User, clinic *clinicmodel.Clinic) (*User, error)
+	Onboard(ctx context.Context, admin *User, systemIDs []uuid.UUID) (*User, error)
 }

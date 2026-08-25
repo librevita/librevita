@@ -3,14 +3,17 @@ package repository
 import (
 	"context"
 	"fmt"
+	"time"
+
+	"github.com/google/uuid"
 
 	"librevita.org/ent"
-	"librevita.org/ent/meta"
-	clinicmodel "librevita.org/internal/domain/clinic/model"
+	"librevita.org/ent/accesspolicyversion"
+	"librevita.org/ent/identifiersystem"
+	"librevita.org/internal/core/clinicctx"
+	"librevita.org/internal/core/policy"
 	usermodel "librevita.org/internal/domain/user/model"
 )
-
-const setupMetaKey = "setup_completed"
 
 type setupRepository struct {
 	client *ent.Client
@@ -22,21 +25,29 @@ func NewSetupRepository(client *ent.Client) usermodel.SetupRepository {
 }
 
 func (r *setupRepository) IsOnboarded(ctx context.Context) (bool, error) {
-	exists, err := r.client.Meta.Query().Where(meta.IDEQ(setupMetaKey)).Exist(ctx)
-	if err != nil {
-		return false, fmt.Errorf("setup repository: read setup marker: %w", err)
+	c, ok := clinicctx.FromContext(ctx)
+	if !ok {
+		return false, nil
 	}
-	if exists {
+	if c.OnboardedAt != nil && !c.OnboardedAt.IsZero() {
 		return true, nil
 	}
-	count, err := r.client.User.Query().Count(ctx)
+	row, err := r.client.Clinic.Get(ctx, c.ID)
 	if err != nil {
-		return false, fmt.Errorf("setup repository: count users: %w", err)
+		if ent.IsNotFound(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("setup repository: load clinic: %w", err)
 	}
-	return count > 0, nil
+	return row.OnboardedAt != nil && !row.OnboardedAt.IsZero(), nil
 }
 
-func (r *setupRepository) Onboard(ctx context.Context, admin *usermodel.User, c *clinicmodel.Clinic) (*usermodel.User, error) {
+func (r *setupRepository) Onboard(ctx context.Context, admin *usermodel.User, systemIDs []uuid.UUID) (*usermodel.User, error) {
+	clinicID, err := clinicctx.MustClinicID(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	tx, err := r.client.Tx(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("setup repository: begin onboard: %w", err)
@@ -48,45 +59,107 @@ func (r *setupRepository) Onboard(ctx context.Context, admin *usermodel.User, c 
 		}
 	}()
 
-	exists, err := tx.Meta.Query().Where(meta.IDEQ(setupMetaKey)).Exist(ctx)
+	row, err := tx.Clinic.Get(ctx, clinicID)
 	if err != nil {
 		_ = tx.Rollback()
-		return nil, fmt.Errorf("setup repository: read setup marker: %w", err)
+		return nil, fmt.Errorf("setup repository: load clinic: %w", err)
 	}
-	if exists {
+	if row.OnboardedAt != nil && !row.OnboardedAt.IsZero() {
 		_ = tx.Rollback()
 		return nil, usermodel.ErrAlreadyOnboarded
 	}
 
-	count, err := tx.User.Query().Count(ctx)
-	if err != nil {
-		_ = tx.Rollback()
-		return nil, fmt.Errorf("setup repository: count users: %w", err)
+	roles := []struct {
+		name     string
+		clinical bool
+	}{
+		{"admin", false},
+		{"physician", true},
+		{"receptionist", false},
+		{"patient", false},
 	}
-	if count > 0 {
-		_ = tx.Rollback()
-		return nil, usermodel.ErrAlreadyOnboarded
+	var adminRoleID uuid.UUID
+	for _, rl := range roles {
+		id, err := uuid.NewV7()
+		if err != nil {
+			_ = tx.Rollback()
+			return nil, err
+		}
+		created, err := tx.Role.Create().
+			SetID(id).
+			SetClinicID(clinicID).
+			SetName(rl.name).
+			SetSystem(true).
+			SetIsClinical(rl.clinical).
+			Save(ctx)
+		if err != nil {
+			_ = tx.Rollback()
+			return nil, fmt.Errorf("setup repository: seed role %q: %w", rl.name, err)
+		}
+		if rl.name == "admin" {
+			adminRoleID = created.ID
+		}
 	}
 
-	clinicCreate := tx.Clinic.Create().
-		SetID(c.ID).
-		SetName(c.Name).
-		SetCountry(c.Country).
-		SetTimezone(c.Timezone)
-	if c.TaxID != "" {
-		clinicCreate.SetTaxID(c.TaxID)
+	for name, expr := range policy.DefaultPolicies {
+		pID, err := uuid.NewV7()
+		if err != nil {
+			_ = tx.Rollback()
+			return nil, err
+		}
+		pol, err := tx.AccessPolicy.Create().
+			SetID(pID).
+			SetClinicID(clinicID).
+			SetName(name).
+			SetExpression(expr).
+			Save(ctx)
+		if err != nil {
+			_ = tx.Rollback()
+			return nil, fmt.Errorf("setup repository: seed policy %q: %w", name, err)
+		}
+		if _, err := tx.AccessPolicyVersion.Create().
+			SetPolicyID(pol.ID).
+			SetExpression(expr).
+			SetOrigin(accesspolicyversion.OriginSeed).
+			Save(ctx); err != nil {
+			_ = tx.Rollback()
+			return nil, fmt.Errorf("setup repository: seed policy version %q: %w", name, err)
+		}
 	}
-	if _, err := clinicCreate.Save(ctx); err != nil {
-		_ = tx.Rollback()
-		return nil, fmt.Errorf("setup repository: create clinic: %w", err)
+
+	if len(systemIDs) == 0 {
+		active, err := tx.IdentifierSystem.Query().Where(identifiersystem.ActiveEQ(true)).All(ctx)
+		if err != nil {
+			_ = tx.Rollback()
+			return nil, fmt.Errorf("setup repository: list identifier systems: %w", err)
+		}
+		for _, sys := range active {
+			systemIDs = append(systemIDs, sys.ID)
+		}
+	}
+	for _, sysID := range systemIDs {
+		optID, err := uuid.NewV7()
+		if err != nil {
+			_ = tx.Rollback()
+			return nil, err
+		}
+		if err := tx.ClinicIdentifierSystem.Create().
+			SetID(optID).
+			SetClinicID(clinicID).
+			SetIdentifierSystemID(sysID).
+			Exec(ctx); err != nil && !ent.IsConstraintError(err) {
+			_ = tx.Rollback()
+			return nil, fmt.Errorf("setup repository: identifier opt-in: %w", err)
+		}
 	}
 
 	createdUser, err := tx.User.Create().
 		SetID(admin.ID).
+		SetClinicID(clinicID).
 		SetEmail(admin.Email).
 		SetPasswordHash(admin.PasswordHash).
 		SetDisplayName(admin.DisplayName).
-		SetRoleID(admin.RoleID).
+		SetRoleID(adminRoleID).
 		SetActive(admin.Active).
 		Save(ctx)
 	if err != nil {
@@ -97,9 +170,10 @@ func (r *setupRepository) Onboard(ctx context.Context, admin *usermodel.User, c 
 		return nil, fmt.Errorf("setup repository: create admin: %w", err)
 	}
 
-	if err := tx.Meta.Create().SetID(setupMetaKey).SetValue("1").Exec(ctx); err != nil {
+	now := time.Now().UTC()
+	if err := tx.Clinic.UpdateOneID(clinicID).SetOnboardedAt(now).Exec(ctx); err != nil {
 		_ = tx.Rollback()
-		return nil, fmt.Errorf("setup repository: mark setup complete: %w", err)
+		return nil, fmt.Errorf("setup repository: mark onboarded: %w", err)
 	}
 
 	if err := tx.Commit(); err != nil {

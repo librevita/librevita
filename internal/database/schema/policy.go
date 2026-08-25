@@ -8,6 +8,7 @@ import (
 	"entgo.io/ent/schema"
 	"entgo.io/ent/schema/edge"
 	"entgo.io/ent/schema/field"
+	"entgo.io/ent/schema/index"
 	"github.com/google/uuid"
 )
 
@@ -29,10 +30,11 @@ func (AccessPolicy) Fields() []ent.Field {
 		field.UUID("id", uuid.UUID{}).
 			Default(newUUIDv7).
 			Immutable(),
+		field.UUID("clinic_id", uuid.UUID{}).
+			Comment("Owning clinic; DefaultPolicies are copied at clinic onboard"),
 		field.String("name").
 			NotEmpty().
-			Unique().
-			Comment("Permission name: dashboard.view, patient.edit, etc."),
+			Comment("Permission name unique per clinic: dashboard.view, patient.edit, etc."),
 		field.String("expression").
 			NotEmpty().
 			Comment("CEL expression"),
@@ -45,6 +47,19 @@ func (AccessPolicy) Fields() []ent.Field {
 // Edges of the AccessPolicy.
 func (AccessPolicy) Edges() []ent.Edge {
 	return []ent.Edge{
+		edge.From("clinic", Clinic.Type).
+			Ref("policies").
+			Field("clinic_id").
+			Unique().
+			Required(),
 		edge.To("versions", AccessPolicyVersion.Type),
+	}
+}
+
+// Indexes of the AccessPolicy.
+func (AccessPolicy) Indexes() []ent.Index {
+	return []ent.Index{
+		index.Fields("clinic_id", "name").
+			Unique(),
 	}
 }

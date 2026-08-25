@@ -17,6 +17,7 @@ import (
 	"github.com/google/uuid"
 	"golang.org/x/crypto/blake2b"
 
+	"librevita.org/internal/core/clinicctx"
 	"librevita.org/internal/core/config"
 )
 
@@ -28,23 +29,28 @@ const sessionTTL = 24 * time.Hour
 
 // Principal is the authenticated user identity carried through the request.
 type Principal struct {
-	ID       string
-	Email    string
-	Name     string
-	Role     Role
-	Timezone string
-	UITheme  UITheme
+	ID        string
+	Email     string
+	Name      string
+	Role      Role
+	Timezone  string
+	UITheme   UITheme
+	ClinicID  string
+	PatientID string
+	Platform  bool
 }
 
 // SessionUser holds the user information joined in active session queries.
 type SessionUser struct {
-	ID       uuid.UUID
-	Email    string
-	Name     string
-	Role     Role
-	Active   bool
-	Timezone string
-	UITheme  UITheme
+	ID        uuid.UUID
+	Email     string
+	Name      string
+	Role      Role
+	Active    bool
+	Timezone  string
+	UITheme   UITheme
+	ClinicID  uuid.UUID
+	PatientID uuid.UUID
 }
 
 // SessionRecord holds the session storage row.
@@ -66,11 +72,12 @@ type SessionRepository interface {
 // SessionManager issues PASETO v4.local session tokens and keeps a
 // revocation index in the database.
 type SessionManager struct {
-	repo   SessionRepository
-	key    paseto.V4SymmetricKey
-	ttl    time.Duration
-	secure bool
-	log    *slog.Logger
+	repo     SessionRepository
+	platform PlatformSessionRepository
+	key      paseto.V4SymmetricKey
+	ttl      time.Duration
+	secure   bool
+	log      *slog.Logger
 }
 
 // NewSessionManager is the Fx provider.
@@ -108,14 +115,17 @@ func NewSessionManager(repo SessionRepository, cfg *config.Config, log *slog.Log
 	}, nil
 }
 
+// SetPlatformRepository attaches apex session storage. Optional in tests.
+func (m *SessionManager) SetPlatformRepository(repo PlatformSessionRepository) {
+	m.platform = repo
+}
+
 // Create starts a session for p and returns the raw PASETO token. The token
-// id is stored hashed in the sessions table so that it can be revoked.
+// id is stored hashed so that it can be revoked.
 func (m *SessionManager) Create(ctx context.Context, p Principal) (string, error) {
 	now := time.Now().UTC()
 	expires := now.Add(m.ttl)
-
-	// Best-effort cleanup of expired sessions
-	_ = m.repo.CleanupExpired(ctx, now)
+	_ = m.CleanupExpired(ctx)
 
 	jti := make([]byte, 32)
 	if _, err := rand.Read(jti); err != nil {
@@ -135,7 +145,17 @@ func (m *SessionManager) Create(ctx context.Context, p Principal) (string, error
 		return "", fmt.Errorf("auth: invalid user id: %w", err)
 	}
 
-	if err := m.repo.Create(ctx, m.hashToken(jtiHex), userUUID, expires); err != nil {
+	hashed := m.hashToken(jtiHex)
+	if p.Platform || clinicctx.IsApex(ctx) {
+		if m.platform == nil {
+			return "", errors.New("auth: platform session repository is not configured")
+		}
+		if err := m.platform.Create(ctx, hashed, userUUID, expires); err != nil {
+			return "", fmt.Errorf("auth: store platform session: %w", err)
+		}
+		return rawToken, nil
+	}
+	if err := m.repo.Create(ctx, hashed, userUUID, expires); err != nil {
 		return "", fmt.Errorf("auth: store session: %w", err)
 	}
 	return rawToken, nil
@@ -153,20 +173,59 @@ func (m *SessionManager) Authenticate(ctx context.Context, token string) (*Princ
 	if err != nil || jti == "" {
 		return nil, ErrNoSession
 	}
+	hashed := m.hashToken(jti)
+	now := time.Now().UTC()
 
-	sess, err := m.repo.GetActive(ctx, m.hashToken(jti), time.Now().UTC())
+	if clinicctx.IsApex(ctx) {
+		return m.authenticatePlatform(ctx, hashed, now)
+	}
+	return m.authenticateClinic(ctx, hashed, now)
+}
+
+func (m *SessionManager) authenticateClinic(ctx context.Context, hashed string, now time.Time) (*Principal, error) {
+	sess, err := m.repo.GetActive(ctx, hashed, now)
 	if err != nil || sess == nil || sess.User == nil || !sess.User.Active {
 		return nil, ErrNoSession
 	}
+	u := sess.User
+	if cid, ok := clinicctx.ClinicID(ctx); ok && u.ClinicID != uuid.Nil && u.ClinicID != cid {
+		return nil, ErrNoSession
+	}
+	p := &Principal{
+		ID:        u.ID.String(),
+		Email:     u.Email,
+		Name:      u.Name,
+		Role:      u.Role,
+		Timezone:  u.Timezone,
+		UITheme:   u.UITheme,
+		ClinicID:  u.ClinicID.String(),
+		PatientID: "",
+	}
+	if u.PatientID != uuid.Nil {
+		p.PatientID = u.PatientID.String()
+	}
+	if u.ClinicID == uuid.Nil {
+		p.ClinicID = ""
+	}
+	return p, nil
+}
 
+func (m *SessionManager) authenticatePlatform(ctx context.Context, hashed string, now time.Time) (*Principal, error) {
+	if m.platform == nil {
+		return nil, ErrNoSession
+	}
+	sess, err := m.platform.GetActive(ctx, hashed, now)
+	if err != nil || sess == nil || sess.User == nil || !sess.User.Active {
+		return nil, ErrNoSession
+	}
 	u := sess.User
 	return &Principal{
 		ID:       u.ID.String(),
 		Email:    u.Email,
 		Name:     u.Name,
-		Role:     u.Role,
 		Timezone: u.Timezone,
 		UITheme:  u.UITheme,
+		Platform: true,
 	}, nil
 }
 
@@ -183,12 +242,23 @@ func (m *SessionManager) Destroy(ctx context.Context, token string) error {
 	if err != nil {
 		return nil
 	}
-	return m.repo.Delete(ctx, m.hashToken(jti))
+	hashed := m.hashToken(jti)
+	if clinicctx.IsApex(ctx) && m.platform != nil {
+		return m.platform.Delete(ctx, hashed)
+	}
+	return m.repo.Delete(ctx, hashed)
 }
 
 // CleanupExpired removes expired sessions from the database.
 func (m *SessionManager) CleanupExpired(ctx context.Context) error {
-	return m.repo.CleanupExpired(ctx, time.Now().UTC())
+	now := time.Now().UTC()
+	if err := m.repo.CleanupExpired(ctx, now); err != nil {
+		return err
+	}
+	if m.platform != nil {
+		return m.platform.CleanupExpired(ctx, now)
+	}
+	return nil
 }
 
 // Cookie builds the session cookie for token.

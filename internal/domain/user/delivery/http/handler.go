@@ -9,15 +9,19 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 
 	"librevita.org/internal/core/audit"
 	"librevita.org/internal/core/auth"
+	"librevita.org/internal/core/clinicctx"
+	"librevita.org/internal/core/config"
 	"librevita.org/internal/core/policy"
 	"librevita.org/internal/core/server"
 	"librevita.org/internal/core/storage"
 	clinicmodel "librevita.org/internal/domain/clinic/model"
 	clinicusecase "librevita.org/internal/domain/clinic/usecase"
+	identifiermodel "librevita.org/internal/domain/identifier/model"
 	patientusecase "librevita.org/internal/domain/patient/usecase"
 	"librevita.org/internal/domain/user/delivery/views"
 	"librevita.org/internal/domain/user/usecase"
@@ -28,37 +32,57 @@ import (
 type Handler struct {
 	svc      *usecase.Service
 	patients *patientusecase.Service
+	platform *clinicusecase.PlatformService
+	systems  identifiermodel.SystemRepository
 	csrf     *auth.CSRF
 	sessions *auth.SessionManager
 	policies *policy.PolicyEngine
 	audit    *audit.Logger
 	clocks   *clinicusecase.ClockProvider
 	files    *storage.FileManager
+	cfg      *config.Config
 	log      *slog.Logger
 }
 
 // NewHandler is the Fx provider.
 func NewHandler(svc *usecase.Service, patients *patientusecase.Service,
+	platform *clinicusecase.PlatformService, systems identifiermodel.SystemRepository,
 	csrf *auth.CSRF, sessions *auth.SessionManager,
 	policies *policy.PolicyEngine, auditLogger *audit.Logger, clocks *clinicusecase.ClockProvider,
-	files *storage.FileManager, log *slog.Logger) *Handler {
-	return &Handler{svc: svc, patients: patients, csrf: csrf, sessions: sessions,
-		policies: policies, audit: auditLogger, clocks: clocks, files: files, log: log}
+	files *storage.FileManager, cfg *config.Config, log *slog.Logger) *Handler {
+	return &Handler{svc: svc, patients: patients, platform: platform, systems: systems,
+		csrf: csrf, sessions: sessions, policies: policies, audit: auditLogger,
+		clocks: clocks, files: files, cfg: cfg, log: log}
 }
 
-// SetupGate redirects navigation to /setup while the system is not yet
-// onboarded. The setup routes themselves are exempt.
+// SetupGate redirects clinic hosts to /setup while onboarded_at is null.
+// Apex platform routes are not gated.
 func (h *Handler) SetupGate() echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
-			if c.Path() == "/setup" {
+			ctx := c.Request().Context()
+			if clinicctx.IsApex(ctx) {
+				if h.platform == nil {
+					return next(c)
+				}
+				hasOps, err := h.platform.HasOperators(ctx)
+				if err != nil {
+					return err
+				}
+				if !hasOps {
+					return server.HtmxRedirect(c, "/setup")
+				}
 				return next(c)
 			}
-			onboarded, err := h.svc.IsOnboarded(c.Request().Context())
-			if err != nil {
-				return err
+			path := c.Request().URL.Path
+			if path == "/setup" || strings.HasPrefix(path, "/static/") || path == "/healthz" {
+				return next(c)
 			}
-			if !onboarded {
+			clinic, ok := clinicctx.FromContext(ctx)
+			if !ok {
+				return next(c)
+			}
+			if clinic.OnboardedAt == nil {
 				return server.HtmxRedirect(c, "/setup")
 			}
 			return next(c)
@@ -66,9 +90,11 @@ func (h *Handler) SetupGate() echo.MiddlewareFunc {
 	}
 }
 
-// SetupPage renders the onboarding form. Onboarded systems redirect to the
-// login page.
+// SetupPage renders platform bootstrap on the apex, or clinic onboard on a subdomain.
 func (h *Handler) SetupPage(c echo.Context) error {
+	if clinicctx.IsApex(c.Request().Context()) {
+		return h.platformSetupPage(c)
+	}
 	onboarded, err := h.svc.IsOnboarded(c.Request().Context())
 	if err != nil {
 		return err
@@ -76,18 +102,38 @@ func (h *Handler) SetupPage(c echo.Context) error {
 	if onboarded {
 		return c.Redirect(http.StatusFound, "/auth/login")
 	}
-	return server.Render(c, http.StatusOK, views.Setup(server.CSRFToken(c, h.csrf), ""))
+	systems, err := h.systems.ListAll(c.Request().Context())
+	if err != nil {
+		return err
+	}
+	clinic, _ := clinicctx.FromContext(c.Request().Context())
+	name := ""
+	if clinic != nil {
+		name = clinic.Name
+	}
+	return server.Render(c, http.StatusOK, views.ClinicSetup(server.CSRFToken(c, h.csrf), name, systems, ""))
 }
 
-// Setup creates the initial admin account and the clinic profile, then
-// starts a session.
+// Setup handles apex bootstrap or clinic onboard.
 func (h *Handler) Setup(c echo.Context) error {
+	if clinicctx.IsApex(c.Request().Context()) {
+		return h.platformBootstrap(c)
+	}
 	onboarded, err := h.svc.IsOnboarded(c.Request().Context())
 	if err != nil {
 		return err
 	}
 	if onboarded {
 		return c.Redirect(http.StatusFound, "/auth/login")
+	}
+
+	var systemIDs []uuid.UUID
+	if form, err := c.FormParams(); err == nil {
+		for _, raw := range form["identifier_system_id"] {
+			if id, err := uuid.Parse(raw); err == nil {
+				systemIDs = append(systemIDs, id)
+			}
+		}
 	}
 
 	_, token, err := h.svc.Onboard(c.Request().Context(),
@@ -95,24 +141,18 @@ func (h *Handler) Setup(c echo.Context) error {
 			Name:     c.FormValue("admin_name"),
 			Email:    c.FormValue("admin_email"),
 			Password: c.FormValue("admin_password"),
-		},
-		usecase.ClinicInput{
-			Name:       c.FormValue("clinic_name"),
-			TaxID:      c.FormValue("clinic_tax_id"),
-			Phone:      c.FormValue("clinic_phone"),
-			Email:      c.FormValue("clinic_email"),
-			Street:     c.FormValue("clinic_street"),
-			City:       c.FormValue("clinic_city"),
-			State:      c.FormValue("clinic_state"),
-			PostalCode: c.FormValue("clinic_postal_code"),
-			Country:    c.FormValue("clinic_country"),
-			Timezone:   c.FormValue("clinic_timezone"),
-		})
+		}, systemIDs)
 	if err != nil {
 		var v *usecase.ValidationError
+		systems, _ := h.systems.ListAll(c.Request().Context())
+		clinic, _ := clinicctx.FromContext(c.Request().Context())
+		name := ""
+		if clinic != nil {
+			name = clinic.Name
+		}
 		switch {
 		case errors.As(err, &v):
-			return server.Render(c, http.StatusBadRequest, views.Setup(server.CSRFToken(c, h.csrf), v.Msg))
+			return server.Render(c, http.StatusBadRequest, views.ClinicSetup(server.CSRFToken(c, h.csrf), name, systems, v.Msg))
 		case errors.Is(err, usecase.ErrAlreadyOnboarded):
 			return c.Redirect(http.StatusFound, "/auth/login")
 		default:
@@ -124,6 +164,92 @@ func (h *Handler) Setup(c echo.Context) error {
 	return c.Redirect(http.StatusFound, "/")
 }
 
+func (h *Handler) platformSetupPage(c echo.Context) error {
+	if h.platform == nil {
+		return echo.NewHTTPError(http.StatusNotFound)
+	}
+	has, err := h.platform.HasOperators(c.Request().Context())
+	if err != nil {
+		return err
+	}
+	if has {
+		return c.Redirect(http.StatusFound, "/auth/login")
+	}
+	return server.Render(c, http.StatusOK, views.PlatformBootstrap(server.CSRFToken(c, h.csrf), ""))
+}
+
+func (h *Handler) platformBootstrap(c echo.Context) error {
+	if h.platform == nil {
+		return echo.NewHTTPError(http.StatusNotFound)
+	}
+	p, _, err := h.platform.Bootstrap(c.Request().Context(),
+		c.FormValue("admin_name"),
+		c.FormValue("admin_email"),
+		c.FormValue("admin_password"),
+	)
+	if err != nil {
+		if errors.Is(err, clinicusecase.ErrPlatformExists) {
+			return c.Redirect(http.StatusFound, "/auth/login")
+		}
+		return server.Render(c, http.StatusBadRequest, views.PlatformBootstrap(server.CSRFToken(c, h.csrf), err.Error()))
+	}
+	token, err := h.sessions.Create(c.Request().Context(), *p)
+	if err != nil {
+		return err
+	}
+	c.SetCookie(h.sessions.Cookie(token))
+	return c.Redirect(http.StatusFound, "/")
+}
+
+func (h *Handler) requireApexPlatform(c echo.Context) error {
+	if !clinicctx.IsApex(c.Request().Context()) {
+		return echo.NewHTTPError(http.StatusNotFound)
+	}
+	p := server.Principal(c)
+	if p == nil || !p.Platform {
+		return echo.NewHTTPError(http.StatusForbidden)
+	}
+	return nil
+}
+
+// ProvisionPage renders the apex form that creates a clinic shell.
+func (h *Handler) ProvisionPage(c echo.Context) error {
+	if err := h.requireApexPlatform(c); err != nil {
+		return err
+	}
+	return server.Render(c, http.StatusOK, views.Provision(server.CSRFToken(c, h.csrf), ""))
+}
+
+// Provision creates a clinic shell and its Clinic DEK.
+func (h *Handler) Provision(c echo.Context) error {
+	if err := h.requireApexPlatform(c); err != nil {
+		return err
+	}
+	_, err := h.platform.Provision(c.Request().Context(), clinicusecase.ProvisionInput{
+		Name:     c.FormValue("clinic_name"),
+		Slug:     c.FormValue("clinic_slug"),
+		TaxID:    c.FormValue("clinic_tax_id"),
+		Phone:    c.FormValue("clinic_phone"),
+		Email:    c.FormValue("clinic_email"),
+		Street:   c.FormValue("clinic_street"),
+		City:     c.FormValue("clinic_city"),
+		State:    c.FormValue("clinic_state"),
+		Postal:   c.FormValue("clinic_postal_code"),
+		Timezone: c.FormValue("clinic_timezone"),
+	})
+	if err != nil {
+		msg := err.Error()
+		switch {
+		case errors.Is(err, clinicusecase.ErrInvalidSlug):
+			msg = "Enter a valid subdomain (letters, digits, hyphens)"
+		case errors.Is(err, clinicusecase.ErrSlugTaken):
+			msg = "That subdomain is already in use"
+		}
+		return server.Render(c, http.StatusBadRequest, views.Provision(server.CSRFToken(c, h.csrf), msg))
+	}
+	return c.Redirect(http.StatusFound, "/")
+}
+
 // LoginPage renders the sign-in form.
 func (h *Handler) LoginPage(c echo.Context) error {
 	next := server.ValidNext(c.QueryParam("next"))
@@ -132,7 +258,11 @@ func (h *Handler) LoginPage(c echo.Context) error {
 
 // Login validates credentials and starts a session.
 func (h *Handler) Login(c echo.Context) error {
-	_, token, err := h.svc.Login(c.Request().Context(), usecase.Credentials{
+	ctx := c.Request().Context()
+	if clinicctx.IsApex(ctx) {
+		return h.platformLogin(c)
+	}
+	_, token, err := h.svc.Login(ctx, usecase.Credentials{
 		Email:    c.FormValue("email"),
 		Password: c.FormValue("password"),
 	})
@@ -152,6 +282,24 @@ func (h *Handler) Login(c echo.Context) error {
 	return c.Redirect(http.StatusFound, next)
 }
 
+func (h *Handler) platformLogin(c echo.Context) error {
+	p, err := h.platform.Login(c.Request().Context(), c.FormValue("email"), c.FormValue("password"))
+	if err != nil {
+		return server.Render(c, http.StatusUnauthorized,
+			views.Login(server.CSRFToken(c, h.csrf), server.ValidNext(c.FormValue("next")), "Invalid email or password"))
+	}
+	token, err := h.sessions.Create(c.Request().Context(), *p)
+	if err != nil {
+		return err
+	}
+	c.SetCookie(h.sessions.Cookie(token))
+	next := server.ValidNext(c.FormValue("next"))
+	if next == "" {
+		next = "/"
+	}
+	return c.Redirect(http.StatusFound, next)
+}
+
 // RegisterPage renders the account creation form.
 func (h *Handler) RegisterPage(c echo.Context) error {
 	return server.Render(c, http.StatusOK, views.Register(server.CSRFToken(c, h.csrf), ""))
@@ -160,9 +308,10 @@ func (h *Handler) RegisterPage(c echo.Context) error {
 // Register creates the account and starts a session.
 func (h *Handler) Register(c echo.Context) error {
 	_, token, err := h.svc.Register(c.Request().Context(), usecase.RegisterInput{
-		Name:     c.FormValue("name"),
-		Email:    c.FormValue("email"),
-		Password: c.FormValue("password"),
+		Name:      c.FormValue("name"),
+		Email:     c.FormValue("email"),
+		Password:  c.FormValue("password"),
+		PatientID: c.FormValue("patient_id"),
 	})
 	if err != nil {
 		var v *usecase.ValidationError
@@ -200,6 +349,9 @@ func (h *Handler) Logout(c echo.Context) error {
 // activity, latest users, and the clinic profile.
 func (h *Handler) Home(c echo.Context) error {
 	ctx := c.Request().Context()
+	if p := server.Principal(c); p != nil && p.Platform {
+		return h.platformHome(c)
+	}
 
 	clinicRow, err := h.clocks.Profile(ctx)
 	if err != nil {
@@ -271,6 +423,18 @@ func (h *Handler) Home(c echo.Context) error {
 	}
 
 	return server.Render(c, http.StatusOK, views.Home(server.CSRFToken(c, h.csrf), server.Principal(c), stats))
+}
+
+func (h *Handler) platformHome(c echo.Context) error {
+	clinics, err := h.platform.ListClinics(c.Request().Context())
+	if err != nil {
+		return err
+	}
+	base := ""
+	if h.cfg != nil {
+		base = h.cfg.BaseDomain
+	}
+	return server.Render(c, http.StatusOK, views.PlatformHome(server.CSRFToken(c, h.csrf), server.Principal(c), clinics, base))
 }
 
 // HomeActivity serves the dashboard activity feed fragment: the timeline

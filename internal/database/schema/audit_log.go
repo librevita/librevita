@@ -6,8 +6,10 @@ import (
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/entsql"
 	"entgo.io/ent/schema"
+	"entgo.io/ent/schema/edge"
 	"entgo.io/ent/schema/field"
 	"entgo.io/ent/schema/index"
+	"github.com/google/uuid"
 )
 
 // AuditLog holds the schema definition for the immutable AuditLog entity.
@@ -27,6 +29,10 @@ func (AuditLog) Fields() []ent.Field {
 	return []ent.Field{
 		field.Int("id").
 			Immutable(),
+		field.UUID("clinic_id", uuid.UUID{}).
+			Optional().
+			Nillable().
+			Comment("Owning clinic; null for apex events"),
 		field.String("actor_id").
 			Optional().
 			Nillable().
@@ -76,5 +82,16 @@ func (AuditLog) Indexes() []ent.Index {
 		index.Fields("action"),
 		index.Fields("created_at"),
 		index.Fields("resource", "id"),
+		index.Fields("clinic_id", "id"),
+	}
+}
+
+// Edges of the AuditLog.
+func (AuditLog) Edges() []ent.Edge {
+	return []ent.Edge{
+		edge.From("clinic", Clinic.Type).
+			Ref("audit_logs").
+			Field("clinic_id").
+			Unique(),
 	}
 }

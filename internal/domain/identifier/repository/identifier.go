@@ -7,6 +7,8 @@ import (
 	"github.com/google/uuid"
 
 	"librevita.org/ent"
+	"librevita.org/ent/clinicidentifiersystem"
+	"librevita.org/ent/identifiersystem"
 	"librevita.org/ent/patient"
 	"librevita.org/ent/patientidentifier"
 	identifiermodel "librevita.org/internal/domain/identifier/model"
@@ -24,6 +26,7 @@ func NewIdentifierRepository(client *ent.Client) identifiermodel.IdentifierRepos
 func (r *identifierRepository) Add(ctx context.Context, rec identifiermodel.IdentifierRecord) (*identifiermodel.IdentifierRecord, error) {
 	create := r.client.PatientIdentifier.Create().
 		SetID(rec.ID).
+		SetClinicID(rec.ClinicID).
 		SetPatientID(rec.PatientID).
 		SetSystem(rec.System).
 		SetValueCiphertext(rec.ValueCiphertext).
@@ -41,6 +44,19 @@ func (r *identifierRepository) Add(ctx context.Context, rec identifiermodel.Iden
 		return nil, fmt.Errorf("identifier repository: add: %w", err)
 	}
 	return toIdentifierRecordDomain(saved), nil
+}
+
+func (r *identifierRepository) AllowsSystem(ctx context.Context, clinicID uuid.UUID, system string) (bool, error) {
+	ok, err := r.client.ClinicIdentifierSystem.Query().
+		Where(
+			clinicidentifiersystem.ClinicIDEQ(clinicID),
+			clinicidentifiersystem.HasSystemWith(identifiersystem.SystemEQ(system)),
+		).
+		Exist(ctx)
+	if err != nil {
+		return false, fmt.Errorf("identifier repository: allows system: %w", err)
+	}
+	return ok, nil
 }
 
 func (r *identifierRepository) FindByBlindIndex(ctx context.Context, clinicID uuid.UUID, blindIndex string) (*identifiermodel.IdentifierRecord, error) {
@@ -122,6 +138,7 @@ func toIdentifierRecordDomain(row *ent.PatientIdentifier) *identifiermodel.Ident
 	}
 	return &identifiermodel.IdentifierRecord{
 		ID:              row.ID,
+		ClinicID:        row.ClinicID,
 		PatientID:       row.PatientID,
 		System:          row.System,
 		ValueCiphertext: row.ValueCiphertext,

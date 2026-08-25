@@ -176,6 +176,7 @@ auth:
   max_concurrent_hashes: 4
 paseto_key: ... # base64, 32 bytes; required outside development
 master_key: ... # base64, 32 bytes; required outside development
+base_domain: lv.test # clinic hosts are {slug}.{base_domain}; required in production
 crypto:
   hash_algorithm: blake2s # blake2s (default) or blake2b
   encryption_cipher: xchacha20-poly1305 # xchacha20-poly1305 (default)
@@ -215,6 +216,7 @@ All configuration flags are:
 | `--mode`                       | `LIBREVITA_MODE`                             | Runtime mode: `development` or `production`                                                                                                                  |
 | `--http-bind`                  | `LIBREVITA_HTTP_BIND`                        | HTTP bind address (`0.0.0.0`, `127.0.0.1`, ...)                                                                                                              |
 | `--http-port`                  | `LIBREVITA_HTTP_PORT`                        | HTTP listen port (default `8080`)                                                                                                                            |
+| `--base-domain`                | `LIBREVITA_BASE_DOMAIN`                      | DNS suffix for clinic hosts (`{slug}.{base_domain}`); default `lv.test` outside production; required in production                                           |
 | `--trusted-proxies`            | `LIBREVITA_TRUSTED_PROXIES`                  | Comma-separated proxy IPs allowed to set `X-Forwarded-For`                                                                                                   |
 | `--hsts-max-age`               | `LIBREVITA_HSTS_MAX_AGE`                     | `Strict-Transport-Security` max-age in seconds (0 disables; HTTPS only)                                                                                      |
 | `--data-dir`                   | `LIBREVITA_DATA_DIR`                         | Base directory for default database and logs                                                                                                                 |
@@ -289,21 +291,24 @@ LibreVita implements an enterprise-grade **Application-Layer Field-Level Encrypt
  - **AL-FLE Ent Extension (`internal/core/database/fle`)** — a compile-time, zero-reflection encryption and indexing layer built on the canonical `entc.Extension` API:
    - **Declarative Schema Annotations**: Sensitive fields are annotated once — `fle.SearchablePhone()`, `fle.SearchableEmail()`, `fle.SearchableDocument()`, `fle.SearchableName()`, or plain `fle.Searchable()` — stored as binary `BLOB`/`BYTEA` via `fle.EncryptedString()`.
    - **Static Codegen (`fle.Template`)**: An Ent template extension generates 100% typed Go hooks (`encryptPatientMutation`) and decrypt interceptors at build time, with zero use of `reflect` or `interface{}` at runtime. Encryptors and hashers are resolved purely from `context.Context` — no global state, no mutex contention.
-   - **Tenant-Bound AAD**: Every ciphertext is authenticated with the tenant's AAD (`urn:librevita:tenant:<id>`), preventing cross-tenant ciphertext transplantation even if the database is shared.
+   - **Clinic-Bound AAD**: Every request ciphertext is authenticated with `urn:librevita:clinic:<clinic_id>` (legacy rows still decrypt with `urn:librevita`). There is no `tenant_id` alias.
    - **Dynamic Schema Injection (`TransformSchemas`)**: For scalar searchable fields (`phone`, `email`, `document`), `TransformSchemas` automatically injects `<field>_blind_index TEXT` and a composite B-Tree index `(clinic_id, <field>_blind_index)` into the Ent AST — no boilerplate in schema files.
    - **Tokenized Name Search (`SearchableName`)**: Name fields use prefix n-gram tokenization instead of a single exact-match blind index. `TransformSchemas` auto-injects a `<field>_token_index JSON` column. The generated hook calls `normalize.NameTokens(val)` and persists a hashed token array — enabling prefix and partial-word search (e.g. `"Car"` → `"Carlos"`) on fully encrypted data without leaking the plaintext. Queried with `json_each()` (SQLite) or `@>` on `JSONB` (PostgreSQL), always pre-filtered by the `clinic_id` B-Tree index.
  - **Text Normalization (`internal/core/normalize`)** — a pure, zero-allocation normalization package:
    - `normalize.Phone`, `normalize.Email`, `normalize.Text` — deterministic canonicalization before hashing, ensuring blind index collisions between `+55 11 98888-7777` and `5511988887777` are avoided.
    - `normalize.NameTokens` — generates prefix n-grams (min 3 chars) of each word in a name, filtering Portuguese stop words via a compile-time `switch` jump table (`isStopWord`) with zero heap allocations. Used by the FLE template for tokenized name search.
-- **Envelope Encryption (`*crypto.Engine`)** — protects sensitive patient data (such as FHIR identification documents) with physical state separation:
+- **Envelope Encryption (`*crypto.Engine`)** — protects sensitive patient data with physical state separation:
   - **KEK (Key Encryption Key)** — derived via HKDF-BLAKE2b-256 from `LIBREVITA_MASTER_KEY` (`master_key`) using info string `librevita:kek:v1`. The KEK is kept strictly in memory and never written to disk.
-  - **DEK (Data Encryption Key)** — a cryptographically random 32-byte key generated per patient (`urn:librevita:patient:<id>`). Patient data fields are encrypted using XChaCha20-Poly1305 with random 24-byte nonces under the patient's DEK.
-- **KeyVault Port & Adapters** — patient DEKs are encrypted under the KEK and stored outside the primary database in a dedicated key vault in `internal/core/vault`. The active implementation is configured with `vault.backend`:
+  - **Clinic DEK** — a 32-byte key per clinic (`urn:librevita:clinic:<id>`), wrapped by the installation KEK. Request FLE and blind indexes use this key, not the master.
+  - **Patient DEK** — a 32-byte key per patient (`urn:librevita:clinic:<id>:patient:<id>`), wrapped by the Clinic DEK. PHI is encrypted with XChaCha20-Poly1305 under the patient DEK; AAD is the patient URN (legacy rows still use the catalog system URN).
+- **KeyVault Port & Adapters** — clinic and patient DEKs are stored outside the primary database in a dedicated key vault in `internal/core/vault`. The active implementation is configured with `vault.backend`:
   - **`bbolt`** — embedded Key-Value database (default `<data-dir>/keys.db`).
   - **`nats`** — high-performance NATS JetStream KeyValue store (`--vault-nats-url`, `--vault-nats-bucket`).
   - **`etcd`** — cloud-native Raft consensus KV store (`--vault-etcd-endpoints`, `--vault-etcd-prefix`).
   - **`hashicorp`**, **`hashicorp_vault`**, or **`openbao`** — enterprise HashiCorp Vault / OpenBao secret manager (`--vault-hashicorp-address`, `--vault-hashicorp-token`, `--vault-hashicorp-mount`). Hard-delete metadata purges enforce physical Crypto-Shredding.
-- **Crypto-Shredding** — calling `DeletePatientDEK` permanently deletes the patient's DEK from the vault. All database records belonging to that patient instantly become unreadable cryptographic noise, fulfilling GDPR / LGPD Right to be Forgotten compliance without requiring database wipes.
+- **Crypto-Shredding** — `DeletePatientDEK` makes that patient's rows unreadable; `DeleteClinicDEK` shreds the whole clinic (patient DEKs wrapped by it become noise). An operator who still holds the master key and the vault can unwrap any clinic. GDPR / LGPD erasure does not require wiping the primary database.
+
+Clinics are isolated on a shared schema (`clinic_id` only — see [ADR 0002](docs/adr/0002-multi-clinic-shared-schema.md)). Production needs wildcard DNS and TLS for `*.base_domain` (development defaults to `lv.test`). Session cookies are host-only. Onboard the first platform operator on the apex (`base_domain` / `www.`), provision a clinic shell, then finish `/setup` on `{slug}.{base_domain}`.
 
 ## Logging
 

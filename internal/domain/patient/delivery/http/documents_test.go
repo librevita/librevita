@@ -116,6 +116,7 @@ func newDocEnvFull(t *testing.T, dir string) (*echo.Echo, *auth.SessionManager, 
 	h := NewHandler(svc, clinicusecase.NewClockProvider(clinicrepo.NewClinicRepository(client)), csrf, auditLogger, files, ids, systems)
 
 	e := echo.New()
+	e.Use(attachSeededClinic())
 	e.POST("/patients/:id/documents", h.UploadDocument,
 		server.RequireAuth(sessions, log),
 		server.RequirePolicy(policies, auditLogger, log, "patient.document.write"))
