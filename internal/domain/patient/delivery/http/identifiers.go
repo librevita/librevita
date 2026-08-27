@@ -52,10 +52,28 @@ func (h *Handler) IdentifierLookup(c echo.Context) error {
 	case 1:
 		return server.HtmxRedirect(c, "/patients/"+hits[0].PatientID)
 	default:
+		patientIDs := make([]string, 0, len(hits))
+		seen := make(map[string]struct{}, len(hits))
+		for _, hit := range hits {
+			if _, ok := seen[hit.PatientID]; ok {
+				continue
+			}
+			seen[hit.PatientID] = struct{}{}
+			patientIDs = append(patientIDs, hit.PatientID)
+		}
+		patients, err := h.svc.GetMany(ctx, clinicID, patientIDs)
+		if err != nil {
+			return err
+		}
+		byID := make(map[string]*usecase.Patient, len(patients))
+		for i := range patients {
+			patient := patients[i]
+			byID[patient.ID.String()] = &patient
+		}
 		lookupHits := make([]views.LookupHit, 0, len(hits))
 		for _, hit := range hits {
-			pt, err := h.svc.Get(ctx, clinicID, hit.PatientID)
-			if err != nil {
+			pt, ok := byID[hit.PatientID]
+			if !ok {
 				continue
 			}
 			lookupHits = append(lookupHits, views.LookupHit{

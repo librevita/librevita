@@ -121,6 +121,15 @@ type GetPatientWithCreatorRow struct {
 	CreatorName  *string
 }
 
+// PatientCandidate contains only the non-sensitive fields needed to select a
+// page before loading patient PHI and Patient DEKs.
+type PatientCandidate struct {
+	ID        uuid.UUID
+	ClinicID  uuid.UUID
+	Status    PatientStatus
+	CreatedAt time.Time
+}
+
 // PatientInput is the editable profile of a patient.
 type PatientInput struct {
 	DisplayName string
@@ -147,4 +156,20 @@ type PatientRepository interface {
 	BulkSetStatus(ctx context.Context, clinicID uuid.UUID, patientIDs []uuid.UUID, status PatientStatus) (int, error)
 	ListByClinicAndStatus(ctx context.Context, clinicID uuid.UUID, status *PatientStatus) ([]Patient, error)
 	Count(ctx context.Context, clinicID uuid.UUID) (int, error)
+}
+
+// PatientDeletionRepository performs an idempotent aggregate delete for one
+// clinic patient and all relational clinical rows owned by it.
+type PatientDeletionRepository interface {
+	PatientRepository
+	DeleteAggregate(ctx context.Context, clinicID, patientID uuid.UUID) error
+}
+
+// PatientQueryRepository is the optimized extension used by the production
+// repository. Candidate selection happens in SQL and PHI hydration is
+// limited to the returned page.
+type PatientQueryRepository interface {
+	PatientRepository
+	ListCandidates(ctx context.Context, clinicID uuid.UUID, status *PatientStatus, nameTokens []string, emailBlindIndex string, limit, offset int) ([]PatientCandidate, int, error)
+	GetMany(ctx context.Context, clinicID uuid.UUID, patientIDs []uuid.UUID) ([]Patient, error)
 }

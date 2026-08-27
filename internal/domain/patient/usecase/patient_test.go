@@ -75,7 +75,7 @@ func setupPatientTest(t *testing.T) (
 	require.NoError(t, policies.Load(context.Background()))
 
 	repoMock := patientmocks.NewMockPatientRepository(t)
-	svc := usecase.NewService(repoMock, slog.New(slog.DiscardHandler), policies)
+	svc := usecase.NewService(repoMock, slog.New(slog.DiscardHandler), policies, nil)
 
 	return repoMock, svc
 }

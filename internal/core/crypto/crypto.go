@@ -4,12 +4,12 @@
 // The master key is a base64-encoded 32-byte secret (LIBREVITA_MASTER_KEY).
 // KEK (Key Encryption Key) and BlindIndexKey are derived via HKDF-BLAKE2b-256 with
 // purpose-specific info strings:
-//   - InfoKEK: "librevita:kek:v1" (used ONLY to encrypt/decrypt patient DEKs)
+//   - InfoKEK: "librevita:kek:v1" (used to wrap clinic DEKs)
 //   - InfoBlindIndex: "librevita:blind-index:v1" (used for exact-match BLAKE2b blind indexes)
 //
 // Patient data is encrypted using XChaCha20-Poly1305 under a dedicated 32-byte
-// random Data Encryption Key (DEK) per patient. The DEK is encrypted with the KEK
-// and stored in a KeyVault (bbolt). Deleting a patient's DEK from the vault
+// random Data Encryption Key (DEK) per patient. Patient DEKs are wrapped by the
+// clinic DEK and stored in a KeyVault. Deleting a patient's DEK from the vault
 // executes instant Crypto-Shredding (GDPR/LGPD Right to be Forgotten).
 package crypto
 
@@ -48,9 +48,10 @@ type Engine struct {
 	kek      []byte
 	blindKey []byte
 	vault    KeyVault
+	metrics  *keyMetrics
 }
 
-// MasterKey is an alias for Engine for backwards compatibility.
+// MasterKey is an alias for Engine.
 type MasterKey = Engine
 
 // NewEngine initializes the crypto Engine from a base64 32-byte master key and KeyVault.
@@ -81,6 +82,7 @@ func deriveEngine(raw []byte, vault KeyVault) *Engine {
 		kek:      hkdfExpand(raw, InfoKEK),
 		blindKey: hkdfExpand(raw, InfoBlindIndex),
 		vault:    vault,
+		metrics:  &keyMetrics{},
 	}
 }
 
@@ -91,53 +93,48 @@ func ZeroBytes(b []byte) {
 	}
 }
 
-// SetupPatientDEK generates a fresh random 32-byte DEK for patientURN, encrypts it
-// with the KEK, and stores it in the KeyVault. Returns the plaintext DEK.
+// SetupPatientDEK creates the patient-scoped DEK identified by a canonical
+// PatientURN. The DEK is wrapped by the corresponding Clinic DEK and stored in
+// the KeyVault. Returns the plaintext DEK for the current operation.
 func (e *Engine) SetupPatientDEK(ctx context.Context, patientURN string) ([]byte, error) {
-	dek := make([]byte, SizeDEK)
-	if _, err := rand.Read(dek); err != nil {
-		return nil, fmt.Errorf("crypto: generate dek: %w", err)
+	clinicID, patientID, ok := ParsePatientURN(patientURN)
+	if !ok {
+		return nil, fmt.Errorf("crypto: invalid patient urn %q", patientURN)
 	}
-
-	encDEK, err := e.encryptWithKEK(dek)
-	if err != nil {
-		ZeroBytes(dek)
-		return nil, fmt.Errorf("crypto: encrypt dek: %w", err)
-	}
-
-	if err := e.vault.PutDEK(ctx, patientURN, encDEK); err != nil {
-		ZeroBytes(dek)
-		return nil, fmt.Errorf("crypto: save dek to vault: %w", err)
-	}
-
-	return dek, nil
+	return e.SetupPatientDEKForClinic(ctx, clinicID, patientID)
 }
 
-// GetPatientDEK retrieves and decrypts the DEK for patientURN from the KeyVault.
-// If not found, returns ErrKeyNotFound.
+// GetPatientDEK retrieves and unwraps a patient DEK identified by a canonical
+// PatientURN from the KeyVault.
 func (e *Engine) GetPatientDEK(ctx context.Context, patientURN string) ([]byte, error) {
-	encDEK, err := e.vault.GetDEK(ctx, patientURN)
-	if err != nil {
-		return nil, err
+	clinicID, patientID, ok := ParsePatientURN(patientURN)
+	if !ok {
+		return nil, fmt.Errorf("crypto: invalid patient urn %q", patientURN)
 	}
-	return e.decryptWithKEK(encDEK)
+	return e.GetPatientDEKForClinic(ctx, clinicID, patientID)
 }
 
-// DeletePatientDEK deletes the patient's DEK from the vault, executing instant Crypto-Shredding.
+// DeletePatientDEK deletes a patient-scoped DEK identified by a canonical
+// PatientURN, executing instant Crypto-Shredding.
 func (e *Engine) DeletePatientDEK(ctx context.Context, patientURN string) error {
-	return e.vault.DeleteDEK(ctx, patientURN)
+	if _, _, ok := ParsePatientURN(patientURN); !ok {
+		return fmt.Errorf("crypto: invalid patient urn %q", patientURN)
+	}
+	err := e.vault.DeleteDEK(ctx, patientURN)
+	if err == nil {
+		forgetDEK(ctx, patientURN)
+	}
+	return err
 }
 
-// EnsurePatientDEK returns the existing patient DEK or creates a new one if it does not exist yet.
+// EnsurePatientDEK returns the existing patient DEK or creates one for a
+// canonical PatientURN if it does not exist yet.
 func (e *Engine) EnsurePatientDEK(ctx context.Context, patientURN string) ([]byte, error) {
-	dek, err := e.GetPatientDEK(ctx, patientURN)
-	if errors.Is(err, ErrKeyNotFound) {
-		return e.SetupPatientDEK(ctx, patientURN)
+	clinicID, patientID, ok := ParsePatientURN(patientURN)
+	if !ok {
+		return nil, fmt.Errorf("crypto: invalid patient urn %q", patientURN)
 	}
-	if err != nil {
-		return nil, err
-	}
-	return dek, nil
+	return e.EnsurePatientDEKForClinic(ctx, clinicID, patientID)
 }
 
 // EncryptPatientData encrypts patient data using the patient's DEK from vault under XChaCha20-Poly1305.
@@ -145,10 +142,18 @@ func (e *Engine) EncryptPatientData(ctx context.Context, patientURN string, aad,
 	return e.EncryptPayload(ctx, patientURN, aad, plaintext)
 }
 
-// DecryptPatientData decrypts patient data using the patient's DEK from vault under XChaCha20-Poly1305.
-// Returns ErrKeyNotFound if the patient's DEK has been deleted (Crypto-Shredded).
+// DecryptPatientData decrypts patient data using the patient's DEK from the
+// vault under XChaCha20-Poly1305. Returns ErrKeyDestroyed when the patient's
+// DEK has been shredded.
 func (e *Engine) DecryptPatientData(ctx context.Context, patientURN string, aad, ciphertext, nonce []byte) ([]byte, error) {
 	return e.DecryptPayload(ctx, patientURN, aad, ciphertext, nonce)
+}
+
+// DecryptPatientDataWithDEK decrypts a payload with an already resolved
+// patient DEK. It is intended for batch reads that have loaded each unique
+// Patient DEK once.
+func (e *Engine) DecryptPatientDataWithDEK(dek, aad, ciphertext, nonce []byte) ([]byte, error) {
+	return decryptWithDEK(dek, aad, ciphertext, nonce)
 }
 
 // EncryptPayload encrypts any domain payload using the entity/patient DEK from vault under XChaCha20-Poly1305.
@@ -160,18 +165,7 @@ func (e *Engine) EncryptPayload(ctx context.Context, urn string, aad, plaintext 
 	}
 	defer ZeroBytes(dek)
 
-	aead, err := chacha20poly1305.NewX(dek)
-	if err != nil {
-		return nil, nil, fmt.Errorf("crypto: aead: %w", err)
-	}
-
-	nonce = make([]byte, SizeNonce)
-	if _, err := rand.Read(nonce); err != nil {
-		return nil, nil, fmt.Errorf("crypto: nonce: %w", err)
-	}
-
-	ciphertext = aead.Seal(nil, nonce, plaintext, aad)
-	return ciphertext, nonce, nil
+	return encryptWithDEK(dek, aad, plaintext)
 }
 
 // DecryptPayload decrypts any domain payload using the entity/patient DEK from vault under XChaCha20-Poly1305.
@@ -183,17 +177,7 @@ func (e *Engine) DecryptPayload(ctx context.Context, urn string, aad, ciphertext
 	}
 	defer ZeroBytes(dek)
 
-	aead, err := chacha20poly1305.NewX(dek)
-	if err != nil {
-		return nil, fmt.Errorf("crypto: aead: %w", err)
-	}
-
-	plaintext, err := aead.Open(nil, nonce, ciphertext, aad)
-	if err != nil {
-		return nil, fmt.Errorf("crypto: decrypt: %w", err)
-	}
-
-	return plaintext, nil
+	return decryptWithDEK(dek, aad, ciphertext, nonce)
 }
 
 func (e *Engine) dekForURN(ctx context.Context, urn string, ensure bool) ([]byte, error) {
@@ -203,10 +187,7 @@ func (e *Engine) dekForURN(ctx context.Context, urn string, ensure bool) ([]byte
 		}
 		return e.GetPatientDEKForClinic(ctx, clinicID, patientID)
 	}
-	if ensure {
-		return e.EnsurePatientDEK(ctx, urn)
-	}
-	return e.GetPatientDEK(ctx, urn)
+	return nil, fmt.Errorf("crypto: payload urn must be patient-scoped: %q", urn)
 }
 
 // EncryptStruct serializes a Go struct to JSON and encrypts it using the entity's DEK.
@@ -289,8 +270,8 @@ func (e *Engine) DecryptFieldPtr(ctx context.Context, urn string, aad []byte, en
 	return &s, nil
 }
 
-// Seal encrypts plaintext using the global KEK directly.
-// (Used for non-patient system secrets or backwards compatibility).
+// Seal encrypts plaintext using the global KEK directly for non-patient
+// system secrets.
 func (e *Engine) Seal(aad, plaintext []byte) (ciphertext, nonce []byte, err error) {
 	aead, err := chacha20poly1305.NewX(e.kek)
 	if err != nil {
@@ -331,36 +312,32 @@ func (e *Engine) BlindIndex(system, value string) (string, error) {
 	return hex.EncodeToString(hasher.Sum(nil)), nil
 }
 
-func (e *Engine) encryptWithKEK(plaintext []byte) ([]byte, error) {
-	aead, err := chacha20poly1305.NewX(e.kek)
+func encryptWithDEK(dek, aad, plaintext []byte) ([]byte, []byte, error) {
+	if len(dek) != SizeDEK {
+		return nil, nil, ErrInvalidDEK
+	}
+	aead, err := chacha20poly1305.NewX(dek)
 	if err != nil {
-		return nil, err
+		return nil, nil, fmt.Errorf("crypto: aead: %w", err)
 	}
 	nonce := make([]byte, SizeNonce)
 	if _, err := rand.Read(nonce); err != nil {
-		return nil, err
+		return nil, nil, fmt.Errorf("crypto: nonce: %w", err)
 	}
-	ciphertext := aead.Seal(nil, nonce, plaintext, nil)
-	out := make([]byte, SizeNonce+len(ciphertext))
-	copy(out[:SizeNonce], nonce)
-	copy(out[SizeNonce:], ciphertext)
-	return out, nil
+	return aead.Seal(nil, nonce, plaintext, aad), nonce, nil
 }
 
-func (e *Engine) decryptWithKEK(data []byte) ([]byte, error) {
-	if len(data) < SizeNonce {
-		return nil, errors.New("crypto: ciphertext too short for KEK decryption")
+func decryptWithDEK(dek, aad, ciphertext, nonce []byte) ([]byte, error) {
+	if len(dek) != SizeDEK {
+		return nil, ErrInvalidDEK
 	}
-	nonce := data[:SizeNonce]
-	ciphertext := data[SizeNonce:]
-
-	aead, err := chacha20poly1305.NewX(e.kek)
+	aead, err := chacha20poly1305.NewX(dek)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("crypto: aead: %w", err)
 	}
-	plaintext, err := aead.Open(nil, nonce, ciphertext, nil)
+	plaintext, err := aead.Open(nil, nonce, ciphertext, aad)
 	if err != nil {
-		return nil, fmt.Errorf("crypto: decrypt dek with kek: %w", err)
+		return nil, fmt.Errorf("crypto: decrypt: %w", err)
 	}
 	return plaintext, nil
 }

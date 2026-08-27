@@ -135,6 +135,20 @@ func TestPatientRepository_CRUD(t *testing.T) {
 		assert.Contains(t, rawRow.DisplayNameTokenIndex, h)
 	}
 
+	optimized, ok := repo.(patientmodel.PatientQueryRepository)
+	require.True(t, ok)
+	nameHash, err := hasher.BlindIndex("patient.token", "maria")
+	require.NoError(t, err)
+	candidates, totalCandidates, err := optimized.ListCandidates(ctx, clinicID, nil, []string{nameHash}, "", 10, 0)
+	require.NoError(t, err)
+	require.Equal(t, 1, totalCandidates)
+	require.Len(t, candidates, 1)
+	assert.Equal(t, patientID, candidates[0].ID)
+	hydrated, err := optimized.GetMany(ctx, clinicID, []uuid.UUID{patientID})
+	require.NoError(t, err)
+	require.Len(t, hydrated, 1)
+	assert.Equal(t, "Maria Joana", hydrated[0].DisplayName)
+
 	// 2. Get
 	fetched, err := repo.Get(ctx, clinicID, patientID)
 	require.NoError(t, err)
@@ -183,4 +197,11 @@ func TestPatientRepository_CRUD(t *testing.T) {
 	total, err := repo.Count(ctx, clinicID)
 	require.NoError(t, err)
 	assert.Equal(t, 1, total)
+
+	deleter, ok := repo.(patientmodel.PatientDeletionRepository)
+	require.True(t, ok)
+	require.NoError(t, deleter.DeleteAggregate(ctx, clinicID, patientID))
+	require.NoError(t, deleter.DeleteAggregate(ctx, clinicID, patientID))
+	_, err = repo.Get(ctx, clinicID, patientID)
+	assert.ErrorIs(t, err, patientmodel.ErrNotFound)
 }

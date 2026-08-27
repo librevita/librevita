@@ -4,7 +4,9 @@ import (
 	"context"
 	"crypto/rand"
 	"database/sql"
+	"encoding/base64"
 	"fmt"
+	"path/filepath"
 	"sync"
 	"testing"
 
@@ -19,6 +21,7 @@ import (
 	"librevita.org/ent/enttest"
 	"librevita.org/internal/core/crypto"
 	"librevita.org/internal/core/database/fle"
+	"librevita.org/internal/core/vault"
 )
 
 func generateTestKey(t *testing.T) []byte {
@@ -166,8 +169,8 @@ func TestFLE_MultiTenant_DynamicKey_Concurrency(t *testing.T) {
 			// Fetch with wrong tenant context -> cannot decrypt, raw ciphertext returned
 			wrongCtx := fle.WithEncryptor(context.Background(), encTenant2)
 			wrongFetched, err := client.Patient.Get(wrongCtx, pID)
-			assert.NoError(t, err)
-			assert.NotEqual(t, name, wrongFetched.DisplayName) // Remains ciphertext because wrong key cannot decrypt
+			assert.Error(t, err)
+			assert.Nil(t, wrongFetched)
 		}
 	}()
 
@@ -199,10 +202,96 @@ func TestFLE_MultiTenant_DynamicKey_Concurrency(t *testing.T) {
 			// Fetch with wrong tenant context -> cannot decrypt, raw ciphertext returned
 			wrongCtx := fle.WithEncryptor(context.Background(), encTenant1)
 			wrongFetched, err := client.Patient.Get(wrongCtx, pID)
-			assert.NoError(t, err)
-			assert.NotEqual(t, name, wrongFetched.DisplayName)
+			assert.Error(t, err)
+			assert.Nil(t, wrongFetched)
 		}
 	}()
 
 	wg.Wait()
+}
+
+func TestFLE_UsesPatientDEKPerEntity(t *testing.T) {
+	db, err := sql.Open("sqlite", "file:patient_scoped_fle?mode=memory&cache=shared&_pragma=foreign_keys(1)")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	drv := entsql.OpenDB(dialect.SQLite, db)
+	client := enttest.NewClient(t, enttest.WithOptions(ent.Driver(drv)))
+	t.Cleanup(func() { _ = client.Close() })
+
+	require.NoError(t, client.Schema.Create(context.Background()))
+	v, err := vault.NewBBoltVault(filepath.Join(t.TempDir(), "keys.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = v.Close() })
+
+	master := generateTestKey(t)
+	engine, err := crypto.NewEngine(base64.StdEncoding.EncodeToString(master), v)
+	require.NoError(t, err)
+	clinicID := uuid.New()
+	patientA := uuid.New()
+	patientB := uuid.New()
+	_, err = client.Clinic.Create().
+		SetID(clinicID).
+		SetSlug("patient-scoped").
+		SetName("Patient Scoped").
+		SetCountry("BR").
+		SetTimezone("America/Sao_Paulo").
+		Save(context.Background())
+	require.NoError(t, err)
+	clinicDEK, err := engine.EnsureClinicDEK(context.Background(), clinicID)
+	require.NoError(t, err)
+	clinicEnc, err := crypto.NewEncryptor(clinicDEK)
+	require.NoError(t, err)
+	clinicHasher, err := crypto.NewHasherFromDEK(clinicDEK)
+	require.NoError(t, err)
+	crypto.ZeroBytes(clinicDEK)
+
+	client.Use(ent.FLEMutationHook(clinicHasher, clinicEnc, engine))
+	client.Intercept(ent.FLEDecryptionInterceptor(clinicEnc, engine))
+
+	ctx := fle.WithClinicID(context.Background(), clinicID.String())
+	ctx = crypto.WithRequestKeyCache(ctx)
+	defer crypto.ClearRequestKeyCache(ctx)
+	ctx = fle.WithEncryptor(ctx, clinicEnc)
+	ctx = fle.WithHasher(ctx, clinicHasher)
+	ctx = fle.WithPatientEncryptorResolver(ctx, engine)
+
+	_, err = engine.EnsurePatientDEKForClinic(ctx, clinicID, patientA)
+	require.NoError(t, err)
+	_, err = engine.EnsurePatientDEKForClinic(ctx, clinicID, patientB)
+	require.NoError(t, err)
+	_, err = client.Patient.Create().
+		SetID(patientA).
+		SetClinicID(clinicID).
+		SetDisplayName("Paciente A").
+		SetPhone("5511999990001").
+		SetEmail("a@example.org").
+		Save(ctx)
+	require.NoError(t, err)
+	_, err = client.Patient.Create().
+		SetID(patientB).
+		SetClinicID(clinicID).
+		SetDisplayName("Paciente B").
+		SetPhone("5511999990002").
+		SetEmail("b@example.org").
+		Save(ctx)
+	require.NoError(t, err)
+
+	var rawA, rawB []byte
+	require.NoError(t, db.QueryRowContext(ctx, "SELECT display_name FROM patients WHERE id = ?", patientA).Scan(&rawA))
+	require.NoError(t, db.QueryRowContext(ctx, "SELECT display_name FROM patients WHERE id = ?", patientB).Scan(&rawB))
+	assert.NotEqual(t, "Paciente A", string(rawA))
+	assert.NotEqual(t, "Paciente B", string(rawB))
+	assert.NotEqual(t, rawA, rawB)
+
+	gotA, err := client.Patient.Get(ctx, patientA)
+	require.NoError(t, err)
+	assert.Equal(t, "Paciente A", gotA.DisplayName)
+	require.NoError(t, engine.DeletePatientDEKForClinic(ctx, clinicID, patientA))
+	_, err = client.Patient.Get(ctx, patientA)
+	assert.ErrorIs(t, err, crypto.ErrKeyDestroyed)
+
+	gotB, err := client.Patient.Get(ctx, patientB)
+	require.NoError(t, err)
+	assert.Equal(t, "Paciente B", gotB.DisplayName)
 }

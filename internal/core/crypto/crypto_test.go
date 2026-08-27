@@ -71,8 +71,10 @@ func TestKEKDEKPatientDataEncryptionAndCryptoShredding(t *testing.T) {
 	eng, err := crypto.NewEngine(testKey, v)
 	require.NoError(t, err)
 
-	patientURN := "urn:librevita:patient:018f1234-5678-7000-8000-000000000099"
-	aad := []byte("urn:librevita:id:br:cpf")
+	clinicID := uuid.MustParse("01990000-0000-7000-8000-0000000000a1")
+	patientID := uuid.MustParse("01990000-0000-7000-8000-000000000099")
+	patientURN := crypto.PatientURN(clinicID, patientID)
+	aad := []byte(patientURN)
 	plaintext := []byte("12345678900")
 
 	// 1. Setup Patient DEK
@@ -99,9 +101,9 @@ func TestKEKDEKPatientDataEncryptionAndCryptoShredding(t *testing.T) {
 	err = eng.DeletePatientDEK(ctx, patientURN)
 	require.NoError(t, err)
 
-	// 5. Decryption must fail after Crypto-Shredding with ErrKeyNotFound
+	// 5. Decryption must fail after Crypto-Shredding with a terminal error.
 	_, err = eng.DecryptPatientData(ctx, patientURN, aad, ct, nonce)
-	assert.ErrorIs(t, err, crypto.ErrKeyNotFound)
+	assert.ErrorIs(t, err, crypto.ErrKeyDestroyed)
 }
 
 func TestSealOpenDirectKEKRoundtrip(t *testing.T) {
@@ -201,7 +203,10 @@ func TestFxModuleIntegration(t *testing.T) {
 	assert.Equal(t, []byte("medical-data"), pt)
 
 	ctx := context.Background()
-	pURN := "urn:librevita:patient:fx-test"
+	pURN := crypto.PatientURN(
+		uuid.MustParse("01990000-0000-7000-8000-0000000000a1"),
+		uuid.MustParse("01990000-0000-7000-8000-0000000000ff"),
+	)
 	_, err = eng.SetupPatientDEK(ctx, pURN)
 	require.NoError(t, err)
 }
@@ -248,20 +253,67 @@ func TestClinicDEKEnvelopeAndCryptoShred(t *testing.T) {
 	assert.Error(t, err)
 }
 
-func TestReenvelopePatientDEKFromLegacyKEK(t *testing.T) {
-	ctx := context.Background()
+func TestBatchPatientDEKResolutionUsesOneVaultBatch(t *testing.T) {
+	ctx := crypto.WithRequestKeyCache(context.Background())
+	defer crypto.ClearRequestKeyCache(ctx)
 	eng := mustEngine(t)
 	clinicID := uuid.MustParse("01990000-0000-7000-8000-0000000000a1")
-	patientID := uuid.MustParse("01990000-0000-7000-8000-0000000000b2")
+	patientA := uuid.MustParse("01990000-0000-7000-8000-0000000000b1")
+	patientB := uuid.MustParse("01990000-0000-7000-8000-0000000000b2")
 
-	legacyURN := crypto.LegacyPatientURN(patientID)
-	legacyDEK, err := eng.SetupPatientDEK(ctx, legacyURN)
+	_, err := eng.EnsurePatientDEKForClinic(ctx, clinicID, patientA)
 	require.NoError(t, err)
+	_, err = eng.EnsurePatientDEKForClinic(ctx, clinicID, patientB)
+	require.NoError(t, err)
+	before := eng.KeyMetrics()
+	crypto.ClearRequestKeyCache(ctx)
 
-	require.NoError(t, eng.ReenvelopePatientDEK(ctx, clinicID, patientID))
-	got, err := eng.GetPatientDEKForClinic(ctx, clinicID, patientID)
+	deks, err := eng.GetPatientDEKsForClinic(ctx, clinicID, []uuid.UUID{patientA, patientB, patientA})
 	require.NoError(t, err)
-	assert.Equal(t, legacyDEK, got)
+	require.Len(t, deks, 2)
+	assert.Len(t, deks[patientA], crypto.SizeDEK)
+	assert.Len(t, deks[patientB], crypto.SizeDEK)
+	metrics := eng.KeyMetrics()
+	assert.Equal(t, uint64(1), metrics.VaultBatchGet-before.VaultBatchGet)
+	assert.Equal(t, uint64(1), metrics.VaultGet-before.VaultGet)
+}
+
+func TestConcurrentClinicDEKProvisioningIsCreateIfAbsent(t *testing.T) {
+	eng := mustEngine(t)
+	clinicID := uuid.MustParse("01990000-0000-7000-8000-0000000000a3")
+	const workers = 16
+	results := make(chan []byte, workers)
+	errs := make(chan error, workers)
+	for i := 0; i < workers; i++ {
+		go func() {
+			ctx := crypto.WithRequestKeyCache(context.Background())
+			defer crypto.ClearRequestKeyCache(ctx)
+			dek, err := eng.EnsureClinicDEK(ctx, clinicID)
+			if err != nil {
+				errs <- err
+				return
+			}
+			results <- append([]byte(nil), dek...)
+			crypto.ZeroBytes(dek)
+		}()
+	}
+	all := make([][]byte, 0, workers)
+	for i := 0; i < workers; i++ {
+		select {
+		case err := <-errs:
+			require.NoError(t, err)
+		case dek := <-results:
+			require.Len(t, dek, crypto.SizeDEK)
+			all = append(all, dek)
+		}
+	}
+	require.Len(t, all, workers)
+	first := all[0]
+	for _, next := range all[1:] {
+		assert.Equal(t, first, next)
+		crypto.ZeroBytes(next)
+	}
+	crypto.ZeroBytes(first)
 }
 
 func isHex(s string) bool {

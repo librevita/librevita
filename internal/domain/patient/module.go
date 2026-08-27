@@ -13,14 +13,14 @@ import (
 	"librevita.org/internal/core/policy"
 	"librevita.org/internal/core/server"
 	"librevita.org/internal/domain/patient/delivery/http"
-	"librevita.org/internal/domain/patient/repository"
+	patientrepository "librevita.org/internal/domain/patient/repository"
 	"librevita.org/internal/domain/patient/usecase"
 )
 
 // Module wires the patient domain: usecase service, repository,
 // and HTTP endpoints.
 var Module = fx.Module("patient",
-	fx.Provide(repository.NewPatientRepository),
+	fx.Provide(patientrepository.NewPatientRepositoryWithEngine),
 	fx.Provide(usecase.NewService),
 	fx.Provide(http.NewHandler),
 	fx.Invoke(registerHTTPRoutes),
@@ -56,6 +56,7 @@ func registerHTTPRoutes(
 	e.POST("/patients/:id", h.Update, view...)
 	e.POST("/patients/:id/archive", h.Archive, view...)
 	e.POST("/patients/:id/restore", h.Restore, view...)
+	e.POST("/patients/:id/shred", h.Shred, setupGate, server.RequireAuth(sessions, log), server.RequirePolicy(policies, auditLogger, log, "patient.erase"))
 	e.POST("/patients/bulk-archive", h.BulkArchive, view...)
 
 	// Clinical attachments

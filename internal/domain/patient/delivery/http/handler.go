@@ -4,6 +4,7 @@ package http
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -13,6 +14,7 @@ import (
 
 	"librevita.org/internal/core/audit"
 	"librevita.org/internal/core/auth"
+	"librevita.org/internal/core/crypto"
 	"librevita.org/internal/core/server"
 	"librevita.org/internal/core/storage"
 	clinicmodel "librevita.org/internal/domain/clinic/model"
@@ -50,14 +52,15 @@ type Handler struct {
 	files   *storage.FileManager
 	ids     identifierusecase.Service
 	systems identifierusecase.SystemsService
+	engine  *crypto.Engine
 }
 
 // NewHandler is the Fx provider.
 func NewHandler(svc *usecase.Service, clocks *clinicusecase.ClockProvider,
 	csrf *auth.CSRF, auditLogger *audit.Logger, files *storage.FileManager,
-	ids identifierusecase.Service, systems identifierusecase.SystemsService) *Handler {
+	ids identifierusecase.Service, systems identifierusecase.SystemsService, engine *crypto.Engine) *Handler {
 	return &Handler{svc: svc, clocks: clocks, csrf: csrf, audit: auditLogger,
-		files: files, ids: ids, systems: systems}
+		files: files, ids: ids, systems: systems, engine: engine}
 }
 
 // List renders the registry page or, for htmx requests, only the table
@@ -159,13 +162,34 @@ func (h *Handler) documentLookup(c echo.Context, system, q string) error {
 		if err != nil {
 			return err
 		}
+		patientIDs := make([]string, 0, len(hits))
+		seen := make(map[string]struct{}, len(hits))
+		for _, hit := range hits {
+			if hit.System != system {
+				continue
+			}
+			if _, ok := seen[hit.PatientID]; ok {
+				continue
+			}
+			seen[hit.PatientID] = struct{}{}
+			patientIDs = append(patientIDs, hit.PatientID)
+		}
+		patients, err := h.svc.GetMany(ctx, clinicID, patientIDs)
+		if err != nil {
+			return err
+		}
+		byID := make(map[string]*usecase.Patient, len(patients))
+		for i := range patients {
+			patient := patients[i]
+			byID[patient.ID.String()] = &patient
+		}
 		matched := 0
 		for _, hit := range hits {
 			if hit.System != system {
 				continue
 			}
-			pt, err := h.svc.Get(ctx, clinicID, hit.PatientID)
-			if err != nil {
+			pt, ok := byID[hit.PatientID]
+			if !ok {
 				continue
 			}
 			rows = append(rows, h.rows(ctx, []usecase.Patient{*pt})...)
@@ -223,7 +247,7 @@ func (h *Handler) Create(c echo.Context) error {
 		return h.formError(c, "", input, err.Error())
 	}
 	h.audit.Record(ctx, server.EventFromRequest(c, audit.AuditResultSuccess,
-		"patient.create", "patient:"+patient.ID.String(), patient.DisplayName, ""))
+		"patient.create", "patient:"+patient.ID.String(), "", ""))
 	return server.HtmxRedirect(c, "/patients/"+patient.ID.String())
 }
 
@@ -372,7 +396,7 @@ func (h *Handler) Update(c echo.Context) error {
 		return h.formError(c, id.String(), input, err.Error())
 	}
 	h.audit.Record(ctx, server.EventFromRequest(c, audit.AuditResultSuccess,
-		"patient.update", "patient:"+patient.ID.String(), patient.DisplayName, patientChanges(before, input)))
+		"patient.update", "patient:"+patient.ID.String(), "", patientChanges(before, input)))
 	return server.HtmxRedirect(c, "/patients/"+patient.ID.String())
 }
 
@@ -380,7 +404,7 @@ func (h *Handler) Update(c echo.Context) error {
 // patient form (empty value skips it). The normalized value is checked
 // against the clinic's blind index so duplicates fail before any write.
 // The identifier fields are only carried in the form; they never enter
-// the legacy patient columns.
+// the patient profile columns.
 func (h *Handler) prepareIdentifier(ctx context.Context, clinicID string, input *usecase.PatientInput) error {
 	value := strings.TrimSpace(input.IdentifierValue)
 	if value == "" {
@@ -414,8 +438,9 @@ func (h *Handler) createIdentifier(ctx context.Context, clinicID, patientID, act
 	return nil
 }
 
-// patientChanges renders the changed fields as "name: old -> new"
-// pairs, listing only fields whose stored value differs from the input.
+// patientChanges renders only the names of fields that changed. Values are
+// deliberately excluded because audit rows are retained independently of
+// patient ciphertext.
 func patientChanges(before *usecase.GetPatientWithCreatorRow, input usecase.PatientInput) string {
 	type field struct {
 		name string
@@ -440,22 +465,9 @@ func patientChanges(before *usecase.GetPatientWithCreatorRow, input usecase.Pati
 		if old == next {
 			continue
 		}
-		if old == "" {
-			parts = append(parts, f.name+": "+displayValue(next))
-			continue
-		}
-		parts = append(parts, f.name+": "+displayValue(old)+" -> "+displayValue(next))
+		parts = append(parts, f.name)
 	}
 	return strings.Join(parts, ", ")
-}
-
-// displayValue shortens long stored values (e.g. notes) for the audit
-// detail so the change list stays readable.
-func displayValue(s string) string {
-	if len(s) > 40 {
-		return s[:37] + "..."
-	}
-	return s
 }
 
 // Archive sets the patient inactive. htmx responses carry only an OOB
@@ -467,6 +479,54 @@ func (h *Handler) Archive(c echo.Context) error {
 // Restore sets the patient active again.
 func (h *Handler) Restore(c echo.Context) error {
 	return h.setStatus(c, patientmodel.PatientStatusActive, "Patient restored")
+}
+
+// Shred permanently removes one patient's key and then cleans up encrypted
+// relational data and blobs. The key tombstone makes retries safe even when
+// a later cleanup step fails.
+func (h *Handler) Shred(c echo.Context) error {
+	ctx := c.Request().Context()
+	id, err := patientID(c)
+	if err != nil {
+		return err
+	}
+	clinicID, err := h.clinicID(ctx)
+	if err != nil {
+		return err
+	}
+	if h.engine == nil {
+		return errors.New("patient shred: crypto engine is unavailable")
+	}
+
+	_, getErr := h.svc.Get(ctx, clinicID, id.String())
+	if getErr != nil &&
+		!errors.Is(getErr, crypto.ErrKeyNotFound) &&
+		!errors.Is(getErr, crypto.ErrKeyDestroyed) &&
+		!errors.Is(getErr, usecase.ErrNotFound) {
+		return getErr
+	}
+	files, err := h.files.List(ctx, patientDocumentDomain, id)
+	if err != nil {
+		return err
+	}
+	clinicUUID, err := uuid.Parse(clinicID)
+	if err != nil {
+		return fmt.Errorf("patient shred: invalid clinic id: %w", err)
+	}
+	if err := h.engine.DeletePatientDEKForClinic(ctx, clinicUUID, id); err != nil {
+		return err
+	}
+	for _, file := range files {
+		if err := h.files.Delete(ctx, file.ID); err != nil {
+			return err
+		}
+	}
+	if err := h.svc.Delete(ctx, clinicID, id.String()); err != nil {
+		return err
+	}
+	h.audit.Record(ctx, server.EventFromRequest(c, audit.AuditResultSuccess,
+		"patient.shred", "patient:"+id.String(), "", ""))
+	return server.HtmxRedirect(c, "/patients")
 }
 
 // BulkArchive archives the patients whose ids are in the form. The

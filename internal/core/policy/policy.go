@@ -85,6 +85,9 @@ var DefaultPolicies = map[string]string{
 	// (resource.created_by). Enforced in the patient use cases.
 	"patient.edit": `principal.role == 'admin' || (principal.role == 'physician' && resource.created_by == principal.id)`,
 
+	// Patient erasure is deliberately restricted to clinic administrators.
+	"patient.erase": `principal.role == 'admin'`,
+
 	// Clinical file attachments: staff read any file of a clinic patient;
 	// a patient reads their own. Write stays admin/physician.
 	"patient.document.read":  `principal.role in ['admin', 'physician', 'receptionist'] || (principal.role == 'patient' && resource.patient_id == principal.patient_id && principal.patient_id != '')`,

@@ -67,6 +67,7 @@ tasks:
       - go generate ./internal/database/schema
     sources:
       - internal/database/schema/**/*.go
+      - internal/core/database/fle/*.go
     generates:
       - ent/doc.go
       - ent/client.go

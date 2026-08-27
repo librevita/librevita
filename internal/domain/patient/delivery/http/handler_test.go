@@ -30,12 +30,12 @@ func TestPatientChanges(t *testing.T) {
 		{
 			name:  "changed values",
 			input: usecase.PatientInput{DisplayName: "Ana Souza Silva", Sex: "female", Phone: "22", Email: "ana@t.com"},
-			want:  "display name: Ana Souza -> Ana Souza Silva, phone: 11 -> 22",
+			want:  "display name, phone",
 		},
 		{
 			name:  "new value",
 			input: usecase.PatientInput{DisplayName: "Ana Souza", Sex: "female", Phone: "11", Email: "ana@t.com", City: "Sao Paulo"},
-			want:  "city: Sao Paulo",
+			want:  "city",
 		},
 	}
 	for _, tc := range cases {
@@ -45,17 +45,9 @@ func TestPatientChanges(t *testing.T) {
 	}
 }
 
-func TestDisplayValue(t *testing.T) {
-	short := "abc"
-	assert.Equal(t, short, displayValue(short))
-
-	long := "0123456789012345678901234567890123456789X"
-	assert.Equal(t, "0123456789012345678901234567890123456...", displayValue(long))
-}
-
 func TestHistoryText(t *testing.T) {
 	email := "nurse@clinic.org"
-	detail := "phone: 11 -> 22"
+	detail := "phone"
 	cases := []struct {
 		name string
 		ev   audit.EventRow
@@ -69,7 +61,7 @@ func TestHistoryText(t *testing.T) {
 		{
 			name: "update with changes",
 			ev:   audit.EventRow{Action: "patient.update", ActorEmail: &email, Detail: &detail},
-			want: "Updated by nurse@clinic.org (phone: 11 -> 22)",
+			want: "Updated by nurse@clinic.org (phone)",
 		},
 		{
 			name: "update without detail",

@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"bytes"
 	"io"
 	"log/slog"
 	"os"
@@ -12,6 +13,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"librevita.org/internal/core/crypto"
 )
 
 // ageBlob rewinds the file mtime of a locally stored blob, so the
@@ -95,6 +98,38 @@ func TestFileManagerUploadGetListDelete(t *testing.T) {
 	assert.True(t, IsNotFound(err))
 
 	_, err = m.store.Stat(ctx, meta.Key)
+	assert.True(t, IsNotFound(err))
+}
+
+func TestFileManagerEncryptedUploadOpen(t *testing.T) {
+	m, store := testManager(t)
+	ctx := storageCtx()
+	key := bytes.Repeat([]byte{0x19}, crypto.SizeDEK)
+	aad := []byte("urn:librevita:clinic:patient")
+	plain := strings.Repeat("clinical-note-", 7000)
+
+	meta, err := m.UploadEncrypted(ctx, uploadInput(), strings.NewReader(plain), int64(len(plain)), key, aad)
+	require.NoError(t, err)
+	assert.Equal(t, int64(len(plain)), meta.Size)
+	assert.Equal(t, blake2b256Hex(plain), meta.Checksum)
+
+	raw, err := store.Get(ctx, meta.Key)
+	require.NoError(t, err)
+	encoded, err := io.ReadAll(raw.Data)
+	require.NoError(t, err)
+	require.NoError(t, raw.Data.Close())
+	assert.NotEqual(t, []byte(plain), encoded)
+
+	openedMeta, opened, err := m.OpenEncryptedForResource(ctx, uploadInput().Domain, testResource, meta.ID, key, aad)
+	require.NoError(t, err)
+	assert.Equal(t, meta.ID, openedMeta.ID)
+	got, err := io.ReadAll(opened.Data)
+	require.NoError(t, err)
+	require.NoError(t, opened.Data.Close())
+	assert.Equal(t, plain, string(got))
+
+	require.NoError(t, m.Delete(ctx, meta.ID))
+	_, err = store.Stat(ctx, meta.Key)
 	assert.True(t, IsNotFound(err))
 }
 

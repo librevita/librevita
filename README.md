@@ -255,8 +255,15 @@ All configuration flags are:
 | `--storage-s3-region`          | `LIBREVITA_STORAGE_S3_REGION`                | S3 region (may be empty outside AWS)                                                                                                                         |
 | `--storage-s3-secure`          | `LIBREVITA_STORAGE_S3_SECURE`                | Use HTTPS for the S3 endpoint                                                                                                                                |
 | `--storage-s3-path-style`      | `LIBREVITA_STORAGE_S3_PATH_STYLE`            | Use path-style S3 addressing                                                                                                                                 |
-| `--vault-backend`              | `LIBREVITA_VAULT_BACKEND`                    | Key vault storage backend: `bbolt`                                                                                                                           |
+| `--vault-backend`              | `LIBREVITA_VAULT_BACKEND`                    | Key vault storage backend: `bbolt`, `nats`, `etcd`, or `hashicorp`                                                                                           |
 | `--vault-bbolt-path`           | `LIBREVITA_VAULT_BBOLT_PATH`                 | Embedded bbolt key vault database path (default `<data-dir>/keys.db`)                                                                                        |
+| `--vault-nats-url`             | `LIBREVITA_VAULT_NATS_URL`                   | NATS server URL for the JetStream KeyValue vault                                                                                                             |
+| `--vault-nats-bucket`          | `LIBREVITA_VAULT_NATS_BUCKET`                | NATS JetStream KeyValue bucket                                                                                                                               |
+| `--vault-etcd-endpoints`       | `LIBREVITA_VAULT_ETCD_ENDPOINTS`             | Comma-separated etcd v3 endpoints                                                                                                                            |
+| `--vault-etcd-prefix`          | `LIBREVITA_VAULT_ETCD_PREFIX`                | etcd key prefix                                                                                                                                              |
+| `--vault-hashicorp-address`    | `LIBREVITA_VAULT_HASHICORP_ADDRESS`          | HashiCorp Vault / OpenBao address                                                                                                                            |
+| `--vault-hashicorp-token`      | `LIBREVITA_VAULT_HASHICORP_TOKEN`            | HashiCorp Vault / OpenBao token                                                                                                                              |
+| `--vault-hashicorp-mount`      | `LIBREVITA_VAULT_HASHICORP_MOUNT`            | HashiCorp Vault / OpenBao KV v2 mount                                                                                                                        |
 
 Environment variables are the config keys with `_` separators, always in the full section form (`LIBREVITA_CRYPTO_*`, `LIBREVITA_DATABASE_*`, `LIBREVITA_LOGGING_*`, `LIBREVITA_STORAGE_*`, `LIBREVITA_VAULT_*`); no short aliases are accepted.
 
@@ -285,13 +292,13 @@ LibreVita implements an enterprise-grade **Application-Layer Field-Level Encrypt
    - Constant-time verification (`subtle.ConstantTimeCompare`) with legacy raw-hex fallback.
    - Deterministic blind index computation (`system || '\x00' || value`) ensuring cryptographic domain separation across entities (e.g. `patient.phone`, `patient.email`).
  - **Symmetric AEAD Encryptor (`crypto.Encryptor`)** — provides authenticated payload encryption for sensitive personal and clinical data:
-   - Self-Contained Envelope format with Magic Byte versioning at `ciphertext[0]`: `0xA1` (`MagicByteXChaCha20Poly1305`) containing `[ Version (1B) | Nonce (24B) | Ciphertext + Poly1305 Tag ]`.
+   - Self-Contained Envelope format with Magic Byte versioning at `ciphertext[0]`: `0x01` (`MagicByteXChaCha20Poly1305`) containing `[ Version (1B) | Nonce (24B) | Ciphertext + Poly1305 Tag ]`.
    - Cryptographic Agility: Future-proof architecture supporting algorithm migrations (e.g. AES-256-GCM with 12-byte nonces or Post-Quantum ciphers) without database migrations or schema alterations.
    - Memory security: transient plaintext buffers are securely zeroized with `ZeroBytes`.
  - **AL-FLE Ent Extension (`internal/core/database/fle`)** — a compile-time, zero-reflection encryption and indexing layer built on the canonical `entc.Extension` API:
    - **Declarative Schema Annotations**: Sensitive fields are annotated once — `fle.SearchablePhone()`, `fle.SearchableEmail()`, `fle.SearchableDocument()`, `fle.SearchableName()`, or plain `fle.Searchable()` — stored as binary `BLOB`/`BYTEA` via `fle.EncryptedString()`.
    - **Static Codegen (`fle.Template`)**: An Ent template extension generates 100% typed Go hooks (`encryptPatientMutation`) and decrypt interceptors at build time, with zero use of `reflect` or `interface{}` at runtime. Encryptors and hashers are resolved purely from `context.Context` — no global state, no mutex contention.
-   - **Clinic-Bound AAD**: Every request ciphertext is authenticated with `urn:librevita:clinic:<clinic_id>` (legacy rows still decrypt with `urn:librevita`). There is no `tenant_id` alias.
+  - **Patient-Bound AAD**: Patient PHI ciphertexts are authenticated with `urn:librevita:clinic:<clinic_id>:patient:<patient_id>`; clinic-owned ciphertexts use the clinic URN. There is no `tenant_id` alias.
    - **Dynamic Schema Injection (`TransformSchemas`)**: For scalar searchable fields (`phone`, `email`, `document`), `TransformSchemas` automatically injects `<field>_blind_index TEXT` and a composite B-Tree index `(clinic_id, <field>_blind_index)` into the Ent AST — no boilerplate in schema files.
    - **Tokenized Name Search (`SearchableName`)**: Name fields use prefix n-gram tokenization instead of a single exact-match blind index. `TransformSchemas` auto-injects a `<field>_token_index JSON` column. The generated hook calls `normalize.NameTokens(val)` and persists a hashed token array — enabling prefix and partial-word search (e.g. `"Car"` → `"Carlos"`) on fully encrypted data without leaking the plaintext. Queried with `json_each()` (SQLite) or `@>` on `JSONB` (PostgreSQL), always pre-filtered by the `clinic_id` B-Tree index.
  - **Text Normalization (`internal/core/normalize`)** — a pure, zero-allocation normalization package:
@@ -299,14 +306,14 @@ LibreVita implements an enterprise-grade **Application-Layer Field-Level Encrypt
    - `normalize.NameTokens` — generates prefix n-grams (min 3 chars) of each word in a name, filtering Portuguese stop words via a compile-time `switch` jump table (`isStopWord`) with zero heap allocations. Used by the FLE template for tokenized name search.
 - **Envelope Encryption (`*crypto.Engine`)** — protects sensitive patient data with physical state separation:
   - **KEK (Key Encryption Key)** — derived via HKDF-BLAKE2b-256 from `LIBREVITA_MASTER_KEY` (`master_key`) using info string `librevita:kek:v1`. The KEK is kept strictly in memory and never written to disk.
-  - **Clinic DEK** — a 32-byte key per clinic (`urn:librevita:clinic:<id>`), wrapped by the installation KEK. Request FLE and blind indexes use this key, not the master.
-  - **Patient DEK** — a 32-byte key per patient (`urn:librevita:clinic:<id>:patient:<id>`), wrapped by the Clinic DEK. PHI is encrypted with XChaCha20-Poly1305 under the patient DEK; AAD is the patient URN (legacy rows still use the catalog system URN).
+  - **Clinic DEK** — a 32-byte key per clinic (`urn:librevita:clinic:<id>`), wrapped by the installation KEK. It wraps Patient DEKs and derives the clinic-scoped blind-index key; it does not encrypt patient PHI.
+  - **Patient DEK** — a 32-byte random key per patient (`urn:librevita:clinic:<id>:patient:<id>`), wrapped by the Clinic DEK. Patient PHI is encrypted with XChaCha20-Poly1305 under this key; AAD is the Patient URN.
 - **KeyVault Port & Adapters** — clinic and patient DEKs are stored outside the primary database in a dedicated key vault in `internal/core/vault`. The active implementation is configured with `vault.backend`:
   - **`bbolt`** — embedded Key-Value database (default `<data-dir>/keys.db`).
   - **`nats`** — high-performance NATS JetStream KeyValue store (`--vault-nats-url`, `--vault-nats-bucket`).
   - **`etcd`** — cloud-native Raft consensus KV store (`--vault-etcd-endpoints`, `--vault-etcd-prefix`).
   - **`hashicorp`**, **`hashicorp_vault`**, or **`openbao`** — enterprise HashiCorp Vault / OpenBao secret manager (`--vault-hashicorp-address`, `--vault-hashicorp-token`, `--vault-hashicorp-mount`). Hard-delete metadata purges enforce physical Crypto-Shredding.
-- **Crypto-Shredding** — `DeletePatientDEK` makes that patient's rows unreadable; `DeleteClinicDEK` shreds the whole clinic (patient DEKs wrapped by it become noise). An operator who still holds the master key and the vault can unwrap any clinic. GDPR / LGPD erasure does not require wiping the primary database.
+- **Crypto-Shredding** — deleting a Patient DEK makes that patient's encrypted PHI unreadable; the patient erasure flow also removes relational rows, blind indexes, and encrypted attachments. `DeleteClinicDEK` shreds the whole clinic because patient DEKs are wrapped by it. An operator who still holds the master key and the vault can unwrap any clinic.
 
 Clinics are isolated on a shared schema (`clinic_id` only — see [ADR 0002](docs/adr/0002-multi-clinic-shared-schema.md)). Production needs wildcard DNS and TLS for `*.base_domain` (development defaults to `lv.test`). Session cookies are host-only. Onboard the first platform operator on the apex (`base_domain` / `www.`), provision a clinic shell, then finish `/setup` on `{slug}.{base_domain}`.
 
@@ -442,6 +449,7 @@ Echo is created and managed by Fx. Routes:
 | POST   | `/patients/:id`                                  | Save edits (optionally adds an identification document)          |
 | POST   | `/patients/:id/archive`                          | Archive a patient                                                |
 | POST   | `/patients/:id/restore`                          | Restore an archived patient                                      |
+| POST   | `/patients/:id/shred`                            | Permanently erase a patient and shred their encryption key       |
 | POST   | `/patients/bulk-archive`                         | Archive selected patients (up to 50)                             |
 | POST   | `/patients/:id/identifiers`                      | Add an encrypted identification document                         |
 | POST   | `/patients/:id/identifiers/:identifierID/remove` | Remove an identification document                                |
@@ -488,17 +496,16 @@ HTTP errors use RFC 7807 `application/problem+json` responses.
 The clinical and administrative features are organized in `internal/domain`:
 
 - **Patients** — full registry CRUD with tokenized prefix search (debounced server-side, searching across encrypted `display_name_token_index` via blind n-gram hashes), status (active/archived), bulk
-  archive, an audit-backed change history on the detail page, clinical attachments (uploads are checksummed into the
-  audit chain, downloads are audited), and FHIR-style identification documents (system + value) protected via
-  per-patient DEK Envelope Encryption with a keyed blind index for exact lookup and KeyVault Crypto-Shredding for
-  GDPR/LGPD Right to be Forgotten compliance; duplicates are rejected deployment-wide. The document
+  archive, an audit-backed change history on the detail page, clinical attachments encrypted with the Patient DEK and
+  checksummed before storage, downloads that are audited, and FHIR-style identification documents (system + value)
+  protected via per-patient DEK Envelope Encryption with a keyed blind index for exact lookup and KeyVault
+  Crypto-Shredding for GDPR/LGPD Right to be Forgotten compliance; duplicates are rejected deployment-wide. The document
   systems themselves are administered at runtime (pattern, transform, check digit), so a deployment registers its
   jurisdictions' documents without a code change. Editing is governed by the
   resource-level `patient.edit` policy: physicians edit only the patients they registered, admins edit everything.
-- **Clinic** — the installation profile (name, tax id, contact, timezone), created once by onboarding and resolved
-  per request through the clock provider. The tenant model is single-clinic per installation (ADR-0001,
-  `docs/adr/0001-single-clinic-tenant.md`): `clinic_id` on clinical tables is future-proofing, with the scope
-  convention enforced by the Ent repository queries.
+- **Clinic** — the clinic profile (name, tax id, contact, timezone), provisioned on the apex and resolved per
+  request through the Host middleware. Multiple clinics share the schema and are isolated by `clinic_id` (ADR-0002,
+  `docs/adr/0002-multi-clinic-shared-schema.md`), including their FLE key hierarchy.
 - **Staff & specialties** — the clinic specialty catalog and the physician directory. Receptionists propose profile
   changes (name, email, specialties) that an administrator approves or rejects; the request snapshots the previous
   profile so the diff stays readable, and the whole flow (list, history, filters, pagination) is audited.
@@ -578,6 +585,7 @@ rejected, because the policy editor is the only place that could restore it.
 | `staff.approve`          | `principal.role == 'admin'`                                                                             |
 | `patient.view`           | `principal.role in ['admin', 'physician', 'receptionist']`                                              |
 | `patient.edit`           | `principal.role == 'admin' \|\| (principal.role == 'physician' && resource.created_by == principal.id)` |
+| `patient.erase`          | `principal.role == 'admin'`                                                                             |
 | `patient.document.read`  | `principal.role in ['admin', 'physician', 'receptionist']`                                              |
 | `patient.document.write` | `principal.role in ['admin', 'physician']`                                                              |
 

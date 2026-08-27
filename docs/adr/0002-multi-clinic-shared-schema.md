@@ -57,9 +57,11 @@ clinic in context. Session and CSRF cookies are **host-only** (no
 (`urn:librevita:clinic:<id>`) → Patient DEK
 (`urn:librevita:clinic:<id>:patient:<id>`) → PHI.
 
-Request FLE and blind indexes use the Clinic DEK, not the master.
-AAD is `urn:librevita:clinic:<id>` (decrypt still tries legacy
-`urn:librevita`). Crypto-shred of a clinic deletes its Clinic DEK.
+Patient, episode, appointment, identifier, and attachment PHI use the
+Patient DEK. Blind indexes and clinic-owned data use a key derived from the
+Clinic DEK, not the master. Patient-owned AAD is the Patient URN.
+Crypto-shred of a patient deletes its Patient DEK; crypto-shred of a clinic
+deletes its Clinic DEK and therefore makes all child Patient DEKs unreadable.
 An operator with master **and** the vault can still unwrap any clinic.
 
 ### Onboarding

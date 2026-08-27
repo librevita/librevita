@@ -36,15 +36,13 @@ func (s *service) blindIndex(ctx context.Context, system, value string) (string,
 
 func (s *service) decryptValue(ctx context.Context, clinicID, patientID uuid.UUID, system string, ciphertext, nonce []byte) ([]byte, error) {
 	pURN := crypto.PatientURN(clinicID, patientID)
-	value, err := s.key.DecryptPatientData(ctx, pURN, []byte(pURN), ciphertext, nonce)
-	if err == nil {
-		return value, nil
-	}
-	legacy, legacyErr := s.key.DecryptPatientData(ctx, crypto.LegacyPatientURN(patientID), []byte(system), ciphertext, nonce)
-	if legacyErr == nil {
-		return legacy, nil
-	}
-	return nil, err
+	_ = system
+	return s.key.DecryptPatientData(ctx, pURN, []byte(pURN), ciphertext, nonce)
+}
+
+func (s *service) decryptValueWithDEK(clinicID, patientID uuid.UUID, dek, ciphertext, nonce []byte) ([]byte, error) {
+	pURN := crypto.PatientURN(clinicID, patientID)
+	return s.key.DecryptPatientDataWithDEK(dek, []byte(pURN), ciphertext, nonce)
 }
 
 // AddIdentifier normalizes, validates, encrypts, and stores in.
@@ -181,12 +179,28 @@ func (s *service) List(ctx context.Context, clinicID, patientID string) ([]*iden
 		return nil, fmt.Errorf("identifier: list: %w", err)
 	}
 	out := make([]*identifiermodel.Identifier, 0, len(rows))
+	deks, err := s.key.GetPatientDEKsForClinic(ctx, cUUID, []uuid.UUID{pUUID})
+	if err != nil {
+		if errors.Is(err, crypto.ErrKeyNotFound) || errors.Is(err, crypto.ErrKeyDestroyed) {
+			return out, nil
+		}
+		return nil, fmt.Errorf("identifier: load patient dek: %w", err)
+	}
+	defer func() {
+		for _, dek := range deks {
+			crypto.ZeroBytes(dek)
+		}
+	}()
+	dek, ok := deks[pUUID]
+	if !ok {
+		return out, nil
+	}
 	for _, row := range rows {
 		cid := row.ClinicID
 		if cid == uuid.Nil {
 			cid = cUUID
 		}
-		value, err := s.decryptValue(ctx, cid, row.PatientID, row.System, row.ValueCiphertext, row.Nonce)
+		value, err := s.decryptValueWithDEK(cid, row.PatientID, dek, row.ValueCiphertext, row.Nonce)
 		if err != nil {
 			s.log.Error("identifier: failed to decrypt", "id", row.ID, "system", row.System, "error", err)
 			continue
@@ -223,13 +237,41 @@ func (s *service) ListByPatients(ctx context.Context, patientIDs []string) (map[
 	if err != nil {
 		return nil, fmt.Errorf("identifier: list by patients: %w", err)
 	}
-	clinicID, _ := clinicctx.ClinicID(ctx)
+	keysByClinic := make(map[uuid.UUID]map[uuid.UUID][]byte)
+	idsByClinic := make(map[uuid.UUID][]uuid.UUID)
 	for _, row := range rows {
 		cid := row.ClinicID
 		if cid == uuid.Nil {
-			cid = clinicID
+			cid, _ = clinicctx.ClinicID(ctx)
 		}
-		value, err := s.decryptValue(ctx, cid, row.PatientID, row.System, row.ValueCiphertext, row.Nonce)
+		if cid == uuid.Nil {
+			continue
+		}
+		idsByClinic[cid] = append(idsByClinic[cid], row.PatientID)
+	}
+	for cid, ids := range idsByClinic {
+		deks, err := s.key.GetPatientDEKsForClinic(ctx, cid, ids)
+		if err != nil {
+			return nil, fmt.Errorf("identifier: load patient deks: %w", err)
+		}
+		keysByClinic[cid] = deks
+		defer func(deks map[uuid.UUID][]byte) {
+			for _, dek := range deks {
+				crypto.ZeroBytes(dek)
+			}
+		}(deks)
+	}
+	for _, row := range rows {
+		cid := row.ClinicID
+		if cid == uuid.Nil {
+			cid, _ = clinicctx.ClinicID(ctx)
+		}
+		dek, ok := keysByClinic[cid][row.PatientID]
+		if !ok {
+			s.log.Error("identifier: patient DEK unavailable", "patient_id", row.PatientID)
+			continue
+		}
+		value, err := s.decryptValueWithDEK(cid, row.PatientID, dek, row.ValueCiphertext, row.Nonce)
 		if err != nil {
 			s.log.Error("identifier: failed to decrypt", "patient_id", row.PatientID, "system", row.System, "error", err)
 			continue

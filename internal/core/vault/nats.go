@@ -2,9 +2,9 @@ package vault
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
@@ -53,6 +53,13 @@ func NewNATSVault(url, bucketName string) (*NATSVault, error) {
 // PutDEK stores the encrypted DEK bytes indexed by patientURN.
 func (v *NATSVault) PutDEK(ctx context.Context, patientURN string, encryptedDEK []byte) error {
 	key := sanitizeNATSKey(patientURN)
+	if entry, err := v.kv.Get(ctx, key); err == nil {
+		if crypto.IsDestroyedDEK(entry.Value()) {
+			return crypto.ErrKeyDestroyed
+		}
+	} else if !errors.Is(err, jetstream.ErrKeyNotFound) {
+		return fmt.Errorf("vault: nats check existing: %w", err)
+	}
 	if _, err := v.kv.Put(ctx, key, encryptedDEK); err != nil {
 		return fmt.Errorf("vault: nats put: %w", err)
 	}
@@ -70,20 +77,51 @@ func (v *NATSVault) GetDEK(ctx context.Context, patientURN string) ([]byte, erro
 		}
 		return nil, fmt.Errorf("vault: nats get: %w", err)
 	}
+	if crypto.IsDestroyedDEK(entry.Value()) {
+		return nil, crypto.ErrKeyDestroyed
+	}
 	val := make([]byte, len(entry.Value()))
 	copy(val, entry.Value())
 	return val, nil
 }
 
-// DeleteDEK purges the patient's DEK from storage, performing instant Crypto-Shredding.
+// GetDEKs retrieves multiple wrapped DEKs with bounded concurrent JetStream
+// requests. NATS KV does not expose a native multi-get operation.
+func (v *NATSVault) GetDEKs(ctx context.Context, patientURNs []string) (map[string]crypto.DEKResult, error) {
+	return batchGetWithWorkers(ctx, patientURNs, defaultBatchWorkers, v.GetDEK)
+}
+
+// PutIfAbsent creates a wrapped DEK without replacing an existing value.
+func (v *NATSVault) PutIfAbsent(ctx context.Context, patientURN string, encryptedDEK []byte) (bool, error) {
+	key := sanitizeNATSKey(patientURN)
+	_, err := v.kv.Create(ctx, key, encryptedDEK)
+	if err == nil {
+		return true, nil
+	}
+	if errors.Is(err, jetstream.ErrKeyExists) {
+		if _, getErr := v.GetDEK(ctx, patientURN); getErr != nil {
+			if errors.Is(getErr, crypto.ErrKeyDestroyed) {
+				return false, getErr
+			}
+			return false, fmt.Errorf("vault: nats verify existing: %w", getErr)
+		}
+		return false, nil
+	}
+	return false, fmt.Errorf("vault: nats create: %w", err)
+}
+
+// DeleteDEK purges the patient's DEK from storage and writes a terminal
+// tombstone, performing instant Crypto-Shredding without allowing recreation.
 func (v *NATSVault) DeleteDEK(ctx context.Context, patientURN string) error {
 	key := sanitizeNATSKey(patientURN)
 	// Purge removes all history and tombstones for the key, executing physical shredding.
 	if err := v.kv.Purge(ctx, key); err != nil {
-		if errors.Is(err, jetstream.ErrKeyNotFound) {
-			return nil
+		if !errors.Is(err, jetstream.ErrKeyNotFound) {
+			return fmt.Errorf("vault: nats purge: %w", err)
 		}
-		return fmt.Errorf("vault: nats purge: %w", err)
+	}
+	if _, err := v.kv.Put(ctx, key, crypto.DestroyedDEKMarker()); err != nil {
+		return fmt.Errorf("vault: nats tombstone: %w", err)
 	}
 	return nil
 }
@@ -96,6 +134,5 @@ func (v *NATSVault) Close() error {
 
 // sanitizeNATSKey replaces characters invalid in NATS subjects with underscores.
 func sanitizeNATSKey(urn string) string {
-	r := strings.NewReplacer(":", "_", "/", "_", ".", "_", " ", "_")
-	return r.Replace(urn)
+	return "k_" + base64.RawURLEncoding.EncodeToString([]byte(urn))
 }

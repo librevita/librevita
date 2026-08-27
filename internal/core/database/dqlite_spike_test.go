@@ -107,7 +107,7 @@ func TestDqliteSpike(t *testing.T) {
 	t.Cleanup(func() { _ = v.Close() })
 
 	engine, err := crypto.NewEngine("nAmIvOXVc0vb6M9G7P9q2j2yK1WxP3sJ8q5dR4tU6wA=", v)
-	patientSvc := usecase.NewService(patientrepo.NewPatientRepository(client), slog.New(slog.DiscardHandler), nil)
+	patientSvc := usecase.NewService(patientrepo.NewPatientRepository(client), slog.New(slog.DiscardHandler), nil, engine)
 	createdPt, err := patientSvc.Create(context.Background(), clinicID, adminID, usecase.PatientInput{
 		DisplayName: "P",
 		Sex:         "unknown",
