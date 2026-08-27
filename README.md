@@ -279,41 +279,44 @@ implement it, selected with `storage.backend`:
 - **`s3`** — any S3-compatible API (MinIO, Garage, Ceph, ...), not necessarily AWS: endpoint, credentials, region, and
   path-style addressing are configurable. The bucket is verified at startup so a misconfigured backend fails fast.
 
-The backend is wired through the Fx module and injected as the `Store` interface, so domains never depend on the
-concrete implementation.
+Clinical attachments and document uploads are managed via `storage.Manager`, which enforces transparent streaming
+authenticated encryption using the target Patient DEK (`crypto.Encryptor`) with Patient URN authentication and SHA-256
+integrity verification before persistence. Domains interact with storage through clean hexagonal ports.
 
 ## Cryptographic Core, AL-FLE & Envelope Encryption
 
 LibreVita implements an enterprise-grade **Application-Layer Field-Level Encryption (AL-FLE) with Blind Indexing** architecture in `internal/core/crypto` and `internal/core/database/fle` (providing host-proof database persistence), column-level transparent authenticated encryption (AEAD), exact-match blind indexing, tokenized name search, and per-patient envelope encryption with physical key vault storage:
 
- - **Keyed Hasher (`crypto.Hasher`)** — provides keyed cryptographic hashing for blind indexing and session token verification with cryptographic agility:
-   - Formatted prefixed output: `<algorithm>$<hex_hash>` (e.g. `blake2s$3f4a...`).
-   - Active native-keyed engines: `blake2s` (default) and `blake2b`.
-   - Constant-time verification (`subtle.ConstantTimeCompare`) with legacy raw-hex fallback.
-   - Deterministic blind index computation (`system || '\x00' || value`) ensuring cryptographic domain separation across entities (e.g. `patient.phone`, `patient.email`).
- - **Symmetric AEAD Encryptor (`crypto.Encryptor`)** — provides authenticated payload encryption for sensitive personal and clinical data:
-   - Self-Contained Envelope format with Magic Byte versioning at `ciphertext[0]`: `0x01` (`MagicByteXChaCha20Poly1305`) containing `[ Version (1B) | Nonce (24B) | Ciphertext + Poly1305 Tag ]`.
-   - Cryptographic Agility: Future-proof architecture supporting algorithm migrations (e.g. AES-256-GCM with 12-byte nonces or Post-Quantum ciphers) without database migrations or schema alterations.
-   - Memory security: transient plaintext buffers are securely zeroized with `ZeroBytes`.
- - **AL-FLE Ent Extension (`internal/core/database/fle`)** — a compile-time, zero-reflection encryption and indexing layer built on the canonical `entc.Extension` API:
-   - **Declarative Schema Annotations**: Sensitive fields are annotated once — `fle.SearchablePhone()`, `fle.SearchableEmail()`, `fle.SearchableDocument()`, `fle.SearchableName()`, or plain `fle.Searchable()` — stored as binary `BLOB`/`BYTEA` via `fle.EncryptedString()`.
-   - **Static Codegen (`fle.Template`)**: An Ent template extension generates 100% typed Go hooks (`encryptPatientMutation`) and decrypt interceptors at build time, with zero use of `reflect` or `interface{}` at runtime. Encryptors and hashers are resolved purely from `context.Context` — no global state, no mutex contention.
+- **Keyed Hasher (`crypto.Hasher`)** — provides keyed cryptographic hashing for blind indexing and session token verification with cryptographic agility:
+  - Formatted prefixed output: `<algorithm>$<hex_hash>` (e.g. `blake2s$3f4a...`).
+  - Active native-keyed engines: `blake2s` (default) and `blake2b`.
+  - Constant-time verification (`subtle.ConstantTimeCompare`) with legacy raw-hex fallback.
+  - Deterministic blind index computation (`system || '\x00' || value`) ensuring cryptographic domain separation across entities (e.g. `patient.phone`, `patient.email`).
+- **Symmetric AEAD Encryptor (`crypto.Encryptor`)** — provides authenticated payload encryption for sensitive personal and clinical data:
+  - Self-Contained Envelope format with Magic Byte versioning at `ciphertext[0]`: `0x01` (`MagicByteXChaCha20Poly1305`) containing `[ Version (1B) | Nonce (24B) | Ciphertext + Poly1305 Tag ]`.
+  - Cryptographic Agility: Future-proof architecture supporting algorithm migrations (e.g. AES-256-GCM with 12-byte nonces or Post-Quantum ciphers) without database migrations or schema alterations.
+  - Memory security: transient plaintext buffers are securely zeroized with `ZeroBytes`.
+- **AL-FLE Ent Extension (`internal/core/database/fle`)** — a compile-time, zero-reflection encryption and indexing layer built on the canonical `entc.Extension` API:
+  - **Declarative Schema Annotations**: Sensitive fields are annotated once — `fle.SearchablePhone()`, `fle.SearchableEmail()`, `fle.SearchableDocument()`, `fle.SearchableName()`, or plain `fle.Searchable()` — stored as binary `BLOB`/`BYTEA` via `fle.EncryptedString()`.
+  - **Static Codegen (`fle.Template`)**: An Ent template extension generates 100% typed Go hooks (`encryptPatientMutation`) and decrypt interceptors at build time, with zero use of `reflect` or `interface{}` at runtime. Encryptors, hashers, and patient DEK resolvers are resolved purely from `context.Context` — no global state, no mutex contention.
   - **Patient-Bound AAD**: Patient PHI ciphertexts are authenticated with `urn:librevita:clinic:<clinic_id>:patient:<patient_id>`; clinic-owned ciphertexts use the clinic URN. There is no `tenant_id` alias.
-   - **Dynamic Schema Injection (`TransformSchemas`)**: For scalar searchable fields (`phone`, `email`, `document`), `TransformSchemas` automatically injects `<field>_blind_index TEXT` and a composite B-Tree index `(clinic_id, <field>_blind_index)` into the Ent AST — no boilerplate in schema files.
-   - **Tokenized Name Search (`SearchableName`)**: Name fields use prefix n-gram tokenization instead of a single exact-match blind index. `TransformSchemas` auto-injects a `<field>_token_index JSON` column. The generated hook calls `normalize.NameTokens(val)` and persists a hashed token array — enabling prefix and partial-word search (e.g. `"Car"` → `"Carlos"`) on fully encrypted data without leaking the plaintext. Queried with `json_each()` (SQLite) or `@>` on `JSONB` (PostgreSQL), always pre-filtered by the `clinic_id` B-Tree index.
- - **Text Normalization (`internal/core/normalize`)** — a pure, zero-allocation normalization package:
-   - `normalize.Phone`, `normalize.Email`, `normalize.Text` — deterministic canonicalization before hashing, ensuring blind index collisions between `+55 11 98888-7777` and `5511988887777` are avoided.
-   - `normalize.NameTokens` — generates prefix n-grams (min 3 chars) of each word in a name, filtering Portuguese stop words via a compile-time `switch` jump table (`isStopWord`) with zero heap allocations. Used by the FLE template for tokenized name search.
-- **Envelope Encryption (`*crypto.Engine`)** — protects sensitive patient data with physical state separation:
-  - **KEK (Key Encryption Key)** — derived via HKDF-BLAKE2b-256 from `LIBREVITA_MASTER_KEY` (`master_key`) using info string `librevita:kek:v1`. The KEK is kept strictly in memory and never written to disk.
-  - **Clinic DEK** — a 32-byte key per clinic (`urn:librevita:clinic:<id>`), wrapped by the installation KEK. It wraps Patient DEKs and derives the clinic-scoped blind-index key; it does not encrypt patient PHI.
-  - **Patient DEK** — a 32-byte random key per patient (`urn:librevita:clinic:<id>:patient:<id>`), wrapped by the Clinic DEK. Patient PHI is encrypted with XChaCha20-Poly1305 under this key; AAD is the Patient URN.
+  - **Dynamic Schema Injection (`TransformSchemas`)**: For scalar searchable fields (`phone`, `email`, `document`), `TransformSchemas` automatically injects `<field>_blind_index TEXT` and a composite B-Tree index `(clinic_id, <field>_blind_index)` into the Ent AST — no boilerplate in schema files.
+  - **Tokenized Name Search (`SearchableName`)**: Name fields use prefix n-gram tokenization instead of a single exact-match blind index. `TransformSchemas` auto-injects a `<field>_token_index JSON` column. The generated hook calls `normalize.NameTokens(val)` and persists a hashed token array — enabling prefix and partial-word search (e.g. `"Car"` → `"Carlos"`) on fully encrypted data without leaking the plaintext. Queried with `json_each()` (SQLite) or `@>` on `JSONB` (PostgreSQL), always pre-filtered by the `clinic_id` B-Tree index.
+- **Text Normalization (`internal/core/normalize`)** — a pure, zero-allocation normalization package:
+  - `normalize.Phone`, `normalize.Email`, `normalize.Text` — deterministic canonicalization before hashing, ensuring blind index collisions between `+55 11 98888-7777` and `5511988887777` are avoided.
+  - `normalize.NameTokens` — generates prefix n-grams (min 3 chars) of each word in a name, filtering Portuguese stop words via a compile-time `switch` jump table (`isStopWord`) with zero heap allocations. Used by the FLE template for tokenized name search.
+- **Envelope Encryption Hierarchy (`*crypto.Engine`)** — protects sensitive clinical data with physical state separation across 3 cryptographic tiers:
+  - **KEK (Key Encryption Key)** — derived via HKDF-BLAKE2b-256 from `LIBREVITA_MASTER_KEY` (`master_key`) using info string `librevita:kek:v1`. Kept strictly in memory and never written to persistent storage.
+  - **Clinic DEK** — a 32-byte key per clinic (`urn:librevita:clinic:<id>`), wrapped by the installation KEK. It wraps Patient DEKs and derives the clinic-scoped blind-index key; it does not encrypt patient PHI directly.
+  - **Patient DEK** — a 32-byte random key per patient (`urn:librevita:clinic:<id>:patient:<id>`), wrapped by the Clinic DEK. Patient PHI and attachments are encrypted with XChaCha20-Poly1305 under this key; AAD is the Patient URN.
+  - **Request-Scoped Key Cache (`crypto.WithRequestKeyCache`)** — ephemeral in-memory cache preventing redundant vault lookups and unwrapping operations during an HTTP request lifecycle, with guaranteed cryptographic memory zeroization upon request completion.
 - **KeyVault Port & Adapters** — clinic and patient DEKs are stored outside the primary database in a dedicated key vault in `internal/core/vault`. The active implementation is configured with `vault.backend`:
   - **`bbolt`** — embedded Key-Value database (default `<data-dir>/keys.db`).
   - **`nats`** — high-performance NATS JetStream KeyValue store (`--vault-nats-url`, `--vault-nats-bucket`).
   - **`etcd`** — cloud-native Raft consensus KV store (`--vault-etcd-endpoints`, `--vault-etcd-prefix`).
   - **`hashicorp`**, **`hashicorp_vault`**, or **`openbao`** — enterprise HashiCorp Vault / OpenBao secret manager (`--vault-hashicorp-address`, `--vault-hashicorp-token`, `--vault-hashicorp-mount`). Hard-delete metadata purges enforce physical Crypto-Shredding.
-- **Crypto-Shredding** — deleting a Patient DEK makes that patient's encrypted PHI unreadable; the patient erasure flow also removes relational rows, blind indexes, and encrypted attachments. `DeleteClinicDEK` shreds the whole clinic because patient DEKs are wrapped by it. An operator who still holds the master key and the vault can unwrap any clinic.
+  - **Batch & Atomic Operations** — all vault backends implement `ConditionalKeyVault` (`PutIfAbsent`) for race-free concurrent key provisioning and `BatchKeyVault` (`GetDEKs`) for high-throughput batch resolution.
+- **Crypto-Shredding & GDPR/LGPD Erasure** — deleting a Patient DEK makes that patient's encrypted PHI unrecoverable noise; the patient erasure flow (`POST /patients/:id/shred`) also removes relational rows, blind indexes, encrypted attachments, and records an immutable tombstone (`ErrKeyDestroyed`) preventing key resurrection. `DeleteClinicDEK` shreds the entire clinic by invalidating all child Patient DEKs wrapped by it. An operator holding both the master key and the vault can unwrap any clinic.
 
 Clinics are isolated on a shared schema (`clinic_id` only — see [ADR 0002](docs/adr/0002-multi-clinic-shared-schema.md)). Production needs wildcard DNS and TLS for `*.base_domain` (development defaults to `lv.test`). Session cookies are host-only. Onboard the first platform operator on the apex (`base_domain` / `www.`), provision a clinic shell, then finish `/setup` on `{slug}.{base_domain}`.
 
@@ -425,8 +428,10 @@ Echo is created and managed by Fx. Routes:
 | Method | Route                                            | Purpose                                                          |
 | ------ | ------------------------------------------------ | ---------------------------------------------------------------- |
 | GET    | `/healthz`                                       | Liveness probe                                                   |
-| GET    | `/setup`                                         | Onboarding page                                                  |
-| POST   | `/setup`                                         | Onboarding: admin account + clinic profile (rate-limited)        |
+| GET    | `/setup`                                         | Onboarding page (apex bootstrap or clinic onboarding)            |
+| POST   | `/setup`                                         | Onboarding execution (rate-limited)                              |
+| GET    | `/clinics/new`                                   | Clinic provisioning page (apex only)                             |
+| POST   | `/clinics`                                       | Provision a clinic shell & Clinic DEK (apex only, rate-limited)  |
 | GET    | `/auth/login`                                    | Login page                                                       |
 | POST   | `/auth/login`                                    | Authenticate (rate-limited)                                      |
 | GET    | `/auth/register`                                 | Registration page                                                |
@@ -434,6 +439,7 @@ Echo is created and managed by Fx. Routes:
 | POST   | `/auth/logout`                                   | End session                                                      |
 | GET    | `/`                                              | Dashboard                                                        |
 | GET    | `/activity/recent`                               | Recent activity (dashboard panel)                                |
+| GET    | `/calendar`                                      | Clinic calendar view                                             |
 | GET    | `/profile`                                       | Preferences page (UI theme, personal timezone)                   |
 | POST   | `/profile`                                       | Save preferences                                                 |
 | GET    | `/profile/avatar`                                | Profile picture                                                  |
@@ -503,12 +509,17 @@ The clinical and administrative features are organized in `internal/domain`:
   systems themselves are administered at runtime (pattern, transform, check digit), so a deployment registers its
   jurisdictions' documents without a code change. Editing is governed by the
   resource-level `patient.edit` policy: physicians edit only the patients they registered, admins edit everything.
+- **Identifiers** — global catalog of jurisdictional identification document systems (CPF, RG, NHS Number, SSN, etc.)
+  with declarative regex validation patterns, canonical string transforms, and check digit algorithms (Luhn, Mod11).
+  Clinics opt into supported systems; patient values are encrypted with the Patient DEK and indexed via keyed blind indexes.
 - **Clinic** — the clinic profile (name, tax id, contact, timezone), provisioned on the apex and resolved per
   request through the Host middleware. Multiple clinics share the schema and are isolated by `clinic_id` (ADR-0002,
   `docs/adr/0002-multi-clinic-shared-schema.md`), including their FLE key hierarchy.
 - **Staff & specialties** — the clinic specialty catalog and the physician directory. Receptionists propose profile
   changes (name, email, specialties) that an administrator approves or rejects; the request snapshots the previous
   profile so the diff stays readable, and the whole flow (list, history, filters, pagination) is audited.
+- **Calendar** — schedule and appointment overview with responsive monthly views, timezone-aware date calculations, and
+  patient-level privacy boundaries.
 - **Users** — account management with relational roles: create staff accounts, change roles and status, and manage
   dynamic roles (rename, mark as clinical, delete when unused). The anti-lockout rules refuse to demote or deactivate
   the last active admin, enforced atomically in a single SQL statement.
@@ -518,12 +529,19 @@ The clinical and administrative features are organized in `internal/domain`:
 
 ## Onboarding
 
-A fresh installation has no accounts. Any navigation while the system is not onboarded (login, dashboard, register) is
-redirected to `GET /setup`, which creates the initial `admin` account and the clinic profile (name, tax id, contact, and
-address) in a single atomic transaction. Setup runs exactly once: the transaction also persists a `setup_completed`
-marker in the `meta` table, so the system stays onboarded even if every account and the clinic are later removed.
-Onboarded systems redirect setup requests to the login page, and concurrent setup attempts never produce more than one
-admin: exactly one wins, the rest receive the redirect. Setup is rate-limited to 5 attempts per minute per IP.
+LibreVita uses a two-phase onboarding workflow designed for multi-clinic shared-schema deployments:
+
+1. **Apex Platform Bootstrap (`GET /setup` on apex `base_domain` / `www.`)**:
+   When the root platform is uninitialized, accessing the apex redirects to `/setup`. This creates the initial platform
+   operator account in `platform_users`. Platform operators can then access `/clinics/new` to provision clinic shells
+   with their unique subdomain slug, assigning a new `clinic_id` and provisioning the clinic's initial wrapped
+   Clinic DEK (`urn:librevita:clinic:<id>`) in the KeyVault.
+
+2. **Clinic Subdomain Onboarding (`GET /setup` on `{slug}.{base_domain}`)**:
+   When a provisioned clinic shell is accessed before onboarding (`clinic.onboarded_at` is null), all clinic routes redirect
+   to `/setup`. This setup initializes the clinic administrator, seeds system roles, registers default CEL access policies,
+   activates enabled identifier systems, and sets `clinic.onboarded_at`. Once onboarded, setup requests redirect to the login
+   page. Setup attempts are rate-limited to 5 attempts per minute per IP.
 
 After onboarding, account creation is never public: `RequireAuth` plus the `users.register` policy guard the
 registration routes. The default policy restricts registration to the `admin` role; an operator can tighten it to a
@@ -538,8 +556,10 @@ Authentication lives in `internal/core/auth` (transport-agnostic) with HTTP adap
 - Sessions are PASETO v4.local tokens (`aidanwoods.dev/go-paseto`): the payload is encrypted with XChaCha20-Poly1305
   under a single server key and validated cryptographically on every request. The `sessions` table holds only the token
   id (SHA-256) for revocation, logout, and account deactivation checks. The authenticated principal is loaded fresh on
-  every request and carries the user's timezone and UI-theme preferences. The cookie is `HttpOnly` and `SameSite=Lax`,
-  with the `Secure` flag enabled in production
+  every request and carries the user's timezone and UI-theme preferences. Cookies are strictly host-only (`HttpOnly`
+  and `SameSite=Lax`, with `Secure` enabled in production; no wildcard domain sharing).
+- Authenticating on a clinic host requires `users.clinic_id` to match the Host subdomain; the apex host authenticates
+  only platform operators (`platform_users`).
 - The session key is `LIBREVITA_PASETO_KEY` (base64, 32 bytes). Every environment except the explicit `development`
   requires the key and sets the `Secure` flag on cookies; only `development` falls back to an ephemeral key (sessions
   reset on restart). Deployments labeled `staging`, `prod`, or any other value are treated as persistent
@@ -557,10 +577,10 @@ Authentication lives in `internal/core/auth` (transport-agnostic) with HTTP adap
 CEL (`github.com/google/cel-go`) is a non-Turing-complete expression language: it has no loops, recursion, or side
 effects, so authorization rules are bounded, safe to evaluate, and auditable. Policies receive two variables:
 
-- `principal` — `id`, `email`, `name`, `role`
+- `principal` — `id`, `email`, `name`, `role`, `clinic_id`, `patient_id`
 - `request` — `method`, `path`
-- `resource` — only for resource-level policies (`patient.edit`), with the record attributes (`id`, `created_by`,
-  `status`)
+- `resource` — only for resource-level policies (`patient.edit`, `patient.view`), with the record attributes (`id`,
+  `created_by`, `status`, `patient_id`)
 
 Default policies are seeded into the `policies` table on startup. The stored expression always wins, and the policy
 editor (`/policies`) edits them at runtime: every change is validated before activation (the expression must compile and
@@ -572,22 +592,23 @@ policies would silently change meaning.
 Critical policies (`admin.view`) are protected against self-lockout: a change that would deny the admin role is
 rejected, because the policy editor is the only place that could restore it.
 
-| Policy                   | Expression                                                                                              |
-| ------------------------ | ------------------------------------------------------------------------------------------------------- |
-| `dashboard.view`         | `principal.role in ['admin', 'physician', 'receptionist', 'patient']`                                   |
-| `profile.update`         | `principal.role in ['admin', 'physician', 'receptionist', 'patient']`                                   |
-| `admin.view`             | `principal.role == 'admin'`                                                                             |
-| `users.register`         | `principal.role == 'admin'`                                                                             |
-| `users.manage`           | `principal.role == 'admin'`                                                                             |
-| `staff.view`             | `principal.role in ['admin', 'physician', 'receptionist']`                                              |
-| `staff.edit`             | `principal.role == 'admin'`                                                                             |
-| `staff.request`          | `principal.role in ['admin', 'receptionist']`                                                           |
-| `staff.approve`          | `principal.role == 'admin'`                                                                             |
-| `patient.view`           | `principal.role in ['admin', 'physician', 'receptionist']`                                              |
-| `patient.edit`           | `principal.role == 'admin' \|\| (principal.role == 'physician' && resource.created_by == principal.id)` |
-| `patient.erase`          | `principal.role == 'admin'`                                                                             |
-| `patient.document.read`  | `principal.role in ['admin', 'physician', 'receptionist']`                                              |
-| `patient.document.write` | `principal.role in ['admin', 'physician']`                                                              |
+| Policy                   | Expression                                                                                                                                                             |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `dashboard.view`         | `principal.role in ['admin', 'physician', 'receptionist', 'patient']`                                                                                                  |
+| `profile.update`         | `principal.role in ['admin', 'physician', 'receptionist', 'patient']`                                                                                                  |
+| `admin.view`             | `principal.role == 'admin'`                                                                                                                                            |
+| `users.register`         | `principal.role == 'admin'`                                                                                                                                            |
+| `users.manage`           | `principal.role == 'admin'`                                                                                                                                            |
+| `staff.view`             | `principal.role in ['admin', 'physician', 'receptionist']`                                                                                                             |
+| `staff.edit`             | `principal.role == 'admin'`                                                                                                                                            |
+| `staff.request`          | `principal.role in ['admin', 'receptionist']`                                                                                                                          |
+| `staff.approve`          | `principal.role == 'admin'`                                                                                                                                            |
+| `calendar.view`          | `principal.role in ['admin', 'physician', 'receptionist'] \|\| (principal.role == 'patient' && resource.patient_id == principal.patient_id && principal.patient_id != '')` |
+| `patient.view`           | `principal.role in ['admin', 'physician', 'receptionist'] \|\| (principal.role == 'patient' && resource.id == principal.patient_id && principal.patient_id != '')`         |
+| `patient.edit`           | `principal.role == 'admin' \|\| (principal.role == 'physician' && resource.created_by == principal.id)`                                                                |
+| `patient.erase`          | `principal.role == 'admin'`                                                                                                                                            |
+| `patient.document.read`  | `principal.role in ['admin', 'physician', 'receptionist'] \|\| (principal.role == 'patient' && resource.patient_id == principal.patient_id && principal.patient_id != '')` |
+| `patient.document.write` | `principal.role in ['admin', 'physician']`                                                                                                                             |
 
 Abuse controls:
 
