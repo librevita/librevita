@@ -6,13 +6,16 @@ package storage
 
 import (
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"hash"
 	"io"
 	"log/slog"
 	"time"
 
 	"github.com/google/uuid"
+	"golang.org/x/crypto/blake2b"
 )
 
 // StoredFile is the master-index metadata of one stored file.
@@ -111,6 +114,35 @@ func (m *FileManager) OpenForResource(ctx context.Context, domain string, resour
 	return meta, obj, nil
 }
 
+// OpenEncryptedForResource opens an encrypted patient object and exposes a
+// streaming plaintext reader while retaining the index metadata.
+func (m *FileManager) OpenEncryptedForResource(ctx context.Context, domain string, resourceID, id uuid.UUID, key, aad []byte) (*StoredFile, *Object, error) {
+	meta, err := m.GetForResource(ctx, domain, resourceID, id)
+	if err != nil {
+		return nil, nil, err
+	}
+	obj, err := m.store.Get(ctx, meta.Key)
+	if err != nil {
+		return nil, nil, err
+	}
+	decrypted, err := NewDecryptedReader(obj.Data, key, aad)
+	if err != nil {
+		_ = obj.Data.Close()
+		return nil, nil, err
+	}
+	return meta, &Object{
+		ObjectInfo: ObjectInfo{
+			Key:          meta.Key,
+			Size:         meta.Size,
+			ContentType:  meta.ContentType,
+			ETag:         meta.ETag,
+			Checksum:     meta.Checksum,
+			LastModified: meta.CreatedAt,
+		},
+		Data: decrypted,
+	}, nil
+}
+
 // Upload stores data in the blob store and registers the master-index row.
 func (m *FileManager) Upload(ctx context.Context, in UploadInput, data io.Reader, size int64) (*StoredFile, error) {
 	if in.Domain == "" {
@@ -150,6 +182,79 @@ func (m *FileManager) Upload(ctx context.Context, in UploadInput, data io.Reader
 				"key", key, "delete_error", derr, "index_error", err)
 		}
 		return nil, fmt.Errorf("storage: index %q: %w", key, err)
+	}
+	return created, nil
+}
+
+// UploadEncrypted streams a patient-owned plaintext through the chunked
+// XChaCha20-Poly1305 envelope before sending it to the blob store. The index
+// keeps the plaintext size and checksum so callers see the same metadata as
+// the unencrypted Store API.
+func (m *FileManager) UploadEncrypted(ctx context.Context, in UploadInput, data io.Reader, size int64, key, aad []byte) (*StoredFile, error) {
+	if in.Domain == "" {
+		return nil, errors.New("storage: domain is required")
+	}
+	if in.OriginalName == "" {
+		return nil, errors.New("storage: original name is required")
+	}
+	if data == nil {
+		return nil, errors.New("storage: data is required")
+	}
+	if size < -1 {
+		return nil, errors.New("storage: invalid size")
+	}
+	id, err := m.newID()
+	if err != nil {
+		return nil, fmt.Errorf("storage: generate object id: %w", err)
+	}
+	keyName := m.objectKey(in.Domain, in.ResourceID, id)
+
+	checksum, err := blake2b.New256(nil)
+	if err != nil {
+		return nil, fmt.Errorf("storage: checksum: %w", err)
+	}
+	source := io.Reader(data)
+	if size >= 0 {
+		source = io.LimitReader(data, size+1)
+	}
+	hashed := &hashingReader{source: source, hash: checksum}
+	encrypted, err := NewEncryptedReader(hashed, key, aad)
+	if err != nil {
+		return nil, fmt.Errorf("storage: encrypt upload: %w", err)
+	}
+	defer func() { _ = encrypted.Close() }()
+
+	blob, err := m.store.Put(ctx, keyName, encrypted, EncryptedSize(size), in.ContentType)
+	if err != nil {
+		return nil, err
+	}
+	if size >= 0 && hashed.n != size {
+		if deleteErr := m.store.Delete(ctx, keyName); deleteErr != nil {
+			m.log.Error("storage: encrypted upload size compensation failed",
+				"key", keyName, "delete_error", deleteErr)
+		}
+		return nil, fmt.Errorf("storage: encrypted upload size mismatch: got %d, want %d", hashed.n, size)
+	}
+
+	stFile := StoredFile{
+		ID:           id,
+		Key:          keyName,
+		Domain:       in.Domain,
+		ResourceID:   in.ResourceID,
+		OriginalName: in.OriginalName,
+		ContentType:  in.ContentType,
+		Size:         hashed.n,
+		ETag:         blob.ETag,
+		Checksum:     hex.EncodeToString(checksum.Sum(nil)),
+		CreatedBy:    in.CreatedBy,
+	}
+	created, err := m.repo.Insert(ctx, stFile)
+	if err != nil {
+		if deleteErr := m.store.Delete(ctx, keyName); deleteErr != nil {
+			m.log.Error("storage: encrypted upload compensation failed",
+				"key", keyName, "delete_error", deleteErr, "index_error", err)
+		}
+		return nil, fmt.Errorf("storage: index %q: %w", keyName, err)
 	}
 	return created, nil
 }
@@ -221,4 +326,19 @@ func (m *FileManager) Reconcile(ctx context.Context) (int, error) {
 		m.log.Info("storage: reconciled orphaned objects", "removed", removed)
 	}
 	return removed, nil
+}
+
+type hashingReader struct {
+	source io.Reader
+	hash   hash.Hash
+	n      int64
+}
+
+func (r *hashingReader) Read(p []byte) (int, error) {
+	n, err := r.source.Read(p)
+	if n > 0 {
+		_, _ = r.hash.Write(p[:n])
+		r.n += int64(n)
+	}
+	return n, err
 }

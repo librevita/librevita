@@ -16,19 +16,9 @@ func PatientURN(clinicID, patientID uuid.UUID) string {
 	return "urn:librevita:clinic:" + clinicID.String() + ":patient:" + patientID.String()
 }
 
-// LegacyPatientURN is the pre-multi-clinic vault key (wrapped by the installation KEK).
-func LegacyPatientURN(patientID uuid.UUID) string {
-	return "urn:librevita:patient:" + patientID.String()
-}
-
 // ClinicAAD is the request-scoped FLE AAD for a clinic.
 func ClinicAAD(clinicID uuid.UUID) []byte {
 	return []byte(ClinicURN(clinicID))
-}
-
-// LegacyAAD is the installation-wide FLE AAD used before clinic-scoped keys.
-func LegacyAAD() []byte {
-	return []byte("urn:librevita")
 }
 
 // ParsePatientURN extracts clinic and patient IDs from a clinic-scoped patient URN.
@@ -51,4 +41,17 @@ func ParsePatientURN(urn string) (clinicID, patientID uuid.UUID, ok bool) {
 		return uuid.Nil, uuid.Nil, false
 	}
 	return cid, pid, true
+}
+
+// ParseClinicURN extracts a clinic ID from a clinic-scoped key URN.
+func ParseClinicURN(urn string) (clinicID uuid.UUID, ok bool) {
+	const prefix = "urn:librevita:clinic:"
+	if !strings.HasPrefix(urn, prefix) {
+		return uuid.Nil, false
+	}
+	id, err := uuid.Parse(strings.TrimPrefix(urn, prefix))
+	if err != nil || id == uuid.Nil {
+		return uuid.Nil, false
+	}
+	return id, true
 }

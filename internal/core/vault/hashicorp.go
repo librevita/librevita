@@ -47,13 +47,16 @@ func NewHashiCorpVault(address, token, mount string) (*HashiCorpVault, error) {
 }
 
 func (v *HashiCorpVault) secretPath(patientURN string) string {
-	sanitized := strings.NewReplacer(":", "_", "/", "_", ".", "_", " ", "_").Replace(patientURN)
-	return "librevita/patient-deks/" + sanitized
+	sanitized := base64.RawURLEncoding.EncodeToString([]byte(patientURN))
+	return "librevita/deks/" + sanitized
 }
 
 // PutDEK stores the base64-encoded encrypted DEK in Vault KV v2 under secretPath.
 func (v *HashiCorpVault) PutDEK(ctx context.Context, patientURN string, encryptedDEK []byte) error {
 	path := v.secretPath(patientURN)
+	if _, err := v.GetDEK(ctx, patientURN); err != nil && !errors.Is(err, crypto.ErrKeyNotFound) {
+		return err
+	}
 	data := map[string]interface{}{
 		"dek": base64.StdEncoding.EncodeToString(encryptedDEK),
 	}
@@ -85,17 +88,54 @@ func (v *HashiCorpVault) GetDEK(ctx context.Context, patientURN string) ([]byte,
 	if err != nil {
 		return nil, fmt.Errorf("vault: hashicorp decode dek: %w", err)
 	}
+	if crypto.IsDestroyedDEK(decoded) {
+		return nil, crypto.ErrKeyDestroyed
+	}
 	return decoded, nil
 }
 
+// GetDEKs retrieves multiple wrapped DEKs with bounded concurrent KV v2
+// requests. KV v2 does not expose a native multi-read operation.
+func (v *HashiCorpVault) GetDEKs(ctx context.Context, patientURNs []string) (map[string]crypto.DEKResult, error) {
+	return batchGetWithWorkers(ctx, patientURNs, defaultBatchWorkers, v.GetDEK)
+}
+
+// PutIfAbsent creates a wrapped DEK using KV v2 check-and-set semantics.
+func (v *HashiCorpVault) PutIfAbsent(ctx context.Context, patientURN string, encryptedDEK []byte) (bool, error) {
+	path := v.secretPath(patientURN)
+	data := map[string]interface{}{
+		"dek": base64.StdEncoding.EncodeToString(encryptedDEK),
+	}
+	if _, err := v.client.KVv2(v.mount).Put(ctx, path, data, api.WithCheckAndSet(0)); err != nil {
+		lower := strings.ToLower(err.Error())
+		if strings.Contains(lower, "check-and-set") || strings.Contains(lower, "cas") {
+			if _, getErr := v.GetDEK(ctx, patientURN); getErr != nil {
+				if errors.Is(getErr, crypto.ErrKeyDestroyed) {
+					return false, getErr
+				}
+				return false, fmt.Errorf("vault: hashicorp verify existing: %w", getErr)
+			}
+			return false, nil
+		}
+		return false, fmt.Errorf("vault: hashicorp create: %w", err)
+	}
+	return true, nil
+}
+
 // DeleteDEK permanently purges the secret payload and metadata from Vault KV v2,
-// executing hard Crypto-Shredding (bypassing soft-delete/version retention).
+// then writes a terminal tombstone so the key cannot be recreated.
 func (v *HashiCorpVault) DeleteDEK(ctx context.Context, patientURN string) error {
 	path := v.secretPath(patientURN)
 	// DeleteMetadata permanently destroys all secret versions and metadata in KV v2.
 	err := v.client.KVv2(v.mount).DeleteMetadata(ctx, path)
 	if err != nil && !isVaultNotFound(err) {
 		return fmt.Errorf("vault: hashicorp delete metadata: %w", err)
+	}
+	data := map[string]interface{}{
+		"dek": base64.StdEncoding.EncodeToString(crypto.DestroyedDEKMarker()),
+	}
+	if _, err := v.client.KVv2(v.mount).Put(ctx, path, data, api.WithCheckAndSet(0)); err != nil {
+		return fmt.Errorf("vault: hashicorp tombstone: %w", err)
 	}
 	return nil
 }

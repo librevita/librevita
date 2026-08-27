@@ -3,7 +3,10 @@ package fle
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"sync"
+
+	"github.com/google/uuid"
 
 	"librevita.org/internal/core/crypto"
 )
@@ -19,6 +22,8 @@ const (
 	encryptorResolverKey
 	hasherKey
 	clinicIDKey
+	patientIDKey
+	patientEncryptorResolverKey
 )
 
 type searchableField struct {
@@ -99,7 +104,7 @@ func AADFromContext(ctx context.Context) []byte {
 // Priority:
 // 1. Explicit custom AAD set via WithAAD
 // 2. Clinic-scoped AAD ("urn:librevita:clinic:<clinic_id>") if WithClinicID is present
-// 3. Default application AAD ("urn:librevita") for legacy ciphertext
+// 3. Default application AAD ("urn:librevita") for non-patient callers
 func ResolveAAD(ctx context.Context) []byte {
 	if customAAD := AADFromContext(ctx); len(customAAD) > 0 {
 		return customAAD
@@ -108,6 +113,24 @@ func ResolveAAD(ctx context.Context) []byte {
 		return []byte("urn:librevita:clinic:" + clinicID)
 	}
 	return []byte("urn:librevita")
+}
+
+// ResolveEntityAAD returns the authenticated data binding for a
+// patient-owned entity. Explicit custom AAD still takes precedence for
+// callers that need a protocol-specific binding.
+func ResolveEntityAAD(ctx context.Context, clinicID, patientID uuid.UUID) []byte {
+	if customAAD := AADFromContext(ctx); len(customAAD) > 0 {
+		return customAAD
+	}
+	if clinicID != uuid.Nil && patientID != uuid.Nil {
+		return []byte(crypto.PatientURN(clinicID, patientID))
+	}
+	return ResolveAAD(ctx)
+}
+
+// ResolveMutationAAD is the mutation equivalent of ResolveEntityAAD.
+func ResolveMutationAAD(ctx context.Context, clinicID, patientID uuid.UUID) []byte {
+	return ResolveEntityAAD(ctx, clinicID, patientID)
 }
 
 // WithDecryptedRegistry ensures a registry exists in the context to store post-query decrypted payloads.
@@ -193,6 +216,76 @@ func WithClinicID(ctx context.Context, clinicID string) context.Context {
 func ClinicIDFromContext(ctx context.Context) (string, bool) {
 	val, ok := ctx.Value(clinicIDKey).(string)
 	return val, ok && val != ""
+}
+
+// ClinicUUIDFromContext parses the clinic UUID attached to the request.
+func ClinicUUIDFromContext(ctx context.Context) (uuid.UUID, bool) {
+	clinicID, ok := ClinicIDFromContext(ctx)
+	if !ok {
+		return uuid.Nil, false
+	}
+	id, err := uuid.Parse(clinicID)
+	if err != nil || id == uuid.Nil {
+		return uuid.Nil, false
+	}
+	return id, true
+}
+
+// WithPatientID attaches the patient UUID used when an Ent mutation does not
+// carry the patient_id field, such as an update-by-ID operation.
+func WithPatientID(ctx context.Context, patientID uuid.UUID) context.Context {
+	return context.WithValue(ctx, patientIDKey, patientID)
+}
+
+// PatientIDFromContext retrieves the patient UUID attached to the request.
+func PatientIDFromContext(ctx context.Context) (uuid.UUID, bool) {
+	id, ok := ctx.Value(patientIDKey).(uuid.UUID)
+	return id, ok && id != uuid.Nil
+}
+
+// PatientEncryptorResolver resolves an Encryptor for one patient entity.
+// The implementation normally loads and unwraps the Patient DEK.
+type PatientEncryptorResolver interface {
+	ResolvePatientEncryptor(ctx context.Context, clinicID, patientID uuid.UUID) (crypto.Encryptor, error)
+}
+
+// WithPatientEncryptorResolver attaches an entity-key resolver to a request.
+func WithPatientEncryptorResolver(ctx context.Context, resolver PatientEncryptorResolver) context.Context {
+	return context.WithValue(ctx, patientEncryptorResolverKey, resolver)
+}
+
+// PatientEncryptorResolverFromContext retrieves the entity-key resolver.
+func PatientEncryptorResolverFromContext(ctx context.Context) (PatientEncryptorResolver, bool) {
+	resolver, ok := ctx.Value(patientEncryptorResolverKey).(PatientEncryptorResolver)
+	return resolver, ok && resolver != nil
+}
+
+// ResolvePatientEncryptor resolves a patient-scoped encryptor when a resolver
+// is installed. The fallback keeps isolated unit tests and non-patient
+// contexts usable without silently changing their configured encryptor.
+func ResolvePatientEncryptor(ctx context.Context, clinicID, patientID uuid.UUID, fallback crypto.Encryptor, defaults ...PatientEncryptorResolver) (crypto.Encryptor, error) {
+	resolver, ok := PatientEncryptorResolverFromContext(ctx)
+	if !ok {
+		if len(defaults) > 0 && defaults[0] != nil {
+			resolver = defaults[0]
+		} else {
+			return fallback, nil
+		}
+	}
+	if clinicID == uuid.Nil {
+		if contextClinicID, contextOK := ClinicUUIDFromContext(ctx); contextOK {
+			clinicID = contextClinicID
+		}
+	}
+	if patientID == uuid.Nil {
+		if contextPatientID, contextOK := PatientIDFromContext(ctx); contextOK {
+			patientID = contextPatientID
+		}
+	}
+	if clinicID == uuid.Nil || patientID == uuid.Nil {
+		return nil, fmt.Errorf("fle: patient scope is required for encrypted entity")
+	}
+	return resolver.ResolvePatientEncryptor(ctx, clinicID, patientID)
 }
 
 // WithHasher attaches a clinic-scoped Hasher (blind index key from Clinic DEK).

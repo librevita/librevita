@@ -1,6 +1,7 @@
 package http
 
 import (
+	"errors"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -57,8 +58,10 @@ func HostMiddleware(cfg *config.Config, clinics model.Repository, engine *crypto
 			ctx = fle.WithClinicID(ctx, row.ID.String())
 
 			if engine != nil {
+				ctx = crypto.WithRequestKeyCache(ctx)
+				defer crypto.ClearRequestKeyCache(ctx)
 				dek, dekErr := engine.GetClinicDEK(ctx, row.ID)
-				if dekErr != nil {
+				if errors.Is(dekErr, crypto.ErrKeyNotFound) {
 					dek, dekErr = engine.EnsureClinicDEK(ctx, row.ID)
 				}
 				if dekErr != nil {
@@ -71,7 +74,11 @@ func HostMiddleware(cfg *config.Config, clinics model.Repository, engine *crypto
 					log.Error("clinic encryptor", "clinic_id", row.ID, "error", encErr)
 					return echo.NewHTTPError(http.StatusInternalServerError)
 				}
-				h, hErr := crypto.NewHasherFromDEK(dek)
+				algorithm := cfg.Crypto.HashAlgorithm
+				if algorithm == "" {
+					algorithm = crypto.DefaultHashAlgorithm
+				}
+				h, hErr := crypto.NewHasherFromDEK(dek, crypto.WithHashAlgorithm(algorithm))
 				crypto.ZeroBytes(dek)
 				if hErr != nil {
 					log.Error("clinic hasher", "clinic_id", row.ID, "error", hErr)
@@ -79,6 +86,7 @@ func HostMiddleware(cfg *config.Config, clinics model.Repository, engine *crypto
 				}
 				ctx = fle.WithEncryptor(ctx, enc)
 				ctx = fle.WithHasher(ctx, h)
+				ctx = fle.WithPatientEncryptorResolver(ctx, engine)
 			}
 
 			c.SetRequest(c.Request().WithContext(ctx))

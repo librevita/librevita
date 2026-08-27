@@ -28,12 +28,12 @@ func sqlDB(store *Store) *sql.DB { return store.SQL() }
 
 // entClient exposes the Ent ORM client configured for the active persistence backend
 // with compile-time typed blind indexing hooks and context-aware decryption interceptors.
-func entClient(store *Store, hasher crypto.Hasher, encryptor crypto.Encryptor) *ent.Client {
+func entClient(store *Store, hasher crypto.Hasher, encryptor crypto.Encryptor, engine *crypto.Engine) *ent.Client {
 	client := store.Ent()
 	client.Use(isolation.MutationHook())
-	client.Use(ent.FLEMutationHook(hasher, encryptor))
+	client.Use(ent.FLEMutationHook(hasher, encryptor, engine))
 	client.Intercept(isolation.QueryInterceptor())
-	client.Intercept(ent.FLEDecryptionInterceptor(encryptor))
+	client.Intercept(ent.FLEDecryptionInterceptor(encryptor, engine))
 	return client
 }
 

@@ -4,6 +4,7 @@ package usecase
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/mail"
@@ -13,6 +14,9 @@ import (
 	"github.com/google/uuid"
 
 	"librevita.org/internal/core/auth"
+	"librevita.org/internal/core/crypto"
+	"librevita.org/internal/core/database/fle"
+	normalizer "librevita.org/internal/core/normalize"
 	"librevita.org/internal/core/policy"
 	patientmodel "librevita.org/internal/domain/patient/model"
 )
@@ -48,14 +52,16 @@ type Service struct {
 	repo     PatientRepository
 	log      *slog.Logger
 	policies *policy.PolicyEngine
+	engine   *crypto.Engine
 }
 
 // NewService is the Fx provider.
-func NewService(repo PatientRepository, log *slog.Logger, policies *policy.PolicyEngine) *Service {
+func NewService(repo PatientRepository, log *slog.Logger, policies *policy.PolicyEngine, engine *crypto.Engine) *Service {
 	return &Service{
 		repo:     repo,
 		log:      log,
 		policies: policies,
+		engine:   engine,
 	}
 }
 
@@ -115,7 +121,16 @@ func (s *Service) Create(ctx context.Context, clinicID, createdBy string, in Pat
 		CreatedBy:   cb,
 	}
 
-	return s.repo.Create(ctx, p)
+	if s.engine != nil {
+		if _, err := s.engine.EnsurePatientDEKForClinic(ctx, cUUID, id); err != nil {
+			return nil, fmt.Errorf("usecase: provision patient dek: %w", err)
+		}
+	}
+	created, err := s.repo.Create(ctx, p)
+	if err != nil && s.engine != nil {
+		_ = s.engine.DeletePatientDEKForClinic(ctx, cUUID, id)
+	}
+	return created, err
 }
 
 // Get returns a patient by id, scoped to the clinic.
@@ -144,6 +159,69 @@ func (s *Service) GetWithCreator(ctx context.Context, clinicID, id string) (*Get
 	}
 
 	return s.repo.GetWithCreator(ctx, cUUID, pUUID)
+}
+
+// GetMany returns patients from one clinic, preserving the order of ids.
+func (s *Service) GetMany(ctx context.Context, clinicID string, ids []string) ([]Patient, error) {
+	cUUID, err := uuid.Parse(clinicID)
+	if err != nil {
+		return nil, fmt.Errorf("usecase: invalid clinic id: %w", err)
+	}
+	patientIDs := make([]uuid.UUID, 0, len(ids))
+	for _, id := range ids {
+		pUUID, err := uuid.Parse(id)
+		if err != nil {
+			return nil, fmt.Errorf("usecase: invalid patient id: %w", err)
+		}
+		patientIDs = append(patientIDs, pUUID)
+	}
+	if optimized, ok := s.repo.(patientmodel.PatientQueryRepository); ok {
+		patients, err := optimized.GetMany(ctx, cUUID, patientIDs)
+		if err != nil {
+			return nil, err
+		}
+		byID := make(map[uuid.UUID]Patient, len(patients))
+		for _, patient := range patients {
+			byID[patient.ID] = patient
+		}
+		out := make([]Patient, 0, len(patientIDs))
+		for _, id := range patientIDs {
+			if patient, ok := byID[id]; ok {
+				out = append(out, patient)
+			}
+		}
+		return out, nil
+	}
+	out := make([]Patient, 0, len(patientIDs))
+	for _, id := range patientIDs {
+		patient, err := s.repo.Get(ctx, cUUID, id)
+		if err != nil {
+			return nil, err
+		}
+		if patient != nil {
+			out = append(out, *patient)
+		}
+	}
+	return out, nil
+}
+
+// Delete removes a patient aggregate after the caller has completed its
+// crypto-shredding step. The concrete repository must support aggregate
+// deletion in production.
+func (s *Service) Delete(ctx context.Context, clinicID, id string) error {
+	cUUID, err := uuid.Parse(clinicID)
+	if err != nil {
+		return fmt.Errorf("usecase: invalid clinic id: %w", err)
+	}
+	pUUID, err := uuid.Parse(id)
+	if err != nil {
+		return fmt.Errorf("usecase: invalid patient id: %w", err)
+	}
+	repo, ok := s.repo.(patientmodel.PatientDeletionRepository)
+	if !ok {
+		return errors.New("usecase: patient deletion repository is unavailable")
+	}
+	return repo.DeleteAggregate(ctx, cUUID, pUUID)
 }
 
 // Update validates in and updates the patient.
@@ -240,6 +318,10 @@ func (s *Service) List(ctx context.Context, clinicID, q, status, field string, l
 		statusFilter = &st
 	}
 
+	if optimized, ok := s.repo.(patientmodel.PatientQueryRepository); ok {
+		return s.listOptimized(ctx, optimized, cUUID, strings.TrimSpace(q), field, statusFilter, limit, offset)
+	}
+
 	patients, err := s.repo.ListByClinicAndStatus(ctx, cUUID, statusFilter)
 	if err != nil {
 		return nil, 0, fmt.Errorf("usecase: list patients: %w", err)
@@ -283,6 +365,72 @@ func (s *Service) List(ctx context.Context, clinicID, q, status, field string, l
 	}
 
 	return filtered[start:end], int64(len(filtered)), nil
+}
+
+func (s *Service) listOptimized(
+	ctx context.Context,
+	repo patientmodel.PatientQueryRepository,
+	clinicID uuid.UUID,
+	q, field string,
+	status *patientmodel.PatientStatus,
+	limit, offset int,
+) ([]Patient, int64, error) {
+	var nameTokens []string
+	var emailBlindIndex string
+	if q != "" {
+		hasher := fle.ResolveHasher(ctx, nil)
+		if hasher == nil {
+			return nil, 0, fmt.Errorf("usecase: clinic hasher is required for patient search")
+		}
+		searchEmail := field == "email" || (field == "" && strings.Contains(q, "@"))
+		if searchEmail {
+			var err error
+			emailBlindIndex, err = hasher.BlindIndex("patient.email", normalizer.Email(q))
+			if err != nil {
+				return nil, 0, fmt.Errorf("usecase: hash patient email search: %w", err)
+			}
+		} else {
+			for _, word := range strings.Fields(normalizer.Text(q)) {
+				tokens := normalizer.NameTokens(word)
+				if len(tokens) == 0 {
+					continue
+				}
+				token := tokens[len(tokens)-1]
+				hash, err := hasher.BlindIndex("patient.token", token)
+				if err != nil {
+					return nil, 0, fmt.Errorf("usecase: hash patient name search: %w", err)
+				}
+				nameTokens = append(nameTokens, hash)
+			}
+			if len(nameTokens) == 0 {
+				return []Patient{}, 0, nil
+			}
+		}
+	}
+
+	candidates, total, err := repo.ListCandidates(ctx, clinicID, status, nameTokens, emailBlindIndex, limit, offset)
+	if err != nil {
+		return nil, 0, fmt.Errorf("usecase: list patient candidates: %w", err)
+	}
+	ids := make([]uuid.UUID, 0, len(candidates))
+	for _, candidate := range candidates {
+		ids = append(ids, candidate.ID)
+	}
+	hydrated, err := repo.GetMany(ctx, clinicID, ids)
+	if err != nil {
+		return nil, 0, fmt.Errorf("usecase: hydrate patients: %w", err)
+	}
+	byID := make(map[uuid.UUID]Patient, len(hydrated))
+	for _, patient := range hydrated {
+		byID[patient.ID] = patient
+	}
+	out := make([]Patient, 0, len(candidates))
+	for _, candidate := range candidates {
+		if patient, ok := byID[candidate.ID]; ok {
+			out = append(out, patient)
+		}
+	}
+	return out, int64(total), nil
 }
 
 // ListPage returns one page of decrypted patients.

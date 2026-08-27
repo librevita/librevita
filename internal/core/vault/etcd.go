@@ -55,7 +55,13 @@ func (v *EtcdVault) key(patientURN string) string {
 
 // PutDEK stores the encrypted DEK bytes indexed by patientURN.
 func (v *EtcdVault) PutDEK(ctx context.Context, patientURN string, encryptedDEK []byte) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	k := v.key(patientURN)
+	if _, err := v.GetDEK(ctx, patientURN); err != nil && !errors.Is(err, crypto.ErrKeyNotFound) {
+		return err
+	}
 	if _, err := v.cli.Put(ctx, k, string(encryptedDEK)); err != nil {
 		return fmt.Errorf("vault: etcd put: %w", err)
 	}
@@ -65,6 +71,9 @@ func (v *EtcdVault) PutDEK(ctx context.Context, patientURN string, encryptedDEK 
 // GetDEK retrieves the encrypted DEK bytes for patientURN.
 // Returns crypto.ErrKeyNotFound if key does not exist.
 func (v *EtcdVault) GetDEK(ctx context.Context, patientURN string) ([]byte, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	k := v.key(patientURN)
 	resp, err := v.cli.Get(ctx, k)
 	if err != nil {
@@ -74,16 +83,80 @@ func (v *EtcdVault) GetDEK(ctx context.Context, patientURN string) ([]byte, erro
 		return nil, crypto.ErrKeyNotFound
 	}
 	val := resp.Kvs[0].Value
+	if crypto.IsDestroyedDEK(val) {
+		return nil, crypto.ErrKeyDestroyed
+	}
 	out := make([]byte, len(val))
 	copy(out, val)
 	return out, nil
 }
 
-// DeleteDEK removes the patient's DEK from etcd, performing instant Crypto-Shredding.
-func (v *EtcdVault) DeleteDEK(ctx context.Context, patientURN string) error {
+// GetDEKs retrieves multiple wrapped DEKs with one transaction per bounded
+// batch. Missing and destroyed keys are returned per item.
+func (v *EtcdVault) GetDEKs(ctx context.Context, patientURNs []string) (map[string]crypto.DEKResult, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	unique := uniqueURNs(patientURNs)
+	results := make(map[string]crypto.DEKResult, len(unique))
+	const batchSize = 64
+	for start := 0; start < len(unique); start += batchSize {
+		end := start + batchSize
+		if end > len(unique) {
+			end = len(unique)
+		}
+		ops := make([]clientv3.Op, 0, end-start)
+		for _, urn := range unique[start:end] {
+			ops = append(ops, clientv3.OpGet(v.key(urn)))
+		}
+		resp, err := v.cli.Txn(ctx).Then(ops...).Commit()
+		if err != nil {
+			return nil, fmt.Errorf("vault: etcd batch get: %w", err)
+		}
+		for i, urn := range unique[start:end] {
+			rangeResp := resp.Responses[i].GetResponseRange()
+			if rangeResp == nil || len(rangeResp.Kvs) == 0 {
+				results[urn] = crypto.DEKResult{Err: crypto.ErrKeyNotFound}
+				continue
+			}
+			value := rangeResp.Kvs[0].Value
+			if crypto.IsDestroyedDEK(value) {
+				results[urn] = crypto.DEKResult{Err: crypto.ErrKeyDestroyed}
+				continue
+			}
+			copied := make([]byte, len(value))
+			copy(copied, value)
+			results[urn] = crypto.DEKResult{EncryptedDEK: copied}
+		}
+	}
+	return results, nil
+}
+
+// PutIfAbsent stores a wrapped DEK without replacing an existing value.
+func (v *EtcdVault) PutIfAbsent(ctx context.Context, patientURN string, encryptedDEK []byte) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
 	k := v.key(patientURN)
-	if _, err := v.cli.Delete(ctx, k); err != nil {
-		return fmt.Errorf("vault: etcd delete: %w", err)
+	resp, err := v.cli.Txn(ctx).
+		If(clientv3.Compare(clientv3.Version(k), "=", int64(0))).
+		Then(clientv3.OpPut(k, string(encryptedDEK))).
+		Commit()
+	if err != nil {
+		return false, fmt.Errorf("vault: etcd create: %w", err)
+	}
+	return resp.Succeeded, nil
+}
+
+// DeleteDEK replaces the patient's DEK with a terminal tombstone, performing
+// instant Crypto-Shredding without allowing recreation.
+func (v *EtcdVault) DeleteDEK(ctx context.Context, patientURN string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	k := v.key(patientURN)
+	if _, err := v.cli.Put(ctx, k, string(crypto.DestroyedDEKMarker())); err != nil {
+		return fmt.Errorf("vault: etcd tombstone: %w", err)
 	}
 	return nil
 }

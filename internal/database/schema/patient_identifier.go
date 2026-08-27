@@ -36,7 +36,7 @@ func (PatientIdentifier) Fields() []ent.Field {
 			NotEmpty().
 			Comment("24-byte cryptographic nonce"),
 		field.String("blind_index").
-			MaxLen(64).
+			MaxLen(72).
 			NotEmpty().
 			Comment("Hex BLAKE2b-256 keyed blind index for exact search"),
 		field.UUID("created_by", uuid.UUID{}).

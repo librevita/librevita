@@ -17,6 +17,8 @@ import (
 	entsql "entgo.io/ent/dialect/sql"
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	_ "modernc.org/sqlite"
 
 	"librevita.org/ent"
@@ -92,7 +94,6 @@ func newDocEnvFull(t *testing.T, dir string) (*echo.Echo, *auth.SessionManager, 
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = v.Close() })
-	svc := usecase.NewService(patientrepo.NewPatientRepository(client), log, policies)
 	store, err := storage.NewLocal(dir)
 	if err != nil {
 		t.Fatal(err)
@@ -112,17 +113,37 @@ func newDocEnvFull(t *testing.T, dir string) (*echo.Echo, *auth.SessionManager, 
 	if err != nil {
 		t.Fatal(err)
 	}
+	clinicID := uuid.MustParse(testClinic)
+	clinicDEK, err := masterKey.EnsureClinicDEK(context.Background(), clinicID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	enc, err := crypto.NewEncryptor(clinicDEK)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hasher, err := crypto.NewHasherFromDEK(clinicDEK)
+	crypto.ZeroBytes(clinicDEK)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client.Use(ent.FLEMutationHook(hasher, enc, masterKey))
+	client.Intercept(ent.FLEDecryptionInterceptor(enc, masterKey))
+	svc := usecase.NewService(patientrepo.NewPatientRepositoryWithEngine(client, masterKey), log, policies, masterKey)
 	ids, systems := newIdentifierServices(t, client, masterKey, log)
-	h := NewHandler(svc, clinicusecase.NewClockProvider(clinicrepo.NewClinicRepository(client)), csrf, auditLogger, files, ids, systems)
+	h := NewHandler(svc, clinicusecase.NewClockProvider(clinicrepo.NewClinicRepository(client)), csrf, auditLogger, files, ids, systems, masterKey)
 
 	e := echo.New()
-	e.Use(attachSeededClinic())
+	e.Use(attachSeededClinic(masterKey, enc, hasher))
 	e.POST("/patients/:id/documents", h.UploadDocument,
 		server.RequireAuth(sessions, log),
 		server.RequirePolicy(policies, auditLogger, log, "patient.document.write"))
 	e.GET("/patients/:id/documents/:fileID", h.DownloadDocument,
 		server.RequireAuth(sessions, log),
 		server.RequirePolicy(policies, auditLogger, log, "patient.document.read"))
+	e.POST("/patients/:id/shred", h.Shred,
+		server.RequireAuth(sessions, log),
+		server.RequirePolicy(policies, auditLogger, log, "patient.erase"))
 	return e, sessions, svc, files, client
 }
 
@@ -253,8 +274,44 @@ func TestDocumentsUploadDownloadIDOR(t *testing.T) {
 	}
 }
 
+func TestDocumentsShredRemovesBlobAndPatient(t *testing.T) {
+	e, sessions, svc, files := newDocEnv(t)
+	cookie := adminSession(t, sessions)
+	patientID := newPatient(t, svc, "01990000-0000-7000-8000-0000000000d0")
+
+	var buf bytes.Buffer
+	w := multipart.NewWriter(&buf)
+	fw, err := w.CreateFormFile("file", "laudo.pdf")
+	require.NoError(t, err)
+	_, err = fw.Write([]byte("pdf-data"))
+	require.NoError(t, err)
+	require.NoError(t, w.Close())
+	req := httptest.NewRequest(http.MethodPost, "/patients/"+patientID.String()+"/documents", &buf)
+	req.Header.Set("Content-Type", w.FormDataContentType())
+	req.AddCookie(cookie)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusFound, rec.Code)
+
+	filesBefore, err := files.List(context.Background(), "patient_document", patientID)
+	require.NoError(t, err)
+	require.Len(t, filesBefore, 1)
+
+	shred := httptest.NewRequest(http.MethodPost, "/patients/"+patientID.String()+"/shred", nil)
+	shred.AddCookie(cookie)
+	shredRec := httptest.NewRecorder()
+	e.ServeHTTP(shredRec, shred)
+	require.Equal(t, http.StatusFound, shredRec.Code)
+
+	filesAfter, err := files.List(context.Background(), "patient_document", patientID)
+	require.NoError(t, err)
+	assert.Empty(t, filesAfter)
+	_, err = svc.Get(context.Background(), "01990000-0000-7000-8000-0000000000d0", patientID.String())
+	assert.ErrorIs(t, err, usecase.ErrNotFound)
+}
+
 // TestDocumentsDownloadDetectsTampering uploads a file, corrupts the
-// blob on disk and checks that the download still streams but the
+// blob on disk and checks that the encrypted object is rejected and the
 // divergence is registered in the append-only audit trail.
 func TestDocumentsDownloadDetectsTampering(t *testing.T) {
 	dir := t.TempDir()
@@ -296,11 +353,11 @@ func TestDocumentsDownloadDetectsTampering(t *testing.T) {
 	dl.AddCookie(cookie)
 	drec := httptest.NewRecorder()
 	e.ServeHTTP(drec, dl)
-	if drec.Code != http.StatusOK {
-		t.Fatalf("download status = %d, want 200", drec.Code)
+	if drec.Code != http.StatusInternalServerError {
+		t.Fatalf("download status = %d, want 500", drec.Code)
 	}
-	if got := drec.Body.String(); got != "tampered!" {
-		t.Errorf("download body = %q, want the tampered payload", got)
+	if got := drec.Body.String(); strings.Contains(got, "tampered!") {
+		t.Errorf("download body exposed the tampered payload: %q", got)
 	}
 
 	lastAudit, err := db.AuditLog.Query().
@@ -310,8 +367,8 @@ func TestDocumentsDownloadDetectsTampering(t *testing.T) {
 	if err != nil {
 		t.Fatalf("query audit trail: %v", err)
 	}
-	if lastAudit.Detail == nil || !strings.Contains(*lastAudit.Detail, "checksum mismatch") {
-		t.Errorf("audit detail = %v, want checksum mismatch", lastAudit.Detail)
+	if lastAudit.Detail == nil || !strings.Contains(*lastAudit.Detail, "encrypted object unavailable") {
+		t.Errorf("audit detail = %v, want encrypted object unavailable", lastAudit.Detail)
 	}
 }
 

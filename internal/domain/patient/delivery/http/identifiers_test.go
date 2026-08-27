@@ -2,6 +2,7 @@ package http
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -36,7 +37,7 @@ import (
 
 var testClinic = "01990000-0000-7000-8000-0000000000d0"
 
-func attachSeededClinic() echo.MiddlewareFunc {
+func attachSeededClinic(engine *crypto.Engine, enc crypto.Encryptor, hasher crypto.Hasher) echo.MiddlewareFunc {
 	id := uuid.MustParse(testClinic)
 	now := time.Now()
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
@@ -49,6 +50,11 @@ func attachSeededClinic() echo.MiddlewareFunc {
 				OnboardedAt: &now,
 			})
 			ctx = fle.WithClinicID(ctx, id.String())
+			ctx = crypto.WithRequestKeyCache(ctx)
+			defer crypto.ClearRequestKeyCache(ctx)
+			ctx = fle.WithEncryptor(ctx, enc)
+			ctx = fle.WithHasher(ctx, hasher)
+			ctx = fle.WithPatientEncryptorResolver(ctx, engine)
 			c.SetRequest(c.Request().WithContext(ctx))
 			return next(c)
 		}
@@ -83,7 +89,6 @@ func newIdentEnv(t *testing.T) (*echo.Echo, *auth.SessionManager, *usecase.Servi
 	}
 	t.Cleanup(func() { _ = v.Close() })
 
-	svc := usecase.NewService(patientrepo.NewPatientRepository(client), log, policies)
 	files, err := storage.NewFileManager(storage.NewIndexRepository(client), mustLocalStore(t), log)
 	if err != nil {
 		t.Fatal(err)
@@ -99,11 +104,28 @@ func newIdentEnv(t *testing.T) (*echo.Echo, *auth.SessionManager, *usecase.Servi
 	if err != nil {
 		t.Fatal(err)
 	}
+	clinicID := uuid.MustParse(testClinic)
+	clinicDEK, err := masterKey.EnsureClinicDEK(context.Background(), clinicID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	enc, err := crypto.NewEncryptor(clinicDEK)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hasher, err := crypto.NewHasherFromDEK(clinicDEK)
+	crypto.ZeroBytes(clinicDEK)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client.Use(ent.FLEMutationHook(hasher, enc, masterKey))
+	client.Intercept(ent.FLEDecryptionInterceptor(enc, masterKey))
+	svc := usecase.NewService(patientrepo.NewPatientRepositoryWithEngine(client, masterKey), log, policies, masterKey)
 	ids, systems := newIdentifierServices(t, client, masterKey, log)
-	h := NewHandler(svc, clinicusecase.NewClockProvider(clinicrepo.NewClinicRepository(client)), csrf, auditLogger, files, ids, systems)
+	h := NewHandler(svc, clinicusecase.NewClockProvider(clinicrepo.NewClinicRepository(client)), csrf, auditLogger, files, ids, systems, masterKey)
 
 	e := echo.New()
-	e.Use(attachSeededClinic())
+	e.Use(attachSeededClinic(masterKey, enc, hasher))
 	view := []echo.MiddlewareFunc{
 		server.RequireAuth(sessions, log),
 		server.RequirePolicy(policies, auditLogger, log, "patient.view"),
@@ -112,6 +134,7 @@ func newIdentEnv(t *testing.T) (*echo.Echo, *auth.SessionManager, *usecase.Servi
 	e.GET("/patients/lookup", h.IdentifierLookup, lookup...)
 	e.POST("/patients/:id/identifiers", h.IdentifierAdd, view...)
 	e.POST("/patients/:id/identifiers/:identifierID/remove", h.IdentifierRemove, view...)
+	e.POST("/patients/:id/shred", h.Shred, view...)
 	e.GET("/patients/:id", h.Detail, view...)
 	e.GET("/patients", h.List, view...)
 	e.POST("/patients", h.Create, view...)
@@ -491,6 +514,42 @@ func TestRegistryListMasksDocument(t *testing.T) {
 		t.Fatalf("list body has no patient rows: %q", body)
 	}
 	_ = withoutDoc
+}
+
+func TestPatientShredRemovesAggregate(t *testing.T) {
+	e, sessions, svc, _, db := newIdentEnv(t)
+	cookie := adminSession(t, sessions)
+	patientID := newPatient(t, svc, testClinic)
+	postForm(t, e, "/patients/"+patientID.String()+"/identifiers", cookie, url.Values{
+		"value": {"52998224725"},
+	})
+	count, err := db.PatientIdentifier.Query().Where(patientidentifier.PatientIDEQ(patientID)).Count(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("identifiers before shred = %d, want 1", count)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/patients/"+patientID.String()+"/shred", nil)
+	req.AddCookie(cookie)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+	if rec.Code != http.StatusFound {
+		t.Fatalf("shred status = %d, want 302", rec.Code)
+	}
+
+	_, err = svc.Get(context.Background(), testClinic, patientID.String())
+	if !errors.Is(err, usecase.ErrNotFound) {
+		t.Fatalf("get after shred = %v, want not found", err)
+	}
+	count, err = db.PatientIdentifier.Query().Where(patientidentifier.PatientIDEQ(patientID)).Count(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 0 {
+		t.Fatalf("identifiers after shred = %d, want 0", count)
+	}
 }
 
 // TestRegistryListSearchField verifies the "search with dropdown"

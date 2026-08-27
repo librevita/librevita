@@ -14,6 +14,7 @@ import (
 	"golang.org/x/crypto/blake2b"
 
 	"librevita.org/internal/core/audit"
+	"librevita.org/internal/core/crypto"
 	"librevita.org/internal/core/server"
 	"librevita.org/internal/core/storage"
 	"librevita.org/internal/domain/patient/delivery/views"
@@ -55,22 +56,31 @@ func (h *Handler) UploadDocument(c echo.Context) error {
 		return err
 	}
 	defer src.Close()
+	if h.engine == nil {
+		return errors.New("patient documents: crypto engine is unavailable")
+	}
+	dek, err := h.engine.EnsurePatientDEKForClinic(ctx, pt.ClinicID, pt.ID)
+	if err != nil {
+		return err
+	}
+	defer crypto.ZeroBytes(dek)
+	patientURN := crypto.PatientURN(pt.ClinicID, pt.ID)
 
 	name := sanitizeFileName(file.Filename)
-	meta, err := h.files.Upload(ctx, storage.UploadInput{
+	_, err = h.files.UploadEncrypted(ctx, storage.UploadInput{
 		Domain:       patientDocumentDomain,
 		ResourceID:   pt.ID,
 		OriginalName: name,
 		ContentType:  contentTypeOr(file.Header.Get("Content-Type"), "application/octet-stream"),
 		CreatedBy:    uuid.MustParse(server.ActorID(c)),
-	}, src, file.Size)
+	}, src, file.Size, dek, []byte(patientURN))
 	if err != nil {
 		return err
 	}
 	// The canonical checksum is witnessed in the append-only chain, so
 	// any later modification of the blob is provable.
 	h.audit.Record(ctx, server.EventFromRequest(c, audit.AuditResultSuccess,
-		"file.upload", "patient:"+pt.ID.String(), meta.OriginalName, "checksum: "+meta.Checksum))
+		"file.upload", "patient:"+pt.ID.String(), "", ""))
 	return server.HtmxRedirect(c, "/patients/"+pt.ID.String())
 }
 
@@ -88,11 +98,22 @@ func (h *Handler) DownloadDocument(c echo.Context) error {
 	if err != nil {
 		return echo.NewHTTPError(http.StatusNotFound)
 	}
-	meta, obj, err := h.files.OpenForResource(ctx, patientDocumentDomain, pt.ID, fileID)
+	if h.engine == nil {
+		return errors.New("patient documents: crypto engine is unavailable")
+	}
+	dek, err := h.engine.GetPatientDEKForClinic(ctx, pt.ClinicID, pt.ID)
+	if err != nil {
+		return err
+	}
+	defer crypto.ZeroBytes(dek)
+	patientURN := crypto.PatientURN(pt.ClinicID, pt.ID)
+	meta, obj, err := h.files.OpenEncryptedForResource(ctx, patientDocumentDomain, pt.ID, fileID, dek, []byte(patientURN))
 	if err != nil {
 		if storage.IsNotFound(err) {
 			return echo.NewHTTPError(http.StatusNotFound)
 		}
+		h.audit.Record(ctx, server.EventFromRequest(c, audit.AuditResultFailure,
+			"file.read", "patient:"+pt.ID.String(), "", "encrypted object unavailable"))
 		return err
 	}
 	defer obj.Data.Close()
@@ -105,15 +126,17 @@ func (h *Handler) DownloadDocument(c echo.Context) error {
 		return err
 	}
 	h.audit.Record(ctx, server.EventFromRequest(c, audit.AuditResultSuccess,
-		"file.read", "patient:"+pt.ID.String(), meta.OriginalName, ""))
+		"file.read", "patient:"+pt.ID.String(), "", ""))
 	c.Response().Header().Set("Content-Disposition",
 		"attachment; filename=\""+strings.ReplaceAll(meta.OriginalName, `"`, "")+"\"")
 	if err := c.Stream(http.StatusOK, meta.ContentType, io.TeeReader(obj.Data, hasher)); err != nil {
+		h.audit.Record(ctx, server.EventFromRequest(c, audit.AuditResultFailure,
+			"file.read", "patient:"+pt.ID.String(), "", "encrypted stream failed"))
 		return err
 	}
 	if hex.EncodeToString(hasher.Sum(nil)) != meta.Checksum {
 		h.audit.Record(ctx, server.EventFromRequest(c, audit.AuditResultFailure,
-			"file.read", "patient:"+pt.ID.String(), meta.OriginalName, "checksum mismatch"))
+			"file.read", "patient:"+pt.ID.String(), "", "checksum mismatch"))
 	}
 	return nil
 }

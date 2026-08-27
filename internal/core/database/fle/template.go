@@ -148,6 +148,9 @@ const fleTemplate = `
 
 import (
 	"context"
+	"fmt"
+
+	"github.com/google/uuid"
 
 	"librevita.org/internal/core/crypto"
 	"librevita.org/internal/core/database/fle"
@@ -157,31 +160,91 @@ import (
 {{ range $n := $nodes }}
 {{- if hasEncryptedFields $n }}
 // Decrypt{{ $n.Name }} decrypts all encrypted fields of {{ $n.Name }} in place without reflection.
-func Decrypt{{ $n.Name }}(ctx context.Context, enc crypto.Encryptor, entity *{{ $n.Name }}) error {
-	if entity == nil || enc == nil {
+func Decrypt{{ $n.Name }}(ctx context.Context, enc crypto.Encryptor, entity *{{ $n.Name }}, resolvers ...fle.PatientEncryptorResolver) error {
+	if entity == nil {
 		return nil
 	}
-	aad := fle.ResolveAAD(ctx)
+	needsDecryption := false
 	{{- range $f := encryptedFields $n }}
 	{{- if $f.Nillable }}
 	if entity.{{ $f.StructField }} != nil && crypto.IsCiphertextString(*entity.{{ $f.StructField }}) {
-		if dec, err := fle.DecryptString(enc, []byte(*entity.{{ $f.StructField }}), aad); err == nil {
-			*entity.{{ $f.StructField }} = dec
-		}
+		needsDecryption = true
 	}
 	{{- else }}
 	if crypto.IsCiphertextString(entity.{{ $f.StructField }}) {
-		if dec, err := fle.DecryptString(enc, []byte(entity.{{ $f.StructField }}), aad); err == nil {
-			entity.{{ $f.StructField }} = dec
+		needsDecryption = true
+	}
+	{{- end }}
+	{{- end }}
+	if !needsDecryption {
+		return nil
+	}
+	scopedEnc, err := fle.ResolvePatientEncryptor(ctx, entity.ClinicID, entity.{{ if eq $n.Name "Patient" }}ID{{ else }}PatientID{{ end }}, enc, resolvers...)
+	if err != nil {
+		return err
+	}
+	if scopedEnc == nil {
+		return fmt.Errorf("fle: encryptor is required for {{ $n.Name }}")
+	}
+	enc = scopedEnc
+	aad := fle.ResolveEntityAAD(ctx, entity.ClinicID, entity.{{ if eq $n.Name "Patient" }}ID{{ else }}PatientID{{ end }})
+	{{- range $f := encryptedFields $n }}
+	{{- if $f.Nillable }}
+	if entity.{{ $f.StructField }} != nil && crypto.IsCiphertextString(*entity.{{ $f.StructField }}) {
+		dec, err := fle.DecryptString(enc, []byte(*entity.{{ $f.StructField }}), aad)
+		if err != nil {
+			return err
 		}
+		*entity.{{ $f.StructField }} = dec
+	}
+	{{- else }}
+	if crypto.IsCiphertextString(entity.{{ $f.StructField }}) {
+		dec, err := fle.DecryptString(enc, []byte(entity.{{ $f.StructField }}), aad)
+		if err != nil {
+			return err
+		}
+		entity.{{ $f.StructField }} = dec
 	}
 	{{- end }}
 	{{- end }}
 	return nil
 }
 
-func encrypt{{ $n.Name }}Mutation(ctx context.Context, hasher crypto.Hasher, enc crypto.Encryptor, m *{{ $n.MutationName }}) error {
-	aad := fle.ResolveAAD(ctx)
+func encrypt{{ $n.Name }}Mutation(ctx context.Context, hasher crypto.Hasher, enc crypto.Encryptor, m *{{ $n.MutationName }}, resolver fle.PatientEncryptorResolver) error {
+	var err error
+	needsEncryption := false
+	{{- range $f := encryptedFields $n }}
+	if _, ok := m.{{ $f.MutationGet }}(); ok {
+		needsEncryption = true
+	}
+	{{- end }}
+	clinicID, clinicOK := m.ClinicID()
+	patientID, patientOK := uuid.Nil, false
+	{{- if eq $n.Name "Patient" }}
+	if id, ok := m.ID(); ok {
+		patientID, patientOK = id, true
+	}
+	{{- else }}
+	if id, ok := m.PatientID(); ok {
+		patientID, patientOK = id, true
+	}
+	{{- end }}
+	if !clinicOK {
+		clinicID, clinicOK = fle.ClinicUUIDFromContext(ctx)
+	}
+	if !patientOK {
+		patientID, patientOK = fle.PatientIDFromContext(ctx)
+	}
+	if needsEncryption {
+		enc, err = fle.ResolvePatientEncryptor(ctx, clinicID, patientID, enc, resolver)
+		if err != nil {
+			return err
+		}
+		if enc == nil {
+			return fmt.Errorf("fle: encryptor is required for {{ $n.Name }}")
+		}
+	}
+	aad := fle.ResolveMutationAAD(ctx, clinicID, patientID)
 	{{- range $f := encryptedFields $n }}
 	{{- if isSearchable $f }}
 	if val, ok := m.{{ $f.MutationGet }}(); ok && val != "" && !crypto.IsCiphertextString(val) && hasher != nil {
@@ -190,9 +253,11 @@ func encrypt{{ $n.Name }}Mutation(ctx context.Context, hasher crypto.Hasher, enc
 		tokens := normalize.NameTokens(val)
 		tokenHashes := make([]string, 0, len(tokens))
 		for _, tok := range tokens {
-			if h, err := hasher.BlindIndex("{{ lower $n.Name }}.token", tok); err == nil {
-				tokenHashes = append(tokenHashes, h)
+			h, err := hasher.BlindIndex("{{ lower $n.Name }}.token", tok)
+			if err != nil {
+				return err
 			}
+			tokenHashes = append(tokenHashes, h)
 		}
 		m.Set{{ $f.StructField }}TokenIndex(tokenHashes)
 		{{- end }}
@@ -202,16 +267,20 @@ func encrypt{{ $n.Name }}Mutation(ctx context.Context, hasher crypto.Hasher, enc
 			domainTag = customDomain
 		}
 		normalized := {{ normalizerFunc $f }}(val)
-		if blindHash, err := hasher.BlindIndex(domainTag, normalized); err == nil {
-			m.Set{{ $f.StructField }}BlindIndex(blindHash)
+		blindHash, err := hasher.BlindIndex(domainTag, normalized)
+		if err != nil {
+			return err
 		}
+		m.Set{{ $f.StructField }}BlindIndex(blindHash)
 		{{- end }}
 	}
 	{{- end }}
 	if val, ok := m.{{ $f.MutationGet }}(); ok && val != "" && !crypto.IsCiphertextString(val) && enc != nil {
-		if ctBytes, err := fle.EncryptString(enc, val, aad); err == nil {
-			m.{{ $f.MutationSet }}(string(ctBytes))
+		ctBytes, err := fle.EncryptString(enc, val, aad)
+		if err != nil {
+			return err
 		}
+		m.{{ $f.MutationSet }}(string(ctBytes))
 	}
 	{{- end }}
 	return nil
@@ -221,7 +290,11 @@ func encrypt{{ $n.Name }}Mutation(ctx context.Context, hasher crypto.Hasher, enc
 
 // FLEMutationHook returns an ent.Hook that computes blind indexes and encrypts fields
 // before database persistence in a 100% type-safe manner without reflection.
-func FLEMutationHook(hasher crypto.Hasher, defaultEnc crypto.Encryptor) Hook {
+func FLEMutationHook(hasher crypto.Hasher, defaultEnc crypto.Encryptor, patientResolvers ...fle.PatientEncryptorResolver) Hook {
+	var patientResolver fle.PatientEncryptorResolver
+	if len(patientResolvers) > 0 {
+		patientResolver = patientResolvers[0]
+	}
 	return func(next Mutator) Mutator {
 		return MutateFunc(func(ctx context.Context, m Mutation) (Value, error) {
 			if !m.Op().Is(OpCreate | OpUpdate | OpUpdateOne) {
@@ -237,7 +310,9 @@ func FLEMutationHook(hasher crypto.Hasher, defaultEnc crypto.Encryptor) Hook {
 			{{- range $n := $nodes }}
 			{{- if hasEncryptedFields $n }}
 			case *{{ $n.MutationName }}:
-				_ = encrypt{{ $n.Name }}Mutation(ctx, h, enc, mut)
+				if err := encrypt{{ $n.Name }}Mutation(ctx, h, enc, mut, patientResolver); err != nil {
+					return nil, err
+				}
 			{{- end }}
 			{{- end }}
 			}
@@ -247,12 +322,14 @@ func FLEMutationHook(hasher crypto.Hasher, defaultEnc crypto.Encryptor) Hook {
 				return nil, err
 			}
 
-			if enc != nil && val != nil {
+			if val != nil {
 				switch v := val.(type) {
 				{{- range $n := $nodes }}
 				{{- if hasEncryptedFields $n }}
 				case *{{ $n.Name }}:
-					_ = Decrypt{{ $n.Name }}(ctx, enc, v)
+					if err := Decrypt{{ $n.Name }}(ctx, enc, v, patientResolver); err != nil {
+						return nil, err
+					}
 				{{- end }}
 				{{- end }}
 				}
@@ -265,7 +342,11 @@ func FLEMutationHook(hasher crypto.Hasher, defaultEnc crypto.Encryptor) Hook {
 
 // FLEDecryptionInterceptor returns an ent.Interceptor that transparently decrypts
 // all queried entities in a 100% type-safe manner without reflection.
-func FLEDecryptionInterceptor(defaultEnc crypto.Encryptor) Interceptor {
+func FLEDecryptionInterceptor(defaultEnc crypto.Encryptor, patientResolvers ...fle.PatientEncryptorResolver) Interceptor {
+	var patientResolver fle.PatientEncryptorResolver
+	if len(patientResolvers) > 0 {
+		patientResolver = patientResolvers[0]
+	}
 	return InterceptFunc(func(next Querier) Querier {
 		return QuerierFunc(func(ctx context.Context, q Query) (Value, error) {
 			val, err := next.Query(ctx, q)
@@ -273,7 +354,7 @@ func FLEDecryptionInterceptor(defaultEnc crypto.Encryptor) Interceptor {
 				return nil, err
 			}
 			enc, err := fle.ResolveEncryptor(ctx, defaultEnc)
-			if err != nil || enc == nil || val == nil {
+			if err != nil || val == nil {
 				return val, err
 			}
 
@@ -281,10 +362,14 @@ func FLEDecryptionInterceptor(defaultEnc crypto.Encryptor) Interceptor {
 			{{- range $n := $nodes }}
 			{{- if hasEncryptedFields $n }}
 			case *{{ $n.Name }}:
-				_ = Decrypt{{ $n.Name }}(ctx, enc, v)
+				if err := Decrypt{{ $n.Name }}(ctx, enc, v, patientResolver); err != nil {
+					return nil, err
+				}
 			case []*{{ $n.Name }}:
 				for _, item := range v {
-					_ = Decrypt{{ $n.Name }}(ctx, enc, item)
+					if err := Decrypt{{ $n.Name }}(ctx, enc, item, patientResolver); err != nil {
+						return nil, err
+					}
 				}
 			{{- end }}
 			{{- end }}

@@ -130,6 +130,6 @@ func TestCrossClinicUsersAndFLE(t *testing.T) {
 	wrongCtx = fle.WithEncryptor(wrongCtx, encB)
 	wrongCtx = fle.WithClinicID(wrongCtx, sulID.String())
 	wrongFetched, err := client.Patient.Get(wrongCtx, pA.ID)
-	require.NoError(t, err)
-	assert.NotEqual(t, name, wrongFetched.DisplayName)
+	require.Error(t, err)
+	assert.Nil(t, wrongFetched)
 }

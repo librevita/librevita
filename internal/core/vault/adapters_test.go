@@ -1,6 +1,7 @@
 package vault
 
 import (
+	"encoding/base64"
 	"errors"
 	"net/http"
 	"testing"
@@ -25,7 +26,7 @@ func TestAdapterConstructorsValidation(t *testing.T) {
 
 func TestSanitizeNATSKey(t *testing.T) {
 	urn := "urn:librevita:patient:123/456.789"
-	assert.Equal(t, "urn_librevita_patient_123_456_789", sanitizeNATSKey(urn))
+	assert.Equal(t, "k_"+base64.RawURLEncoding.EncodeToString([]byte(urn)), sanitizeNATSKey(urn))
 }
 
 func TestIsVaultNotFound(t *testing.T) {
