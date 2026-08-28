@@ -7,9 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"net/mail"
 	"strings"
-	"time"
 
 	"github.com/google/uuid"
 
@@ -19,6 +17,7 @@ import (
 	normalizer "librevita.org/internal/core/normalize"
 	"librevita.org/internal/core/policy"
 	patientmodel "librevita.org/internal/domain/patient/model"
+	"librevita.org/pkg/validator"
 )
 
 const (
@@ -30,9 +29,7 @@ const (
 )
 
 // ValidationError is returned for invalid patient input.
-type ValidationError struct{ Msg string }
-
-func (e *ValidationError) Error() string { return e.Msg }
+type ValidationError = validator.ValidationError
 
 // Re-export domain models and contracts from patient/model.
 type (
@@ -474,43 +471,53 @@ func normalize(in PatientInput) (PatientInput, error) {
 		PostalCode:  strings.TrimSpace(in.PostalCode),
 		Notes:       strings.TrimSpace(in.Notes),
 	}
-	if out.DisplayName == "" {
-		return out, &ValidationError{Msg: "patient name is required"}
-	}
-	if len(out.DisplayName) > maxPatientNameLen {
-		return out, &ValidationError{Msg: "patient name is too long"}
-	}
-	if out.Phone == "" {
-		return out, &ValidationError{Msg: "patient phone is required"}
-	}
-	if len(out.Phone) > maxPhoneLen {
-		return out, &ValidationError{Msg: "phone is too long"}
-	}
-	if out.Email == "" {
-		return out, &ValidationError{Msg: "patient email is required"}
-	}
-	addr, err := mail.ParseAddress(out.Email)
-	if err != nil || addr.Address != out.Email {
-		return out, &ValidationError{Msg: "enter a valid email address"}
-	}
 	if out.Sex == "" {
 		out.Sex = patientmodel.SexUnknown
 	}
-	if !out.Sex.Valid() {
-		return out, &ValidationError{Msg: "invalid sex"}
-	}
-	if out.BirthDate != "" {
-		if _, err := time.Parse("2006-01-02", out.BirthDate); err != nil {
-			return out, &ValidationError{Msg: "enter a valid birth date (YYYY-MM-DD)"}
-		}
-	}
-	if len(out.Email) > maxEmailLen || len(out.Street) > maxAddressLen ||
-		len(out.City) > maxAddressLen || len(out.State) > maxAddressLen ||
-		len(out.PostalCode) > maxAddressLen {
-		return out, &ValidationError{Msg: "address fields are too long"}
-	}
-	if len(out.Notes) > maxNotesLen {
-		return out, &ValidationError{Msg: "notes are too long"}
+
+	v := validator.New()
+
+	v.Field(out.DisplayName, "display_name", "patient name").
+		Required().
+		Max(maxPatientNameLen)
+
+	v.Field(out.Phone, "phone", "patient phone").
+		Required().
+		Max(maxPhoneLen)
+
+	v.Field(out.Email, "email", "patient email").
+		Required().
+		Email().
+		Max(maxEmailLen)
+
+	v.Field(out.BirthDate, "birth_date", "birth date").
+		Optional().
+		DateISO()
+
+	v.Field(out.Street, "street", "street").
+		Optional().
+		Max(maxAddressLen)
+
+	v.Field(out.City, "city", "city").
+		Optional().
+		Max(maxAddressLen)
+
+	v.Field(out.State, "state", "state").
+		Optional().
+		Max(maxAddressLen)
+
+	v.Field(out.PostalCode, "postal_code", "postal code").
+		Optional().
+		Max(maxAddressLen)
+
+	v.Field(out.Notes, "notes", "notes").
+		Optional().
+		Max(maxNotesLen)
+
+	v.Validatable(out.Sex, "sex", "sex")
+
+	if err := v.Err(); err != nil {
+		return out, err
 	}
 	return out, nil
 }

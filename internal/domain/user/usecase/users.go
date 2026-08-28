@@ -3,13 +3,13 @@ package usecase
 import (
 	"context"
 	"fmt"
-	"net/mail"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
 
 	"librevita.org/internal/core/auth"
+	"librevita.org/pkg/validator"
 )
 
 // CreateUserInput is the staff account creation request.
@@ -74,13 +74,16 @@ func (s *Service) UpdateUser(ctx context.Context, id string, actorID string, in 
 	email := normalizeEmail(in.Email)
 	roleName := in.Role
 
-	if name == "" {
-		return nil, &ValidationError{Msg: "display name is required"}
-	}
-	if len(name) > maxNameLen {
-		return nil, &ValidationError{Msg: "display name is too long"}
-	}
-	if err := validateEmail(email); err != nil {
+	v := validator.New()
+	v.Field(name, "name", "display name").
+		Required().
+		Max(maxNameLen)
+
+	v.Field(email, "email", "email").
+		Email().
+		Max(maxEmailLen)
+
+	if err := v.Err(); err != nil {
 		return nil, err
 	}
 
@@ -133,14 +136,11 @@ func (s *Service) UpdateUser(ctx context.Context, id string, actorID string, in 
 }
 
 func validateEmail(email string) error {
-	addr, err := mail.ParseAddress(email)
-	if err != nil || !strings.Contains(email, "@") || addr.Address != email {
-		return &ValidationError{Msg: "enter a valid email address"}
-	}
-	if len(email) > maxEmailLen {
-		return &ValidationError{Msg: "email is too long"}
-	}
-	return nil
+	v := validator.New()
+	v.Field(email, "email", "email").
+		Email().
+		Max(maxEmailLen)
+	return v.Err()
 }
 
 // ListUsersPage returns one page of accounts matching q (word-prefix search).
@@ -162,13 +162,14 @@ func (s *Service) CountStaff(ctx context.Context) (int64, error) {
 // UpdatePreferences stores the user's UI theme and personal timezone.
 func (s *Service) UpdatePreferences(ctx context.Context, userID, timezone string, theme auth.UITheme) error {
 	timezone = strings.TrimSpace(timezone)
-	if !theme.Valid() {
-		return &ValidationError{Msg: "invalid UI theme"}
-	}
+	v := validator.New()
+	v.Validatable(theme, "theme", "invalid UI theme")
 	if timezone != "" {
-		if _, err := time.LoadLocation(timezone); err != nil {
-			return &ValidationError{Msg: "unknown timezone"}
-		}
+		_, err := time.LoadLocation(timezone)
+		v.Check(err == nil, "timezone", "unknown timezone")
+	}
+	if err := v.Err(); err != nil {
+		return err
 	}
 	uUUID, err := uuid.Parse(userID)
 	if err != nil {

@@ -1,6 +1,10 @@
 package model
 
-import "errors"
+import (
+	"errors"
+
+	"librevita.org/pkg/validator"
+)
 
 // Domain errors for identifier systems.
 var (
@@ -16,10 +20,4 @@ var (
 
 // ValidationError is returned for values that do not fit the system's
 // scheme (bad check digit, wrong length, ...).
-type ValidationError struct {
-	Msg string
-}
-
-func (e *ValidationError) Error() string {
-	return e.Msg
-}
+type ValidationError = validator.ValidationError
