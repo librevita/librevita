@@ -15,7 +15,6 @@ package crypto
 
 import (
 	"context"
-	"crypto/rand"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -24,8 +23,6 @@ import (
 	"hash"
 	"io"
 
-	"golang.org/x/crypto/blake2b"
-	"golang.org/x/crypto/chacha20poly1305"
 	"golang.org/x/crypto/hkdf"
 )
 
@@ -39,9 +36,34 @@ const (
 	// InfoBlindIndex is the HKDF info string for deriving the Blind Index Key.
 	InfoBlindIndex = "librevita:blind-index:v1"
 
-	// SizeNonce is the XChaCha20-Poly1305 nonce length (24 bytes).
-	SizeNonce = chacha20poly1305.NonceSizeX
+	// SizeNonce is the default AEAD nonce length (24 bytes).
+	SizeNonce = 24
+
+	// SizeAuthTag is the AEAD authentication tag length (16 bytes).
+	SizeAuthTag = 16
 )
+
+// EngineOption configures an Engine instance.
+type EngineOption func(*engineOptions)
+
+type engineOptions struct {
+	hashAlgorithm    string
+	encryptionCipher string
+}
+
+// WithEngineHashAlgorithm sets the hash algorithm for blind indexing in the Engine.
+func WithEngineHashAlgorithm(algo string) EngineOption {
+	return func(o *engineOptions) {
+		o.hashAlgorithm = algo
+	}
+}
+
+// WithEngineEncryptionCipher sets the default encryption cipher for the Engine.
+func WithEngineEncryptionCipher(cipher string) EngineOption {
+	return func(o *engineOptions) {
+		o.encryptionCipher = cipher
+	}
+}
 
 // Engine orchestrates KEK, per-patient DEKs, Blind Indexing, and KeyVault storage.
 type Engine struct {
@@ -49,13 +71,15 @@ type Engine struct {
 	blindKey []byte
 	vault    KeyVault
 	metrics  *keyMetrics
+	hasher   Hasher
+	cipher   string
 }
 
 // MasterKey is an alias for Engine.
 type MasterKey = Engine
 
 // NewEngine initializes the crypto Engine from a base64 32-byte master key and KeyVault.
-func NewEngine(masterKeyB64 string, vault KeyVault) (*Engine, error) {
+func NewEngine(masterKeyB64 string, vault KeyVault, opts ...EngineOption) (*Engine, error) {
 	if masterKeyB64 == "" {
 		return nil, errors.New("crypto: master key is empty")
 	}
@@ -69,21 +93,39 @@ func NewEngine(masterKeyB64 string, vault KeyVault) (*Engine, error) {
 	if len(raw) != SizeDEK {
 		return nil, fmt.Errorf("crypto: master key must be 32 bytes, got %d", len(raw))
 	}
-	return deriveEngine(raw, vault), nil
+	defer ZeroBytes(raw)
+	return deriveEngine(raw, vault, opts...)
 }
 
 // NewMasterKey is a convenience alias for NewEngine.
-func NewMasterKey(encoded string, vault KeyVault) (*Engine, error) {
-	return NewEngine(encoded, vault)
+func NewMasterKey(encoded string, vault KeyVault, opts ...EngineOption) (*Engine, error) {
+	return NewEngine(encoded, vault, opts...)
 }
 
-func deriveEngine(raw []byte, vault KeyVault) *Engine {
+func deriveEngine(raw []byte, vault KeyVault, opts ...EngineOption) (*Engine, error) {
+	options := engineOptions{
+		hashAlgorithm:    DefaultHashAlgorithm,
+		encryptionCipher: DefaultEncryptionCipher,
+	}
+	for _, opt := range opts {
+		opt(&options)
+	}
+
+	blindKey := hkdfExpand(raw, InfoBlindIndex)
+	hasher, err := NewHasher(blindKey, WithHashAlgorithm(options.hashAlgorithm))
+	if err != nil {
+		ZeroBytes(blindKey)
+		return nil, fmt.Errorf("crypto: engine hasher: %w", err)
+	}
+
 	return &Engine{
 		kek:      hkdfExpand(raw, InfoKEK),
-		blindKey: hkdfExpand(raw, InfoBlindIndex),
+		blindKey: blindKey,
 		vault:    vault,
 		metrics:  &keyMetrics{},
-	}
+		hasher:   hasher,
+		cipher:   options.encryptionCipher,
+	}, nil
 }
 
 // ZeroBytes securely zeroes the memory of a byte slice to prevent sensitive material from lingering in RAM.
@@ -273,12 +315,12 @@ func (e *Engine) DecryptFieldPtr(ctx context.Context, urn string, aad []byte, en
 // Seal encrypts plaintext using the global KEK directly for non-patient
 // system secrets.
 func (e *Engine) Seal(aad, plaintext []byte) (ciphertext, nonce []byte, err error) {
-	aead, err := chacha20poly1305.NewX(e.kek)
+	aead, err := NewAEADCipher(e.kek)
 	if err != nil {
 		return nil, nil, fmt.Errorf("crypto: seal: %w", err)
 	}
-	nonce = make([]byte, SizeNonce)
-	if _, err := rand.Read(nonce); err != nil {
+	nonce, err = RandomBytes(SizeNonce)
+	if err != nil {
 		return nil, nil, fmt.Errorf("crypto: nonce: %w", err)
 	}
 	ciphertext = aead.Seal(nil, nonce, plaintext, aad)
@@ -287,7 +329,7 @@ func (e *Engine) Seal(aad, plaintext []byte) (ciphertext, nonce []byte, err erro
 
 // Open authenticates and decrypts ciphertext encrypted with KEK directly.
 func (e *Engine) Open(aad, ciphertext, nonce []byte) ([]byte, error) {
-	aead, err := chacha20poly1305.NewX(e.kek)
+	aead, err := NewAEADCipher(e.kek)
 	if err != nil {
 		return nil, fmt.Errorf("crypto: open: %w", err)
 	}
@@ -298,30 +340,33 @@ func (e *Engine) Open(aad, ciphertext, nonce []byte) ([]byte, error) {
 	return plaintext, nil
 }
 
-// BlindIndex returns the hex keyed-BLAKE2b-256 digest of
-// system || '\x00' || value under the global BlindIndexKey.
+// BlindIndex returns the deterministic keyed digest of
+// system || '\x00' || value under the global BlindIndexKey using the configured Hasher.
 // It is deterministic across all patients to support exact matches (WHERE blind_index = ?).
 func (e *Engine) BlindIndex(system, value string) (string, error) {
-	hasher, err := blake2b.New256(e.blindKey)
+	if e.hasher != nil {
+		return e.hasher.BlindIndex(system, value)
+	}
+	h, err := NewDigestWithKey(e.blindKey)
 	if err != nil {
 		return "", fmt.Errorf("crypto: blind index: %w", err)
 	}
-	hasher.Write([]byte(system))
-	hasher.Write([]byte{0})
-	hasher.Write([]byte(value))
-	return hex.EncodeToString(hasher.Sum(nil)), nil
+	h.Write([]byte(system))
+	h.Write([]byte{0})
+	h.Write([]byte(value))
+	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
 func encryptWithDEK(dek, aad, plaintext []byte) ([]byte, []byte, error) {
 	if len(dek) != SizeDEK {
 		return nil, nil, ErrInvalidDEK
 	}
-	aead, err := chacha20poly1305.NewX(dek)
+	aead, err := NewAEADCipher(dek)
 	if err != nil {
 		return nil, nil, fmt.Errorf("crypto: aead: %w", err)
 	}
-	nonce := make([]byte, SizeNonce)
-	if _, err := rand.Read(nonce); err != nil {
+	nonce, err := RandomBytes(SizeNonce)
+	if err != nil {
 		return nil, nil, fmt.Errorf("crypto: nonce: %w", err)
 	}
 	return aead.Seal(nil, nonce, plaintext, aad), nonce, nil
@@ -331,7 +376,7 @@ func decryptWithDEK(dek, aad, ciphertext, nonce []byte) ([]byte, error) {
 	if len(dek) != SizeDEK {
 		return nil, ErrInvalidDEK
 	}
-	aead, err := chacha20poly1305.NewX(dek)
+	aead, err := NewAEADCipher(dek)
 	if err != nil {
 		return nil, fmt.Errorf("crypto: aead: %w", err)
 	}
@@ -342,16 +387,14 @@ func decryptWithDEK(dek, aad, ciphertext, nonce []byte) ([]byte, error) {
 	return plaintext, nil
 }
 
-func newBLAKE2b256() hash.Hash {
-	h, err := blake2b.New256(nil)
-	if err != nil {
-		panic(fmt.Sprintf("crypto: blake2b init: %v", err))
-	}
-	return h
-}
-
 func hkdfExpand(ikm []byte, info string) []byte {
-	reader := hkdf.New(newBLAKE2b256, ikm, nil, []byte(info))
+	reader := hkdf.New(func() hash.Hash {
+		h, err := NewDigest()
+		if err != nil {
+			panic(fmt.Sprintf("crypto: digest init: %v", err))
+		}
+		return h
+	}, ikm, nil, []byte(info))
 	out := make([]byte, SizeDEK)
 	if _, err := io.ReadFull(reader, out); err != nil {
 		panic(fmt.Sprintf("crypto: hkdf expand: %v", err))

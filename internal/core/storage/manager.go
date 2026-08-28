@@ -15,7 +15,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"golang.org/x/crypto/blake2b"
+	"librevita.org/internal/core/crypto"
 )
 
 // StoredFile is the master-index metadata of one stored file.
@@ -209,7 +209,7 @@ func (m *FileManager) UploadEncrypted(ctx context.Context, in UploadInput, data 
 	}
 	keyName := m.objectKey(in.Domain, in.ResourceID, id)
 
-	checksum, err := blake2b.New256(nil)
+	checksum, err := crypto.NewDigest()
 	if err != nil {
 		return nil, fmt.Errorf("storage: checksum: %w", err)
 	}

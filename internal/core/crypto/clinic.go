@@ -2,7 +2,6 @@ package crypto
 
 import (
 	"context"
-	"crypto/rand"
 	"errors"
 	"fmt"
 
@@ -251,8 +250,8 @@ func zeroDEKMap(deks map[uuid.UUID][]byte) {
 }
 
 func (e *Engine) createWrappedDEK(ctx context.Context, urn string, scope byte, wrappingKey, aad []byte) ([]byte, bool, error) {
-	dek := make([]byte, SizeDEK)
-	if _, err := rand.Read(dek); err != nil {
+	dek, err := RandomBytes(SizeDEK)
+	if err != nil {
 		return nil, false, fmt.Errorf("crypto: generate dek: %w", err)
 	}
 	encDEK, err := wrapKey(wrappingKey, dek, scope, aad)

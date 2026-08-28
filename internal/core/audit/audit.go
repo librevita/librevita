@@ -10,9 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"golang.org/x/crypto/blake2b"
-
 	"librevita.org/internal/core/clinicctx"
+	"librevita.org/internal/core/crypto"
 )
 
 // Event is the structured audit payload recorded for an operation.
@@ -198,11 +197,12 @@ func chainHash(prev string, ev Event, createdAt time.Time) string {
 		decoded, err := hex.DecodeString(prev)
 		if err == nil && len(decoded) == 32 {
 			key = decoded
+			defer crypto.ZeroBytes(key)
 		}
 	}
-	h, err := blake2b.New256(key)
+	h, err := crypto.NewDigestWithKey(key)
 	if err != nil {
-		panic(fmt.Sprintf("audit: blake2b init: %v", err))
+		panic(fmt.Sprintf("audit: digest init: %v", err))
 	}
 	h.Write([]byte(chainPayload(ev, createdAt)))
 	return hex.EncodeToString(h.Sum(nil))

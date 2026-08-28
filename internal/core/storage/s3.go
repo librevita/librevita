@@ -16,7 +16,7 @@ import (
 
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
-	"golang.org/x/crypto/blake2b"
+	"librevita.org/internal/core/crypto"
 )
 
 // S3Config selects and authenticates the S3-compatible endpoint.
@@ -91,7 +91,7 @@ func (s *S3) Put(ctx context.Context, key string, data io.Reader, size int64, co
 	// The application computes the canonical checksum while the payload
 	// streams to the API; the server ETag is kept as-is (S3 multipart
 	// ETags are not the digest of the whole object).
-	checksum, err := blake2b.New256(nil)
+	checksum, err := crypto.NewDigest()
 	if err != nil {
 		return ObjectInfo{}, fmt.Errorf("storage/s3: checksum: %w", err)
 	}

@@ -1,43 +1,10 @@
 package crypto
 
 import (
-	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"strings"
-
-	"golang.org/x/crypto/chacha20poly1305"
 )
-
-// Supported encryption ciphers and magic byte identifiers.
-const (
-	// CipherXChaCha20Poly1305 is the canonical identifier for XChaCha20-Poly1305 AEAD.
-	CipherXChaCha20Poly1305 = "xchacha20-poly1305"
-
-	// DefaultEncryptionCipher is the default encryption cipher.
-	DefaultEncryptionCipher = CipherXChaCha20Poly1305
-
-	// MagicByteXChaCha20Poly1305 indicates XChaCha20-Poly1305 AEAD with a 24-byte nonce.
-	MagicByteXChaCha20Poly1305 byte = 0x01
-
-	// DefaultEncryptionVersion is the default encryption Magic Byte (XChaCha20-Poly1305).
-	DefaultEncryptionVersion = MagicByteXChaCha20Poly1305
-)
-
-type cipherSpec struct {
-	name      string
-	nonceSize int
-	tagSize   int
-}
-
-var supportedCiphers = map[byte]cipherSpec{
-	MagicByteXChaCha20Poly1305: {
-		name:      CipherXChaCha20Poly1305,
-		nonceSize: chacha20poly1305.NonceSizeX, // 24
-		tagSize:   16,
-	},
-}
 
 // Encryptor provides symmetric AEAD encryption and decryption with cryptographic agility.
 type Encryptor interface {
@@ -156,26 +123,26 @@ func (e *AEADEncryptor) Version() byte {
 
 // Encrypt encrypts plaintext with AAD, injecting the Magic Byte version at index [0].
 func (e *AEADEncryptor) Encrypt(plaintext, aad []byte) ([]byte, error) {
-	switch e.version {
-	case MagicByteXChaCha20Poly1305:
-		aead, err := chacha20poly1305.NewX(e.key)
-		if err != nil {
-			return nil, fmt.Errorf("crypto: xchacha20poly1305 init: %w", err)
-		}
-		nonce := make([]byte, chacha20poly1305.NonceSizeX)
-		if _, err := rand.Read(nonce); err != nil {
-			return nil, fmt.Errorf("crypto: generate nonce: %w", err)
-		}
-
-		out := make([]byte, 1+len(nonce), 1+len(nonce)+len(plaintext)+aead.Overhead())
-		out[0] = MagicByteXChaCha20Poly1305
-		copy(out[1:], nonce)
-		out = aead.Seal(out, nonce, plaintext, aad)
-		return out, nil
-
-	default:
+	spec, ok := supportedCiphers[e.version]
+	if !ok {
 		return nil, ErrUnsupportedVersion
 	}
+
+	aead, err := NewAEADCipherByVersion(e.version, e.key)
+	if err != nil {
+		return nil, err
+	}
+
+	nonce, err := RandomBytes(spec.NonceSize)
+	if err != nil {
+		return nil, fmt.Errorf("crypto: generate nonce: %w", err)
+	}
+
+	out := make([]byte, 1+len(nonce), 1+len(nonce)+len(plaintext)+aead.Overhead())
+	out[0] = e.version
+	copy(out[1:], nonce)
+	out = aead.Seal(out, nonce, plaintext, aad)
+	return out, nil
 }
 
 // Decrypt inspects the Magic Byte at ciphertext[0] and decrypts the payload.
@@ -190,30 +157,24 @@ func (e *AEADEncryptor) Decrypt(ciphertext, aad []byte) ([]byte, error) {
 		return nil, ErrUnsupportedVersion
 	}
 
-	minSize := 1 + spec.nonceSize + spec.tagSize
+	minSize := 1 + spec.NonceSize + spec.TagSize
 	if len(ciphertext) < minSize {
 		return nil, ErrCiphertextTooShort
 	}
 
-	switch magicByte {
-	case MagicByteXChaCha20Poly1305:
-		nonce := ciphertext[1 : 1+spec.nonceSize]
-		payload := ciphertext[1+spec.nonceSize:]
+	nonce := ciphertext[1 : 1+spec.NonceSize]
+	payload := ciphertext[1+spec.NonceSize:]
 
-		aead, err := chacha20poly1305.NewX(e.key)
-		if err != nil {
-			return nil, fmt.Errorf("crypto: xchacha20poly1305 init: %w", err)
-		}
-
-		plaintext, err := aead.Open(nil, nonce, payload, aad)
-		if err != nil {
-			return nil, fmt.Errorf("%w: %v", ErrDecryptionFailed, err)
-		}
-		return plaintext, nil
-
-	default:
-		return nil, ErrUnsupportedVersion
+	aead, err := NewAEADCipherByVersion(magicByte, e.key)
+	if err != nil {
+		return nil, err
 	}
+
+	plaintext, err := aead.Open(nil, nonce, payload, aad)
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrDecryptionFailed, err)
+	}
+	return plaintext, nil
 }
 
 // EncryptStruct serializes a Go struct to JSON and encrypts it.
@@ -248,60 +209,4 @@ func (e *AEADEncryptor) Cipher() string {
 // IsCiphertext reports whether the provided data is a recognized ciphertext payload.
 func (e *AEADEncryptor) IsCiphertext(data []byte) bool {
 	return IsCiphertext(data)
-}
-
-// MinCiphertextSizeForVersion returns the minimum ciphertext length for a specific magic byte version.
-func MinCiphertextSizeForVersion(version byte) (int, bool) {
-	spec, ok := supportedCiphers[version]
-	if !ok {
-		return 0, false
-	}
-	return 1 + spec.nonceSize + spec.tagSize, true
-}
-
-// IsCiphertext reports whether data begins with a recognized ciphertext Magic Byte
-// and satisfies the minimum payload length specific to that cipher version.
-func IsCiphertext(data []byte) bool {
-	if len(data) < 1 {
-		return false
-	}
-	minSize, ok := MinCiphertextSizeForVersion(data[0])
-	if !ok {
-		return false
-	}
-	return len(data) >= minSize
-}
-
-// IsCiphertextString reports whether a string represents a recognized ciphertext payload.
-func IsCiphertextString(s string) bool {
-	if len(s) < 1 {
-		return false
-	}
-	minSize, ok := MinCiphertextSizeForVersion(s[0])
-	if !ok {
-		return false
-	}
-	return len(s) >= minSize
-}
-
-func isValidVersion(v byte) bool {
-	_, ok := supportedCiphers[v]
-	return ok
-}
-
-func resolveCipherAndVersion(cipherName string, version byte) (byte, string, error) {
-	if cipherName != "" && cipherName != DefaultEncryptionCipher {
-		normalized := strings.ToLower(strings.TrimSpace(cipherName))
-		for ver, spec := range supportedCiphers {
-			if strings.EqualFold(spec.name, normalized) || strings.EqualFold(strings.ReplaceAll(spec.name, "-", ""), normalized) {
-				return ver, spec.name, nil
-			}
-		}
-		return 0, "", fmt.Errorf("%w: invalid encryption cipher %q", ErrUnsupportedVersion, cipherName)
-	}
-
-	if spec, ok := supportedCiphers[version]; ok {
-		return version, spec.name, nil
-	}
-	return 0, "", ErrUnsupportedVersion
 }

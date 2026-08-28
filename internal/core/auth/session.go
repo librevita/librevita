@@ -4,7 +4,6 @@ package auth
 
 import (
 	"context"
-	"crypto/rand"
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
@@ -15,10 +14,10 @@ import (
 
 	"aidanwoods.dev/go-paseto"
 	"github.com/google/uuid"
-	"golang.org/x/crypto/blake2b"
 
 	"librevita.org/internal/core/clinicctx"
 	"librevita.org/internal/core/config"
+	"librevita.org/internal/core/crypto"
 )
 
 // SessionCookieName is the name of the session cookie.
@@ -75,6 +74,7 @@ type SessionManager struct {
 	repo     SessionRepository
 	platform PlatformSessionRepository
 	key      paseto.V4SymmetricKey
+	hasher   crypto.Hasher
 	ttl      time.Duration
 	secure   bool
 	log      *slog.Logger
@@ -95,22 +95,43 @@ func NewSessionManager(repo SessionRepository, cfg *config.Config, log *slog.Log
 			return nil, errors.New("auth: paseto key is required outside development (LIBREVITA_PASETO_KEY)")
 		}
 		log.Warn("no paseto key configured; using an ephemeral key (sessions reset on restart)")
-		raw = make([]byte, 32)
-		if _, err := rand.Read(raw); err != nil {
-			return nil, fmt.Errorf("auth: ephemeral paseto key: %w", err)
+		var randErr error
+		raw, randErr = crypto.RandomBytes(32)
+		if randErr != nil {
+			return nil, fmt.Errorf("auth: ephemeral paseto key: %w", randErr)
 		}
 	}
 
 	key, err := paseto.V4SymmetricKeyFromBytes(raw)
 	if err != nil {
+		crypto.ZeroBytes(raw)
 		return nil, fmt.Errorf("auth: paseto key: %w", err)
+	}
+
+	algo := ""
+	if cfg != nil {
+		algo = cfg.Crypto.HashAlgorithm
+	}
+	if algo == "" {
+		algo = crypto.DefaultHashAlgorithm
+	}
+	hasher, err := crypto.NewHasher(raw, crypto.WithHashAlgorithm(algo))
+	crypto.ZeroBytes(raw)
+	if err != nil {
+		return nil, fmt.Errorf("auth: session hasher init: %w", err)
+	}
+
+	secure := false
+	if cfg != nil {
+		secure = !cfg.IsDevelopment()
 	}
 
 	return &SessionManager{
 		repo:   repo,
 		key:    key,
+		hasher: hasher,
 		ttl:    sessionTTL,
-		secure: !cfg.IsDevelopment(),
+		secure: secure,
 		log:    log,
 	}, nil
 }
@@ -127,11 +148,10 @@ func (m *SessionManager) Create(ctx context.Context, p Principal) (string, error
 	expires := now.Add(m.ttl)
 	_ = m.CleanupExpired(ctx)
 
-	jti := make([]byte, 32)
-	if _, err := rand.Read(jti); err != nil {
+	jtiHex, err := crypto.RandomHex(32)
+	if err != nil {
 		return "", fmt.Errorf("auth: session id: %w", err)
 	}
-	jtiHex := hex.EncodeToString(jti)
 
 	token := paseto.NewToken()
 	token.SetSubject(p.ID)
@@ -304,15 +324,23 @@ func ContextWithPrincipal(ctx context.Context, p *Principal) context.Context {
 
 type principalContextKey struct{}
 
-// hashToken computes the keyed BLAKE2b-256 fingerprint of the session
-// token id (jti) stored in the sessions table for revocation.
+// hashToken computes the keyed fingerprint of the session token id (jti)
+// stored in the sessions table for revocation, using the configured hash algorithm.
 func (m *SessionManager) hashToken(token string) string {
-	h, err := blake2b.New256(m.key.ExportBytes())
-	if err != nil {
-		panic(fmt.Sprintf("auth: blake2b init: %v", err))
+	if m.hasher != nil {
+		digest, err := m.hasher.HashString(token)
+		if err == nil {
+			return digest
+		}
 	}
-	h.Write([]byte(token))
-	return hex.EncodeToString(h.Sum(nil))
+	rawKey := m.key.ExportBytes()
+	defer crypto.ZeroBytes(rawKey)
+	digest, err := crypto.NewDigestWithKey(rawKey)
+	if err != nil {
+		panic(fmt.Sprintf("auth: session digest init: %v", err))
+	}
+	digest.Write([]byte(token))
+	return hex.EncodeToString(digest.Sum(nil))
 }
 
 func decodeKey(encoded string) ([]byte, error) {

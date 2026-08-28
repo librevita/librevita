@@ -3,8 +3,6 @@ package http
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"html"
 	"image"
@@ -27,6 +25,7 @@ import (
 	_ "golang.org/x/image/webp"
 
 	"librevita.org/internal/core/audit"
+	"librevita.org/internal/core/crypto"
 	"librevita.org/internal/core/server"
 	"librevita.org/internal/core/storage"
 	"librevita.org/internal/domain/user/usecase"
@@ -253,8 +252,7 @@ func etagMatches(header, want string) bool {
 // itself, so the tag follows the bytes (initials and name edits
 // included).
 func avatarDigest(payload []byte) string {
-	sum := sha256.Sum256(payload)
-	return hex.EncodeToString(sum[:])
+	return crypto.Digest256(payload)
 }
 
 // removeAvatars deletes every avatar of the user except the given id
