@@ -1,8 +1,6 @@
 package auth
 
 import (
-	"crypto/rand"
-	"crypto/subtle"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -10,6 +8,8 @@ import (
 	"sync"
 
 	"golang.org/x/crypto/argon2"
+
+	"librevita.org/internal/core/crypto"
 )
 
 // Argon2id parameters. The memory cost must stay a power of two.
@@ -60,8 +60,8 @@ func HashPassword(plain string) (string, error) {
 	release := acquireHashSlot()
 	defer release()
 
-	salt := make([]byte, argonSaltLen)
-	if _, err := rand.Read(salt); err != nil {
+	salt, err := crypto.RandomBytes(argonSaltLen)
+	if err != nil {
 		return "", fmt.Errorf("auth: password salt: %w", err)
 	}
 
@@ -87,7 +87,7 @@ func VerifyPassword(hash, plain string) (bool, error) {
 	}
 
 	candidate := argon2.IDKey([]byte(plain), salt, time, memory, threads, keyLen)
-	return subtle.ConstantTimeCompare(candidate, key) == 1, nil
+	return crypto.ConstantTimeCompareBytes(candidate, key), nil
 }
 
 func decodeHash(hash string) (memory, time uint32, threads uint8, keyLen uint32, salt, key []byte, err error) {

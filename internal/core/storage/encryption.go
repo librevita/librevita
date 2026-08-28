@@ -1,21 +1,18 @@
 package storage
 
 import (
-	"crypto/rand"
 	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
 
-	"golang.org/x/crypto/chacha20poly1305"
-
 	"librevita.org/internal/core/crypto"
 )
 
 const (
-	encryptedFileVersion     byte = 1
+	encryptedFileVersion     byte = crypto.DefaultEncryptionVersion
 	encryptedFileChunkSize        = 64 << 10
-	encryptedFileHeaderSize       = 4 + 1 + chacha20poly1305.NonceSizeX
+	encryptedFileHeaderSize       = 4 + 1 + crypto.SizeNonce
 	encryptedFrameHeaderSize      = 4
 )
 
@@ -35,7 +32,7 @@ func EncryptedSize(plaintextSize int64) int64 {
 	}
 	chunks := (plaintextSize + encryptedFileChunkSize - 1) / encryptedFileChunkSize
 	return encryptedFileHeaderSize + plaintextSize +
-		chunks*int64(encryptedFrameHeaderSize+chacha20poly1305.Overhead)
+		chunks*int64(encryptedFrameHeaderSize+crypto.SizeAuthTag)
 }
 
 // EncryptedReader encodes a plaintext reader as independently authenticated
@@ -62,8 +59,8 @@ func NewEncryptedReader(source io.Reader, key, aad []byte) (*EncryptedReader, er
 	if len(key) != crypto.SizeDEK {
 		return nil, crypto.ErrInvalidDEK
 	}
-	baseNonce := make([]byte, chacha20poly1305.NonceSizeX)
-	if _, err := rand.Read(baseNonce); err != nil {
+	baseNonce, err := crypto.RandomBytes(crypto.SizeNonce)
+	if err != nil {
 		return nil, fmt.Errorf("storage: encrypted nonce: %w", err)
 	}
 	header := make([]byte, encryptedFileHeaderSize)
@@ -147,7 +144,7 @@ func (r *EncryptedReader) fillFrame() error {
 	}
 	binary.BigEndian.PutUint32(length, uint32(n)) // #nosec G115 -- n is bounded by encryptedFileChunkSize
 	nonce := chunkNonce(r.baseNonce, r.counter)
-	aead, err := chacha20poly1305.NewX(r.key)
+	aead, err := crypto.NewAEADCipher(r.key)
 	if err != nil {
 		return fmt.Errorf("storage: encrypted chunk init: %w", err)
 	}
@@ -261,12 +258,12 @@ func (r *DecryptedReader) fillFrame() error {
 	if length == 0 || length > encryptedFileChunkSize {
 		return ErrInvalidEncryptedObject
 	}
-	ciphertext := make([]byte, int(length)+chacha20poly1305.Overhead)
+	ciphertext := make([]byte, int(length)+crypto.SizeAuthTag)
 	if _, err := io.ReadFull(r.source, ciphertext); err != nil {
 		return fmt.Errorf("%w: frame payload: %v", ErrInvalidEncryptedObject, err)
 	}
 	nonce := chunkNonce(r.baseNonce, r.counter)
-	aead, err := chacha20poly1305.NewX(r.key)
+	aead, err := crypto.NewAEADCipher(r.key)
 	if err != nil {
 		return fmt.Errorf("storage: decrypted chunk init: %w", err)
 	}

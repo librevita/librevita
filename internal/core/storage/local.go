@@ -23,7 +23,7 @@ import (
 	"strings"
 	"time"
 
-	"golang.org/x/crypto/blake2b"
+	"librevita.org/internal/core/crypto"
 )
 
 const metaDir = ".meta"
@@ -80,9 +80,9 @@ func (s *Local) Put(ctx context.Context, key string, data io.Reader, size int64,
 	tmpName := tmp.Name()
 	defer os.Remove(tmpName)
 
-	// #nosec G401 -- MD5 for the S3-style ETag only; integrity is BLAKE2b.
+	// #nosec G401 -- MD5 for the S3-style ETag only; integrity is BLAKE2b/BLAKE2s via crypto.
 	etagHash := md5.New()
-	checksum, err := blake2b.New256(nil)
+	checksum, err := crypto.NewDigest()
 	if err != nil {
 		tmp.Close()
 		return ObjectInfo{}, fmt.Errorf("storage: checksum: %w", err)

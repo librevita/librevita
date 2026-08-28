@@ -3,7 +3,6 @@ package storage
 import (
 	"bytes"
 	"context"
-	"encoding/hex"
 	"errors"
 	"io"
 	"os"
@@ -13,7 +12,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"golang.org/x/crypto/blake2b"
+	"librevita.org/internal/core/crypto"
 )
 
 // TestValidKey covers the key layout rules that both backends enforce.
@@ -63,10 +62,9 @@ func TestLocalPutGetStat(t *testing.T) {
 	assert.Equal(t, wantChecksum, st.Checksum)
 }
 
-// blake2b256Hex computes the canonical checksum of the payload.
+// blake2b256Hex computes the canonical checksum of the payload via crypto.
 func blake2b256Hex(payload string) string {
-	sum := blake2b.Sum256([]byte(payload))
-	return hex.EncodeToString(sum[:])
+	return crypto.Digest256([]byte(payload))
 }
 
 func TestLocalNotFound(t *testing.T) {

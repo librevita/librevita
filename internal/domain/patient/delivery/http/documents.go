@@ -11,7 +11,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
-	"golang.org/x/crypto/blake2b"
 
 	"librevita.org/internal/core/audit"
 	"librevita.org/internal/core/crypto"
@@ -121,7 +120,7 @@ func (h *Handler) DownloadDocument(c echo.Context) error {
 	// hash is computed while streaming (no buffering); on mismatch the
 	// divergence is registered in the append-only trail, so tampering
 	// that bypasses the application never stays silent.
-	hasher, err := blake2b.New256(nil)
+	hasher, err := crypto.NewDigest()
 	if err != nil {
 		return err
 	}

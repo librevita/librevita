@@ -1,13 +1,13 @@
 package components
 
 import (
-	"crypto/sha256"
 	"fmt"
 	"net/http"
 	"strconv"
 
 	"github.com/labstack/echo/v4"
 
+	"librevita.org/internal/core/crypto"
 	"librevita.org/internal/core/server"
 )
 
@@ -48,7 +48,7 @@ func datepickerPanelHandler(c echo.Context) error {
 // datepickerETag derives a strong validator from the panel contents:
 // the rendered markup is a pure function of this data.
 func datepickerETag(data DatepickerPanelData) string {
-	hash := sha256.Sum256([]byte(fmt.Sprintf("%s|%s|%s|%v",
-		data.Title, data.PrevURL, data.NextURL, data.Cells)))
-	return fmt.Sprintf("\"%x\"", hash)
+	payload := []byte(fmt.Sprintf("%s|%s|%s|%v",
+		data.Title, data.PrevURL, data.NextURL, data.Cells))
+	return fmt.Sprintf("\"%s\"", crypto.Digest256(payload))
 }

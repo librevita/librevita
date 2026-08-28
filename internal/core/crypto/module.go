@@ -1,7 +1,6 @@
 package crypto
 
 import (
-	"crypto/rand"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -72,7 +71,17 @@ func NewFromConfig(cfg *config.Config, vault KeyVault, log *slog.Logger) (*Engin
 	}
 	defer ZeroBytes(rawMasterKey)
 
-	return deriveEngine(rawMasterKey, vault), nil
+	algo := cfg.Crypto.HashAlgorithm
+	if algo == "" {
+		algo = DefaultHashAlgorithm
+	}
+
+	cipher := cfg.Crypto.EncryptionCipher
+	if cipher == "" {
+		cipher = DefaultEncryptionCipher
+	}
+
+	return deriveEngine(rawMasterKey, vault, WithEngineHashAlgorithm(algo), WithEngineEncryptionCipher(cipher))
 }
 
 func resolveMasterKey(cfg *config.Config, log *slog.Logger) ([]byte, error) {
@@ -82,8 +91,8 @@ func resolveMasterKey(cfg *config.Config, log *slog.Logger) ([]byte, error) {
 			return nil, errors.New("master key is required outside development (LIBREVITA_MASTER_KEY)")
 		}
 		log.Warn("no master key configured; using an ephemeral key (encrypted values reset on restart)")
-		raw := make([]byte, SizeDEK)
-		if _, err := rand.Read(raw); err != nil {
+		raw, err := RandomBytes(SizeDEK)
+		if err != nil {
 			return nil, fmt.Errorf("generate ephemeral master key: %w", err)
 		}
 		return raw, nil

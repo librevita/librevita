@@ -3,6 +3,7 @@ package crypto_test
 import (
 	"crypto/rand"
 	"encoding/base64"
+	"encoding/hex"
 	"strings"
 	"testing"
 
@@ -229,6 +230,67 @@ func TestHasherInvalidInputs(t *testing.T) {
 	// Malformed prefix syntax
 	_, err = h.Verify([]byte("test"), "$$$")
 	assert.ErrorIs(t, err, crypto.ErrInvalidHashFormat)
+}
+
+func TestDigestAndCryptoHelpers(t *testing.T) {
+	t.Run("NewDigest default blake2s and configurable blake2b", func(t *testing.T) {
+		d1, err := crypto.NewDigest()
+		require.NoError(t, err)
+		d1.Write([]byte("test payload"))
+		sum1 := hex.EncodeToString(d1.Sum(nil))
+		assert.NotEmpty(t, sum1)
+		assert.Len(t, sum1, 64)
+
+		d2, err := crypto.NewDigest(crypto.WithHashAlgorithm(crypto.AlgorithmBlake2b))
+		require.NoError(t, err)
+		d2.Write([]byte("test payload"))
+		sum2 := hex.EncodeToString(d2.Sum(nil))
+		assert.NotEmpty(t, sum2)
+		assert.Len(t, sum2, 64)
+		assert.NotEqual(t, sum1, sum2)
+	})
+
+	t.Run("Digest256 and DigestReader", func(t *testing.T) {
+		data := []byte("hello world integrity check")
+		hexStr := crypto.Digest256(data)
+		assert.Len(t, hexStr, 64)
+
+		fromReader, err := crypto.DigestReader(strings.NewReader("hello world integrity check"))
+		require.NoError(t, err)
+		assert.Equal(t, hexStr, fromReader)
+	})
+
+	t.Run("NewDigestWithKey", func(t *testing.T) {
+		k := mustHasherKey(t)
+		hKeyed, err := crypto.NewDigestWithKey(k)
+		require.NoError(t, err)
+		hKeyed.Write([]byte("message"))
+		sumKeyed := hex.EncodeToString(hKeyed.Sum(nil))
+
+		hUnkeyed, err := crypto.NewDigestWithKey(nil)
+		require.NoError(t, err)
+		hUnkeyed.Write([]byte("message"))
+		sumUnkeyed := hex.EncodeToString(hUnkeyed.Sum(nil))
+
+		assert.NotEqual(t, sumKeyed, sumUnkeyed)
+	})
+
+	t.Run("RandomBytes and RandomHex", func(t *testing.T) {
+		b, err := crypto.RandomBytes(32)
+		require.NoError(t, err)
+		assert.Len(t, b, 32)
+
+		h, err := crypto.RandomHex(16)
+		require.NoError(t, err)
+		assert.Len(t, h, 32) // 16 bytes = 32 hex chars
+	})
+
+	t.Run("ConstantTimeCompare", func(t *testing.T) {
+		assert.True(t, crypto.ConstantTimeCompare("secret-token-123", "secret-token-123"))
+		assert.False(t, crypto.ConstantTimeCompare("secret-token-123", "wrong-token"))
+		assert.True(t, crypto.ConstantTimeCompareBytes([]byte("abc"), []byte("abc")))
+		assert.False(t, crypto.ConstantTimeCompareBytes([]byte("abc"), []byte("def")))
+	})
 }
 
 func BenchmarkHasher_BLAKE2s(b *testing.B) {

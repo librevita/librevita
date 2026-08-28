@@ -1,11 +1,8 @@
 package crypto
 
 import (
-	"crypto/rand"
 	"errors"
 	"fmt"
-
-	"golang.org/x/crypto/chacha20poly1305"
 )
 
 // KeyEnvelopeVersion identifies the envelope format used for wrapped DEKs.
@@ -26,7 +23,7 @@ var (
 )
 
 func wrapKey(wrappingKey, plaintext []byte, scope byte, aad []byte) ([]byte, error) {
-	if len(wrappingKey) != chacha20poly1305.KeySize {
+	if len(wrappingKey) != SizeDEK {
 		return nil, ErrWeakKey
 	}
 	if len(plaintext) != SizeDEK {
@@ -36,12 +33,12 @@ func wrapKey(wrappingKey, plaintext []byte, scope byte, aad []byte) ([]byte, err
 		return nil, ErrInvalidKeyEnvelope
 	}
 
-	aead, err := chacha20poly1305.NewX(wrappingKey)
+	aead, err := NewAEADCipher(wrappingKey)
 	if err != nil {
 		return nil, fmt.Errorf("crypto: key envelope init: %w", err)
 	}
-	nonce := make([]byte, chacha20poly1305.NonceSizeX)
-	if _, err := rand.Read(nonce); err != nil {
+	nonce, err := RandomBytes(SizeNonce)
+	if err != nil {
 		return nil, fmt.Errorf("crypto: key envelope nonce: %w", err)
 	}
 
@@ -54,10 +51,10 @@ func wrapKey(wrappingKey, plaintext []byte, scope byte, aad []byte) ([]byte, err
 }
 
 func unwrapKey(wrappingKey, envelope []byte, expectedScope byte, aad []byte) ([]byte, error) {
-	if len(wrappingKey) != chacha20poly1305.KeySize {
+	if len(wrappingKey) != SizeDEK {
 		return nil, ErrWeakKey
 	}
-	minSize := keyEnvelopeHeaderSize + chacha20poly1305.NonceSizeX + SizeDEK + chacha20poly1305.Overhead
+	minSize := keyEnvelopeHeaderSize + SizeNonce + SizeDEK + SizeAuthTag
 	if len(envelope) < minSize {
 		return nil, ErrInvalidKeyEnvelope
 	}
@@ -70,11 +67,11 @@ func unwrapKey(wrappingKey, envelope []byte, expectedScope byte, aad []byte) ([]
 
 	header := envelope[:keyEnvelopeHeaderSize]
 	nonceStart := keyEnvelopeHeaderSize
-	nonceEnd := nonceStart + chacha20poly1305.NonceSizeX
+	nonceEnd := nonceStart + SizeNonce
 	nonce := envelope[nonceStart:nonceEnd]
 	ciphertext := envelope[nonceEnd:]
 
-	aead, err := chacha20poly1305.NewX(wrappingKey)
+	aead, err := NewAEADCipher(wrappingKey)
 	if err != nil {
 		return nil, fmt.Errorf("crypto: key envelope init: %w", err)
 	}

@@ -7,12 +7,10 @@
 package auth
 
 import (
-	"crypto/rand"
-	"crypto/subtle"
-	"encoding/hex"
 	"net/http"
 
 	"librevita.org/internal/core/config"
+	"librevita.org/internal/core/crypto"
 )
 
 // CSRFCookieName is the double-submit cookie holding the CSRF token.
@@ -32,11 +30,11 @@ func NewCSRF(cfg *config.Config) *CSRF {
 
 // NewToken returns a fresh random token.
 func (c *CSRF) NewToken() string {
-	buf := make([]byte, 32)
-	if _, err := rand.Read(buf); err != nil {
+	token, err := crypto.RandomHex(32)
+	if err != nil {
 		panic("auth: csrf token: " + err.Error())
 	}
-	return hex.EncodeToString(buf)
+	return token
 }
 
 // Cookie returns the CSRF cookie descriptor for token. The token is
@@ -61,5 +59,5 @@ func ValidCSRF(submitted, cookieValue string) bool {
 	if submitted == "" || cookieValue == "" {
 		return false
 	}
-	return subtle.ConstantTimeCompare([]byte(submitted), []byte(cookieValue)) == 1
+	return crypto.ConstantTimeCompare(submitted, cookieValue)
 }
