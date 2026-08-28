@@ -49,7 +49,7 @@ func (r *userRepository) Create(ctx context.Context, u *usermodel.User) (*usermo
 	saved, err := create.Save(ctx)
 	if err != nil {
 		if ent.IsConstraintError(err) {
-			return nil, usermodel.ErrEmailTaken
+			return nil, errors.WithSecondaryError(usermodel.ErrEmailTaken, err)
 		}
 		return nil, errors.Wrap(err, "user repository: create")
 	}
@@ -71,7 +71,7 @@ func (r *userRepository) BindPortalPatient(ctx context.Context, userID, patientI
 		Save(ctx)
 	if err != nil {
 		if ent.IsConstraintError(err) {
-			return usermodel.ErrEmailTaken
+			return errors.WithSecondaryError(usermodel.ErrEmailTaken, err)
 		}
 		return errors.Wrap(err, "user repository: bind portal patient")
 	}
@@ -88,7 +88,7 @@ func (r *userRepository) GetByID(ctx context.Context, id uuid.UUID) (*usermodel.
 		Only(ctx)
 	if err != nil {
 		if ent.IsNotFound(err) {
-			return nil, usermodel.ErrUserNotFound
+			return nil, errors.WithSecondaryError(usermodel.ErrUserNotFound, err)
 		}
 		return nil, errors.Wrap(err, "user repository: get by id")
 	}
@@ -123,7 +123,7 @@ func (r *userRepository) GetByEmail(ctx context.Context, email string) (*usermod
 		Only(ctx)
 	if err != nil {
 		if ent.IsNotFound(err) {
-			return nil, usermodel.ErrUserNotFound
+			return nil, errors.WithSecondaryError(usermodel.ErrUserNotFound, err)
 		}
 		return nil, errors.Wrap(err, "user repository: get by email")
 	}
@@ -162,10 +162,10 @@ func (r *userRepository) Update(ctx context.Context, u *usermodel.User) (*usermo
 	saved, err := update.Save(ctx)
 	if err != nil {
 		if ent.IsNotFound(err) {
-			return nil, usermodel.ErrUserNotFound
+			return nil, errors.WithSecondaryError(usermodel.ErrUserNotFound, err)
 		}
 		if ent.IsConstraintError(err) {
-			return nil, usermodel.ErrEmailTaken
+			return nil, errors.WithSecondaryError(usermodel.ErrEmailTaken, err)
 		}
 		return nil, errors.Wrap(err, "user repository: update")
 	}
@@ -181,7 +181,7 @@ func (r *userRepository) UpdatePreferences(ctx context.Context, id uuid.UUID, ti
 		Exec(ctx)
 	if err != nil {
 		if ent.IsNotFound(err) {
-			return usermodel.ErrUserNotFound
+			return errors.WithSecondaryError(usermodel.ErrUserNotFound, err)
 		}
 		return errors.Wrap(err, "user repository: update preferences")
 	}

@@ -71,7 +71,7 @@ func (r *roleRepository) Create(ctx context.Context, roleModel *usermodel.Role) 
 	saved, err := create.Save(ctx)
 	if err != nil {
 		if ent.IsConstraintError(err) {
-			return nil, usermodel.ErrDuplicateRole
+			return nil, errors.WithSecondaryError(usermodel.ErrDuplicateRole, err)
 		}
 		return nil, errors.Wrap(err, "role repository: create")
 	}
@@ -86,7 +86,7 @@ func (r *roleRepository) Update(ctx context.Context, roleModel *usermodel.Role) 
 	saved, err := update.Save(ctx)
 	if err != nil {
 		if ent.IsConstraintError(err) {
-			return nil, usermodel.ErrDuplicateRole
+			return nil, errors.WithSecondaryError(usermodel.ErrDuplicateRole, err)
 		}
 		return nil, errors.Wrap(err, "role repository: update")
 	}

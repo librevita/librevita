@@ -15,7 +15,9 @@ import (
 	"librevita.org/ent/patient"
 	"librevita.org/ent/patientidentifier"
 	"librevita.org/internal/core/crypto"
+	"librevita.org/internal/core/database"
 	patientmodel "librevita.org/internal/domain/patient/model"
+	"librevita.org/pkg/flow"
 )
 
 type patientRepository struct {
@@ -93,7 +95,7 @@ func (r *patientRepository) Get(ctx context.Context, clinicID, patientID uuid.UU
 		Only(ctx)
 	if err != nil {
 		if ent.IsNotFound(err) {
-			return nil, patientmodel.ErrNotFound
+			return nil, errors.WithSecondaryError(patientmodel.ErrNotFound, err)
 		}
 		return nil, errors.Wrap(err, "patient repository: get")
 	}
@@ -109,7 +111,7 @@ func (r *patientRepository) GetWithCreator(ctx context.Context, clinicID, patien
 		Only(ctx)
 	if err != nil {
 		if ent.IsNotFound(err) {
-			return nil, patientmodel.ErrNotFound
+			return nil, errors.WithSecondaryError(patientmodel.ErrNotFound, err)
 		}
 		return nil, errors.Wrap(err, "patient repository: get with creator")
 	}
@@ -205,7 +207,7 @@ func (r *patientRepository) Update(ctx context.Context, p patientmodel.Patient) 
 	updated, err := update.Save(ctx)
 	if err != nil {
 		if ent.IsNotFound(err) {
-			return nil, patientmodel.ErrNotFound
+			return nil, errors.WithSecondaryError(patientmodel.ErrNotFound, err)
 		}
 		return nil, errors.Wrap(err, "patient repository: update")
 	}
@@ -325,51 +327,46 @@ func (r *patientRepository) GetMany(ctx context.Context, clinicID uuid.UUID, pat
 // operation is idempotent so cleanup can be retried after a key has already
 // been shredded.
 func (r *patientRepository) DeleteAggregate(ctx context.Context, clinicID, patientID uuid.UUID) error {
-	tx, err := r.client.Tx(ctx)
-	if err != nil {
-		return errors.Wrap(err, "patient repository: begin aggregate delete")
-	}
-	rollback := func(cause error) error {
-		_ = tx.Rollback()
-		return cause
-	}
-
-	if _, err := tx.PatientIdentifier.Delete().
-		Where(
-			patientidentifier.ClinicIDEQ(clinicID),
-			patientidentifier.PatientIDEQ(patientID),
-		).
-		Exec(ctx); err != nil {
-		return rollback(errors.Wrap(err, "patient repository: delete identifiers"))
-	}
-	if _, err := tx.Episode.Delete().
-		Where(
-			episode.ClinicIDEQ(clinicID),
-			episode.PatientIDEQ(patientID),
-		).
-		Exec(ctx); err != nil {
-		return rollback(errors.Wrap(err, "patient repository: delete episodes"))
-	}
-	if _, err := tx.Appointment.Delete().
-		Where(
-			appointment.ClinicIDEQ(clinicID),
-			appointment.PatientIDEQ(patientID),
-		).
-		Exec(ctx); err != nil {
-		return rollback(errors.Wrap(err, "patient repository: delete appointments"))
-	}
-	if _, err := tx.Patient.Delete().
-		Where(
-			patient.ClinicIDEQ(clinicID),
-			patient.IDEQ(patientID),
-		).
-		Exec(ctx); err != nil {
-		return rollback(errors.Wrap(err, "patient repository: delete patient"))
-	}
-	if err := tx.Commit(); err != nil {
-		return errors.Wrap(err, "patient repository: commit aggregate delete")
-	}
-	return nil
+	return database.WithTx(ctx, r.client, func(tx *ent.Tx) error {
+		return flow.Exec(
+			func() error {
+				_, err := tx.PatientIdentifier.Delete().
+					Where(
+						patientidentifier.ClinicIDEQ(clinicID),
+						patientidentifier.PatientIDEQ(patientID),
+					).
+					Exec(ctx)
+				return errors.Wrap(err, "patient repository: delete identifiers")
+			},
+			func() error {
+				_, err := tx.Episode.Delete().
+					Where(
+						episode.ClinicIDEQ(clinicID),
+						episode.PatientIDEQ(patientID),
+					).
+					Exec(ctx)
+				return errors.Wrap(err, "patient repository: delete episodes")
+			},
+			func() error {
+				_, err := tx.Appointment.Delete().
+					Where(
+						appointment.ClinicIDEQ(clinicID),
+						appointment.PatientIDEQ(patientID),
+					).
+					Exec(ctx)
+				return errors.Wrap(err, "patient repository: delete appointments")
+			},
+			func() error {
+				_, err := tx.Patient.Delete().
+					Where(
+						patient.ClinicIDEQ(clinicID),
+						patient.IDEQ(patientID),
+					).
+					Exec(ctx)
+				return errors.Wrap(err, "patient repository: delete patient")
+			},
+		)
+	})
 }
 
 func (r *patientRepository) Count(ctx context.Context, clinicID uuid.UUID) (int, error) {

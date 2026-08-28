@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/cockroachdb/errors"
 	"github.com/labstack/echo/v4"
 )
 
@@ -50,5 +51,42 @@ func TestProblemErrorHandlerFormatsByClient(t *testing.T) {
 				t.Fatalf("body %q missing %q", rec.Body.String(), tc.wantBody)
 			}
 		})
+	}
+}
+
+func TestProblemErrorHandlerWithHints(t *testing.T) {
+	e := echo.New()
+	e.HTTPErrorHandler = ProblemErrorHandler
+	e.GET("/with-hint", func(c echo.Context) error {
+		err := echo.NewHTTPError(http.StatusBadRequest, "invalid configuration")
+		return errors.WithHint(err, "Please provide a valid database connection string.")
+	})
+
+	// JSON request
+	reqJSON := httptest.NewRequest(http.MethodGet, "/with-hint", nil)
+	reqJSON.Header.Set("Accept", "application/json")
+	recJSON := httptest.NewRecorder()
+	e.ServeHTTP(recJSON, reqJSON)
+
+	if recJSON.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", recJSON.Code)
+	}
+	bodyJSON := recJSON.Body.String()
+	if !strings.Contains(bodyJSON, `"hint":"Please provide a valid database connection string."`) {
+		t.Fatalf("bodyJSON %q missing hint", bodyJSON)
+	}
+
+	// HTML request
+	reqHTML := httptest.NewRequest(http.MethodGet, "/with-hint", nil)
+	reqHTML.Header.Set("Accept", "text/html")
+	recHTML := httptest.NewRecorder()
+	e.ServeHTTP(recHTML, reqHTML)
+
+	if recHTML.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400", recHTML.Code)
+	}
+	bodyHTML := recHTML.Body.String()
+	if !strings.Contains(bodyHTML, "Please provide a valid database connection string.") {
+		t.Fatalf("bodyHTML %q missing hint", bodyHTML)
 	}
 }

@@ -11,6 +11,7 @@ import (
 	"librevita.org/internal/core/crypto"
 	"librevita.org/internal/domain/clinic/model"
 	"librevita.org/internal/domain/clinic/repository"
+	"librevita.org/pkg/flow"
 )
 
 var (
@@ -117,17 +118,7 @@ type ProvisionInput struct {
 // Provision creates a clinic shell (onboarded_at null) and its Clinic DEK.
 func (s *PlatformService) Provision(ctx context.Context, in ProvisionInput) (*model.Clinic, error) {
 	slug := strings.ToLower(strings.TrimSpace(in.Slug))
-	if !model.ValidSlug(slug) {
-		return nil, ErrInvalidSlug
-	}
 	name := strings.TrimSpace(in.Name)
-	if name == "" {
-		return nil, errors.New("clinic: name is required")
-	}
-	id, err := uuid.NewV7()
-	if err != nil {
-		return nil, err
-	}
 	tz := strings.TrimSpace(in.Timezone)
 	if tz == "" {
 		tz = model.DefaultTimezone
@@ -136,30 +127,64 @@ func (s *PlatformService) Provision(ctx context.Context, in ProvisionInput) (*mo
 	if country == "" {
 		country = "BR"
 	}
-	shell, err := s.clinics.CreateShell(ctx, &model.Clinic{
-		ID:         id,
-		Slug:       slug,
-		Name:       name,
-		TaxID:      strings.TrimSpace(in.TaxID),
-		Phone:      strings.TrimSpace(in.Phone),
-		Email:      strings.ToLower(strings.TrimSpace(in.Email)),
-		Street:     strings.TrimSpace(in.Street),
-		City:       strings.TrimSpace(in.City),
-		State:      strings.TrimSpace(in.State),
-		PostalCode: strings.TrimSpace(in.Postal),
-		Country:    country,
-		Timezone:   tz,
-	})
+
+	var shell *model.Clinic
+	var id uuid.UUID
+
+	err := flow.New().
+		Step("validate slug", func() error {
+			if !model.ValidSlug(slug) {
+				return ErrInvalidSlug
+			}
+			return nil
+		}).
+		Step("validate name", func() error {
+			if name == "" {
+				return errors.New("clinic: name is required")
+			}
+			return nil
+		}).
+		Step("generate clinic id", func() error {
+			var gerr error
+			id, gerr = uuid.NewV7()
+			return gerr
+		}).
+		Step("create clinic shell", func() error {
+			var cerr error
+			shell, cerr = s.clinics.CreateShell(ctx, &model.Clinic{
+				ID:         id,
+				Slug:       slug,
+				Name:       name,
+				TaxID:      strings.TrimSpace(in.TaxID),
+				Phone:      strings.TrimSpace(in.Phone),
+				Email:      strings.ToLower(strings.TrimSpace(in.Email)),
+				Street:     strings.TrimSpace(in.Street),
+				City:       strings.TrimSpace(in.City),
+				State:      strings.TrimSpace(in.State),
+				PostalCode: strings.TrimSpace(in.Postal),
+				Country:    country,
+				Timezone:   tz,
+			})
+			if cerr != nil {
+				if strings.Contains(cerr.Error(), "slug taken") {
+					return ErrSlugTaken
+				}
+				return cerr
+			}
+			return nil
+		}).
+		Step("ensure clinic dek", func() error {
+			if s.engine != nil {
+				if _, err := s.engine.EnsureClinicDEK(ctx, shell.ID); err != nil {
+					return errors.Wrap(err, "clinic: ensure dek")
+				}
+			}
+			return nil
+		}).
+		Err()
+
 	if err != nil {
-		if strings.Contains(err.Error(), "slug taken") {
-			return nil, ErrSlugTaken
-		}
 		return nil, err
-	}
-	if s.engine != nil {
-		if _, err := s.engine.EnsureClinicDEK(ctx, shell.ID); err != nil {
-			return nil, errors.Wrap(err, "clinic: ensure dek")
-		}
 	}
 	return shell, nil
 }

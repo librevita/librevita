@@ -15,6 +15,7 @@ import (
 	"github.com/cockroachdb/errors"
 	"github.com/google/uuid"
 	"librevita.org/internal/core/crypto"
+	"librevita.org/pkg/flow"
 )
 
 // StoredFile is the master-index metadata of one stored file.
@@ -156,31 +157,46 @@ func (m *FileManager) Upload(ctx context.Context, in UploadInput, data io.Reader
 	}
 	key := m.objectKey(in.Domain, in.ResourceID, id)
 
-	blob, err := m.store.Put(ctx, key, data, size, in.ContentType)
+	var blob ObjectInfo
+	var created *StoredFile
+
+	err = flow.New().
+		StepWithRollback("store blob", func() error {
+			var perr error
+			blob, perr = m.store.Put(ctx, key, data, size, in.ContentType)
+			return perr
+		}, func() error {
+			if derr := m.store.Delete(ctx, key); derr != nil {
+				m.log.Error("storage: upload compensation failed",
+					"key", key, "delete_error", derr)
+				return derr
+			}
+			return nil
+		}).
+		Step("insert index", func() error {
+			stFile := StoredFile{
+				ID:           id,
+				Key:          key,
+				Domain:       in.Domain,
+				ResourceID:   in.ResourceID,
+				OriginalName: in.OriginalName,
+				ContentType:  blob.ContentType,
+				Size:         blob.Size,
+				ETag:         blob.ETag,
+				Checksum:     blob.Checksum,
+				CreatedBy:    in.CreatedBy,
+			}
+			var ierr error
+			created, ierr = m.repo.Insert(ctx, stFile)
+			if ierr != nil {
+				return errors.Wrapf(ierr, "storage: index %q", key)
+			}
+			return nil
+		}).
+		Err()
+
 	if err != nil {
 		return nil, err
-	}
-
-	stFile := StoredFile{
-		ID:           id,
-		Key:          key,
-		Domain:       in.Domain,
-		ResourceID:   in.ResourceID,
-		OriginalName: in.OriginalName,
-		ContentType:  blob.ContentType,
-		Size:         blob.Size,
-		ETag:         blob.ETag,
-		Checksum:     blob.Checksum,
-		CreatedBy:    in.CreatedBy,
-	}
-
-	created, err := m.repo.Insert(ctx, stFile)
-	if err != nil {
-		if derr := m.store.Delete(ctx, key); derr != nil {
-			m.log.Error("storage: upload compensation failed",
-				"key", key, "delete_error", derr, "index_error", err)
-		}
-		return nil, errors.Wrapf(err, "storage: index %q", key)
 	}
 	return created, nil
 }
@@ -223,37 +239,52 @@ func (m *FileManager) UploadEncrypted(ctx context.Context, in UploadInput, data 
 	}
 	defer func() { _ = encrypted.Close() }()
 
-	blob, err := m.store.Put(ctx, keyName, encrypted, EncryptedSize(size), in.ContentType)
+	var blob ObjectInfo
+	var created *StoredFile
+
+	err = flow.New().
+		StepWithRollback("store encrypted blob", func() error {
+			var perr error
+			blob, perr = m.store.Put(ctx, keyName, encrypted, EncryptedSize(size), in.ContentType)
+			if perr != nil {
+				return perr
+			}
+			if size >= 0 && hashed.n != size {
+				return errors.Newf("storage: encrypted upload size mismatch: got %d, want %d", hashed.n, size)
+			}
+			return nil
+		}, func() error {
+			if derr := m.store.Delete(ctx, keyName); derr != nil {
+				m.log.Error("storage: encrypted upload compensation failed",
+					"key", keyName, "delete_error", derr)
+				return derr
+			}
+			return nil
+		}).
+		Step("insert encrypted index", func() error {
+			stFile := StoredFile{
+				ID:           id,
+				Key:          keyName,
+				Domain:       in.Domain,
+				ResourceID:   in.ResourceID,
+				OriginalName: in.OriginalName,
+				ContentType:  in.ContentType,
+				Size:         hashed.n,
+				ETag:         blob.ETag,
+				Checksum:     hex.EncodeToString(checksum.Sum(nil)),
+				CreatedBy:    in.CreatedBy,
+			}
+			var ierr error
+			created, ierr = m.repo.Insert(ctx, stFile)
+			if ierr != nil {
+				return errors.Wrapf(ierr, "storage: index %q", keyName)
+			}
+			return nil
+		}).
+		Err()
+
 	if err != nil {
 		return nil, err
-	}
-	if size >= 0 && hashed.n != size {
-		if deleteErr := m.store.Delete(ctx, keyName); deleteErr != nil {
-			m.log.Error("storage: encrypted upload size compensation failed",
-				"key", keyName, "delete_error", deleteErr)
-		}
-		return nil, errors.Newf("storage: encrypted upload size mismatch: got %d, want %d", hashed.n, size)
-	}
-
-	stFile := StoredFile{
-		ID:           id,
-		Key:          keyName,
-		Domain:       in.Domain,
-		ResourceID:   in.ResourceID,
-		OriginalName: in.OriginalName,
-		ContentType:  in.ContentType,
-		Size:         hashed.n,
-		ETag:         blob.ETag,
-		Checksum:     hex.EncodeToString(checksum.Sum(nil)),
-		CreatedBy:    in.CreatedBy,
-	}
-	created, err := m.repo.Insert(ctx, stFile)
-	if err != nil {
-		if deleteErr := m.store.Delete(ctx, keyName); deleteErr != nil {
-			m.log.Error("storage: encrypted upload compensation failed",
-				"key", keyName, "delete_error", deleteErr, "index_error", err)
-		}
-		return nil, errors.Wrapf(err, "storage: index %q", keyName)
 	}
 	return created, nil
 }
