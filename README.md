@@ -321,6 +321,16 @@ LibreVita implements an enterprise-grade **Application-Layer Field-Level Encrypt
 
 Clinics are isolated on a shared schema (`clinic_id` only — see [ADR 0002](docs/adr/0002-multi-clinic-shared-schema.md)). Production needs wildcard DNS and TLS for `*.base_domain` (development defaults to `lv.test`). Session cookies are host-only. Onboard the first platform operator on the apex (`base_domain` / `www.`), provision a clinic shell, then finish `/setup` on `{slug}.{base_domain}`.
 
+## Validation & Internationalization (`pkg/validator`)
+
+Input validation is implemented as a standalone, zero-dependency utility package in `pkg/validator`, decoupled from internal infrastructure:
+
+- **Zero-Reflection & Type-Safe**: Validations execute at compiled Go speed without runtime `reflect` allocations or struct tag parsing.
+- **Fluent Builder DSL**: Provides an expressive, short-circuiting fluent builder API with declarative constraints (`Required`, `Optional`, `Min`, `Max`, `Between`, `Email`, `DateISO`, `UUID`, `In`, `Matches`, `Custom`).
+- **Field-Level Error Mapping**: Records failures as structured `FieldError` entries (`Field`, `Label`, `Code`, `Message`, `Params`), short-circuiting subsequent checks on the failing field while validating other fields independently to power inline Templ and HTMX feedback.
+- **Native i18n & Canonical Error Codes**: Emits standardized error codes (`validation.required`, `validation.max_runes`, `validation.invalid_email`, etc.) with built-in message catalogs for English (`en`) and Brazilian Portuguese (`pt-BR`). Context-aware resolution via `validator.FromContext(ctx)` reads the client's locale automatically.
+- **Domain Contract Validation (`Validatable`)**: Enums and domain value objects implementing `Valid() bool` (such as `patientmodel.Sex` or `auth.UITheme`) integrate seamlessly with nil-safety.
+
 ## Logging
 
 The application uses `log/slog` with Zap and `zapslog`. Fx and Goose use the same logger.

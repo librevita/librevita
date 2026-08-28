@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"net/mail"
 	"strings"
 
 	"github.com/google/uuid"
@@ -14,6 +13,7 @@ import (
 	"librevita.org/internal/core/audit"
 	"librevita.org/internal/core/auth"
 	"librevita.org/internal/core/clinicctx"
+	"librevita.org/pkg/validator"
 )
 
 // Input field limits.
@@ -25,9 +25,7 @@ const (
 )
 
 // ValidationError reports invalid registration input.
-type ValidationError struct{ Msg string }
-
-func (e *ValidationError) Error() string { return "usecase: " + e.Msg }
+type ValidationError = validator.ValidationError
 
 // RegisterInput is the account creation request.
 type RegisterInput struct {
@@ -331,26 +329,23 @@ func normalizeEmail(email string) string {
 }
 
 func validateRegistration(name, email, password string) error {
-	if name == "" {
-		return &ValidationError{Msg: "display name is required"}
-	}
-	if len(name) > maxNameLen {
-		return &ValidationError{Msg: "display name is too long"}
-	}
-	addr, err := mail.ParseAddress(email)
-	if err != nil || !strings.Contains(email, "@") || addr.Address != email {
-		return &ValidationError{Msg: "enter a valid email address"}
-	}
-	if len(email) > maxEmailLen {
-		return &ValidationError{Msg: "email is too long"}
-	}
-	if len(password) < minPasswordLen {
-		return &ValidationError{Msg: "password must be at least 8 characters"}
-	}
-	if len(password) > maxPasswordLen {
-		return &ValidationError{Msg: "password must be at most 128 characters"}
-	}
-	return nil
+	v := validator.New()
+
+	v.Field(name, "name", "display name").
+		Required().
+		Max(maxNameLen)
+
+	v.Field(email, "email", "email").
+		Required().
+		Email().
+		Max(maxEmailLen)
+
+	v.Field(password, "password", "password").
+		Required().
+		Min(minPasswordLen).
+		Max(maxPasswordLen)
+
+	return v.Err()
 }
 
 func (s *Service) auditOnboard(ctx context.Context, failure string) {
