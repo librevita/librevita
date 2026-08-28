@@ -607,7 +607,8 @@ func (c *Config) normalize() {
 
 func (c *Config) validate() error {
 	if c.IsProduction() && strings.TrimSpace(c.BaseDomain) == "" {
-		return errors.New("config: base_domain is required in production (LIBREVITA_BASE_DOMAIN)")
+		err := errors.New("config: base_domain is required in production (LIBREVITA_BASE_DOMAIN)")
+		return errors.WithHint(err, "Configure a variável de ambiente LIBREVITA_BASE_DOMAIN com o domínio público da instalação (ex: app.librevita.org).")
 	}
 
 	switch c.Crypto.HashAlgorithm {
@@ -642,7 +643,8 @@ func (c *Config) validate() error {
 			}
 		}
 		if addresses == 0 && c.Database.Dqlite.DiscoverySRV == "" {
-			return errors.New("config: database.dqlite.addrs requires at least one node address (e.g. \"node1:9001,node2:9001,node3:9001\") or database.dqlite.discovery_srv (an SRV record)")
+			err := errors.New("config: database.dqlite.addrs requires at least one node address (e.g. \"node1:9001,node2:9001,node3:9001\") or database.dqlite.discovery_srv (an SRV record)")
+			return errors.WithHint(err, "Defina LIBREVITA_DATABASE_DQLITE_ADDRS com uma lista de nós ou configure LIBREVITA_DATABASE_DQLITE_DISCOVERY_SRV.")
 		}
 	}
 

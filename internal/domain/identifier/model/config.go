@@ -44,7 +44,7 @@ func (c SystemConfig) ValidateShape() error {
 		return errors.New("system must be between 3 and 64 characters")
 	}
 	if c.System == RawSystem {
-		return errors.Newf("system %q is reserved", RawSystem)
+		return errors.Newf("system %q is reserved", errors.Safe(RawSystem))
 	}
 	if c.DisplayName == "" {
 		return errors.New("display name is required")
@@ -53,10 +53,10 @@ func (c SystemConfig) ValidateShape() error {
 		return errors.New("mask must be at most 64 characters")
 	}
 	if !c.Transform.Valid() {
-		return errors.Newf("invalid transform %q", c.Transform)
+		return errors.Newf("invalid transform %q", errors.Safe(string(c.Transform)))
 	}
 	if !c.CheckAlgorithm.Valid() {
-		return errors.Newf("invalid check algorithm %q", c.CheckAlgorithm)
+		return errors.Newf("invalid check algorithm %q", errors.Safe(string(c.CheckAlgorithm)))
 	}
 	if c.CheckAlgorithm == CheckNone {
 		if c.CheckBaseLen != 0 {

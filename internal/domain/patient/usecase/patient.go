@@ -16,6 +16,7 @@ import (
 	normalizer "librevita.org/internal/core/normalize"
 	"librevita.org/internal/core/policy"
 	patientmodel "librevita.org/internal/domain/patient/model"
+	"librevita.org/pkg/flow"
 	"librevita.org/pkg/validator"
 )
 
@@ -117,16 +118,33 @@ func (s *Service) Create(ctx context.Context, clinicID, createdBy string, in Pat
 		CreatedBy:   cb,
 	}
 
-	if s.engine != nil {
-		if _, err := s.engine.EnsurePatientDEKForClinic(ctx, cUUID, id); err != nil {
-			return nil, errors.Wrap(err, "usecase: provision patient dek")
-		}
+	var created *Patient
+	err = flow.New().
+		StepWithRollback("provision patient dek", func() error {
+			if s.engine != nil {
+				_, err := s.engine.EnsurePatientDEKForClinic(ctx, cUUID, id)
+				if err != nil {
+					return errors.Wrap(err, "usecase: provision patient dek")
+				}
+			}
+			return nil
+		}, func() error {
+			if s.engine != nil {
+				return s.engine.DeletePatientDEKForClinic(ctx, cUUID, id)
+			}
+			return nil
+		}).
+		Step("create patient record", func() error {
+			var cerr error
+			created, cerr = s.repo.Create(ctx, p)
+			return cerr
+		}).
+		Err()
+
+	if err != nil {
+		return nil, err
 	}
-	created, err := s.repo.Create(ctx, p)
-	if err != nil && s.engine != nil {
-		_ = s.engine.DeletePatientDEKForClinic(ctx, cUUID, id)
-	}
-	return created, err
+	return created, nil
 }
 
 // Get returns a patient by id, scoped to the clinic.

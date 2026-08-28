@@ -53,7 +53,7 @@ func (r *systemRepository) GetByID(ctx context.Context, id uuid.UUID) (*identifi
 	row, err := r.client.IdentifierSystem.Get(ctx, id)
 	if err != nil {
 		if ent.IsNotFound(err) {
-			return nil, identifiermodel.ErrSystemNotFound
+			return nil, errors.WithSecondaryError(identifiermodel.ErrSystemNotFound, err)
 		}
 		return nil, errors.Wrap(err, "system repository: get by id")
 	}
@@ -66,7 +66,7 @@ func (r *systemRepository) GetBySystem(ctx context.Context, system string) (*ide
 		Only(ctx)
 	if err != nil {
 		if ent.IsNotFound(err) {
-			return nil, identifiermodel.ErrSystemNotFound
+			return nil, errors.WithSecondaryError(identifiermodel.ErrSystemNotFound, err)
 		}
 		return nil, errors.Wrap(err, "system repository: get by system")
 	}
@@ -93,7 +93,7 @@ func (r *systemRepository) Create(ctx context.Context, s *identifiermodel.Identi
 	saved, err := create.Save(ctx)
 	if err != nil {
 		if ent.IsConstraintError(err) {
-			return nil, identifiermodel.ErrDuplicate
+			return nil, errors.WithSecondaryError(identifiermodel.ErrDuplicate, err)
 		}
 		return nil, errors.Wrap(err, "system repository: create")
 	}
@@ -119,10 +119,10 @@ func (r *systemRepository) Update(ctx context.Context, s *identifiermodel.Identi
 	updated, err := update.Save(ctx)
 	if err != nil {
 		if ent.IsNotFound(err) {
-			return nil, identifiermodel.ErrSystemNotFound
+			return nil, errors.WithSecondaryError(identifiermodel.ErrSystemNotFound, err)
 		}
 		if ent.IsConstraintError(err) {
-			return nil, identifiermodel.ErrDuplicate
+			return nil, errors.WithSecondaryError(identifiermodel.ErrDuplicate, err)
 		}
 		return nil, errors.Wrap(err, "system repository: update")
 	}
@@ -136,7 +136,7 @@ func (r *systemRepository) SetActive(ctx context.Context, id uuid.UUID, active b
 		Exec(ctx)
 	if err != nil {
 		if ent.IsNotFound(err) {
-			return identifiermodel.ErrSystemNotFound
+			return errors.WithSecondaryError(identifiermodel.ErrSystemNotFound, err)
 		}
 		return errors.Wrap(err, "system repository: set active")
 	}

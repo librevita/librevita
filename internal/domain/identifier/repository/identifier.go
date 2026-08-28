@@ -39,7 +39,7 @@ func (r *identifierRepository) Add(ctx context.Context, rec identifiermodel.Iden
 	saved, err := create.Save(ctx)
 	if err != nil {
 		if ent.IsConstraintError(err) {
-			return nil, identifiermodel.ErrDuplicate
+			return nil, errors.WithSecondaryError(identifiermodel.ErrDuplicate, err)
 		}
 		return nil, errors.Wrap(err, "identifier repository: add")
 	}
@@ -68,7 +68,7 @@ func (r *identifierRepository) FindByBlindIndex(ctx context.Context, clinicID uu
 		Only(ctx)
 	if err != nil {
 		if ent.IsNotFound(err) {
-			return nil, identifiermodel.ErrNotFound
+			return nil, errors.WithSecondaryError(identifiermodel.ErrNotFound, err)
 		}
 		return nil, errors.Wrap(err, "identifier repository: find by blind index")
 	}

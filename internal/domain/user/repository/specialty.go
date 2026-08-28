@@ -81,7 +81,7 @@ func (r *specialtyRepository) Create(ctx context.Context, sp *usermodel.Specialt
 		Save(ctx)
 	if err != nil {
 		if ent.IsConstraintError(err) {
-			return nil, usermodel.ErrDuplicateSpecialty
+			return nil, errors.WithSecondaryError(usermodel.ErrDuplicateSpecialty, err)
 		}
 		return nil, errors.Wrap(err, "specialty repository: create")
 	}

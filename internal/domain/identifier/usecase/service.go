@@ -12,6 +12,7 @@ import (
 	"librevita.org/internal/core/crypto"
 	"librevita.org/internal/core/database/fle"
 	identifiermodel "librevita.org/internal/domain/identifier/model"
+	"librevita.org/pkg/flow"
 )
 
 type service struct {
@@ -50,56 +51,76 @@ func (s *service) AddIdentifier(ctx context.Context, clinicID, createdBy string,
 	if err != nil {
 		return nil, errors.Wrap(err, "identifier: invalid clinic id")
 	}
+
 	strategy := s.resolve(in)
-	normalized, err := strategy.Normalize(in.Value)
-	if err != nil {
-		return nil, err
-	}
-
-	ok, err := s.repo.AllowsSystem(ctx, cUUID, strategy.System())
-	if err != nil {
-		return nil, err
-	}
-	if !ok {
-		return nil, identifiermodel.ErrSystemNotAllowed
-	}
-
-	blind, err := s.blindIndex(ctx, strategy.System(), normalized)
-	if err != nil {
-		return nil, err
-	}
+	var normalized string
+	var blind string
+	var ciphertext []byte
+	var nonce []byte
+	var id uuid.UUID
 	pUUID := uuid.MustParse(in.PatientID)
 	pURN := crypto.PatientURN(cUUID, pUUID)
-	ciphertext, nonce, err := s.key.EncryptPatientData(ctx, pURN, []byte(pURN), []byte(normalized))
+
+	err = flow.New().
+		Step("normalize input", func() error {
+			var nerr error
+			normalized, nerr = strategy.Normalize(in.Value)
+			return nerr
+		}).
+		Step("check system allowed", func() error {
+			ok, aerr := s.repo.AllowsSystem(ctx, cUUID, strategy.System())
+			if aerr != nil {
+				return aerr
+			}
+			if !ok {
+				return identifiermodel.ErrSystemNotAllowed
+			}
+			return nil
+		}).
+		Step("compute blind index", func() error {
+			var berr error
+			blind, berr = s.blindIndex(ctx, strategy.System(), normalized)
+			return berr
+		}).
+		Step("encrypt data", func() error {
+			var eerr error
+			ciphertext, nonce, eerr = s.key.EncryptPatientData(ctx, pURN, []byte(pURN), []byte(normalized))
+			return eerr
+		}).
+		Step("generate id", func() error {
+			var gerr error
+			id, gerr = uuid.NewV7()
+			if gerr != nil {
+				return errors.Wrap(gerr, "identifier: generate id")
+			}
+			return nil
+		}).
+		Step("persist identifier", func() error {
+			var cb *uuid.UUID
+			if createdBy != "" {
+				parsed := uuid.MustParse(createdBy)
+				cb = &parsed
+			}
+
+			rec := identifiermodel.IdentifierRecord{
+				ID:              id,
+				ClinicID:        cUUID,
+				PatientID:       pUUID,
+				System:          strategy.System(),
+				ValueCiphertext: ciphertext,
+				Nonce:           nonce,
+				BlindIndex:      blind,
+				CreatedBy:       cb,
+			}
+			_, perr := s.repo.Add(ctx, rec)
+			return perr
+		}).
+		Err()
+
 	if err != nil {
 		return nil, err
 	}
 
-	id, err := uuid.NewV7()
-	if err != nil {
-		return nil, errors.Wrap(err, "identifier: generate id")
-	}
-
-	var cb *uuid.UUID
-	if createdBy != "" {
-		parsed := uuid.MustParse(createdBy)
-		cb = &parsed
-	}
-
-	rec := identifiermodel.IdentifierRecord{
-		ID:              id,
-		ClinicID:        cUUID,
-		PatientID:       pUUID,
-		System:          strategy.System(),
-		ValueCiphertext: ciphertext,
-		Nonce:           nonce,
-		BlindIndex:      blind,
-		CreatedBy:       cb,
-	}
-
-	if _, err := s.repo.Add(ctx, rec); err != nil {
-		return nil, err
-	}
 	return &identifiermodel.Identifier{
 		ID:        id.String(),
 		PatientID: in.PatientID,

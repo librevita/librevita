@@ -17,6 +17,7 @@ type Problem struct {
 	Status   int    `json:"status"`
 	Detail   string `json:"detail,omitempty"`
 	Instance string `json:"instance,omitempty"`
+	Hint     string `json:"hint,omitempty"`
 }
 
 // ProblemErrorHandler converts errors into responses. API clients and
@@ -31,6 +32,7 @@ func ProblemErrorHandler(err error, c echo.Context) {
 	var he *echo.HTTPError
 	status := http.StatusInternalServerError
 	detail := http.StatusText(status)
+	hint := errors.FlattenHints(err)
 
 	if errors.As(err, &he) {
 		status = he.Code
@@ -53,6 +55,9 @@ func ProblemErrorHandler(err error, c echo.Context) {
 			title = "Something has gone seriously wrong"
 			detail = "It's always time for a coffee break. We should be back by the time you finish your coffee."
 		}
+		if hint != "" && status < http.StatusInternalServerError {
+			detail = detail + " — " + hint
+		}
 		if err := Render(c, status, pages.ErrorPage(status, title, detail)); err != nil {
 			c.Logger().Error(err)
 		}
@@ -65,6 +70,7 @@ func ProblemErrorHandler(err error, c echo.Context) {
 		Status:   status,
 		Detail:   detail,
 		Instance: c.Request().URL.Path,
+		Hint:     hint,
 	}
 
 	c.Response().Header().Set(echo.HeaderContentType, "application/problem+json")

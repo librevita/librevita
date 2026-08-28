@@ -91,7 +91,8 @@ func NewSessionManager(repo SessionRepository, cfg *config.Config, log *slog.Log
 	}
 	if raw == nil {
 		if !cfg.IsDevelopment() {
-			return nil, errors.New("auth: paseto key is required outside development (LIBREVITA_PASETO_KEY)")
+			err := errors.New("auth: paseto key is required outside development (LIBREVITA_PASETO_KEY)")
+			return nil, errors.WithHint(err, "Gere uma chave simétrica segura de 32 bytes em base64 e configure na variável LIBREVITA_PASETO_KEY.")
 		}
 		log.Warn("no paseto key configured; using an ephemeral key (sessions reset on restart)")
 		var randErr error

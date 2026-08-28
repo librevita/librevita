@@ -75,7 +75,7 @@ func (r *clinicRepository) CreateShell(ctx context.Context, c *model.Clinic) (*m
 	row, err := create.Save(ctx)
 	if err != nil {
 		if ent.IsConstraintError(err) {
-			return nil, errors.New("clinic repository: slug taken")
+			return nil, errors.WithSecondaryError(errors.New("clinic repository: slug taken"), err)
 		}
 		return nil, errors.Wrap(err, "clinic repository: create shell")
 	}
