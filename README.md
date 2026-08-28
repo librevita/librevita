@@ -8,7 +8,7 @@
 > _"In quella parte del libro de la mia memoria dinanzi a la quale poco si potrebbe leggere, si trova una rubrica la quale dice: **Incipit vita nova**."_  
 > — **Dante Alighieri**, _Vita Nuova_ (c. 1294)
 
-**LibreVita** is a sovereign electronic health record (EHR) and clinic management platform built in Go with **Application-Layer Field-Level Encryption (AL-FLE)**, **Blind Indexing**, and **Tokenized Name Search**. Uniting the principled tradition of **Libre Software** with Dante’s **_Vita Nuova_** (*"New Life"*), LibreVita marks a new beginning for clinical privacy, human dignity, and patient data sovereignty. The module path is `librevita.org`.
+**LibreVita** is a sovereign electronic health record (EHR) and clinic management platform built in Go with **Application-Layer Field-Level Encryption (AL-FLE)**, **Blind Indexing**, and **Tokenized Name Search**. Uniting the principled tradition of **Libre Software** with Dante’s **_Vita Nuova_** (_"New Life"_), LibreVita marks a new beginning for clinical privacy, human dignity, and patient data sovereignty. The module path is `librevita.org`.
 
 ## Requirements
 
@@ -331,6 +331,24 @@ Input validation is implemented as a standalone, zero-dependency utility package
 - **Native i18n & Canonical Error Codes**: Emits standardized error codes (`validation.required`, `validation.max_runes`, `validation.invalid_email`, etc.) with built-in message catalogs for English (`en`) and Brazilian Portuguese (`pt-BR`). Context-aware resolution via `validator.FromContext(ctx)` reads the client's locale automatically.
 - **Domain Contract Validation (`Validatable`)**: Enums and domain value objects implementing `Valid() bool` (such as `patientmodel.Sex` or `auth.UITheme`) integrate seamlessly with nil-safety.
 
+## Error Handling & Observability (`github.com/cockroachdb/errors`)
+
+All application errors across domain and core packages are managed with `github.com/cockroachdb/errors`:
+
+- **Preserved Stack Traces**: Stack traces are captured at error origin and preserved through wrapping (`Wrap`, `Wrapf`), accessible in `%+v` logs for server errors without exposing internals to clients.
+- **Root Cause & Sentinel Identity**: Errors wrapped with `errors.WithSecondaryError` preserve underlying driver stack traces while satisfying domain sentinel contracts (`errors.Is(err, ErrNotFound)`).
+- **RFC 7807 Problem Details & Hints**: Actionable troubleshooting hints (`errors.WithHint`) are automatically extracted by `ProblemErrorHandler` and rendered into the `hint` field of RFC 7807 JSON responses and HTML error pages.
+- **PII Protection & Zero-Knowledge Safety**: Internal identifiers and known tokens are marked with `errors.Safe` to ensure sensitive patient information never leaks into telemetry or external logs.
+
+## Flow Control & Sagas (`pkg/flow`)
+
+Complex multi-step domain workflows and distributed operations are orchestrated using `pkg/flow`:
+
+- **Declarative Pipelines**: Encapsulates linear business logic (`Step`, `StepIf`) that short-circuits on the first failure without repetitive `if err != nil` boilerplate.
+- **Compensating Sagas (`StepWithRollback`)**: Automatically registers LIFO rollback actions (e.g. deleting orphaned storage blobs or vault keys when relational database inserts fail) and combines compensation failures via `errors.Join`.
+- **Batch Runners**: `flow.Exec` for sequential fail-fast operations and `flow.All` for complete teardown/cleanup aggregation.
+- **Transactional Helpers (`database.WithTx`)**: Encapsulates database transaction lifecycle, commits, rollbacks, and panic recovery in a single safe closure.
+
 ## Logging
 
 The application uses `log/slog` with Zap and `zapslog`. Fx and Goose use the same logger.
@@ -603,23 +621,23 @@ policies would silently change meaning.
 Critical policies (`admin.view`) are protected against self-lockout: a change that would deny the admin role is
 rejected, because the policy editor is the only place that could restore it.
 
-| Policy                   | Expression                                                                                                                                                             |
-| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `dashboard.view`         | `principal.role in ['admin', 'physician', 'receptionist', 'patient']`                                                                                                  |
-| `profile.update`         | `principal.role in ['admin', 'physician', 'receptionist', 'patient']`                                                                                                  |
-| `admin.view`             | `principal.role == 'admin'`                                                                                                                                            |
-| `users.register`         | `principal.role == 'admin'`                                                                                                                                            |
-| `users.manage`           | `principal.role == 'admin'`                                                                                                                                            |
-| `staff.view`             | `principal.role in ['admin', 'physician', 'receptionist']`                                                                                                             |
-| `staff.edit`             | `principal.role == 'admin'`                                                                                                                                            |
-| `staff.request`          | `principal.role in ['admin', 'receptionist']`                                                                                                                          |
-| `staff.approve`          | `principal.role == 'admin'`                                                                                                                                            |
+| Policy                   | Expression                                                                                                                                                                 |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `dashboard.view`         | `principal.role in ['admin', 'physician', 'receptionist', 'patient']`                                                                                                      |
+| `profile.update`         | `principal.role in ['admin', 'physician', 'receptionist', 'patient']`                                                                                                      |
+| `admin.view`             | `principal.role == 'admin'`                                                                                                                                                |
+| `users.register`         | `principal.role == 'admin'`                                                                                                                                                |
+| `users.manage`           | `principal.role == 'admin'`                                                                                                                                                |
+| `staff.view`             | `principal.role in ['admin', 'physician', 'receptionist']`                                                                                                                 |
+| `staff.edit`             | `principal.role == 'admin'`                                                                                                                                                |
+| `staff.request`          | `principal.role in ['admin', 'receptionist']`                                                                                                                              |
+| `staff.approve`          | `principal.role == 'admin'`                                                                                                                                                |
 | `calendar.view`          | `principal.role in ['admin', 'physician', 'receptionist'] \|\| (principal.role == 'patient' && resource.patient_id == principal.patient_id && principal.patient_id != '')` |
 | `patient.view`           | `principal.role in ['admin', 'physician', 'receptionist'] \|\| (principal.role == 'patient' && resource.id == principal.patient_id && principal.patient_id != '')`         |
-| `patient.edit`           | `principal.role == 'admin' \|\| (principal.role == 'physician' && resource.created_by == principal.id)`                                                                |
-| `patient.erase`          | `principal.role == 'admin'`                                                                                                                                            |
+| `patient.edit`           | `principal.role == 'admin' \|\| (principal.role == 'physician' && resource.created_by == principal.id)`                                                                    |
+| `patient.erase`          | `principal.role == 'admin'`                                                                                                                                                |
 | `patient.document.read`  | `principal.role in ['admin', 'physician', 'receptionist'] \|\| (principal.role == 'patient' && resource.patient_id == principal.patient_id && principal.patient_id != '')` |
-| `patient.document.write` | `principal.role in ['admin', 'physician']`                                                                                                                             |
+| `patient.document.write` | `principal.role in ['admin', 'physician']`                                                                                                                                 |
 
 Abuse controls:
 
@@ -656,11 +674,10 @@ LibreVita is free and open-source software licensed under the **[GNU Affero Gene
 LibreVita was founded with an ethical mission: to defend clinical privacy, ensure absolute patient data sovereignty, and democratize sovereign healthcare infrastructure for humanity. To guarantee that the project will never be compromised or commercialized at the expense of its users, we formally commit to the following principles:
 
 1. **Perpetual Free Software (AGPLv3 or later)**:
-   * LibreVita is and will forever remain 100% Free and Open Source Software. The only future license evolution accepted will be official subsequent versions published by the Free Software Foundation (e.g., AGPLv4).
+   - LibreVita is and will forever remain 100% Free and Open Source Software. The only future license evolution accepted will be official subsequent versions published by the Free Software Foundation (e.g., AGPLv4).
 2. **No "Bait-and-Switch" or Relicensing**:
-   * We will **never** relicense this codebase under proprietary, closed-source, or restrictive "source-available" licenses (such as BSL, SSPL, or commercial dual-licensing traps).
+   - We will **never** relicense this codebase under proprietary, closed-source, or restrictive "source-available" licenses (such as BSL, SSPL, or commercial dual-licensing traps).
 3. **No "Open-Core" Trap**:
-   * There is not and will never be an artificial "Enterprise Edition" with paywalled security or clinical features. 100% of our codebase — including Zero-Knowledge encryption, Blind Indexing, CEL policy engine, and audit verification — is completely free and available to all.
+   - There is not and will never be an artificial "Enterprise Edition" with paywalled security or clinical features. 100% of our codebase — including Zero-Knowledge encryption, Blind Indexing, CEL policy engine, and audit verification — is completely free and available to all.
 4. **Inbound = Outbound Community Integrity**:
-   * All contributions from the community are accepted under the same AGPL-3.0-or-later terms for the perpetual benefit of the global commons. We will never require predatory Contributor License Agreements (CLAs) that transfer copyright ownership to enable closed-source commercial forks.
-
+   - All contributions from the community are accepted under the same AGPL-3.0-or-later terms for the perpetual benefit of the global commons. We will never require predatory Contributor License Agreements (CLAs) that transfer copyright ownership to enable closed-source commercial forks.

@@ -11,39 +11,40 @@ Go module `librevita.org`, built with `CGO_ENABLED=0` into a static binary on a 
 `internal/database/schema` and versioned migrations in `internal/database/migrations/{sqlite,postgres}`, applied through
 Goose at startup.
 
-| Package                                    | Version   | License      | Purpose                                                 |
-| ------------------------------------------ | --------- | ------------ | ------------------------------------------------------- |
-| `entgo.io/ent`                             | v0.14.6   | Apache-2.0   | ORM: schema-as-code, typed client, code generation      |
-| `github.com/a-h/templ`                     | v0.3.1020 | MIT          | Type-safe server-rendered templates (SSR)               |
-| `github.com/labstack/echo/v4`              | v4.15.4   | MIT          | HTTP router and middleware                              |
-| `aidanwoods.dev/go-paseto`                 | v1.6.0    | MIT          | PASETO v4.local session tokens                          |
-| `golang.org/x/crypto`                      | v0.54.0   | BSD-3-Clause | Argon2id password hashing (PHC format)                  |
-| `github.com/google/cel-go`                 | v0.28.0   | Apache-2.0   | Dynamic policy engine (RBAC rules at runtime)           |
-| `github.com/pressly/goose/v3`              | v3.27.3   | MIT          | SQL migrations (embedded)                               |
-| `modernc.org/sqlite`                       | v1.56.0   | BSD-3-Clause | Pure-Go SQLite driver (no CGO)                          |
-| `github.com/jackc/pgx/v5`                  | v5.10.0   | MIT          | PostgreSQL driver with connection pooling               |
-| `github.com/canonical/go-dqlite/v3`        | v3.0.4    | Apache-2.0   | Optional dqlite backend: pure-Go wire protocol          |
-| `github.com/minio/minio-go/v7`             | v7.2.1    | Apache-2.0   | S3-compatible API client for file storage               |
-| `github.com/breml/rootcerts`               | v0.3.7    | BSD-2-Clause | Trusted roots for S3-compatible API TLS connections     |
-| `go.uber.org/fx`                           | v1.24.0   | MIT          | Dependency injection container                          |
-| `go.uber.org/zap`                          | v1.28.0   | MIT          | Structured logging (UTC)                                |
-| `go.uber.org/zap/exp`                      | v0.3.0    | MIT          | Audit trail logging                                     |
-| `gopkg.in/natefinch/lumberjack.v2`         | v2.2.1    | MIT          | Log rotation for file output                            |
-| `github.com/knadh/koanf/v2`                | v2.3.6    | MIT          | Config loading core                                     |
-| `github.com/knadh/koanf/providers/env`     | v1.1.0    | MIT          | Environment variable provider                           |
-| `github.com/knadh/koanf/providers/file`    | v1.2.1    | MIT          | Config file provider                                    |
-| `github.com/knadh/koanf/providers/posflag` | v1.0.2    | MIT          | pflag provider                                          |
-| `github.com/knadh/koanf/parsers/json`      | v1.0.1    | MIT          | JSON parser                                             |
-| `github.com/knadh/koanf/parsers/yaml`      | v1.1.1    | MIT          | YAML parser                                             |
-| `github.com/spf13/pflag`                   | v1.0.10   | BSD-3-Clause | CLI flag parsing                                        |
-| `github.com/joho/godotenv`                 | v1.5.1    | MIT          | `.env` support for local config                         |
-| `github.com/google/uuid`                   | v1.6.0    | BSD-3-Clause | Session and record identifiers                          |
-| `github.com/disintegration/imaging`        | v1.6.2    | MIT          | Image resize and re-encode (avatar pipeline)            |
-| `golang.org/x/term`                        | v0.45.0   | BSD-3-Clause | Terminal width detection for the console logger         |
-| `go.etcd.io/bbolt`                         | v1.3.11   | MIT          | Embedded Key-Value database for patient DEKs (KeyVault) |
-| `github.com/nats-io/nats.go`               | v1.53.1   | Apache-2.0   | NATS JetStream KeyValue client for distributed KeyVault |
-| `go.etcd.io/etcd/client/v3`                | v3.7.1    | Apache-2.0   | etcd v3 client for cloud-native KeyVault                |
-| `github.com/hashicorp/vault/api`           | v1.23.0   | MPL-2.0      | HashiCorp Vault / OpenBao secret manager KeyVault       |
+| Package                                    | Version   | License      | Purpose                                                           |
+| ------------------------------------------ | --------- | ------------ | ----------------------------------------------------------------- |
+| `entgo.io/ent`                             | v0.14.6   | Apache-2.0   | ORM: schema-as-code, typed client, code generation                |
+| `github.com/a-h/templ`                     | v0.3.1020 | MIT          | Type-safe server-rendered templates (SSR)                         |
+| `github.com/labstack/echo/v4`              | v4.15.4   | MIT          | HTTP router and middleware                                        |
+| `aidanwoods.dev/go-paseto`                 | v1.6.0    | MIT          | PASETO v4.local session tokens                                    |
+| `golang.org/x/crypto`                      | v0.54.0   | BSD-3-Clause | Argon2id password hashing (PHC format)                            |
+| `github.com/google/cel-go`                 | v0.28.0   | Apache-2.0   | Dynamic policy engine (RBAC rules at runtime)                     |
+| `github.com/pressly/goose/v3`              | v3.27.3   | MIT          | SQL migrations (embedded)                                         |
+| `modernc.org/sqlite`                       | v1.56.0   | BSD-3-Clause | Pure-Go SQLite driver (no CGO)                                    |
+| `github.com/jackc/pgx/v5`                  | v5.10.0   | MIT          | PostgreSQL driver with connection pooling                         |
+| `github.com/canonical/go-dqlite/v3`        | v3.0.4    | Apache-2.0   | Optional dqlite backend: pure-Go wire protocol                    |
+| `github.com/minio/minio-go/v7`             | v7.2.1    | Apache-2.0   | S3-compatible API client for file storage                         |
+| `github.com/breml/rootcerts`               | v0.3.7    | BSD-2-Clause | Trusted roots for S3-compatible API TLS connections               |
+| `go.uber.org/fx`                           | v1.24.0   | MIT          | Dependency injection container                                    |
+| `go.uber.org/zap`                          | v1.28.0   | MIT          | Structured logging (UTC)                                          |
+| `go.uber.org/zap/exp`                      | v0.3.0    | MIT          | Audit trail logging                                               |
+| `gopkg.in/natefinch/lumberjack.v2`         | v2.2.1    | MIT          | Log rotation for file output                                      |
+| `github.com/knadh/koanf/v2`                | v2.3.6    | MIT          | Config loading core                                               |
+| `github.com/knadh/koanf/providers/env`     | v1.1.0    | MIT          | Environment variable provider                                     |
+| `github.com/knadh/koanf/providers/file`    | v1.2.1    | MIT          | Config file provider                                              |
+| `github.com/knadh/koanf/providers/posflag` | v1.0.2    | MIT          | pflag provider                                                    |
+| `github.com/knadh/koanf/parsers/json`      | v1.0.1    | MIT          | JSON parser                                                       |
+| `github.com/knadh/koanf/parsers/yaml`      | v1.1.1    | MIT          | YAML parser                                                       |
+| `github.com/spf13/pflag`                   | v1.0.10   | BSD-3-Clause | CLI flag parsing                                                  |
+| `github.com/joho/godotenv`                 | v1.5.1    | MIT          | `.env` support for local config                                   |
+| `github.com/google/uuid`                   | v1.6.0    | BSD-3-Clause | Session and record identifiers                                    |
+| `github.com/disintegration/imaging`        | v1.6.2    | MIT          | Image resize and re-encode (avatar pipeline)                      |
+| `golang.org/x/term`                        | v0.45.0   | BSD-3-Clause | Terminal width detection for the console logger                   |
+| `github.com/cockroachdb/errors`            | v1.11.3   | Apache-2.0   | Error handling with preserved stack traces, PII safety, and hints |
+| `go.etcd.io/bbolt`                         | v1.3.11   | MIT          | Embedded Key-Value database for patient DEKs (KeyVault)           |
+| `github.com/nats-io/nats.go`               | v1.53.1   | Apache-2.0   | NATS JetStream KeyValue client for distributed KeyVault           |
+| `go.etcd.io/etcd/client/v3`                | v3.7.1    | Apache-2.0   | etcd v3 client for cloud-native KeyVault                          |
+| `github.com/hashicorp/vault/api`           | v1.23.0   | MPL-2.0      | HashiCorp Vault / OpenBao secret manager KeyVault                 |
 
 ### Build-time Go tools
 
