@@ -2,10 +2,9 @@ package usecase
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"strings"
 
+	"github.com/cockroachdb/errors"
 	"github.com/google/uuid"
 
 	"librevita.org/internal/core/auth"
@@ -159,7 +158,7 @@ func (s *PlatformService) Provision(ctx context.Context, in ProvisionInput) (*mo
 	}
 	if s.engine != nil {
 		if _, err := s.engine.EnsureClinicDEK(ctx, shell.ID); err != nil {
-			return nil, fmt.Errorf("clinic: ensure dek: %w", err)
+			return nil, errors.Wrap(err, "clinic: ensure dek")
 		}
 	}
 	return shell, nil

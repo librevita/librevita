@@ -6,6 +6,8 @@ import (
 	"sort"
 	"strings"
 	"sync"
+
+	"github.com/cockroachdb/errors"
 )
 
 // Registry is the runtime view of identifier_systems: a thread-safe
@@ -42,7 +44,7 @@ func (r *Registry) Reload(systems []*IdentifierSystem) error {
 	for _, row := range sorted {
 		c, err := NewConfigured(row)
 		if err != nil {
-			return fmt.Errorf("identifier: system %q: %w", row.System, err)
+			return errors.Wrapf(err, "identifier: system %q", row.System)
 		}
 		next[row.System] = c
 		order = append(order, row.System)

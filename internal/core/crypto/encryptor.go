@@ -3,7 +3,8 @@ package crypto
 import (
 	"encoding/base64"
 	"encoding/json"
-	"fmt"
+
+	"github.com/cockroachdb/errors"
 )
 
 // Encryptor provides symmetric AEAD encryption and decryption with cryptographic agility.
@@ -110,7 +111,7 @@ func NewEncryptorFromBase64(keyB64 string, opts ...EncryptorOption) (*AEADEncryp
 	}
 	raw, err := base64.StdEncoding.DecodeString(keyB64)
 	if err != nil {
-		return nil, fmt.Errorf("crypto: invalid base64 key: %w", err)
+		return nil, errors.Wrap(err, "crypto: invalid base64 key")
 	}
 	defer ZeroBytes(raw)
 	return NewEncryptor(raw, opts...)
@@ -135,7 +136,7 @@ func (e *AEADEncryptor) Encrypt(plaintext, aad []byte) ([]byte, error) {
 
 	nonce, err := RandomBytes(spec.NonceSize)
 	if err != nil {
-		return nil, fmt.Errorf("crypto: generate nonce: %w", err)
+		return nil, errors.Wrap(err, "crypto: generate nonce")
 	}
 
 	out := make([]byte, 1+len(nonce), 1+len(nonce)+len(plaintext)+aead.Overhead())
@@ -172,7 +173,7 @@ func (e *AEADEncryptor) Decrypt(ciphertext, aad []byte) ([]byte, error) {
 
 	plaintext, err := aead.Open(nil, nonce, payload, aad)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrDecryptionFailed, err)
+		return nil, errors.Wrapf(ErrDecryptionFailed, "%v", err)
 	}
 	return plaintext, nil
 }
@@ -181,7 +182,7 @@ func (e *AEADEncryptor) Decrypt(ciphertext, aad []byte) ([]byte, error) {
 func (e *AEADEncryptor) EncryptStruct(value any, aad []byte) ([]byte, error) {
 	data, err := json.Marshal(value)
 	if err != nil {
-		return nil, fmt.Errorf("crypto: marshal struct: %w", err)
+		return nil, errors.Wrap(err, "crypto: marshal struct")
 	}
 	defer ZeroBytes(data)
 	return e.Encrypt(data, aad)
@@ -196,7 +197,7 @@ func (e *AEADEncryptor) DecryptInto(ciphertext, aad []byte, target any) error {
 	defer ZeroBytes(plaintext)
 
 	if err := json.Unmarshal(plaintext, target); err != nil {
-		return fmt.Errorf("crypto: unmarshal payload: %w", err)
+		return errors.Wrap(err, "crypto: unmarshal payload")
 	}
 	return nil
 }

@@ -3,10 +3,10 @@ package database
 import (
 	"context"
 	"database/sql"
-	"fmt"
 	"io/fs"
 	"log/slog"
 
+	"github.com/cockroachdb/errors"
 	"github.com/pressly/goose/v3"
 
 	"librevita.org/internal/core/config"
@@ -26,10 +26,10 @@ func MigrateWithDriver(ctx context.Context, db *sql.DB, driver string, log *slog
 		return err
 	}
 	if _, err := provider.Up(ctx); err != nil {
-		return fmt.Errorf("migrate: goose up: %w", err)
+		return errors.Wrap(err, "migrate: goose up")
 	}
 	if err := EnsureAuditTriggers(ctx, db, driver); err != nil {
-		return fmt.Errorf("migrate: audit triggers: %w", err)
+		return errors.Wrap(err, "migrate: audit triggers")
 	}
 	return nil
 }
@@ -45,7 +45,7 @@ func newProvider(db *sql.DB, driver string, log *slog.Logger) (*goose.Provider, 
 
 	subFS, err := fs.Sub(migrations.FS, subPath)
 	if err != nil {
-		return nil, fmt.Errorf("migrate: embedded filesystem for %q: %w", subPath, err)
+		return nil, errors.Wrapf(err, "migrate: embedded filesystem for %q", subPath)
 	}
 
 	return goose.NewProvider(

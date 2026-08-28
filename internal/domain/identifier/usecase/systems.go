@@ -2,10 +2,10 @@ package usecase
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"strings"
 
+	"github.com/cockroachdb/errors"
 	"github.com/google/uuid"
 
 	identifiermodel "librevita.org/internal/domain/identifier/model"
@@ -35,7 +35,7 @@ func (s *systemsService) List(ctx context.Context) ([]*identifiermodel.Identifie
 func (s *systemsService) SystemByID(ctx context.Context, id string) (*identifiermodel.IdentifierSystem, error) {
 	uUUID, err := uuid.Parse(id)
 	if err != nil {
-		return nil, fmt.Errorf("identifier: invalid system id: %w", err)
+		return nil, errors.Wrap(err, "identifier: invalid system id")
 	}
 	return s.repo.GetByID(ctx, uUUID)
 }
@@ -48,7 +48,7 @@ func (s *systemsService) Create(ctx context.Context, createdBy string, in System
 	}
 	id, err := uuid.NewV7()
 	if err != nil {
-		return nil, fmt.Errorf("identifier: generate system id: %w", err)
+		return nil, errors.Wrap(err, "identifier: generate system id")
 	}
 
 	var cb *uuid.UUID
@@ -90,7 +90,7 @@ func (s *systemsService) Update(ctx context.Context, id string, in SystemInput) 
 	}
 	uUUID, err := uuid.Parse(id)
 	if err != nil {
-		return nil, fmt.Errorf("identifier: invalid system id: %w", err)
+		return nil, errors.Wrap(err, "identifier: invalid system id")
 	}
 
 	sys := &identifiermodel.IdentifierSystem{
@@ -120,7 +120,7 @@ func (s *systemsService) Update(ctx context.Context, id string, in SystemInput) 
 func (s *systemsService) SetActive(ctx context.Context, id string, active bool) error {
 	uUUID, err := uuid.Parse(id)
 	if err != nil {
-		return fmt.Errorf("identifier: invalid system id: %w", err)
+		return errors.Wrap(err, "identifier: invalid system id")
 	}
 	if err := s.repo.SetActive(ctx, uUUID, active); err != nil {
 		return err
@@ -132,10 +132,10 @@ func (s *systemsService) SetActive(ctx context.Context, id string, active bool) 
 func (s *systemsService) reload(ctx context.Context) error {
 	rows, err := s.repo.ListActive(ctx)
 	if err != nil {
-		return fmt.Errorf("identifier: reload systems: %w", err)
+		return errors.Wrap(err, "identifier: reload systems")
 	}
 	if err := s.reg.Reload(rows); err != nil {
-		return fmt.Errorf("identifier: reload systems: %w", err)
+		return errors.Wrap(err, "identifier: reload systems")
 	}
 	return nil
 }

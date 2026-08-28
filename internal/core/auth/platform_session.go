@@ -2,8 +2,9 @@ package auth
 
 import (
 	"context"
-	"fmt"
 	"time"
+
+	"github.com/cockroachdb/errors"
 
 	"github.com/google/uuid"
 
@@ -35,7 +36,7 @@ func (r *platformSessionRepository) Create(ctx context.Context, id string, userI
 		SetExpiresAt(expiresAt).
 		Save(ctx)
 	if err != nil {
-		return fmt.Errorf("platform session repository: create: %w", err)
+		return errors.Wrap(err, "platform session repository: create")
 	}
 	return nil
 }
@@ -52,7 +53,7 @@ func (r *platformSessionRepository) GetActive(ctx context.Context, id string, no
 		if ent.IsNotFound(err) {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("platform session repository: get active: %w", err)
+		return nil, errors.Wrap(err, "platform session repository: get active")
 	}
 
 	var u *SessionUser
@@ -77,7 +78,7 @@ func (r *platformSessionRepository) GetActive(ctx context.Context, id string, no
 func (r *platformSessionRepository) Delete(ctx context.Context, id string) error {
 	err := r.client.PlatformSession.DeleteOneID(id).Exec(ctx)
 	if err != nil && !ent.IsNotFound(err) {
-		return fmt.Errorf("platform session repository: delete: %w", err)
+		return errors.Wrap(err, "platform session repository: delete")
 	}
 	return nil
 }
@@ -87,7 +88,7 @@ func (r *platformSessionRepository) CleanupExpired(ctx context.Context, now time
 		Where(platformsession.ExpiresAtLTE(now)).
 		Exec(ctx)
 	if err != nil {
-		return fmt.Errorf("platform session repository: cleanup expired: %w", err)
+		return errors.Wrap(err, "platform session repository: cleanup expired")
 	}
 	return nil
 }

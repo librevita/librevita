@@ -2,7 +2,7 @@
 package auth
 
 import (
-	"fmt"
+	"github.com/cockroachdb/errors"
 )
 
 // Role is an authorization level assigned to a user account.
@@ -34,7 +34,7 @@ func (r Role) Valid() bool {
 func ParseRole(s string) (Role, error) {
 	r := Role(s)
 	if !r.Valid() {
-		return "", fmt.Errorf("security: invalid role %q", s)
+		return "", errors.Newf("security: invalid role %q", s)
 	}
 	return r, nil
 }

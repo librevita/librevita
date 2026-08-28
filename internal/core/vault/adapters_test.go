@@ -2,9 +2,10 @@ package vault
 
 import (
 	"encoding/base64"
-	"errors"
 	"net/http"
 	"testing"
+
+	"github.com/cockroachdb/errors"
 
 	"github.com/hashicorp/vault/api"
 	"github.com/stretchr/testify/assert"

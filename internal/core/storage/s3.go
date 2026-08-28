@@ -9,11 +9,10 @@ package storage
 import (
 	"context"
 	"encoding/hex"
-	"errors"
-	"fmt"
 	"io"
 	"sort"
 
+	"github.com/cockroachdb/errors"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 	"librevita.org/internal/core/crypto"
@@ -65,7 +64,7 @@ func NewS3(cfg S3Config) (*S3, error) {
 		BucketLookup: lookup,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("storage/s3: client: %w", err)
+		return nil, errors.Wrap(err, "storage/s3: client")
 	}
 	return &S3{client: client, bucket: cfg.Bucket}, nil
 }
@@ -75,10 +74,10 @@ func NewS3(cfg S3Config) (*S3, error) {
 func (s *S3) Verify(ctx context.Context) error {
 	exists, err := s.client.BucketExists(ctx, s.bucket)
 	if err != nil {
-		return fmt.Errorf("storage/s3: bucket check %q: %w", s.bucket, err)
+		return errors.Wrapf(err, "storage/s3: bucket check %q", s.bucket)
 	}
 	if !exists {
-		return fmt.Errorf("storage/s3: bucket %q does not exist", s.bucket)
+		return errors.Newf("storage/s3: bucket %q does not exist", s.bucket)
 	}
 	return nil
 }
@@ -93,13 +92,13 @@ func (s *S3) Put(ctx context.Context, key string, data io.Reader, size int64, co
 	// ETags are not the digest of the whole object).
 	checksum, err := crypto.NewDigest()
 	if err != nil {
-		return ObjectInfo{}, fmt.Errorf("storage/s3: checksum: %w", err)
+		return ObjectInfo{}, errors.Wrap(err, "storage/s3: checksum")
 	}
 	body := io.TeeReader(data, checksum)
 	info, err := s.client.PutObject(ctx, s.bucket, key, body, size,
 		minio.PutObjectOptions{ContentType: contentType})
 	if err != nil {
-		return ObjectInfo{}, fmt.Errorf("storage/s3: put %q: %w", key, err)
+		return ObjectInfo{}, errors.Wrapf(err, "storage/s3: put %q", key)
 	}
 	return ObjectInfo{
 		Key:          key,
@@ -141,7 +140,7 @@ func (s *S3) Delete(ctx context.Context, key string) error {
 	}
 	err := s.client.RemoveObject(ctx, s.bucket, key, minio.RemoveObjectOptions{})
 	if err != nil {
-		return fmt.Errorf("storage/s3: delete %q: %w", key, err)
+		return errors.Wrapf(err, "storage/s3: delete %q", key)
 	}
 	return nil
 }
@@ -169,7 +168,7 @@ func (s *S3) List(ctx context.Context, prefix string) ([]ObjectInfo, error) {
 		Recursive: true,
 	}) {
 		if obj.Err != nil {
-			return nil, fmt.Errorf("storage/s3: list %q: %w", prefix, obj.Err)
+			return nil, errors.Wrapf(obj.Err, "storage/s3: list %q", prefix)
 		}
 		out = append(out, ObjectInfo{
 			Key:          obj.Key,
@@ -189,5 +188,5 @@ func mapErr(key string, err error) error {
 	if errors.As(err, &resp) && resp.Code == "NoSuchKey" {
 		return ErrNotFound
 	}
-	return fmt.Errorf("storage/s3: %q: %w", key, err)
+	return errors.Wrapf(err, "storage/s3: %q", key)
 }

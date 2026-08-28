@@ -1,11 +1,11 @@
 package server
 
 import (
-	"errors"
 	"mime"
 	"net/http"
 	"strings"
 
+	"github.com/cockroachdb/errors"
 	"github.com/labstack/echo/v4"
 	"librevita.org/internal/ui/pages"
 )
@@ -39,6 +39,8 @@ func ProblemErrorHandler(err error, c echo.Context) {
 		} else {
 			detail = http.StatusText(status)
 		}
+	} else if status >= http.StatusInternalServerError {
+		c.Logger().Errorf("server error: %+v", err)
 	}
 
 	if !IsHtmx(c) && wantsHTML(c.Request()) {

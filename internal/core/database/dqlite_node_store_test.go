@@ -2,11 +2,11 @@ package database
 
 import (
 	"context"
-	"errors"
 	"net"
 	"testing"
 
 	"github.com/canonical/go-dqlite/v3/client"
+	"github.com/cockroachdb/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

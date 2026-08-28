@@ -2,9 +2,9 @@ package repository
 
 import (
 	"context"
-	"fmt"
 	"time"
 
+	"github.com/cockroachdb/errors"
 	"github.com/google/uuid"
 
 	"librevita.org/ent"
@@ -26,7 +26,7 @@ func (r *systemRepository) ListAll(ctx context.Context) ([]*identifiermodel.Iden
 		Order(ent.Asc(identifiersystem.FieldDisplayName)).
 		All(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("system repository: list all: %w", err)
+		return nil, errors.Wrap(err, "system repository: list all")
 	}
 	out := make([]*identifiermodel.IdentifierSystem, 0, len(rows))
 	for _, row := range rows {
@@ -40,7 +40,7 @@ func (r *systemRepository) ListActive(ctx context.Context) ([]*identifiermodel.I
 		Where(identifiersystem.ActiveEQ(true)).
 		All(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("system repository: list active: %w", err)
+		return nil, errors.Wrap(err, "system repository: list active")
 	}
 	out := make([]*identifiermodel.IdentifierSystem, 0, len(rows))
 	for _, row := range rows {
@@ -55,7 +55,7 @@ func (r *systemRepository) GetByID(ctx context.Context, id uuid.UUID) (*identifi
 		if ent.IsNotFound(err) {
 			return nil, identifiermodel.ErrSystemNotFound
 		}
-		return nil, fmt.Errorf("system repository: get by id: %w", err)
+		return nil, errors.Wrap(err, "system repository: get by id")
 	}
 	return toSystemDomain(row), nil
 }
@@ -68,7 +68,7 @@ func (r *systemRepository) GetBySystem(ctx context.Context, system string) (*ide
 		if ent.IsNotFound(err) {
 			return nil, identifiermodel.ErrSystemNotFound
 		}
-		return nil, fmt.Errorf("system repository: get by system: %w", err)
+		return nil, errors.Wrap(err, "system repository: get by system")
 	}
 	return toSystemDomain(row), nil
 }
@@ -95,7 +95,7 @@ func (r *systemRepository) Create(ctx context.Context, s *identifiermodel.Identi
 		if ent.IsConstraintError(err) {
 			return nil, identifiermodel.ErrDuplicate
 		}
-		return nil, fmt.Errorf("system repository: create: %w", err)
+		return nil, errors.Wrap(err, "system repository: create")
 	}
 	return toSystemDomain(saved), nil
 }
@@ -124,7 +124,7 @@ func (r *systemRepository) Update(ctx context.Context, s *identifiermodel.Identi
 		if ent.IsConstraintError(err) {
 			return nil, identifiermodel.ErrDuplicate
 		}
-		return nil, fmt.Errorf("system repository: update: %w", err)
+		return nil, errors.Wrap(err, "system repository: update")
 	}
 	return toSystemDomain(updated), nil
 }
@@ -138,7 +138,7 @@ func (r *systemRepository) SetActive(ctx context.Context, id uuid.UUID, active b
 		if ent.IsNotFound(err) {
 			return identifiermodel.ErrSystemNotFound
 		}
-		return fmt.Errorf("system repository: set active: %w", err)
+		return errors.Wrap(err, "system repository: set active")
 	}
 	return nil
 }
@@ -197,7 +197,7 @@ func (r *systemRepository) SeedDefaults(ctx context.Context) error {
 	for _, sys := range defaultSystems {
 		exists, err := r.client.IdentifierSystem.Query().Where(identifiersystem.SystemEQ(sys.System)).Exist(ctx)
 		if err != nil {
-			return fmt.Errorf("system repository: check seed %q: %w", sys.System, err)
+			return errors.Wrapf(err, "system repository: check seed %q", sys.System)
 		}
 		if exists {
 			continue
@@ -219,7 +219,7 @@ func (r *systemRepository) SeedDefaults(ctx context.Context) error {
 			SetActive(sys.Active).
 			SetMask(sys.Mask).
 			Exec(ctx); err != nil && !ent.IsConstraintError(err) {
-			return fmt.Errorf("system repository: seed insert %q: %w", sys.System, err)
+			return errors.Wrapf(err, "system repository: seed insert %q", sys.System)
 		}
 	}
 	return nil

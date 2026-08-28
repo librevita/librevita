@@ -18,11 +18,11 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"hash"
 	"io"
 
+	"github.com/cockroachdb/errors"
 	"golang.org/x/crypto/hkdf"
 )
 
@@ -88,10 +88,10 @@ func NewEngine(masterKeyB64 string, vault KeyVault, opts ...EngineOption) (*Engi
 	}
 	raw, err := base64.StdEncoding.DecodeString(masterKeyB64)
 	if err != nil {
-		return nil, fmt.Errorf("crypto: master key is not valid base64: %w", err)
+		return nil, errors.Wrap(err, "crypto: master key is not valid base64")
 	}
 	if len(raw) != SizeDEK {
-		return nil, fmt.Errorf("crypto: master key must be 32 bytes, got %d", len(raw))
+		return nil, errors.Newf("crypto: master key must be 32 bytes, got %d", len(raw))
 	}
 	defer ZeroBytes(raw)
 	return deriveEngine(raw, vault, opts...)
@@ -115,7 +115,7 @@ func deriveEngine(raw []byte, vault KeyVault, opts ...EngineOption) (*Engine, er
 	hasher, err := NewHasher(blindKey, WithHashAlgorithm(options.hashAlgorithm))
 	if err != nil {
 		ZeroBytes(blindKey)
-		return nil, fmt.Errorf("crypto: engine hasher: %w", err)
+		return nil, errors.Wrap(err, "crypto: engine hasher")
 	}
 
 	return &Engine{
@@ -141,7 +141,7 @@ func ZeroBytes(b []byte) {
 func (e *Engine) SetupPatientDEK(ctx context.Context, patientURN string) ([]byte, error) {
 	clinicID, patientID, ok := ParsePatientURN(patientURN)
 	if !ok {
-		return nil, fmt.Errorf("crypto: invalid patient urn %q", patientURN)
+		return nil, errors.Newf("crypto: invalid patient urn %q", patientURN)
 	}
 	return e.SetupPatientDEKForClinic(ctx, clinicID, patientID)
 }
@@ -151,7 +151,7 @@ func (e *Engine) SetupPatientDEK(ctx context.Context, patientURN string) ([]byte
 func (e *Engine) GetPatientDEK(ctx context.Context, patientURN string) ([]byte, error) {
 	clinicID, patientID, ok := ParsePatientURN(patientURN)
 	if !ok {
-		return nil, fmt.Errorf("crypto: invalid patient urn %q", patientURN)
+		return nil, errors.Newf("crypto: invalid patient urn %q", patientURN)
 	}
 	return e.GetPatientDEKForClinic(ctx, clinicID, patientID)
 }
@@ -160,7 +160,7 @@ func (e *Engine) GetPatientDEK(ctx context.Context, patientURN string) ([]byte, 
 // PatientURN, executing instant Crypto-Shredding.
 func (e *Engine) DeletePatientDEK(ctx context.Context, patientURN string) error {
 	if _, _, ok := ParsePatientURN(patientURN); !ok {
-		return fmt.Errorf("crypto: invalid patient urn %q", patientURN)
+		return errors.Newf("crypto: invalid patient urn %q", patientURN)
 	}
 	err := e.vault.DeleteDEK(ctx, patientURN)
 	if err == nil {
@@ -174,7 +174,7 @@ func (e *Engine) DeletePatientDEK(ctx context.Context, patientURN string) error 
 func (e *Engine) EnsurePatientDEK(ctx context.Context, patientURN string) ([]byte, error) {
 	clinicID, patientID, ok := ParsePatientURN(patientURN)
 	if !ok {
-		return nil, fmt.Errorf("crypto: invalid patient urn %q", patientURN)
+		return nil, errors.Newf("crypto: invalid patient urn %q", patientURN)
 	}
 	return e.EnsurePatientDEKForClinic(ctx, clinicID, patientID)
 }
@@ -203,7 +203,7 @@ func (e *Engine) DecryptPatientDataWithDEK(dek, aad, ciphertext, nonce []byte) (
 func (e *Engine) EncryptPayload(ctx context.Context, urn string, aad, plaintext []byte) (ciphertext, nonce []byte, err error) {
 	dek, err := e.dekForURN(ctx, urn, true)
 	if err != nil {
-		return nil, nil, fmt.Errorf("crypto: get dek for encrypt: %w", err)
+		return nil, nil, errors.Wrap(err, "crypto: get dek for encrypt")
 	}
 	defer ZeroBytes(dek)
 
@@ -215,7 +215,7 @@ func (e *Engine) EncryptPayload(ctx context.Context, urn string, aad, plaintext 
 func (e *Engine) DecryptPayload(ctx context.Context, urn string, aad, ciphertext, nonce []byte) ([]byte, error) {
 	dek, err := e.dekForURN(ctx, urn, false)
 	if err != nil {
-		return nil, fmt.Errorf("crypto: get dek for decrypt: %w", err)
+		return nil, errors.Wrap(err, "crypto: get dek for decrypt")
 	}
 	defer ZeroBytes(dek)
 
@@ -229,7 +229,7 @@ func (e *Engine) dekForURN(ctx context.Context, urn string, ensure bool) ([]byte
 		}
 		return e.GetPatientDEKForClinic(ctx, clinicID, patientID)
 	}
-	return nil, fmt.Errorf("crypto: payload urn must be patient-scoped: %q", urn)
+	return nil, errors.Newf("crypto: payload urn must be patient-scoped: %q", urn)
 }
 
 // EncryptStruct serializes a Go struct to JSON and encrypts it using the entity's DEK.
@@ -237,7 +237,7 @@ func (e *Engine) dekForURN(ctx context.Context, urn string, ensure bool) ([]byte
 func (e *Engine) EncryptStruct(ctx context.Context, urn string, aad []byte, source any) (ciphertext, nonce []byte, err error) {
 	data, err := json.Marshal(source)
 	if err != nil {
-		return nil, nil, fmt.Errorf("crypto: marshal struct: %w", err)
+		return nil, nil, errors.Wrap(err, "crypto: marshal struct")
 	}
 	defer ZeroBytes(data)
 
@@ -254,7 +254,7 @@ func (e *Engine) DecryptInto(ctx context.Context, urn string, aad, ciphertext, n
 	defer ZeroBytes(plaintext)
 
 	if err := json.Unmarshal(plaintext, target); err != nil {
-		return fmt.Errorf("crypto: unmarshal decrypted payload: %w", err)
+		return errors.Wrap(err, "crypto: unmarshal decrypted payload")
 	}
 	return nil
 }
@@ -317,11 +317,11 @@ func (e *Engine) DecryptFieldPtr(ctx context.Context, urn string, aad []byte, en
 func (e *Engine) Seal(aad, plaintext []byte) (ciphertext, nonce []byte, err error) {
 	aead, err := NewAEADCipher(e.kek)
 	if err != nil {
-		return nil, nil, fmt.Errorf("crypto: seal: %w", err)
+		return nil, nil, errors.Wrap(err, "crypto: seal")
 	}
 	nonce, err = RandomBytes(SizeNonce)
 	if err != nil {
-		return nil, nil, fmt.Errorf("crypto: nonce: %w", err)
+		return nil, nil, errors.Wrap(err, "crypto: nonce")
 	}
 	ciphertext = aead.Seal(nil, nonce, plaintext, aad)
 	return ciphertext, nonce, nil
@@ -331,11 +331,11 @@ func (e *Engine) Seal(aad, plaintext []byte) (ciphertext, nonce []byte, err erro
 func (e *Engine) Open(aad, ciphertext, nonce []byte) ([]byte, error) {
 	aead, err := NewAEADCipher(e.kek)
 	if err != nil {
-		return nil, fmt.Errorf("crypto: open: %w", err)
+		return nil, errors.Wrap(err, "crypto: open")
 	}
 	plaintext, err := aead.Open(nil, nonce, ciphertext, aad)
 	if err != nil {
-		return nil, fmt.Errorf("crypto: decrypt: %w", err)
+		return nil, errors.Wrap(err, "crypto: decrypt")
 	}
 	return plaintext, nil
 }
@@ -349,7 +349,7 @@ func (e *Engine) BlindIndex(system, value string) (string, error) {
 	}
 	h, err := NewDigestWithKey(e.blindKey)
 	if err != nil {
-		return "", fmt.Errorf("crypto: blind index: %w", err)
+		return "", errors.Wrap(err, "crypto: blind index")
 	}
 	h.Write([]byte(system))
 	h.Write([]byte{0})
@@ -363,11 +363,11 @@ func encryptWithDEK(dek, aad, plaintext []byte) ([]byte, []byte, error) {
 	}
 	aead, err := NewAEADCipher(dek)
 	if err != nil {
-		return nil, nil, fmt.Errorf("crypto: aead: %w", err)
+		return nil, nil, errors.Wrap(err, "crypto: aead")
 	}
 	nonce, err := RandomBytes(SizeNonce)
 	if err != nil {
-		return nil, nil, fmt.Errorf("crypto: nonce: %w", err)
+		return nil, nil, errors.Wrap(err, "crypto: nonce")
 	}
 	return aead.Seal(nil, nonce, plaintext, aad), nonce, nil
 }
@@ -378,11 +378,11 @@ func decryptWithDEK(dek, aad, ciphertext, nonce []byte) ([]byte, error) {
 	}
 	aead, err := NewAEADCipher(dek)
 	if err != nil {
-		return nil, fmt.Errorf("crypto: aead: %w", err)
+		return nil, errors.Wrap(err, "crypto: aead")
 	}
 	plaintext, err := aead.Open(nil, nonce, ciphertext, aad)
 	if err != nil {
-		return nil, fmt.Errorf("crypto: decrypt: %w", err)
+		return nil, errors.Wrap(err, "crypto: decrypt")
 	}
 	return plaintext, nil
 }

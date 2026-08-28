@@ -2,8 +2,9 @@ package repository
 
 import (
 	"context"
-	"fmt"
 	"time"
+
+	"github.com/cockroachdb/errors"
 
 	"github.com/google/uuid"
 
@@ -27,7 +28,7 @@ func (r *clinicRepository) GetByID(ctx context.Context, id uuid.UUID) (*model.Cl
 		if ent.IsNotFound(err) {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("clinic repository: get by id: %w", err)
+		return nil, errors.Wrap(err, "clinic repository: get by id")
 	}
 	return toClinicDomain(row), nil
 }
@@ -38,7 +39,7 @@ func (r *clinicRepository) GetBySlug(ctx context.Context, slug string) (*model.C
 		if ent.IsNotFound(err) {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("clinic repository: get by slug: %w", err)
+		return nil, errors.Wrap(err, "clinic repository: get by slug")
 	}
 	return toClinicDomain(row), nil
 }
@@ -74,9 +75,9 @@ func (r *clinicRepository) CreateShell(ctx context.Context, c *model.Clinic) (*m
 	row, err := create.Save(ctx)
 	if err != nil {
 		if ent.IsConstraintError(err) {
-			return nil, fmt.Errorf("clinic repository: slug taken")
+			return nil, errors.New("clinic repository: slug taken")
 		}
-		return nil, fmt.Errorf("clinic repository: create shell: %w", err)
+		return nil, errors.Wrap(err, "clinic repository: create shell")
 	}
 	return toClinicDomain(row), nil
 }
@@ -84,7 +85,7 @@ func (r *clinicRepository) CreateShell(ctx context.Context, c *model.Clinic) (*m
 func (r *clinicRepository) MarkOnboarded(ctx context.Context, id uuid.UUID, at time.Time) error {
 	err := r.client.Clinic.UpdateOneID(id).SetOnboardedAt(at).Exec(ctx)
 	if err != nil {
-		return fmt.Errorf("clinic repository: mark onboarded: %w", err)
+		return errors.Wrap(err, "clinic repository: mark onboarded")
 	}
 	return nil
 }
@@ -92,7 +93,7 @@ func (r *clinicRepository) MarkOnboarded(ctx context.Context, id uuid.UUID, at t
 func (r *clinicRepository) List(ctx context.Context) ([]*model.Clinic, error) {
 	rows, err := r.client.Clinic.Query().Order(ent.Asc(clinic.FieldName)).All(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("clinic repository: list: %w", err)
+		return nil, errors.Wrap(err, "clinic repository: list")
 	}
 	out := make([]*model.Clinic, 0, len(rows))
 	for _, row := range rows {

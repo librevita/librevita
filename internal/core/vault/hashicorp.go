@@ -3,11 +3,10 @@ package vault
 import (
 	"context"
 	"encoding/base64"
-	"errors"
-	"fmt"
 	"net/http"
 	"strings"
 
+	"github.com/cockroachdb/errors"
 	"github.com/hashicorp/vault/api"
 
 	"librevita.org/internal/core/crypto"
@@ -36,7 +35,7 @@ func NewHashiCorpVault(address, token, mount string) (*HashiCorpVault, error) {
 
 	client, err := api.NewClient(config)
 	if err != nil {
-		return nil, fmt.Errorf("vault: hashicorp client init: %w", err)
+		return nil, errors.Wrap(err, "vault: hashicorp client init")
 	}
 	client.SetToken(token)
 
@@ -61,7 +60,7 @@ func (v *HashiCorpVault) PutDEK(ctx context.Context, patientURN string, encrypte
 		"dek": base64.StdEncoding.EncodeToString(encryptedDEK),
 	}
 	if _, err := v.client.KVv2(v.mount).Put(ctx, path, data); err != nil {
-		return fmt.Errorf("vault: hashicorp put: %w", err)
+		return errors.Wrap(err, "vault: hashicorp put")
 	}
 	return nil
 }
@@ -75,7 +74,7 @@ func (v *HashiCorpVault) GetDEK(ctx context.Context, patientURN string) ([]byte,
 		if isVaultNotFound(err) {
 			return nil, crypto.ErrKeyNotFound
 		}
-		return nil, fmt.Errorf("vault: hashicorp get: %w", err)
+		return nil, errors.Wrap(err, "vault: hashicorp get")
 	}
 	if secret == nil || secret.Data == nil {
 		return nil, crypto.ErrKeyNotFound
@@ -86,7 +85,7 @@ func (v *HashiCorpVault) GetDEK(ctx context.Context, patientURN string) ([]byte,
 	}
 	decoded, err := base64.StdEncoding.DecodeString(rawDEK)
 	if err != nil {
-		return nil, fmt.Errorf("vault: hashicorp decode dek: %w", err)
+		return nil, errors.Wrap(err, "vault: hashicorp decode dek")
 	}
 	if crypto.IsDestroyedDEK(decoded) {
 		return nil, crypto.ErrKeyDestroyed
@@ -113,11 +112,11 @@ func (v *HashiCorpVault) PutIfAbsent(ctx context.Context, patientURN string, enc
 				if errors.Is(getErr, crypto.ErrKeyDestroyed) {
 					return false, getErr
 				}
-				return false, fmt.Errorf("vault: hashicorp verify existing: %w", getErr)
+				return false, errors.Wrap(getErr, "vault: hashicorp verify existing")
 			}
 			return false, nil
 		}
-		return false, fmt.Errorf("vault: hashicorp create: %w", err)
+		return false, errors.Wrap(err, "vault: hashicorp create")
 	}
 	return true, nil
 }
@@ -129,13 +128,13 @@ func (v *HashiCorpVault) DeleteDEK(ctx context.Context, patientURN string) error
 	// DeleteMetadata permanently destroys all secret versions and metadata in KV v2.
 	err := v.client.KVv2(v.mount).DeleteMetadata(ctx, path)
 	if err != nil && !isVaultNotFound(err) {
-		return fmt.Errorf("vault: hashicorp delete metadata: %w", err)
+		return errors.Wrap(err, "vault: hashicorp delete metadata")
 	}
 	data := map[string]interface{}{
 		"dek": base64.StdEncoding.EncodeToString(crypto.DestroyedDEKMarker()),
 	}
 	if _, err := v.client.KVv2(v.mount).Put(ctx, path, data, api.WithCheckAndSet(0)); err != nil {
-		return fmt.Errorf("vault: hashicorp tombstone: %w", err)
+		return errors.Wrap(err, "vault: hashicorp tombstone")
 	}
 	return nil
 }

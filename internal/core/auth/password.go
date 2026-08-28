@@ -2,11 +2,11 @@ package auth
 
 import (
 	"encoding/base64"
-	"errors"
 	"fmt"
 	"strings"
 	"sync"
 
+	"github.com/cockroachdb/errors"
 	"golang.org/x/crypto/argon2"
 
 	"librevita.org/internal/core/crypto"
@@ -62,7 +62,7 @@ func HashPassword(plain string) (string, error) {
 
 	salt, err := crypto.RandomBytes(argonSaltLen)
 	if err != nil {
-		return "", fmt.Errorf("auth: password salt: %w", err)
+		return "", errors.Wrap(err, "auth: password salt")
 	}
 
 	key := argon2.IDKey([]byte(plain), salt, argonTime, argonMemory, argonThreads, argonKeyLen)

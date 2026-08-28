@@ -2,10 +2,9 @@ package crypto
 
 import (
 	"encoding/base64"
-	"errors"
-	"fmt"
 	"log/slog"
 
+	"github.com/cockroachdb/errors"
 	"go.uber.org/fx"
 
 	"librevita.org/internal/core/config"
@@ -25,7 +24,7 @@ var Module = fx.Module("crypto",
 func NewHasherFromConfig(cfg *config.Config, log *slog.Logger) (Hasher, error) {
 	rawMasterKey, err := resolveMasterKey(cfg, log)
 	if err != nil {
-		return nil, fmt.Errorf("crypto: hasher init: %w", err)
+		return nil, errors.Wrap(err, "crypto: hasher init")
 	}
 	defer ZeroBytes(rawMasterKey)
 
@@ -44,7 +43,7 @@ func NewHasherFromConfig(cfg *config.Config, log *slog.Logger) (Hasher, error) {
 func NewEncryptorFromConfig(cfg *config.Config, log *slog.Logger) (Encryptor, error) {
 	rawMasterKey, err := resolveMasterKey(cfg, log)
 	if err != nil {
-		return nil, fmt.Errorf("crypto: encryptor init: %w", err)
+		return nil, errors.Wrap(err, "crypto: encryptor init")
 	}
 	defer ZeroBytes(rawMasterKey)
 
@@ -67,7 +66,7 @@ func NewFromConfig(cfg *config.Config, vault KeyVault, log *slog.Logger) (*Engin
 
 	rawMasterKey, err := resolveMasterKey(cfg, log)
 	if err != nil {
-		return nil, fmt.Errorf("crypto: engine init: %w", err)
+		return nil, errors.Wrap(err, "crypto: engine init")
 	}
 	defer ZeroBytes(rawMasterKey)
 
@@ -93,17 +92,17 @@ func resolveMasterKey(cfg *config.Config, log *slog.Logger) ([]byte, error) {
 		log.Warn("no master key configured; using an ephemeral key (encrypted values reset on restart)")
 		raw, err := RandomBytes(SizeDEK)
 		if err != nil {
-			return nil, fmt.Errorf("generate ephemeral master key: %w", err)
+			return nil, errors.Wrap(err, "generate ephemeral master key")
 		}
 		return raw, nil
 	}
 
 	raw, err := base64.StdEncoding.DecodeString(masterKey)
 	if err != nil {
-		return nil, fmt.Errorf("master key is not valid base64: %w", err)
+		return nil, errors.Wrap(err, "master key is not valid base64")
 	}
 	if len(raw) != SizeDEK {
-		return nil, fmt.Errorf("master key must be 32 bytes, got %d", len(raw))
+		return nil, errors.Newf("master key must be 32 bytes, got %d", len(raw))
 	}
 	return raw, nil
 }

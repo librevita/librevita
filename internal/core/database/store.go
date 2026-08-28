@@ -2,11 +2,11 @@ package database
 
 import (
 	"database/sql"
-	"fmt"
 	"log/slog"
 
 	"entgo.io/ent/dialect"
 	entsql "entgo.io/ent/dialect/sql"
+	"github.com/cockroachdb/errors"
 
 	"librevita.org/ent"
 	"librevita.org/internal/core/config"
@@ -57,7 +57,7 @@ func NewStore(cfg *config.Config, log *slog.Logger) (*Store, error) {
 
 	default:
 		// config.New validates this value; keep a defensive check here.
-		return nil, fmt.Errorf("database: unknown driver %q", cfg.Database.Driver)
+		return nil, errors.Newf("database: unknown driver %q", cfg.Database.Driver)
 	}
 }
 

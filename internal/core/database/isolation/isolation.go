@@ -3,10 +3,10 @@ package isolation
 
 import (
 	"context"
-	"fmt"
 
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
+	"github.com/cockroachdb/errors"
 	"github.com/google/uuid"
 
 	entgen "librevita.org/ent"
@@ -77,7 +77,7 @@ func MutationHook() ent.Hook {
 			if m.Op().Is(ent.OpCreate) {
 				if setter, ok := m.(clinicIDMutation); ok {
 					if existing, set := setter.ClinicID(); set && existing != uuid.Nil && existing != id {
-						return nil, fmt.Errorf("isolation: clinic_id mismatch")
+						return nil, errors.New("isolation: clinic_id mismatch")
 					}
 					setter.SetClinicID(id)
 				}

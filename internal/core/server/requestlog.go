@@ -1,11 +1,11 @@
 package server
 
 import (
-	"errors"
 	"log/slog"
 	"net/http"
 	"time"
 
+	"github.com/cockroachdb/errors"
 	"github.com/labstack/echo/v4"
 )
 

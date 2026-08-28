@@ -2,9 +2,9 @@ package usecase
 
 import (
 	"context"
-	"fmt"
 	"strings"
 
+	"github.com/cockroachdb/errors"
 	"github.com/google/uuid"
 )
 
@@ -26,7 +26,7 @@ func (s *Service) CreateRole(ctx context.Context, name string, clinical bool) (*
 	}
 	id, err := uuid.NewV7()
 	if err != nil {
-		return nil, fmt.Errorf("usecase: generate role id: %w", err)
+		return nil, errors.Wrap(err, "usecase: generate role id")
 	}
 	return s.roleRepo.Create(ctx, &Role{
 		ID:         id,
@@ -46,11 +46,11 @@ func (s *Service) RenameRole(ctx context.Context, id, name string) (*Role, error
 	}
 	rUUID, err := uuid.Parse(id)
 	if err != nil {
-		return nil, fmt.Errorf("usecase: invalid role id: %w", err)
+		return nil, errors.Wrap(err, "usecase: invalid role id")
 	}
 	current, err := s.roleRepo.GetByID(ctx, rUUID)
 	if err != nil {
-		return nil, fmt.Errorf("usecase: load role: %w", err)
+		return nil, errors.Wrap(err, "usecase: load role")
 	}
 	if current.System {
 		return nil, ErrSystemRole
@@ -66,18 +66,18 @@ func (s *Service) RenameRole(ctx context.Context, id, name string) (*Role, error
 func (s *Service) DeleteRole(ctx context.Context, id string) error {
 	rUUID, err := uuid.Parse(id)
 	if err != nil {
-		return fmt.Errorf("usecase: invalid role id: %w", err)
+		return errors.Wrap(err, "usecase: invalid role id")
 	}
 	current, err := s.roleRepo.GetByID(ctx, rUUID)
 	if err != nil {
-		return fmt.Errorf("usecase: load role: %w", err)
+		return errors.Wrap(err, "usecase: load role")
 	}
 	if current.System {
 		return ErrSystemRole
 	}
 	count, err := s.roleRepo.CountUsersWithRole(ctx, rUUID)
 	if err != nil {
-		return fmt.Errorf("usecase: count role users: %w", err)
+		return errors.Wrap(err, "usecase: count role users")
 	}
 	if count > 0 {
 		return ErrRoleInUse
@@ -89,11 +89,11 @@ func (s *Service) DeleteRole(ctx context.Context, id string) error {
 func (s *Service) SetRoleClinical(ctx context.Context, id string, clinical bool) error {
 	rUUID, err := uuid.Parse(id)
 	if err != nil {
-		return fmt.Errorf("usecase: invalid role id: %w", err)
+		return errors.Wrap(err, "usecase: invalid role id")
 	}
 	current, err := s.roleRepo.GetByID(ctx, rUUID)
 	if err != nil {
-		return fmt.Errorf("usecase: load role: %w", err)
+		return errors.Wrap(err, "usecase: load role")
 	}
 	if current.System {
 		return ErrSystemRole
@@ -104,7 +104,7 @@ func (s *Service) SetRoleClinical(ctx context.Context, id string, clinical bool)
 		IsClinical: clinical,
 	})
 	if err != nil {
-		return fmt.Errorf("usecase: set role clinical: %w", err)
+		return errors.Wrap(err, "usecase: set role clinical")
 	}
 	return nil
 }
@@ -113,7 +113,7 @@ func (s *Service) SetRoleClinical(ctx context.Context, id string, clinical bool)
 func (s *Service) RoleByID(ctx context.Context, id string) (*Role, error) {
 	rUUID, err := uuid.Parse(id)
 	if err != nil {
-		return nil, fmt.Errorf("usecase: invalid role id: %w", err)
+		return nil, errors.Wrap(err, "usecase: invalid role id")
 	}
 	return s.roleRepo.GetByID(ctx, rUUID)
 }

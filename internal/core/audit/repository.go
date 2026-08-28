@@ -2,8 +2,9 @@ package audit
 
 import (
 	"context"
-	"fmt"
 	"time"
+
+	"github.com/cockroachdb/errors"
 
 	"github.com/google/uuid"
 
@@ -34,7 +35,7 @@ func (r *auditRepository) Recent(ctx context.Context, limit int, before int64) (
 		Limit(limit).
 		All(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("audit: recent: %w", err)
+		return nil, errors.Wrap(err, "audit: recent")
 	}
 
 	out := make([]EventRow, 0, len(rows))
@@ -63,7 +64,7 @@ func (r *auditRepository) ForResource(ctx context.Context, resource string, limi
 		Limit(limit).
 		All(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("audit: for resource: %w", err)
+		return nil, errors.Wrap(err, "audit: for resource")
 	}
 
 	out := make([]EventRow, 0, len(rows))
@@ -91,7 +92,7 @@ func (r *auditRepository) LastSignature(ctx context.Context) (string, error) {
 		return "", nil
 	}
 	if err != nil {
-		return "", fmt.Errorf("audit: last signature: %w", err)
+		return "", errors.Wrap(err, "audit: last signature")
 	}
 	return last.Signature, nil
 }
@@ -133,7 +134,7 @@ func (r *auditRepository) Record(ctx context.Context, ev Event, createdAt time.T
 
 	_, err := create.Save(ctx)
 	if err != nil {
-		return fmt.Errorf("audit: insert: %w", err)
+		return errors.Wrap(err, "audit: insert")
 	}
 	return nil
 }
@@ -144,7 +145,7 @@ func (r *auditRepository) All(ctx context.Context) ([]StoredEntry, error) {
 		Order(ent.Asc(auditlog.FieldID)).
 		All(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("audit: all: %w", err)
+		return nil, errors.Wrap(err, "audit: all")
 	}
 
 	out := make([]StoredEntry, 0, len(rows))

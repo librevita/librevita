@@ -2,11 +2,10 @@ package vault
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"strings"
 	"time"
 
+	"github.com/cockroachdb/errors"
 	clientv3 "go.etcd.io/etcd/client/v3"
 
 	"librevita.org/internal/core/crypto"
@@ -40,7 +39,7 @@ func NewEtcdVault(endpointsStr, prefix string) (*EtcdVault, error) {
 		DialTimeout: 5 * time.Second,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("vault: etcd client init: %w", err)
+		return nil, errors.Wrap(err, "vault: etcd client init")
 	}
 
 	return &EtcdVault{
@@ -63,7 +62,7 @@ func (v *EtcdVault) PutDEK(ctx context.Context, patientURN string, encryptedDEK 
 		return err
 	}
 	if _, err := v.cli.Put(ctx, k, string(encryptedDEK)); err != nil {
-		return fmt.Errorf("vault: etcd put: %w", err)
+		return errors.Wrap(err, "vault: etcd put")
 	}
 	return nil
 }
@@ -77,7 +76,7 @@ func (v *EtcdVault) GetDEK(ctx context.Context, patientURN string) ([]byte, erro
 	k := v.key(patientURN)
 	resp, err := v.cli.Get(ctx, k)
 	if err != nil {
-		return nil, fmt.Errorf("vault: etcd get: %w", err)
+		return nil, errors.Wrap(err, "vault: etcd get")
 	}
 	if len(resp.Kvs) == 0 {
 		return nil, crypto.ErrKeyNotFound
@@ -111,7 +110,7 @@ func (v *EtcdVault) GetDEKs(ctx context.Context, patientURNs []string) (map[stri
 		}
 		resp, err := v.cli.Txn(ctx).Then(ops...).Commit()
 		if err != nil {
-			return nil, fmt.Errorf("vault: etcd batch get: %w", err)
+			return nil, errors.Wrap(err, "vault: etcd batch get")
 		}
 		for i, urn := range unique[start:end] {
 			rangeResp := resp.Responses[i].GetResponseRange()
@@ -143,7 +142,7 @@ func (v *EtcdVault) PutIfAbsent(ctx context.Context, patientURN string, encrypte
 		Then(clientv3.OpPut(k, string(encryptedDEK))).
 		Commit()
 	if err != nil {
-		return false, fmt.Errorf("vault: etcd create: %w", err)
+		return false, errors.Wrap(err, "vault: etcd create")
 	}
 	return resp.Succeeded, nil
 }
@@ -156,7 +155,7 @@ func (v *EtcdVault) DeleteDEK(ctx context.Context, patientURN string) error {
 	}
 	k := v.key(patientURN)
 	if _, err := v.cli.Put(ctx, k, string(crypto.DestroyedDEKMarker())); err != nil {
-		return fmt.Errorf("vault: etcd tombstone: %w", err)
+		return errors.Wrap(err, "vault: etcd tombstone")
 	}
 	return nil
 }

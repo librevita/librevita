@@ -1,9 +1,10 @@
 package model
 
 import (
-	"errors"
 	"regexp"
 	"strings"
+
+	"github.com/cockroachdb/errors"
 )
 
 // RawSystem is the reserved URN of the built-in fallback strategy. It

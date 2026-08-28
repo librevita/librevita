@@ -14,10 +14,11 @@ package storage
 
 import (
 	"context"
-	"errors"
 	"io"
 	"strings"
 	"time"
+
+	"github.com/cockroachdb/errors"
 )
 
 // ErrNotFound is returned when the object does not exist. Use

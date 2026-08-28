@@ -5,7 +5,6 @@
 package config
 
 import (
-	"errors"
 	"fmt"
 	"net"
 	"net/url"
@@ -13,6 +12,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/cockroachdb/errors"
 	"github.com/joho/godotenv"
 	"github.com/knadh/koanf/parsers/json"
 	"github.com/knadh/koanf/parsers/yaml"
@@ -438,7 +438,7 @@ func New() (*Config, error) {
 
 	// Keep support for .env files. Existing process variables take precedence.
 	if err := godotenv.Load(".env"); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return nil, fmt.Errorf("config: failed to read .env: %w", err)
+		return nil, errors.Wrap(err, "config: failed to read .env")
 	}
 
 	cfg, err := load(pflag.CommandLine)
@@ -446,7 +446,7 @@ func New() (*Config, error) {
 		return nil, err
 	}
 	if err := os.MkdirAll(cfg.DataDir, 0o750); err != nil {
-		return nil, fmt.Errorf("config: failed to create data directory %q: %w", cfg.DataDir, err)
+		return nil, errors.Wrapf(err, "config: failed to create data directory %q", cfg.DataDir)
 	}
 	return cfg, nil
 }
@@ -455,10 +455,10 @@ func load(fs *pflag.FlagSet) (*Config, error) {
 	// Resolve the configuration file before loading the remaining sources.
 	bootstrap := koanf.New(".")
 	if err := loadEnvironment(bootstrap); err != nil {
-		return nil, fmt.Errorf("config: environment: %w", err)
+		return nil, errors.Wrap(err, "config: environment")
 	}
 	if err := loadFlags(bootstrap, fs); err != nil {
-		return nil, fmt.Errorf("config: flags: %w", err)
+		return nil, errors.Wrap(err, "config: flags")
 	}
 
 	configFile := bootstrap.String(keyConfigFile)
@@ -473,19 +473,19 @@ func load(fs *pflag.FlagSet) (*Config, error) {
 			return nil, err
 		}
 		if err := k.Load(file.Provider(configFile), parser); err != nil {
-			return nil, fmt.Errorf("config: failed to read %q: %w", configFile, err)
+			return nil, errors.Wrapf(err, "config: failed to read %q", configFile)
 		}
 	}
 	if err := loadEnvironment(k); err != nil {
-		return nil, fmt.Errorf("config: environment: %w", err)
+		return nil, errors.Wrap(err, "config: environment")
 	}
 	if err := loadFlags(k, fs); err != nil {
-		return nil, fmt.Errorf("config: flags: %w", err)
+		return nil, errors.Wrap(err, "config: flags")
 	}
 
 	var cfg Config
 	if err := k.Unmarshal("", &cfg); err != nil {
-		return nil, fmt.Errorf("config: decode: %w", err)
+		return nil, errors.Wrap(err, "config: decode")
 	}
 
 	cfg.ConfigFile = configFile
@@ -607,31 +607,31 @@ func (c *Config) normalize() {
 
 func (c *Config) validate() error {
 	if c.IsProduction() && strings.TrimSpace(c.BaseDomain) == "" {
-		return fmt.Errorf("config: base_domain is required in production (LIBREVITA_BASE_DOMAIN)")
+		return errors.New("config: base_domain is required in production (LIBREVITA_BASE_DOMAIN)")
 	}
 
 	switch c.Crypto.HashAlgorithm {
 	case "", "blake2s", "blake2b":
 	default:
-		return fmt.Errorf("config: invalid crypto.hash_algorithm %q (active supported: \"blake2s\", \"blake2b\")", c.Crypto.HashAlgorithm)
+		return errors.Newf("config: invalid crypto.hash_algorithm %q (active supported: \"blake2s\", \"blake2b\")", c.Crypto.HashAlgorithm)
 	}
 
 	switch c.Crypto.EncryptionCipher {
 	case "", "xchacha20-poly1305", "xchacha20poly1305":
 	default:
-		return fmt.Errorf("config: invalid crypto.encryption_cipher %q (active supported: \"xchacha20-poly1305\")", c.Crypto.EncryptionCipher)
+		return errors.Newf("config: invalid crypto.encryption_cipher %q (active supported: \"xchacha20-poly1305\")", c.Crypto.EncryptionCipher)
 	}
 
 	switch c.Vault.Backend {
 	case "", "bbolt", "nats", "etcd", "hashicorp", "hashicorp_vault", "openbao":
 	default:
-		return fmt.Errorf("config: invalid vault.backend %q (use \"bbolt\", \"nats\", \"etcd\", \"hashicorp\", \"hashicorp_vault\", or \"openbao\")", c.Vault.Backend)
+		return errors.Newf("config: invalid vault.backend %q (use \"bbolt\", \"nats\", \"etcd\", \"hashicorp\", \"hashicorp_vault\", or \"openbao\")", c.Vault.Backend)
 	}
 
 	switch c.Database.Driver {
 	case DriverSQLite, DriverPostgres, DriverDqlite:
 	default:
-		return fmt.Errorf("config: invalid database.driver %q (use %q, %q, or %q)",
+		return errors.Newf("config: invalid database.driver %q (use %q, %q, or %q)",
 			c.Database.Driver, DriverSQLite, DriverPostgres, DriverDqlite)
 	}
 	if c.Database.Driver == DriverDqlite {
@@ -642,12 +642,12 @@ func (c *Config) validate() error {
 			}
 		}
 		if addresses == 0 && c.Database.Dqlite.DiscoverySRV == "" {
-			return fmt.Errorf("config: database.dqlite.addrs requires at least one node address (e.g. \"node1:9001,node2:9001,node3:9001\") or database.dqlite.discovery_srv (an SRV record)")
+			return errors.New("config: database.dqlite.addrs requires at least one node address (e.g. \"node1:9001,node2:9001,node3:9001\") or database.dqlite.discovery_srv (an SRV record)")
 		}
 	}
 
 	if c.HTTPPort > 65535 {
-		return fmt.Errorf("config: invalid http_port %d (max 65535)", c.HTTPPort)
+		return errors.Newf("config: invalid http_port %d (max 65535)", c.HTTPPort)
 	}
 
 	// A typo here would silently degrade to trusting the remote address
@@ -662,7 +662,7 @@ func (c *Config) validate() error {
 				continue
 			}
 			if net.ParseIP(p) == nil {
-				return fmt.Errorf("config: invalid trusted_proxies entry %q (use CIDR or IP, comma-separated)", p)
+				return errors.Newf("config: invalid trusted_proxies entry %q (use CIDR or IP, comma-separated)", p)
 			}
 		}
 	}
@@ -671,7 +671,7 @@ func (c *Config) validate() error {
 	case LogModeConsole, LogModeFile, LogModeRotating:
 		return nil
 	default:
-		return fmt.Errorf("config: invalid logging.mode %q (use %q, %q, or %q)",
+		return errors.Newf("config: invalid logging.mode %q (use %q, %q, or %q)",
 			c.Logging.Mode, LogModeConsole, LogModeFile, LogModeRotating)
 	}
 }
@@ -922,6 +922,6 @@ func parserFor(path string) (koanf.Parser, error) {
 	case ".json":
 		return json.Parser(), nil
 	default:
-		return nil, fmt.Errorf("config: unsupported extension in %q (use .yaml, .yml, or .json)", path)
+		return nil, errors.Newf("config: unsupported extension in %q (use .yaml, .yml, or .json)", path)
 	}
 }

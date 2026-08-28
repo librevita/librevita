@@ -2,8 +2,8 @@ package repository
 
 import (
 	"context"
-	"fmt"
 
+	"github.com/cockroachdb/errors"
 	"github.com/google/uuid"
 
 	"librevita.org/ent"
@@ -27,7 +27,7 @@ func (r *roleRepository) List(ctx context.Context) ([]usermodel.Role, error) {
 		Order(ent.Desc(role.FieldSystem), ent.Asc(role.FieldName)).
 		All(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("role repository: list: %w", err)
+		return nil, errors.Wrap(err, "role repository: list")
 	}
 
 	rows := make([]usermodel.Role, 0, len(roles))
@@ -41,9 +41,9 @@ func (r *roleRepository) GetByID(ctx context.Context, id uuid.UUID) (*usermodel.
 	rl, err := r.client.Role.Get(ctx, id)
 	if err != nil {
 		if ent.IsNotFound(err) {
-			return nil, fmt.Errorf("role repository: role not found")
+			return nil, errors.New("role repository: role not found")
 		}
-		return nil, fmt.Errorf("role repository: get by id: %w", err)
+		return nil, errors.Wrap(err, "role repository: get by id")
 	}
 	return toRoleDomain(rl), nil
 }
@@ -52,9 +52,9 @@ func (r *roleRepository) GetByName(ctx context.Context, name string) (*usermodel
 	rl, err := r.client.Role.Query().Where(role.NameEQ(name)).Only(ctx)
 	if err != nil {
 		if ent.IsNotFound(err) {
-			return nil, fmt.Errorf("role repository: role not found: %s", name)
+			return nil, errors.Newf("role repository: role not found: %s", name)
 		}
-		return nil, fmt.Errorf("role repository: get by name: %w", err)
+		return nil, errors.Wrap(err, "role repository: get by name")
 	}
 	return toRoleDomain(rl), nil
 }
@@ -73,7 +73,7 @@ func (r *roleRepository) Create(ctx context.Context, roleModel *usermodel.Role) 
 		if ent.IsConstraintError(err) {
 			return nil, usermodel.ErrDuplicateRole
 		}
-		return nil, fmt.Errorf("role repository: create: %w", err)
+		return nil, errors.Wrap(err, "role repository: create")
 	}
 	return toRoleDomain(saved), nil
 }
@@ -88,7 +88,7 @@ func (r *roleRepository) Update(ctx context.Context, roleModel *usermodel.Role) 
 		if ent.IsConstraintError(err) {
 			return nil, usermodel.ErrDuplicateRole
 		}
-		return nil, fmt.Errorf("role repository: update: %w", err)
+		return nil, errors.Wrap(err, "role repository: update")
 	}
 	return toRoleDomain(saved), nil
 }
@@ -96,7 +96,7 @@ func (r *roleRepository) Update(ctx context.Context, roleModel *usermodel.Role) 
 func (r *roleRepository) Delete(ctx context.Context, id uuid.UUID) error {
 	err := r.client.Role.DeleteOneID(id).Exec(ctx)
 	if err != nil {
-		return fmt.Errorf("role repository: delete: %w", err)
+		return errors.Wrap(err, "role repository: delete")
 	}
 	return nil
 }
@@ -104,7 +104,7 @@ func (r *roleRepository) Delete(ctx context.Context, id uuid.UUID) error {
 func (r *roleRepository) CountUsersWithRole(ctx context.Context, roleID uuid.UUID) (int, error) {
 	count, err := r.client.User.Query().Where(user.RoleIDEQ(roleID)).Count(ctx)
 	if err != nil {
-		return 0, fmt.Errorf("role repository: count users: %w", err)
+		return 0, errors.Wrap(err, "role repository: count users")
 	}
 	return count, nil
 }
@@ -127,7 +127,7 @@ func (r *roleRepository) SeedDefaults(ctx context.Context) error {
 	for _, dr := range defaultRoles {
 		exists, err := r.client.Role.Query().Where(role.NameEQ(dr.name)).Exist(ctx)
 		if err != nil {
-			return fmt.Errorf("role repository: seed check %q: %w", dr.name, err)
+			return errors.Wrapf(err, "role repository: seed check %q", dr.name)
 		}
 		if exists {
 			continue
@@ -143,7 +143,7 @@ func (r *roleRepository) SeedDefaults(ctx context.Context) error {
 			SetSystem(true).
 			SetIsClinical(dr.isClinical).
 			Exec(ctx); err != nil && !ent.IsConstraintError(err) {
-			return fmt.Errorf("role repository: seed insert %q: %w", dr.name, err)
+			return errors.Wrapf(err, "role repository: seed insert %q", dr.name)
 		}
 	}
 	return nil

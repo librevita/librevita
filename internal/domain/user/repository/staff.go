@@ -2,9 +2,9 @@ package repository
 
 import (
 	"context"
-	"fmt"
 	"time"
 
+	"github.com/cockroachdb/errors"
 	"github.com/google/uuid"
 
 	"librevita.org/ent"
@@ -34,7 +34,7 @@ func (r *staffRequestRepository) Create(ctx context.Context, req *usermodel.Staf
 	}
 	saved, err := create.Save(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("staff request repository: create: %w", err)
+		return nil, errors.Wrap(err, "staff request repository: create")
 	}
 
 	return toStaffChangeRequestDomain(saved), nil
@@ -46,7 +46,7 @@ func (r *staffRequestRepository) GetByID(ctx context.Context, id uuid.UUID) (*us
 		if ent.IsNotFound(err) {
 			return nil, usermodel.ErrRequestNotFound
 		}
-		return nil, fmt.Errorf("staff request repository: get by id: %w", err)
+		return nil, errors.Wrap(err, "staff request repository: get by id")
 	}
 	return toStaffChangeRequestDomain(req), nil
 }
@@ -59,7 +59,7 @@ func (r *staffRequestRepository) ListByRequester(ctx context.Context, requesterI
 		Limit(limit).
 		All(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("staff request repository: list by requester: %w", err)
+		return nil, errors.Wrap(err, "staff request repository: list by requester")
 	}
 
 	rows := make([]usermodel.ListStaffChangeRequestsByRequesterRow, 0, len(requests))
@@ -107,7 +107,7 @@ func (r *staffRequestRepository) ListFiltered(ctx context.Context, status, q str
 
 	requests, err := query.Limit(limit).Offset(offset).All(ctx)
 	if err != nil {
-		return nil, 0, fmt.Errorf("staff request repository: list filtered: %w", err)
+		return nil, 0, errors.Wrap(err, "staff request repository: list filtered")
 	}
 
 	countQuery := r.client.StaffChangeRequest.Query()
@@ -125,7 +125,7 @@ func (r *staffRequestRepository) ListFiltered(ctx context.Context, status, q str
 	}
 	total, err := countQuery.Count(ctx)
 	if err != nil {
-		return nil, 0, fmt.Errorf("staff request repository: count filtered: %w", err)
+		return nil, 0, errors.Wrap(err, "staff request repository: count filtered")
 	}
 
 	rows := make([]usermodel.ListStaffChangeRequestsFilteredRow, 0, len(requests))
@@ -176,7 +176,7 @@ func (r *staffRequestRepository) Reject(ctx context.Context, id, deciderID uuid.
 		if ent.IsNotFound(err) {
 			return usermodel.ErrRequestNotFound
 		}
-		return fmt.Errorf("staff request repository: reject: %w", err)
+		return errors.Wrap(err, "staff request repository: reject")
 	}
 	return nil
 }

@@ -4,10 +4,10 @@ package vault
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"path/filepath"
 
+	"github.com/cockroachdb/errors"
 	"go.etcd.io/bbolt"
 
 	"librevita.org/internal/core/crypto"
@@ -23,12 +23,12 @@ type BBoltVault struct {
 // NewBBoltVault creates or opens a bbolt KeyVault database at dbPath.
 func NewBBoltVault(dbPath string) (*BBoltVault, error) {
 	if err := os.MkdirAll(filepath.Dir(dbPath), 0o700); err != nil {
-		return nil, fmt.Errorf("vault: mkdir: %w", err)
+		return nil, errors.Wrap(err, "vault: mkdir")
 	}
 
 	db, err := bbolt.Open(dbPath, 0o600, nil)
 	if err != nil {
-		return nil, fmt.Errorf("vault: open bbolt: %w", err)
+		return nil, errors.Wrap(err, "vault: open bbolt")
 	}
 
 	err = db.Update(func(tx *bbolt.Tx) error {
@@ -37,7 +37,7 @@ func NewBBoltVault(dbPath string) (*BBoltVault, error) {
 	})
 	if err != nil {
 		_ = db.Close()
-		return nil, fmt.Errorf("vault: init bucket: %w", err)
+		return nil, errors.Wrap(err, "vault: init bucket")
 	}
 
 	return &BBoltVault{db: db}, nil

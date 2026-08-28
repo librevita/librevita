@@ -13,12 +13,11 @@ package policy
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"log/slog"
 	"sync"
 	"time"
 
+	"github.com/cockroachdb/errors"
 	"github.com/google/cel-go/cel"
 	"github.com/google/cel-go/common/types"
 	"github.com/google/uuid"
@@ -177,7 +176,7 @@ func NewPolicyEngine(repo Repository, log *slog.Logger) (*PolicyEngine, error) {
 		cel.Variable("context", cel.MapType(cel.StringType, cel.AnyType)),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("policy: cel environment: %w", err)
+		return nil, errors.Wrap(err, "policy: cel environment")
 	}
 
 	return &PolicyEngine{
@@ -204,7 +203,7 @@ func (pe *PolicyEngine) loadClinic(ctx context.Context, id uuid.UUID) error {
 	}
 	rows, err := pe.repo.List(ctx)
 	if err != nil {
-		return fmt.Errorf("policy: list: %w", err)
+		return errors.Wrap(err, "policy: list")
 	}
 	compiled := make(map[string]cel.Program, len(rows))
 	for _, row := range rows {
@@ -266,10 +265,10 @@ func (pe *PolicyEngine) Set(ctx context.Context, name, expression string, actor 
 	if criticalPolicies[name] {
 		allowed, err := evaluate(prog, &adminFixture, RequestInfo{Method: "GET", Path: "/admin"}, nil, nil)
 		if err != nil {
-			return fmt.Errorf("policy: %q would break admin access: %w", name, err)
+			return errors.Wrapf(err, "policy: %q would break admin access", name)
 		}
 		if !allowed {
-			return fmt.Errorf("policy: change to %q would deny access to the admin panel (self-lockout rejected)", name)
+			return errors.Newf("policy: change to %q would deny access to the admin panel (self-lockout rejected)", name)
 		}
 	}
 
@@ -341,7 +340,7 @@ func (pe *PolicyEngine) program(ctx context.Context, name string) (cel.Program, 
 	prog, ok := pe.progs[id][name]
 	pe.mu.RUnlock()
 	if !ok {
-		return nil, fmt.Errorf("%w: %q", ErrPolicyNotFound, name)
+		return nil, errors.Wrapf(ErrPolicyNotFound, "%q", name)
 	}
 	return prog, nil
 }
@@ -365,14 +364,14 @@ func (pe *PolicyEngine) contextMap(ctx context.Context) map[string]any {
 func (pe *PolicyEngine) compile(name, expression string) (cel.Program, error) {
 	ast, issues := pe.env.Compile(expression)
 	if issues != nil && issues.Err() != nil {
-		return nil, fmt.Errorf("policy: %q compile error: %w", name, issues.Err())
+		return nil, errors.Wrapf(issues.Err(), "policy: %q compile error", name)
 	}
 	if ast.OutputType() != cel.BoolType {
-		return nil, fmt.Errorf("policy: %q expression must evaluate to a boolean, got %s", name, ast.OutputType().TypeName())
+		return nil, errors.Newf("policy: %q expression must evaluate to a boolean, got %s", name, ast.OutputType().TypeName())
 	}
 	prog, err := pe.env.Program(ast)
 	if err != nil {
-		return nil, fmt.Errorf("policy: %q program error: %w", name, err)
+		return nil, errors.Wrapf(err, "policy: %q program error", name)
 	}
 	return prog, nil
 }
@@ -432,11 +431,11 @@ func evaluate(prog cel.Program, p *auth.Principal, req RequestInfo, resource, ct
 		"context":   ctx,
 	})
 	if err != nil {
-		return false, fmt.Errorf("eval: %w", err)
+		return false, errors.Wrap(err, "eval")
 	}
 	b, ok := out.(types.Bool)
 	if !ok {
-		return false, fmt.Errorf("policy evaluated to non-bool %T", out)
+		return false, errors.Newf("policy evaluated to non-bool %T", out)
 	}
 	return bool(b), nil
 }

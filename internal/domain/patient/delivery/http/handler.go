@@ -3,12 +3,11 @@ package http
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
 
+	"github.com/cockroachdb/errors"
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 
@@ -511,7 +510,7 @@ func (h *Handler) Shred(c echo.Context) error {
 	}
 	clinicUUID, err := uuid.Parse(clinicID)
 	if err != nil {
-		return fmt.Errorf("patient shred: invalid clinic id: %w", err)
+		return errors.Wrap(err, "patient shred: invalid clinic id")
 	}
 	if err := h.engine.DeletePatientDEKForClinic(ctx, clinicUUID, id); err != nil {
 		return err

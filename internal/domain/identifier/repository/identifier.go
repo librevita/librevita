@@ -2,8 +2,8 @@ package repository
 
 import (
 	"context"
-	"fmt"
 
+	"github.com/cockroachdb/errors"
 	"github.com/google/uuid"
 
 	"librevita.org/ent"
@@ -41,7 +41,7 @@ func (r *identifierRepository) Add(ctx context.Context, rec identifiermodel.Iden
 		if ent.IsConstraintError(err) {
 			return nil, identifiermodel.ErrDuplicate
 		}
-		return nil, fmt.Errorf("identifier repository: add: %w", err)
+		return nil, errors.Wrap(err, "identifier repository: add")
 	}
 	return toIdentifierRecordDomain(saved), nil
 }
@@ -54,7 +54,7 @@ func (r *identifierRepository) AllowsSystem(ctx context.Context, clinicID uuid.U
 		).
 		Exist(ctx)
 	if err != nil {
-		return false, fmt.Errorf("identifier repository: allows system: %w", err)
+		return false, errors.Wrap(err, "identifier repository: allows system")
 	}
 	return ok, nil
 }
@@ -70,7 +70,7 @@ func (r *identifierRepository) FindByBlindIndex(ctx context.Context, clinicID uu
 		if ent.IsNotFound(err) {
 			return nil, identifiermodel.ErrNotFound
 		}
-		return nil, fmt.Errorf("identifier repository: find by blind index: %w", err)
+		return nil, errors.Wrap(err, "identifier repository: find by blind index")
 	}
 	return toIdentifierRecordDomain(row), nil
 }
@@ -81,7 +81,7 @@ func (r *identifierRepository) ListByPatient(ctx context.Context, patientID uuid
 		Order(ent.Asc(patientidentifier.FieldCreatedAt)).
 		All(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("identifier repository: list by patient: %w", err)
+		return nil, errors.Wrap(err, "identifier repository: list by patient")
 	}
 	out := make([]identifiermodel.IdentifierRecord, 0, len(rows))
 	for _, row := range rows {
@@ -98,7 +98,7 @@ func (r *identifierRepository) ListByPatients(ctx context.Context, patientIDs []
 		Where(patientidentifier.PatientIDIn(patientIDs...)).
 		All(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("identifier repository: list by patients: %w", err)
+		return nil, errors.Wrap(err, "identifier repository: list by patients")
 	}
 	out := make([]identifiermodel.IdentifierRecord, 0, len(rows))
 	for _, row := range rows {
@@ -115,7 +115,7 @@ func (r *identifierRepository) Remove(ctx context.Context, patientID, identifier
 		).
 		Exec(ctx)
 	if err != nil {
-		return fmt.Errorf("identifier repository: remove: %w", err)
+		return errors.Wrap(err, "identifier repository: remove")
 	}
 	if count == 0 {
 		return identifiermodel.ErrNotFound

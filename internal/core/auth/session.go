@@ -6,15 +6,14 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"time"
 
 	"aidanwoods.dev/go-paseto"
+	"github.com/cockroachdb/errors"
 	"github.com/google/uuid"
-
 	"librevita.org/internal/core/clinicctx"
 	"librevita.org/internal/core/config"
 	"librevita.org/internal/core/crypto"
@@ -98,14 +97,14 @@ func NewSessionManager(repo SessionRepository, cfg *config.Config, log *slog.Log
 		var randErr error
 		raw, randErr = crypto.RandomBytes(32)
 		if randErr != nil {
-			return nil, fmt.Errorf("auth: ephemeral paseto key: %w", randErr)
+			return nil, errors.Wrap(randErr, "auth: ephemeral paseto key")
 		}
 	}
 
 	key, err := paseto.V4SymmetricKeyFromBytes(raw)
 	if err != nil {
 		crypto.ZeroBytes(raw)
-		return nil, fmt.Errorf("auth: paseto key: %w", err)
+		return nil, errors.Wrap(err, "auth: paseto key")
 	}
 
 	algo := ""
@@ -118,7 +117,7 @@ func NewSessionManager(repo SessionRepository, cfg *config.Config, log *slog.Log
 	hasher, err := crypto.NewHasher(raw, crypto.WithHashAlgorithm(algo))
 	crypto.ZeroBytes(raw)
 	if err != nil {
-		return nil, fmt.Errorf("auth: session hasher init: %w", err)
+		return nil, errors.Wrap(err, "auth: session hasher init")
 	}
 
 	secure := false
@@ -150,7 +149,7 @@ func (m *SessionManager) Create(ctx context.Context, p Principal) (string, error
 
 	jtiHex, err := crypto.RandomHex(32)
 	if err != nil {
-		return "", fmt.Errorf("auth: session id: %w", err)
+		return "", errors.Wrap(err, "auth: session id")
 	}
 
 	token := paseto.NewToken()
@@ -162,7 +161,7 @@ func (m *SessionManager) Create(ctx context.Context, p Principal) (string, error
 
 	userUUID, err := uuid.Parse(p.ID)
 	if err != nil {
-		return "", fmt.Errorf("auth: invalid user id: %w", err)
+		return "", errors.Wrap(err, "auth: invalid user id")
 	}
 
 	hashed := m.hashToken(jtiHex)
@@ -171,12 +170,12 @@ func (m *SessionManager) Create(ctx context.Context, p Principal) (string, error
 			return "", errors.New("auth: platform session repository is not configured")
 		}
 		if err := m.platform.Create(ctx, hashed, userUUID, expires); err != nil {
-			return "", fmt.Errorf("auth: store platform session: %w", err)
+			return "", errors.Wrap(err, "auth: store platform session")
 		}
 		return rawToken, nil
 	}
 	if err := m.repo.Create(ctx, hashed, userUUID, expires); err != nil {
-		return "", fmt.Errorf("auth: store session: %w", err)
+		return "", errors.Wrap(err, "auth: store session")
 	}
 	return rawToken, nil
 }
@@ -349,10 +348,10 @@ func decodeKey(encoded string) ([]byte, error) {
 	}
 	raw, err := base64.StdEncoding.DecodeString(encoded)
 	if err != nil {
-		return nil, fmt.Errorf("auth: paseto key is not valid base64: %w", err)
+		return nil, errors.Wrap(err, "auth: paseto key is not valid base64")
 	}
 	if len(raw) != 32 {
-		return nil, fmt.Errorf("auth: paseto key must be 32 bytes, got %d", len(raw))
+		return nil, errors.Newf("auth: paseto key must be 32 bytes, got %d", len(raw))
 	}
 	return raw, nil
 }

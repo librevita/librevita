@@ -3,7 +3,8 @@ package crypto
 import (
 	"bytes"
 	"context"
-	"errors"
+
+	"github.com/cockroachdb/errors"
 )
 
 var (

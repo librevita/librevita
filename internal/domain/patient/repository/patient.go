@@ -2,11 +2,11 @@ package repository
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	entsql "entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqljson"
+	"github.com/cockroachdb/errors"
 	"github.com/google/uuid"
 
 	"librevita.org/ent"
@@ -79,7 +79,7 @@ func (r *patientRepository) Create(ctx context.Context, p patientmodel.Patient) 
 
 	saved, err := create.Save(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("patient repository: create: %w", err)
+		return nil, errors.Wrap(err, "patient repository: create")
 	}
 	return toDomainPatient(saved), nil
 }
@@ -95,7 +95,7 @@ func (r *patientRepository) Get(ctx context.Context, clinicID, patientID uuid.UU
 		if ent.IsNotFound(err) {
 			return nil, patientmodel.ErrNotFound
 		}
-		return nil, fmt.Errorf("patient repository: get: %w", err)
+		return nil, errors.Wrap(err, "patient repository: get")
 	}
 	return toDomainPatient(p), nil
 }
@@ -111,7 +111,7 @@ func (r *patientRepository) GetWithCreator(ctx context.Context, clinicID, patien
 		if ent.IsNotFound(err) {
 			return nil, patientmodel.ErrNotFound
 		}
-		return nil, fmt.Errorf("patient repository: get with creator: %w", err)
+		return nil, errors.Wrap(err, "patient repository: get with creator")
 	}
 
 	pt := toDomainPatient(p)
@@ -207,7 +207,7 @@ func (r *patientRepository) Update(ctx context.Context, p patientmodel.Patient) 
 		if ent.IsNotFound(err) {
 			return nil, patientmodel.ErrNotFound
 		}
-		return nil, fmt.Errorf("patient repository: update: %w", err)
+		return nil, errors.Wrap(err, "patient repository: update")
 	}
 	return toDomainPatient(updated), nil
 }
@@ -222,7 +222,7 @@ func (r *patientRepository) BulkSetStatus(ctx context.Context, clinicID uuid.UUI
 		SetUpdatedAt(time.Now()).
 		Save(ctx)
 	if err != nil {
-		return 0, fmt.Errorf("patient repository: bulk set status: %w", err)
+		return 0, errors.Wrap(err, "patient repository: bulk set status")
 	}
 	return count, nil
 }
@@ -234,7 +234,7 @@ func (r *patientRepository) ListByClinicAndStatus(ctx context.Context, clinicID 
 	}
 	rows, err := query.Order(ent.Desc(patient.FieldCreatedAt)).All(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("patient repository: list: %w", err)
+		return nil, errors.Wrap(err, "patient repository: list")
 	}
 
 	out := make([]patientmodel.Patient, 0, len(rows))
@@ -266,7 +266,7 @@ func (r *patientRepository) ListCandidates(ctx context.Context, clinicID uuid.UU
 
 	total, err := query.Clone().Count(ctx)
 	if err != nil {
-		return nil, 0, fmt.Errorf("patient repository: count candidates: %w", err)
+		return nil, 0, errors.Wrap(err, "patient repository: count candidates")
 	}
 	rows, err := query.
 		Select(patient.FieldID, patient.FieldClinicID, patient.FieldStatus, patient.FieldCreatedAt).
@@ -275,7 +275,7 @@ func (r *patientRepository) ListCandidates(ctx context.Context, clinicID uuid.UU
 		Offset(offset).
 		All(ctx)
 	if err != nil {
-		return nil, 0, fmt.Errorf("patient repository: list candidates: %w", err)
+		return nil, 0, errors.Wrap(err, "patient repository: list candidates")
 	}
 	out := make([]patientmodel.PatientCandidate, 0, len(rows))
 	for _, row := range rows {
@@ -302,7 +302,7 @@ func (r *patientRepository) GetMany(ctx context.Context, clinicID uuid.UUID, pat
 		}
 		deks, err := r.engine.GetPatientDEKsForClinic(queryCtx, clinicID, patientIDs)
 		if err != nil {
-			return nil, fmt.Errorf("patient repository: prefetch patient deks: %w", err)
+			return nil, errors.Wrap(err, "patient repository: prefetch patient deks")
 		}
 		for _, dek := range deks {
 			crypto.ZeroBytes(dek)
@@ -312,7 +312,7 @@ func (r *patientRepository) GetMany(ctx context.Context, clinicID uuid.UUID, pat
 		Where(patient.ClinicIDEQ(clinicID), patient.IDIn(patientIDs...)).
 		All(queryCtx)
 	if err != nil {
-		return nil, fmt.Errorf("patient repository: get many: %w", err)
+		return nil, errors.Wrap(err, "patient repository: get many")
 	}
 	out := make([]patientmodel.Patient, 0, len(rows))
 	for _, row := range rows {
@@ -327,7 +327,7 @@ func (r *patientRepository) GetMany(ctx context.Context, clinicID uuid.UUID, pat
 func (r *patientRepository) DeleteAggregate(ctx context.Context, clinicID, patientID uuid.UUID) error {
 	tx, err := r.client.Tx(ctx)
 	if err != nil {
-		return fmt.Errorf("patient repository: begin aggregate delete: %w", err)
+		return errors.Wrap(err, "patient repository: begin aggregate delete")
 	}
 	rollback := func(cause error) error {
 		_ = tx.Rollback()
@@ -340,7 +340,7 @@ func (r *patientRepository) DeleteAggregate(ctx context.Context, clinicID, patie
 			patientidentifier.PatientIDEQ(patientID),
 		).
 		Exec(ctx); err != nil {
-		return rollback(fmt.Errorf("patient repository: delete identifiers: %w", err))
+		return rollback(errors.Wrap(err, "patient repository: delete identifiers"))
 	}
 	if _, err := tx.Episode.Delete().
 		Where(
@@ -348,7 +348,7 @@ func (r *patientRepository) DeleteAggregate(ctx context.Context, clinicID, patie
 			episode.PatientIDEQ(patientID),
 		).
 		Exec(ctx); err != nil {
-		return rollback(fmt.Errorf("patient repository: delete episodes: %w", err))
+		return rollback(errors.Wrap(err, "patient repository: delete episodes"))
 	}
 	if _, err := tx.Appointment.Delete().
 		Where(
@@ -356,7 +356,7 @@ func (r *patientRepository) DeleteAggregate(ctx context.Context, clinicID, patie
 			appointment.PatientIDEQ(patientID),
 		).
 		Exec(ctx); err != nil {
-		return rollback(fmt.Errorf("patient repository: delete appointments: %w", err))
+		return rollback(errors.Wrap(err, "patient repository: delete appointments"))
 	}
 	if _, err := tx.Patient.Delete().
 		Where(
@@ -364,10 +364,10 @@ func (r *patientRepository) DeleteAggregate(ctx context.Context, clinicID, patie
 			patient.IDEQ(patientID),
 		).
 		Exec(ctx); err != nil {
-		return rollback(fmt.Errorf("patient repository: delete patient: %w", err))
+		return rollback(errors.Wrap(err, "patient repository: delete patient"))
 	}
 	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("patient repository: commit aggregate delete: %w", err)
+		return errors.Wrap(err, "patient repository: commit aggregate delete")
 	}
 	return nil
 }
@@ -375,7 +375,7 @@ func (r *patientRepository) DeleteAggregate(ctx context.Context, clinicID, patie
 func (r *patientRepository) Count(ctx context.Context, clinicID uuid.UUID) (int, error) {
 	count, err := r.client.Patient.Query().Where(patient.ClinicIDEQ(clinicID)).Count(ctx)
 	if err != nil {
-		return 0, fmt.Errorf("patient repository: count: %w", err)
+		return 0, errors.Wrap(err, "patient repository: count")
 	}
 	return count, nil
 }

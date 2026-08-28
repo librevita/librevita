@@ -4,9 +4,9 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"encoding/json"
-	"fmt"
 
 	"entgo.io/ent/schema/field"
+	"github.com/cockroachdb/errors"
 	"librevita.org/internal/core/crypto"
 )
 
@@ -101,14 +101,14 @@ func EncryptPayload(encryptor crypto.Encryptor, payload any, aad []byte) (cipher
 	default:
 		data, err = json.Marshal(p)
 		if err != nil {
-			return nil, nil, fmt.Errorf("entfle: marshal payload: %w", err)
+			return nil, nil, errors.Wrap(err, "entfle: marshal payload")
 		}
 	}
 	defer crypto.ZeroBytes(data)
 
 	ciphertext, err = encryptor.Encrypt(data, aad)
 	if err != nil {
-		return nil, nil, fmt.Errorf("entfle: encrypt payload: %w", err)
+		return nil, nil, errors.Wrap(err, "entfle: encrypt payload")
 	}
 
 	if len(ciphertext) >= 25 {
@@ -123,12 +123,12 @@ func EncryptPayload(encryptor crypto.Encryptor, payload any, aad []byte) (cipher
 func DecryptPayload(encryptor crypto.Encryptor, ciphertext, aad []byte, target any) error {
 	plaintext, err := encryptor.Decrypt(ciphertext, aad)
 	if err != nil {
-		return fmt.Errorf("entfle: decrypt payload: %w", err)
+		return errors.Wrap(err, "entfle: decrypt payload")
 	}
 	defer crypto.ZeroBytes(plaintext)
 
 	if err := json.Unmarshal(plaintext, target); err != nil {
-		return fmt.Errorf("entfle: unmarshal payload: %w", err)
+		return errors.Wrap(err, "entfle: unmarshal payload")
 	}
 	return nil
 }

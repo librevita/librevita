@@ -3,12 +3,11 @@ package http
 import (
 	"context"
 	"encoding/json"
-	"errors"
-	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
 
+	"github.com/cockroachdb/errors"
 	"github.com/labstack/echo/v4"
 
 	"librevita.org/internal/core/audit"
@@ -212,7 +211,7 @@ func (h *Handler) staffRequestViews(ctx context.Context, rows []usecase.ListStaf
 func (h *Handler) staffRequestView(ctx context.Context, userID, changes, status, requesterEmail string) (views.StaffRequestRow, error) {
 	var change usecase.StaffChange
 	if err := json.Unmarshal([]byte(changes), &change); err != nil {
-		return views.StaffRequestRow{}, fmt.Errorf("decode staff changes: %w", err)
+		return views.StaffRequestRow{}, errors.Wrap(err, "decode staff changes")
 	}
 	clinicID, err := h.clocks.ClinicID(ctx)
 	if err != nil {

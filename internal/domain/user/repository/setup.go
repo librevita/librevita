@@ -2,9 +2,9 @@ package repository
 
 import (
 	"context"
-	"fmt"
 	"time"
 
+	"github.com/cockroachdb/errors"
 	"github.com/google/uuid"
 
 	"librevita.org/ent"
@@ -37,7 +37,7 @@ func (r *setupRepository) IsOnboarded(ctx context.Context) (bool, error) {
 		if ent.IsNotFound(err) {
 			return false, nil
 		}
-		return false, fmt.Errorf("setup repository: load clinic: %w", err)
+		return false, errors.Wrap(err, "setup repository: load clinic")
 	}
 	return row.OnboardedAt != nil && !row.OnboardedAt.IsZero(), nil
 }
@@ -50,7 +50,7 @@ func (r *setupRepository) Onboard(ctx context.Context, admin *usermodel.User, sy
 
 	tx, err := r.client.Tx(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("setup repository: begin onboard: %w", err)
+		return nil, errors.Wrap(err, "setup repository: begin onboard")
 	}
 	defer func() {
 		if rec := recover(); rec != nil {
@@ -62,7 +62,7 @@ func (r *setupRepository) Onboard(ctx context.Context, admin *usermodel.User, sy
 	row, err := tx.Clinic.Get(ctx, clinicID)
 	if err != nil {
 		_ = tx.Rollback()
-		return nil, fmt.Errorf("setup repository: load clinic: %w", err)
+		return nil, errors.Wrap(err, "setup repository: load clinic")
 	}
 	if row.OnboardedAt != nil && !row.OnboardedAt.IsZero() {
 		_ = tx.Rollback()
@@ -94,7 +94,7 @@ func (r *setupRepository) Onboard(ctx context.Context, admin *usermodel.User, sy
 			Save(ctx)
 		if err != nil {
 			_ = tx.Rollback()
-			return nil, fmt.Errorf("setup repository: seed role %q: %w", rl.name, err)
+			return nil, errors.Wrapf(err, "setup repository: seed role %q", rl.name)
 		}
 		if rl.name == "admin" {
 			adminRoleID = created.ID
@@ -115,7 +115,7 @@ func (r *setupRepository) Onboard(ctx context.Context, admin *usermodel.User, sy
 			Save(ctx)
 		if err != nil {
 			_ = tx.Rollback()
-			return nil, fmt.Errorf("setup repository: seed policy %q: %w", name, err)
+			return nil, errors.Wrapf(err, "setup repository: seed policy %q", name)
 		}
 		if _, err := tx.AccessPolicyVersion.Create().
 			SetPolicyID(pol.ID).
@@ -123,7 +123,7 @@ func (r *setupRepository) Onboard(ctx context.Context, admin *usermodel.User, sy
 			SetOrigin(accesspolicyversion.OriginSeed).
 			Save(ctx); err != nil {
 			_ = tx.Rollback()
-			return nil, fmt.Errorf("setup repository: seed policy version %q: %w", name, err)
+			return nil, errors.Wrapf(err, "setup repository: seed policy version %q", name)
 		}
 	}
 
@@ -131,7 +131,7 @@ func (r *setupRepository) Onboard(ctx context.Context, admin *usermodel.User, sy
 		active, err := tx.IdentifierSystem.Query().Where(identifiersystem.ActiveEQ(true)).All(ctx)
 		if err != nil {
 			_ = tx.Rollback()
-			return nil, fmt.Errorf("setup repository: list identifier systems: %w", err)
+			return nil, errors.Wrap(err, "setup repository: list identifier systems")
 		}
 		for _, sys := range active {
 			systemIDs = append(systemIDs, sys.ID)
@@ -149,7 +149,7 @@ func (r *setupRepository) Onboard(ctx context.Context, admin *usermodel.User, sy
 			SetIdentifierSystemID(sysID).
 			Exec(ctx); err != nil && !ent.IsConstraintError(err) {
 			_ = tx.Rollback()
-			return nil, fmt.Errorf("setup repository: identifier opt-in: %w", err)
+			return nil, errors.Wrap(err, "setup repository: identifier opt-in")
 		}
 	}
 
@@ -167,17 +167,17 @@ func (r *setupRepository) Onboard(ctx context.Context, admin *usermodel.User, sy
 		if ent.IsConstraintError(err) {
 			return nil, usermodel.ErrEmailTaken
 		}
-		return nil, fmt.Errorf("setup repository: create admin: %w", err)
+		return nil, errors.Wrap(err, "setup repository: create admin")
 	}
 
 	now := time.Now().UTC()
 	if err := tx.Clinic.UpdateOneID(clinicID).SetOnboardedAt(now).Exec(ctx); err != nil {
 		_ = tx.Rollback()
-		return nil, fmt.Errorf("setup repository: mark onboarded: %w", err)
+		return nil, errors.Wrap(err, "setup repository: mark onboarded")
 	}
 
 	if err := tx.Commit(); err != nil {
-		return nil, fmt.Errorf("setup repository: commit onboard: %w", err)
+		return nil, errors.Wrap(err, "setup repository: commit onboard")
 	}
 
 	return toUserDomain(createdUser, "admin"), nil

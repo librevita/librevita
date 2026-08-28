@@ -2,10 +2,10 @@ package usecase
 
 import (
 	"context"
-	"fmt"
 	"strings"
 	"time"
 
+	"github.com/cockroachdb/errors"
 	"github.com/google/uuid"
 
 	"librevita.org/internal/core/auth"
@@ -45,7 +45,7 @@ func (s *Service) CreateUser(ctx context.Context, in CreateUserInput) (*User, er
 
 	userID, err := uuid.NewV7()
 	if err != nil {
-		return nil, fmt.Errorf("usecase: generate user id: %w", err)
+		return nil, errors.Wrap(err, "usecase: generate user id")
 	}
 
 	roleRow, err := s.roleRepo.GetByName(ctx, roleName)
@@ -100,7 +100,7 @@ func (s *Service) UpdateUser(ctx context.Context, id string, actorID string, in 
 
 	uUUID, err := uuid.Parse(id)
 	if err != nil {
-		return nil, fmt.Errorf("usecase: invalid user id: %w", err)
+		return nil, errors.Wrap(err, "usecase: invalid user id")
 	}
 
 	current, err := s.userRepo.GetByID(ctx, uUUID)
@@ -114,7 +114,7 @@ func (s *Service) UpdateUser(ctx context.Context, id string, actorID string, in 
 	if demotingOrDeactivating {
 		activeAdmins, err := s.userRepo.CountActiveAdmins(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("usecase: count active admins: %w", err)
+			return nil, errors.Wrap(err, "usecase: count active admins")
 		}
 		if activeAdmins <= 1 {
 			return nil, ErrLastActiveAdmin
@@ -173,7 +173,7 @@ func (s *Service) UpdatePreferences(ctx context.Context, userID, timezone string
 	}
 	uUUID, err := uuid.Parse(userID)
 	if err != nil {
-		return fmt.Errorf("usecase: invalid user id: %w", err)
+		return errors.Wrap(err, "usecase: invalid user id")
 	}
 	return s.userRepo.UpdatePreferences(ctx, uUUID, timezone, string(theme))
 }
