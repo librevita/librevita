@@ -2,9 +2,9 @@ package crypto
 
 import (
 	"crypto/cipher"
-	"fmt"
 	"strings"
 
+	"github.com/cockroachdb/errors"
 	"golang.org/x/crypto/chacha20poly1305"
 )
 
@@ -107,7 +107,7 @@ func resolveCipherAndVersion(cipherName string, version byte) (byte, string, err
 				return ver, spec.Name, nil
 			}
 		}
-		return 0, "", fmt.Errorf("%w: invalid encryption cipher %q", ErrUnsupportedVersion, cipherName)
+		return 0, "", errors.Wrapf(ErrUnsupportedVersion, "invalid encryption cipher %q", cipherName)
 	}
 
 	if spec, ok := supportedCiphers[version]; ok {

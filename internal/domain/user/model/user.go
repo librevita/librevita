@@ -1,9 +1,9 @@
 package model
 
 import (
-	"errors"
 	"time"
 
+	"github.com/cockroachdb/errors"
 	"github.com/google/uuid"
 )
 

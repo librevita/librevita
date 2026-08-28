@@ -2,11 +2,11 @@ package repository
 
 import (
 	"context"
-	"fmt"
 	"strings"
 	"time"
 
 	entsql "entgo.io/ent/dialect/sql"
+	"github.com/cockroachdb/errors"
 	"github.com/google/uuid"
 
 	"librevita.org/ent"
@@ -51,7 +51,7 @@ func (r *userRepository) Create(ctx context.Context, u *usermodel.User) (*usermo
 		if ent.IsConstraintError(err) {
 			return nil, usermodel.ErrEmailTaken
 		}
-		return nil, fmt.Errorf("user repository: create: %w", err)
+		return nil, errors.Wrap(err, "user repository: create")
 	}
 
 	roleName := u.RoleName
@@ -73,7 +73,7 @@ func (r *userRepository) BindPortalPatient(ctx context.Context, userID, patientI
 		if ent.IsConstraintError(err) {
 			return usermodel.ErrEmailTaken
 		}
-		return fmt.Errorf("user repository: bind portal patient: %w", err)
+		return errors.Wrap(err, "user repository: bind portal patient")
 	}
 	if n == 0 {
 		return usermodel.ErrUserNotFound
@@ -90,7 +90,7 @@ func (r *userRepository) GetByID(ctx context.Context, id uuid.UUID) (*usermodel.
 		if ent.IsNotFound(err) {
 			return nil, usermodel.ErrUserNotFound
 		}
-		return nil, fmt.Errorf("user repository: get by id: %w", err)
+		return nil, errors.Wrap(err, "user repository: get by id")
 	}
 
 	roleName := ""
@@ -125,7 +125,7 @@ func (r *userRepository) GetByEmail(ctx context.Context, email string) (*usermod
 		if ent.IsNotFound(err) {
 			return nil, usermodel.ErrUserNotFound
 		}
-		return nil, fmt.Errorf("user repository: get by email: %w", err)
+		return nil, errors.Wrap(err, "user repository: get by email")
 	}
 
 	roleName := ""
@@ -167,7 +167,7 @@ func (r *userRepository) Update(ctx context.Context, u *usermodel.User) (*usermo
 		if ent.IsConstraintError(err) {
 			return nil, usermodel.ErrEmailTaken
 		}
-		return nil, fmt.Errorf("user repository: update: %w", err)
+		return nil, errors.Wrap(err, "user repository: update")
 	}
 
 	return toUserDomain(saved, u.RoleName), nil
@@ -183,7 +183,7 @@ func (r *userRepository) UpdatePreferences(ctx context.Context, id uuid.UUID, ti
 		if ent.IsNotFound(err) {
 			return usermodel.ErrUserNotFound
 		}
-		return fmt.Errorf("user repository: update preferences: %w", err)
+		return errors.Wrap(err, "user repository: update preferences")
 	}
 	return nil
 }
@@ -191,7 +191,7 @@ func (r *userRepository) UpdatePreferences(ctx context.Context, id uuid.UUID, ti
 func (r *userRepository) Count(ctx context.Context) (int64, error) {
 	count, err := r.client.User.Query().Count(ctx)
 	if err != nil {
-		return 0, fmt.Errorf("user repository: count: %w", err)
+		return 0, errors.Wrap(err, "user repository: count")
 	}
 	return int64(count), nil
 }
@@ -201,7 +201,7 @@ func (r *userRepository) CountByRole(ctx context.Context, roleName string) (int6
 		Where(user.HasRoleWith(role.NameEQ(roleName))).
 		Count(ctx)
 	if err != nil {
-		return 0, fmt.Errorf("user repository: count by role: %w", err)
+		return 0, errors.Wrap(err, "user repository: count by role")
 	}
 	return int64(count), nil
 }
@@ -211,7 +211,7 @@ func (r *userRepository) CountStaff(ctx context.Context, roleNames []string) (in
 		Where(user.HasRoleWith(role.NameIn(roleNames...))).
 		Count(ctx)
 	if err != nil {
-		return 0, fmt.Errorf("user repository: count staff: %w", err)
+		return 0, errors.Wrap(err, "user repository: count staff")
 	}
 	return int64(count), nil
 }
@@ -224,7 +224,7 @@ func (r *userRepository) CountActiveAdmins(ctx context.Context) (int, error) {
 		).
 		Count(ctx)
 	if err != nil {
-		return 0, fmt.Errorf("user repository: count active admins: %w", err)
+		return 0, errors.Wrap(err, "user repository: count active admins")
 	}
 	return count, nil
 }
@@ -236,7 +236,7 @@ func (r *userRepository) ListRecent(ctx context.Context, limit int) ([]usermodel
 		Limit(limit).
 		All(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("user repository: list recent: %w", err)
+		return nil, errors.Wrap(err, "user repository: list recent")
 	}
 
 	rows := make([]usermodel.ListRecentUsersRow, 0, len(users))
@@ -272,12 +272,12 @@ func (r *userRepository) ListPage(ctx context.Context, q string, limit, offset i
 
 	users, err := query.Limit(limit).Offset(offset).All(ctx)
 	if err != nil {
-		return nil, 0, fmt.Errorf("user repository: list page: %w", err)
+		return nil, 0, errors.Wrap(err, "user repository: list page")
 	}
 
 	total, err := countQuery.Count(ctx)
 	if err != nil {
-		return nil, 0, fmt.Errorf("user repository: count page: %w", err)
+		return nil, 0, errors.Wrap(err, "user repository: count page")
 	}
 
 	rows := make([]usermodel.ListUsersRow, 0, len(users))
@@ -310,12 +310,12 @@ func (r *userRepository) ListPhysiciansPage(ctx context.Context, limit, offset i
 
 	users, err := query.All(ctx)
 	if err != nil {
-		return nil, 0, fmt.Errorf("user repository: list physicians: %w", err)
+		return nil, 0, errors.Wrap(err, "user repository: list physicians")
 	}
 
 	total, err := r.client.User.Query().Where(user.HasRoleWith(role.IsClinical(true))).Count(ctx)
 	if err != nil {
-		return nil, 0, fmt.Errorf("user repository: count physicians: %w", err)
+		return nil, 0, errors.Wrap(err, "user repository: count physicians")
 	}
 
 	rows := make([]usermodel.ListPhysiciansPageRow, 0, len(users))
@@ -338,7 +338,7 @@ func (r *userRepository) ListPhysiciansPage(ctx context.Context, limit, offset i
 func (r *userRepository) SetSpecialties(ctx context.Context, userID uuid.UUID, specialtyIDs []uuid.UUID) error {
 	tx, err := r.client.Tx(ctx)
 	if err != nil {
-		return fmt.Errorf("user repository: begin specialty tx: %w", err)
+		return errors.Wrap(err, "user repository: begin specialty tx")
 	}
 
 	uUpdate := tx.User.UpdateOneID(userID).ClearSpecialties()
@@ -347,11 +347,11 @@ func (r *userRepository) SetSpecialties(ctx context.Context, userID uuid.UUID, s
 	}
 	if err := uUpdate.Exec(ctx); err != nil {
 		_ = tx.Rollback()
-		return fmt.Errorf("user repository: set specialties: %w", err)
+		return errors.Wrap(err, "user repository: set specialties")
 	}
 
 	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("user repository: commit specialty tx: %w", err)
+		return errors.Wrap(err, "user repository: commit specialty tx")
 	}
 	return nil
 }
@@ -359,7 +359,7 @@ func (r *userRepository) SetSpecialties(ctx context.Context, userID uuid.UUID, s
 func (r *userRepository) ApplyApprovedStaffChange(ctx context.Context, reqID, userID, deciderID uuid.UUID, name, email string, specialtyIDs []uuid.UUID) error {
 	tx, err := r.client.Tx(ctx)
 	if err != nil {
-		return fmt.Errorf("user repository: begin staff change tx: %w", err)
+		return errors.Wrap(err, "user repository: begin staff change tx")
 	}
 
 	uUpdate := tx.User.UpdateOneID(userID).
@@ -374,7 +374,7 @@ func (r *userRepository) ApplyApprovedStaffChange(ctx context.Context, reqID, us
 		if ent.IsConstraintError(err) {
 			return usermodel.ErrEmailInUse
 		}
-		return fmt.Errorf("user repository: apply staff change: %w", err)
+		return errors.Wrap(err, "user repository: apply staff change")
 	}
 
 	decidedAt := time.Now().UTC()
@@ -384,11 +384,11 @@ func (r *userRepository) ApplyApprovedStaffChange(ctx context.Context, reqID, us
 		SetDecidedBy(deciderID).
 		Exec(ctx); err != nil {
 		_ = tx.Rollback()
-		return fmt.Errorf("user repository: approve request: %w", err)
+		return errors.Wrap(err, "user repository: approve request")
 	}
 
 	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("user repository: commit staff change tx: %w", err)
+		return errors.Wrap(err, "user repository: commit staff change tx")
 	}
 	return nil
 }

@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/cockroachdb/errors"
 	_ "modernc.org/sqlite" // registers the "sqlite" driver (pure Go, no CGO)
 )
 
@@ -25,7 +26,7 @@ const sqliteDriver = "sqlite"
 //   - synchronous(NORMAL): balanced durability for WAL-backed edge storage.
 func openSQLite(path string) (*sql.DB, error) {
 	if err := ensureParentDir(path); err != nil {
-		return nil, fmt.Errorf("sqlite: failed to create parent directory for %q: %w", path, err)
+		return nil, errors.Wrapf(err, "sqlite: failed to create parent directory for %q", path)
 	}
 
 	q := url.Values{}
@@ -38,7 +39,7 @@ func openSQLite(path string) (*sql.DB, error) {
 
 	db, err := sql.Open(sqliteDriver, dsn)
 	if err != nil {
-		return nil, fmt.Errorf("sqlite: failed to open %q: %w", path, err)
+		return nil, errors.Wrapf(err, "sqlite: failed to open %q", path)
 	}
 
 	// SQLite has a single writer. A one-connection pool serializes writes
@@ -47,7 +48,7 @@ func openSQLite(path string) (*sql.DB, error) {
 
 	if err := db.Ping(); err != nil {
 		_ = db.Close()
-		return nil, fmt.Errorf("sqlite: ping failed for %q: %w", path, err)
+		return nil, errors.Wrapf(err, "sqlite: ping failed for %q", path)
 	}
 	return db, nil
 }

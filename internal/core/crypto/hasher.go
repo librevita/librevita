@@ -8,6 +8,7 @@ import (
 	"hash"
 	"strings"
 
+	"github.com/cockroachdb/errors"
 	"golang.org/x/crypto/blake2b"
 	"golang.org/x/crypto/blake2s"
 )
@@ -118,7 +119,7 @@ func NewHasherFromBase64(keyB64 string, opts ...HasherOption) (*KeyedHasher, err
 	}
 	raw, err := base64.StdEncoding.DecodeString(keyB64)
 	if err != nil {
-		return nil, fmt.Errorf("crypto: invalid base64 key: %w", err)
+		return nil, errors.Wrap(err, "crypto: invalid base64 key")
 	}
 	defer ZeroBytes(raw)
 	return NewHasher(raw, opts...)
@@ -180,7 +181,7 @@ func (h *KeyedHasher) Verify(data []byte, encodedHash string) (bool, error) {
 
 	expectedBytes, err := hex.DecodeString(expectedHex)
 	if err != nil {
-		return false, fmt.Errorf("%w: invalid hex encoding", ErrInvalidHashFormat)
+		return false, errors.Wrap(ErrInvalidHashFormat, "invalid hex encoding")
 	}
 
 	actualDigest, err := h.computeDigest(targetAlgo, data)
@@ -218,14 +219,14 @@ func createHashEngine(algorithm string, key []byte) (hash.Hash, error) {
 	case AlgorithmBlake2s:
 		h, err := blake2s.New256(key)
 		if err != nil {
-			return nil, fmt.Errorf("crypto: blake2s init: %w", err)
+			return nil, errors.Wrap(err, "crypto: blake2s init")
 		}
 		return h, nil
 
 	case AlgorithmBlake2b:
 		h, err := blake2b.New256(key)
 		if err != nil {
-			return nil, fmt.Errorf("crypto: blake2b init: %w", err)
+			return nil, errors.Wrap(err, "crypto: blake2b init")
 		}
 		return h, nil
 

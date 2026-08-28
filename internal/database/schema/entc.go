@@ -3,12 +3,12 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"os"
 
 	"entgo.io/ent/entc/gen"
 	"entgo.io/ent/entc/load"
+	"github.com/cockroachdb/errors"
 	"librevita.org/internal/core/database/check"
 	"librevita.org/internal/core/database/fle"
 )
@@ -29,7 +29,7 @@ func main() {
 func runCodegen(schemaDir, targetDir string) error {
 	driver, err := gen.NewStorage("sql")
 	if err != nil {
-		return fmt.Errorf("codegen: create storage: %w", err)
+		return errors.Wrap(err, "codegen: create storage")
 	}
 
 	cfg := &gen.Config{
@@ -49,27 +49,27 @@ func runCodegen(schemaDir, targetDir string) error {
 	// 1. Load raw schemas from the schema directory
 	spec, err := (&load.Config{Path: schemaDir, BuildFlags: cfg.BuildFlags}).Load()
 	if err != nil {
-		return fmt.Errorf("codegen: load schemas: %w", err)
+		return errors.Wrap(err, "codegen: load schemas")
 	}
 	cfg.Schema = spec.PkgPath
 
 	// 2. Transform schemas: inject blind indexes for fle.Searchable() fields
 	if err := fle.TransformSchemas(spec.Schemas); err != nil {
-		return fmt.Errorf("codegen fle: %w", err)
+		return errors.Wrap(err, "codegen fle")
 	}
 
 	// 3. Transform schemas: inject database-level CHECK constraints for Enums
 	if err := check.InjectEnumChecks(spec.Schemas); err != nil {
-		return fmt.Errorf("codegen enum checks: %w", err)
+		return errors.Wrap(err, "codegen enum checks")
 	}
 
 	// 4. Build Graph and Generate Ent artifacts
 	graph, err := gen.NewGraph(cfg, spec.Schemas...)
 	if err != nil {
-		return fmt.Errorf("codegen: build graph: %w", err)
+		return errors.Wrap(err, "codegen: build graph")
 	}
 	if err := graph.Gen(); err != nil {
-		return fmt.Errorf("codegen: generate artifacts: %w", err)
+		return errors.Wrap(err, "codegen: generate artifacts")
 	}
 
 	return nil

@@ -3,12 +3,12 @@ package http
 import (
 	"context"
 	"encoding/hex"
-	"errors"
 	"io"
 	"net/http"
 	"path/filepath"
 	"strings"
 
+	"github.com/cockroachdb/errors"
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 

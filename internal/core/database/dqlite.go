@@ -3,7 +3,6 @@ package database
 import (
 	"context"
 	"database/sql"
-	"fmt"
 	"net"
 	"sort"
 	"strconv"
@@ -11,6 +10,7 @@ import (
 
 	"github.com/canonical/go-dqlite/v3/client"
 	dqlitedriver "github.com/canonical/go-dqlite/v3/driver"
+	"github.com/cockroachdb/errors"
 )
 
 // dqliteSrvResolver isolates the DNS lookup (net.Resolver's SRV
@@ -132,23 +132,23 @@ func splitAddresses(addrs string) []string {
 func openDqlite(addrs string, srv string, database string) (*sql.DB, error) {
 	ns := newNodeStore(addrs, srv, net.DefaultResolver)
 	if len(ns.addrs) == 0 && ns.srvName == "" {
-		return nil, fmt.Errorf("dqlite: no node addresses and no discovery SRV configured")
+		return nil, errors.New("dqlite: no node addresses and no discovery SRV configured")
 	}
 
 	drv, err := dqlitedriver.New(ns)
 	if err != nil {
-		return nil, fmt.Errorf("dqlite: driver: %w", err)
+		return nil, errors.Wrap(err, "dqlite: driver")
 	}
 	connector, err := drv.OpenConnector(database)
 	if err != nil {
-		return nil, fmt.Errorf("dqlite: connector: %w", err)
+		return nil, errors.Wrap(err, "dqlite: connector")
 	}
 
 	db := sql.OpenDB(connector)
 	db.SetMaxOpenConns(1)
 	if err := db.Ping(); err != nil {
 		_ = db.Close()
-		return nil, fmt.Errorf("dqlite: ping failed for %v: %w", ns.addrs, err)
+		return nil, errors.Wrapf(err, "dqlite: ping failed for %v", ns.addrs)
 	}
 	return db, nil
 }

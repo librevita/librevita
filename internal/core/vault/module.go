@@ -2,11 +2,11 @@ package vault
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"path/filepath"
 	"strings"
 
+	"github.com/cockroachdb/errors"
 	"go.uber.org/fx"
 
 	"librevita.org/internal/core/config"
@@ -33,7 +33,7 @@ func NewKeyVaultFromConfig(cfg *config.Config, lc fx.Lifecycle, log *slog.Logger
 		log.Info("initializing bbolt key vault adapter", "path", dbPath)
 		v, err := NewBBoltVault(dbPath)
 		if err != nil {
-			return nil, fmt.Errorf("vault: init bbolt: %w", err)
+			return nil, errors.Wrap(err, "vault: init bbolt")
 		}
 		lc.Append(fx.Hook{
 			OnStop: func(ctx context.Context) error {
@@ -49,7 +49,7 @@ func NewKeyVaultFromConfig(cfg *config.Config, lc fx.Lifecycle, log *slog.Logger
 		log.Info("initializing nats jetstream key vault adapter", "url", url, "bucket", bucket)
 		v, err := NewNATSVault(url, bucket)
 		if err != nil {
-			return nil, fmt.Errorf("vault: init nats: %w", err)
+			return nil, errors.Wrap(err, "vault: init nats")
 		}
 		lc.Append(fx.Hook{
 			OnStop: func(ctx context.Context) error {
@@ -65,7 +65,7 @@ func NewKeyVaultFromConfig(cfg *config.Config, lc fx.Lifecycle, log *slog.Logger
 		log.Info("initializing etcd v3 key vault adapter", "endpoints", endpoints, "prefix", prefix)
 		v, err := NewEtcdVault(endpoints, prefix)
 		if err != nil {
-			return nil, fmt.Errorf("vault: init etcd: %w", err)
+			return nil, errors.Wrap(err, "vault: init etcd")
 		}
 		lc.Append(fx.Hook{
 			OnStop: func(ctx context.Context) error {
@@ -82,7 +82,7 @@ func NewKeyVaultFromConfig(cfg *config.Config, lc fx.Lifecycle, log *slog.Logger
 		log.Info("initializing hashicorp vault key vault adapter", "address", address, "mount", mount)
 		v, err := NewHashiCorpVault(address, token, mount)
 		if err != nil {
-			return nil, fmt.Errorf("vault: init hashicorp vault: %w", err)
+			return nil, errors.Wrap(err, "vault: init hashicorp vault")
 		}
 		lc.Append(fx.Hook{
 			OnStop: func(ctx context.Context) error {
@@ -93,6 +93,6 @@ func NewKeyVaultFromConfig(cfg *config.Config, lc fx.Lifecycle, log *slog.Logger
 		return v, nil
 
 	default:
-		return nil, fmt.Errorf("vault: unsupported backend %q (use \"bbolt\", \"nats\", \"etcd\", \"hashicorp\", \"hashicorp_vault\", or \"openbao\")", cfg.Vault.Backend)
+		return nil, errors.Newf("vault: unsupported backend %q (use \"bbolt\", \"nats\", \"etcd\", \"hashicorp\", \"hashicorp_vault\", or \"openbao\")", cfg.Vault.Backend)
 	}
 }

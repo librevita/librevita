@@ -3,11 +3,10 @@ package usecase
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"log/slog"
 	"strings"
 
+	"github.com/cockroachdb/errors"
 	"github.com/google/uuid"
 
 	"librevita.org/internal/core/audit"
@@ -112,12 +111,12 @@ func (s *Service) Register(ctx context.Context, in RegisterInput) (*auth.Princip
 
 	userID, err := uuid.NewV7()
 	if err != nil {
-		return nil, "", fmt.Errorf("usecase: generate user id: %w", err)
+		return nil, "", errors.Wrap(err, "usecase: generate user id")
 	}
 
 	patientRole, err := s.roleRepo.GetByName(ctx, auth.RolePatient.String())
 	if err != nil {
-		return nil, "", fmt.Errorf("usecase: resolve patient role: %w", err)
+		return nil, "", errors.Wrap(err, "usecase: resolve patient role")
 	}
 
 	u, err := s.userRepo.Create(ctx, &User{
@@ -173,7 +172,7 @@ func (s *Service) ListRecentUsers(ctx context.Context, limit int) ([]ListRecentU
 func (s *Service) UserByID(ctx context.Context, id string) (*GetUserByIDRow, error) {
 	uUUID, err := uuid.Parse(id)
 	if err != nil {
-		return nil, fmt.Errorf("usecase: invalid user id: %w", err)
+		return nil, errors.Wrap(err, "usecase: invalid user id")
 	}
 	return s.userRepo.GetByID(ctx, uUUID)
 }
@@ -200,7 +199,7 @@ func (s *Service) Onboard(ctx context.Context, admin RegisterInput, systemIDs []
 
 	adminID, err := uuid.NewV7()
 	if err != nil {
-		return nil, "", fmt.Errorf("usecase: generate admin id: %w", err)
+		return nil, "", errors.Wrap(err, "usecase: generate admin id")
 	}
 
 	adminUser := &User{
@@ -243,7 +242,7 @@ func (s *Service) Login(ctx context.Context, c Credentials) (*auth.Principal, st
 		return nil, "", ErrInvalidCredentials
 	}
 	if err != nil {
-		return nil, "", fmt.Errorf("usecase: lookup email: %w", err)
+		return nil, "", errors.Wrap(err, "usecase: lookup email")
 	}
 	if !u.Active {
 		s.timingDummy(c.Password)

@@ -3,9 +3,8 @@ package vault
 import (
 	"context"
 	"encoding/base64"
-	"errors"
-	"fmt"
 
+	"github.com/cockroachdb/errors"
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 
@@ -29,13 +28,13 @@ func NewNATSVault(url, bucketName string) (*NATSVault, error) {
 
 	nc, err := nats.Connect(url)
 	if err != nil {
-		return nil, fmt.Errorf("vault: nats connect: %w", err)
+		return nil, errors.Wrap(err, "vault: nats connect")
 	}
 
 	js, err := jetstream.New(nc)
 	if err != nil {
 		nc.Close()
-		return nil, fmt.Errorf("vault: nats jetstream init: %w", err)
+		return nil, errors.Wrap(err, "vault: nats jetstream init")
 	}
 
 	ctx := context.Background()
@@ -44,7 +43,7 @@ func NewNATSVault(url, bucketName string) (*NATSVault, error) {
 	})
 	if err != nil {
 		nc.Close()
-		return nil, fmt.Errorf("vault: nats kv bucket init: %w", err)
+		return nil, errors.Wrap(err, "vault: nats kv bucket init")
 	}
 
 	return &NATSVault{nc: nc, kv: kv}, nil
@@ -58,10 +57,10 @@ func (v *NATSVault) PutDEK(ctx context.Context, patientURN string, encryptedDEK 
 			return crypto.ErrKeyDestroyed
 		}
 	} else if !errors.Is(err, jetstream.ErrKeyNotFound) {
-		return fmt.Errorf("vault: nats check existing: %w", err)
+		return errors.Wrap(err, "vault: nats check existing")
 	}
 	if _, err := v.kv.Put(ctx, key, encryptedDEK); err != nil {
-		return fmt.Errorf("vault: nats put: %w", err)
+		return errors.Wrap(err, "vault: nats put")
 	}
 	return nil
 }
@@ -75,7 +74,7 @@ func (v *NATSVault) GetDEK(ctx context.Context, patientURN string) ([]byte, erro
 		if errors.Is(err, jetstream.ErrKeyNotFound) {
 			return nil, crypto.ErrKeyNotFound
 		}
-		return nil, fmt.Errorf("vault: nats get: %w", err)
+		return nil, errors.Wrap(err, "vault: nats get")
 	}
 	if crypto.IsDestroyedDEK(entry.Value()) {
 		return nil, crypto.ErrKeyDestroyed
@@ -103,11 +102,11 @@ func (v *NATSVault) PutIfAbsent(ctx context.Context, patientURN string, encrypte
 			if errors.Is(getErr, crypto.ErrKeyDestroyed) {
 				return false, getErr
 			}
-			return false, fmt.Errorf("vault: nats verify existing: %w", getErr)
+			return false, errors.Wrap(getErr, "vault: nats verify existing")
 		}
 		return false, nil
 	}
-	return false, fmt.Errorf("vault: nats create: %w", err)
+	return false, errors.Wrap(err, "vault: nats create")
 }
 
 // DeleteDEK purges the patient's DEK from storage and writes a terminal
@@ -117,11 +116,11 @@ func (v *NATSVault) DeleteDEK(ctx context.Context, patientURN string) error {
 	// Purge removes all history and tombstones for the key, executing physical shredding.
 	if err := v.kv.Purge(ctx, key); err != nil {
 		if !errors.Is(err, jetstream.ErrKeyNotFound) {
-			return fmt.Errorf("vault: nats purge: %w", err)
+			return errors.Wrap(err, "vault: nats purge")
 		}
 	}
 	if _, err := v.kv.Put(ctx, key, crypto.DestroyedDEKMarker()); err != nil {
-		return fmt.Errorf("vault: nats tombstone: %w", err)
+		return errors.Wrap(err, "vault: nats tombstone")
 	}
 	return nil
 }

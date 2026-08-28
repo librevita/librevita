@@ -4,11 +4,12 @@ package audit
 import (
 	"context"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
 	"time"
+
+	"github.com/cockroachdb/errors"
 
 	"librevita.org/internal/core/clinicctx"
 	"librevita.org/internal/core/crypto"
@@ -140,7 +141,7 @@ func (l *Logger) Record(ctx context.Context, ev Event) {
 func (l *Logger) VerifyChain(ctx context.Context) (int64, error) {
 	rows, err := l.repo.All(ctx)
 	if err != nil {
-		return 0, fmt.Errorf("audit: verify chain: %w", err)
+		return 0, errors.Wrap(err, "audit: verify chain")
 	}
 	var prev string
 	for _, r := range rows {

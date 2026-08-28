@@ -1,11 +1,11 @@
 package http
 
 import (
-	"errors"
 	"log/slog"
 	"net/http"
 	"strings"
 
+	"github.com/cockroachdb/errors"
 	"github.com/labstack/echo/v4"
 
 	"librevita.org/internal/core/clinicctx"

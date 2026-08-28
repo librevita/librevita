@@ -1,18 +1,17 @@
 package fle
 
 import (
-	"fmt"
-
 	"entgo.io/ent/entc/gen"
 	"entgo.io/ent/entc/load"
 	"entgo.io/ent/schema/field"
+	"github.com/cockroachdb/errors"
 )
 
 // Generate runs the Ent code generation pipeline with automatic Field-Level Encryption blind index injection.
 func Generate(schemaDir, targetDir string) error {
 	driver, err := gen.NewStorage("sql")
 	if err != nil {
-		return fmt.Errorf("fle codegen: create storage: %w", err)
+		return errors.Wrap(err, "fle codegen: create storage")
 	}
 
 	cfg := &gen.Config{
@@ -28,7 +27,7 @@ func Generate(schemaDir, targetDir string) error {
 	// 1. Load raw schemas from the schema directory
 	spec, err := (&load.Config{Path: schemaDir, BuildFlags: cfg.BuildFlags}).Load()
 	if err != nil {
-		return fmt.Errorf("fle codegen: load schemas: %w", err)
+		return errors.Wrap(err, "fle codegen: load schemas")
 	}
 	cfg.Schema = spec.PkgPath
 
@@ -40,10 +39,10 @@ func Generate(schemaDir, targetDir string) error {
 	// 3. Build Graph and Generate Ent artifacts
 	graph, err := gen.NewGraph(cfg, spec.Schemas...)
 	if err != nil {
-		return fmt.Errorf("fle codegen: build graph: %w", err)
+		return errors.Wrap(err, "fle codegen: build graph")
 	}
 	if err := graph.Gen(); err != nil {
-		return fmt.Errorf("fle codegen: generate artifacts: %w", err)
+		return errors.Wrap(err, "fle codegen: generate artifacts")
 	}
 
 	return nil
@@ -96,7 +95,7 @@ func TransformSchemas(schemas []*load.Schema) error {
 
 					loadTokensFld, err := load.NewField(tokensDesc)
 					if err != nil {
-						return fmt.Errorf("fle codegen: create %s field: %w", tokenFieldName, err)
+						return errors.Wrapf(err, "fle codegen: create %s field", tokenFieldName)
 					}
 					loadTokensFld.Position = &load.Position{}
 					schema.Fields = append(schema.Fields, loadTokensFld)
@@ -123,7 +122,7 @@ func TransformSchemas(schemas []*load.Schema) error {
 
 			loadFld, err := load.NewField(desc)
 			if err != nil {
-				return fmt.Errorf("fle codegen: create blind index field %s: %w", blindFieldName, err)
+				return errors.Wrapf(err, "fle codegen: create blind index field %s", blindFieldName)
 			}
 			loadFld.Position = &load.Position{}
 			schema.Fields = append(schema.Fields, loadFld)

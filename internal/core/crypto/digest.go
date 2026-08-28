@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"hash"
 	"io"
+
+	"github.com/cockroachdb/errors"
 )
 
 // NewDigest creates an unkeyed 256-bit hash engine using the specified or
@@ -50,7 +52,7 @@ func DigestReader(r io.Reader, opts ...HasherOption) (string, error) {
 		return "", err
 	}
 	if _, err := io.Copy(h, r); err != nil {
-		return "", fmt.Errorf("crypto: digest stream: %w", err)
+		return "", errors.Wrap(err, "crypto: digest stream")
 	}
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
@@ -58,11 +60,11 @@ func DigestReader(r io.Reader, opts ...HasherOption) (string, error) {
 // RandomBytes generates n cryptographically secure random bytes.
 func RandomBytes(n int) ([]byte, error) {
 	if n < 0 {
-		return nil, fmt.Errorf("crypto: invalid random byte length %d", n)
+		return nil, errors.Newf("crypto: invalid random byte length %d", n)
 	}
 	buf := make([]byte, n)
 	if _, err := rand.Read(buf); err != nil {
-		return nil, fmt.Errorf("crypto: random bytes: %w", err)
+		return nil, errors.Wrap(err, "crypto: random bytes")
 	}
 	return buf, nil
 }

@@ -4,9 +4,9 @@ package database
 import (
 	"context"
 	"database/sql"
-	"fmt"
 	"time"
 
+	"github.com/cockroachdb/errors"
 	_ "github.com/jackc/pgx/v5/stdlib" // registers "pgx" driver (pure Go, CGO-free)
 
 	"librevita.org/internal/core/config"
@@ -19,7 +19,7 @@ func openPostgres(cfg config.PostgresConfig) (*sql.DB, error) {
 	dsn := cfg.DSN()
 	db, err := sql.Open(pgxDriver, dsn)
 	if err != nil {
-		return nil, fmt.Errorf("postgres: failed to open connection: %w", err)
+		return nil, errors.Wrap(err, "postgres: failed to open connection")
 	}
 
 	maxOpen := cfg.MaxOpenConns
@@ -41,7 +41,7 @@ func openPostgres(cfg config.PostgresConfig) (*sql.DB, error) {
 
 	if err := db.PingContext(ctx); err != nil {
 		_ = db.Close()
-		return nil, fmt.Errorf("postgres: ping failed for host %q: %w", cfg.Host, err)
+		return nil, errors.Wrapf(err, "postgres: ping failed for host %q", cfg.Host)
 	}
 
 	return db, nil

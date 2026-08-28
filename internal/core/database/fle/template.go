@@ -148,8 +148,8 @@ const fleTemplate = `
 
 import (
 	"context"
-	"fmt"
 
+	"github.com/cockroachdb/errors"
 	"github.com/google/uuid"
 
 	"librevita.org/internal/core/crypto"
@@ -184,7 +184,7 @@ func Decrypt{{ $n.Name }}(ctx context.Context, enc crypto.Encryptor, entity *{{ 
 		return err
 	}
 	if scopedEnc == nil {
-		return fmt.Errorf("fle: encryptor is required for {{ $n.Name }}")
+		return errors.Newf("fle: encryptor is required for %s", "{{ $n.Name }}")
 	}
 	enc = scopedEnc
 	aad := fle.ResolveEntityAAD(ctx, entity.ClinicID, entity.{{ if eq $n.Name "Patient" }}ID{{ else }}PatientID{{ end }})
@@ -241,7 +241,7 @@ func encrypt{{ $n.Name }}Mutation(ctx context.Context, hasher crypto.Hasher, enc
 			return err
 		}
 		if enc == nil {
-			return fmt.Errorf("fle: encryptor is required for {{ $n.Name }}")
+			return errors.Newf("fle: encryptor is required for %s", "{{ $n.Name }}")
 		}
 	}
 	aad := fle.ResolveMutationAAD(ctx, clinicID, patientID)

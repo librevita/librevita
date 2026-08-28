@@ -3,9 +3,9 @@ package fle
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"sync"
 
+	"github.com/cockroachdb/errors"
 	"github.com/google/uuid"
 
 	"librevita.org/internal/core/crypto"
@@ -283,7 +283,7 @@ func ResolvePatientEncryptor(ctx context.Context, clinicID, patientID uuid.UUID,
 		}
 	}
 	if clinicID == uuid.Nil || patientID == uuid.Nil {
-		return nil, fmt.Errorf("fle: patient scope is required for encrypted entity")
+		return nil, errors.New("fle: patient scope is required for encrypted entity")
 	}
 	return resolver.ResolvePatientEncryptor(ctx, clinicID, patientID)
 }

@@ -2,13 +2,13 @@ package server
 
 import (
 	"context"
-	"errors"
 	"log/slog"
 	"net"
 	"net/http"
 	"strconv"
 	"strings"
 
+	"github.com/cockroachdb/errors"
 	"github.com/labstack/echo/v4"
 	"go.uber.org/fx"
 

@@ -2,11 +2,11 @@ package http
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"strconv"
 	"strings"
 
+	"github.com/cockroachdb/errors"
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 

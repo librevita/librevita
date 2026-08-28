@@ -2,9 +2,8 @@ package crypto
 
 import (
 	"context"
-	"errors"
-	"fmt"
 
+	"github.com/cockroachdb/errors"
 	"github.com/google/uuid"
 )
 
@@ -136,7 +135,7 @@ func (e *Engine) GetPatientDEKsForClinic(ctx context.Context, clinicID uuid.UUID
 		}
 		dek, err := unwrapKey(clinicDEK, item.EncryptedDEK, keyScopePatient, []byte(urn))
 		if err != nil {
-			return nil, fmt.Errorf("crypto: unwrap patient dek %q: %w", urn, err)
+			return nil, errors.Wrapf(err, "crypto: unwrap patient dek %q", urn)
 		}
 		if len(dek) != SizeDEK {
 			ZeroBytes(dek)
@@ -252,17 +251,17 @@ func zeroDEKMap(deks map[uuid.UUID][]byte) {
 func (e *Engine) createWrappedDEK(ctx context.Context, urn string, scope byte, wrappingKey, aad []byte) ([]byte, bool, error) {
 	dek, err := RandomBytes(SizeDEK)
 	if err != nil {
-		return nil, false, fmt.Errorf("crypto: generate dek: %w", err)
+		return nil, false, errors.Wrap(err, "crypto: generate dek")
 	}
 	encDEK, err := wrapKey(wrappingKey, dek, scope, aad)
 	if err != nil {
 		ZeroBytes(dek)
-		return nil, false, fmt.Errorf("crypto: wrap dek: %w", err)
+		return nil, false, errors.Wrap(err, "crypto: wrap dek")
 	}
 	created, err := e.putIfAbsent(ctx, urn, encDEK)
 	if err != nil {
 		ZeroBytes(dek)
-		return nil, false, fmt.Errorf("crypto: save dek to vault: %w", err)
+		return nil, false, errors.Wrap(err, "crypto: save dek to vault")
 	}
 	if !created {
 		ZeroBytes(dek)

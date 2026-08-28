@@ -2,9 +2,10 @@
 package host
 
 import (
-	"errors"
 	"net"
 	"strings"
+
+	"github.com/cockroachdb/errors"
 
 	"librevita.org/internal/core/clinicctx"
 )

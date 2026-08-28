@@ -13,8 +13,6 @@ import (
 	"crypto/md5"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
-	"fmt"
 	"io"
 	"io/fs"
 	"os"
@@ -22,6 +20,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/cockroachdb/errors"
 
 	"librevita.org/internal/core/crypto"
 )
@@ -40,7 +40,7 @@ func NewLocal(dir string) (*Local, error) {
 		return nil, errors.New("storage: local directory is required")
 	}
 	if err := os.MkdirAll(filepath.Join(dir, metaDir), 0o750); err != nil {
-		return nil, fmt.Errorf("storage: create root: %w", err)
+		return nil, errors.Wrap(err, "storage: create root")
 	}
 	return &Local{root: dir}, nil
 }
@@ -70,12 +70,12 @@ func (s *Local) Put(ctx context.Context, key string, data io.Reader, size int64,
 		return ObjectInfo{}, err
 	}
 	if err := os.MkdirAll(filepath.Dir(p), 0o750); err != nil {
-		return ObjectInfo{}, fmt.Errorf("storage: create parent: %w", err)
+		return ObjectInfo{}, errors.Wrap(err, "storage: create parent")
 	}
 
 	tmp, err := os.CreateTemp(filepath.Dir(p), ".lv-upload-*")
 	if err != nil {
-		return ObjectInfo{}, fmt.Errorf("storage: create temp: %w", err)
+		return ObjectInfo{}, errors.Wrap(err, "storage: create temp")
 	}
 	tmpName := tmp.Name()
 	defer os.Remove(tmpName)
@@ -85,22 +85,22 @@ func (s *Local) Put(ctx context.Context, key string, data io.Reader, size int64,
 	checksum, err := crypto.NewDigest()
 	if err != nil {
 		tmp.Close()
-		return ObjectInfo{}, fmt.Errorf("storage: checksum: %w", err)
+		return ObjectInfo{}, errors.Wrap(err, "storage: checksum")
 	}
 	written, err := io.Copy(io.MultiWriter(tmp, etagHash, checksum), data)
 	if err != nil {
 		tmp.Close()
-		return ObjectInfo{}, fmt.Errorf("storage: write: %w", err)
+		return ObjectInfo{}, errors.Wrap(err, "storage: write")
 	}
 	if err := tmp.Sync(); err != nil {
 		tmp.Close()
-		return ObjectInfo{}, fmt.Errorf("storage: sync: %w", err)
+		return ObjectInfo{}, errors.Wrap(err, "storage: sync")
 	}
 	if err := tmp.Close(); err != nil {
-		return ObjectInfo{}, fmt.Errorf("storage: close temp: %w", err)
+		return ObjectInfo{}, errors.Wrap(err, "storage: close temp")
 	}
 	if err := os.Rename(tmpName, p); err != nil {
-		return ObjectInfo{}, fmt.Errorf("storage: rename: %w", err)
+		return ObjectInfo{}, errors.Wrap(err, "storage: rename")
 	}
 
 	info := ObjectInfo{
@@ -114,7 +114,7 @@ func (s *Local) Put(ctx context.Context, key string, data io.Reader, size int64,
 	if err := s.writeMeta(key, info); err != nil {
 		// The object is already stored; a broken sidecar degrades
 		// metadata only, so surface it but keep the object.
-		return info, fmt.Errorf("storage: metadata: %w", err)
+		return info, errors.Wrap(err, "storage: metadata")
 	}
 	return info, nil
 }
@@ -132,7 +132,7 @@ func (s *Local) Get(ctx context.Context, key string) (*Object, error) {
 		return nil, ErrNotFound
 	}
 	if err != nil {
-		return nil, fmt.Errorf("storage: open: %w", err)
+		return nil, errors.Wrap(err, "storage: open")
 	}
 	info, err := s.stat(key, p)
 	if err != nil {
@@ -171,7 +171,7 @@ func (s *Local) stat(key, p string) (ObjectInfo, error) {
 		return ObjectInfo{}, ErrNotFound
 	}
 	if err != nil {
-		return ObjectInfo{}, fmt.Errorf("storage: stat: %w", err)
+		return ObjectInfo{}, errors.Wrap(err, "storage: stat")
 	}
 	info := ObjectInfo{
 		Key:          key,
@@ -218,7 +218,7 @@ func (s *Local) List(ctx context.Context, prefix string) ([]ObjectInfo, error) {
 		return nil
 	})
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return nil, fmt.Errorf("storage: list: %w", err)
+		return nil, errors.Wrap(err, "storage: list")
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Key < out[j].Key })
 	return out, nil

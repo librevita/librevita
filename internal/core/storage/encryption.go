@@ -2,10 +2,9 @@ package storage
 
 import (
 	"encoding/binary"
-	"errors"
-	"fmt"
 	"io"
 
+	"github.com/cockroachdb/errors"
 	"librevita.org/internal/core/crypto"
 )
 
@@ -61,7 +60,7 @@ func NewEncryptedReader(source io.Reader, key, aad []byte) (*EncryptedReader, er
 	}
 	baseNonce, err := crypto.RandomBytes(crypto.SizeNonce)
 	if err != nil {
-		return nil, fmt.Errorf("storage: encrypted nonce: %w", err)
+		return nil, errors.Wrap(err, "storage: encrypted nonce")
 	}
 	header := make([]byte, encryptedFileHeaderSize)
 	copy(header, encryptedFileMagic[:])
@@ -127,7 +126,7 @@ func (r *EncryptedReader) fillFrame() error {
 	defer crypto.ZeroBytes(buf)
 	n, err := io.ReadFull(r.source, buf)
 	if err != nil && !errors.Is(err, io.ErrUnexpectedEOF) && !errors.Is(err, io.EOF) {
-		return fmt.Errorf("storage: read plaintext: %w", err)
+		return errors.Wrap(err, "storage: read plaintext")
 	}
 	if n == 0 {
 		r.done = true
@@ -146,7 +145,7 @@ func (r *EncryptedReader) fillFrame() error {
 	nonce := chunkNonce(r.baseNonce, r.counter)
 	aead, err := crypto.NewAEADCipher(r.key)
 	if err != nil {
-		return fmt.Errorf("storage: encrypted chunk init: %w", err)
+		return errors.Wrap(err, "storage: encrypted chunk init")
 	}
 	ciphertext := aead.Seal(nil, nonce, plain, frameAAD(r.aad, r.counter, length))
 	r.frame = make([]byte, encryptedFrameHeaderSize+len(ciphertext))
@@ -194,7 +193,7 @@ func NewDecryptedReader(source io.Reader, key, aad []byte) (*DecryptedReader, er
 	}
 	header := make([]byte, encryptedFileHeaderSize)
 	if _, err := io.ReadFull(source, header); err != nil {
-		return nil, fmt.Errorf("%w: header: %v", ErrInvalidEncryptedObject, err)
+		return nil, errors.Wrapf(ErrInvalidEncryptedObject, "header: %v", err)
 	}
 	if string(header[:4]) != string(encryptedFileMagic[:]) || header[4] != encryptedFileVersion {
 		return nil, ErrInvalidEncryptedObject
@@ -252,7 +251,7 @@ func (r *DecryptedReader) fillFrame() error {
 		return nil
 	}
 	if err != nil {
-		return fmt.Errorf("%w: frame header: %v", ErrInvalidEncryptedObject, err)
+		return errors.Wrapf(ErrInvalidEncryptedObject, "frame header: %v", err)
 	}
 	length := binary.BigEndian.Uint32(lengthBytes[:])
 	if length == 0 || length > encryptedFileChunkSize {
@@ -260,12 +259,12 @@ func (r *DecryptedReader) fillFrame() error {
 	}
 	ciphertext := make([]byte, int(length)+crypto.SizeAuthTag)
 	if _, err := io.ReadFull(r.source, ciphertext); err != nil {
-		return fmt.Errorf("%w: frame payload: %v", ErrInvalidEncryptedObject, err)
+		return errors.Wrapf(ErrInvalidEncryptedObject, "frame payload: %v", err)
 	}
 	nonce := chunkNonce(r.baseNonce, r.counter)
 	aead, err := crypto.NewAEADCipher(r.key)
 	if err != nil {
-		return fmt.Errorf("storage: decrypted chunk init: %w", err)
+		return errors.Wrap(err, "storage: decrypted chunk init")
 	}
 	plain, err := aead.Open(nil, nonce, ciphertext, frameAAD(r.aad, r.counter, lengthBytes[:]))
 	if err != nil || len(plain) != int(length) {
@@ -275,7 +274,7 @@ func (r *DecryptedReader) fillFrame() error {
 		if err == nil {
 			err = ErrInvalidEncryptedObject
 		}
-		return fmt.Errorf("%w: frame authentication: %v", ErrInvalidEncryptedObject, err)
+		return errors.Wrapf(ErrInvalidEncryptedObject, "frame authentication: %v", err)
 	}
 	r.pending = plain
 	r.counter++

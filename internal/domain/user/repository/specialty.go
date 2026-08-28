@@ -2,8 +2,8 @@ package repository
 
 import (
 	"context"
-	"fmt"
 
+	"github.com/cockroachdb/errors"
 	"github.com/google/uuid"
 
 	"librevita.org/ent"
@@ -27,7 +27,7 @@ func (r *specialtyRepository) ListByClinic(ctx context.Context, clinicID uuid.UU
 		Order(ent.Asc(specialty.FieldName)).
 		All(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("specialty repository: list: %w", err)
+		return nil, errors.Wrap(err, "specialty repository: list")
 	}
 
 	rows := make([]usermodel.Specialty, 0, len(specialties))
@@ -45,12 +45,12 @@ func (r *specialtyRepository) ListPageByClinic(ctx context.Context, clinicID uui
 		Offset(offset).
 		All(ctx)
 	if err != nil {
-		return nil, 0, fmt.Errorf("specialty repository: list page: %w", err)
+		return nil, 0, errors.Wrap(err, "specialty repository: list page")
 	}
 
 	total, err := r.client.Specialty.Query().Where(specialty.ClinicIDEQ(clinicID)).Count(ctx)
 	if err != nil {
-		return nil, 0, fmt.Errorf("specialty repository: count: %w", err)
+		return nil, 0, errors.Wrap(err, "specialty repository: count")
 	}
 
 	rows := make([]usermodel.Specialty, 0, len(specialties))
@@ -68,7 +68,7 @@ func (r *specialtyRepository) Create(ctx context.Context, sp *usermodel.Specialt
 		).
 		Exist(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("specialty repository: check duplicate: %w", err)
+		return nil, errors.Wrap(err, "specialty repository: check duplicate")
 	}
 	if exists {
 		return nil, usermodel.ErrDuplicateSpecialty
@@ -83,7 +83,7 @@ func (r *specialtyRepository) Create(ctx context.Context, sp *usermodel.Specialt
 		if ent.IsConstraintError(err) {
 			return nil, usermodel.ErrDuplicateSpecialty
 		}
-		return nil, fmt.Errorf("specialty repository: create: %w", err)
+		return nil, errors.Wrap(err, "specialty repository: create")
 	}
 	return toSpecialtyDomain(saved), nil
 }
@@ -96,7 +96,7 @@ func (r *specialtyRepository) Delete(ctx context.Context, clinicID, id uuid.UUID
 		).
 		Exec(ctx)
 	if err != nil {
-		return fmt.Errorf("specialty repository: delete: %w", err)
+		return errors.Wrap(err, "specialty repository: delete")
 	}
 	return nil
 }
@@ -112,7 +112,7 @@ func (r *specialtyRepository) ListByUser(ctx context.Context, userID uuid.UUID) 
 		if ent.IsNotFound(err) {
 			return nil, usermodel.ErrUserNotFound
 		}
-		return nil, fmt.Errorf("specialty repository: list by user: %w", err)
+		return nil, errors.Wrap(err, "specialty repository: list by user")
 	}
 
 	rows := make([]usermodel.Specialty, 0, len(u.Edges.Specialties))
@@ -130,7 +130,7 @@ func (r *specialtyRepository) CheckClinicScope(ctx context.Context, clinicID uui
 		).
 		Count(ctx)
 	if err != nil {
-		return false, fmt.Errorf("specialty repository: check clinic scope: %w", err)
+		return false, errors.Wrap(err, "specialty repository: check clinic scope")
 	}
 	return count == len(specialtyIDs), nil
 }

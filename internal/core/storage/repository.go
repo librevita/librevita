@@ -2,8 +2,8 @@ package storage
 
 import (
 	"context"
-	"fmt"
 
+	"github.com/cockroachdb/errors"
 	"github.com/google/uuid"
 
 	"librevita.org/ent"
@@ -23,7 +23,7 @@ func NewIndexRepository(client *ent.Client) IndexRepository {
 func (r *indexRepository) Insert(ctx context.Context, f StoredFile) (*StoredFile, error) {
 	clinicID, err := clinicctx.MustClinicID(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("storage repository: insert: %w", err)
+		return nil, errors.Wrap(err, "storage repository: insert")
 	}
 	created, err := r.client.StorageObject.Create().
 		SetID(f.ID).
@@ -39,7 +39,7 @@ func (r *indexRepository) Insert(ctx context.Context, f StoredFile) (*StoredFile
 		SetCreatedBy(f.CreatedBy).
 		Save(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("storage repository: insert: %w", err)
+		return nil, errors.Wrap(err, "storage repository: insert")
 	}
 	return storedFileFromEnt(created), nil
 }
@@ -50,7 +50,7 @@ func (r *indexRepository) Get(ctx context.Context, id uuid.UUID) (*StoredFile, e
 		if ent.IsNotFound(err) {
 			return nil, ErrNotFound
 		}
-		return nil, fmt.Errorf("storage repository: get: %w", err)
+		return nil, errors.Wrap(err, "storage repository: get")
 	}
 	return storedFileFromEnt(obj), nil
 }
@@ -67,7 +67,7 @@ func (r *indexRepository) GetForResource(ctx context.Context, domain string, res
 		if ent.IsNotFound(err) {
 			return nil, ErrNotFound
 		}
-		return nil, fmt.Errorf("storage repository: get for resource: %w", err)
+		return nil, errors.Wrap(err, "storage repository: get for resource")
 	}
 	return storedFileFromEnt(obj), nil
 }
@@ -81,7 +81,7 @@ func (r *indexRepository) List(ctx context.Context, domain string, resourceID uu
 		Order(ent.Desc(storageobject.FieldCreatedAt)).
 		All(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("storage repository: list: %w", err)
+		return nil, errors.Wrap(err, "storage repository: list")
 	}
 	out := make([]StoredFile, 0, len(objs))
 	for _, obj := range objs {
@@ -96,10 +96,10 @@ func (r *indexRepository) Delete(ctx context.Context, id uuid.UUID) (string, err
 		if ent.IsNotFound(err) {
 			return "", ErrNotFound
 		}
-		return "", fmt.Errorf("storage repository: get for delete: %w", err)
+		return "", errors.Wrap(err, "storage repository: get for delete")
 	}
 	if err := r.client.StorageObject.DeleteOneID(id).Exec(ctx); err != nil {
-		return "", fmt.Errorf("storage repository: delete: %w", err)
+		return "", errors.Wrap(err, "storage repository: delete")
 	}
 	return obj.Key, nil
 }

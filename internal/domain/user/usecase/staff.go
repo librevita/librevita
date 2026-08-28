@@ -3,10 +3,9 @@ package usecase
 import (
 	"context"
 	"encoding/json"
-	"errors"
-	"fmt"
 	"strings"
 
+	"github.com/cockroachdb/errors"
 	"github.com/google/uuid"
 )
 
@@ -39,11 +38,11 @@ func (s *Service) CreateStaffChangeRequest(ctx context.Context, userID, requeste
 
 	uUUID, err := uuid.Parse(userID)
 	if err != nil {
-		return nil, fmt.Errorf("usecase: invalid user id: %w", err)
+		return nil, errors.Wrap(err, "usecase: invalid user id")
 	}
 	reqUUID, err := uuid.Parse(requestedBy)
 	if err != nil {
-		return nil, fmt.Errorf("usecase: invalid requester id: %w", err)
+		return nil, errors.Wrap(err, "usecase: invalid requester id")
 	}
 
 	current, err := s.userRepo.GetByID(ctx, uUUID)
@@ -53,7 +52,7 @@ func (s *Service) CreateStaffChangeRequest(ctx context.Context, userID, requeste
 
 	userSpecs, err := s.specialtyRepo.ListByUser(ctx, uUUID)
 	if err != nil {
-		return nil, fmt.Errorf("usecase: list user specialties: %w", err)
+		return nil, errors.Wrap(err, "usecase: list user specialties")
 	}
 
 	previous := &StaffChange{Name: current.DisplayName, Email: current.Email}
@@ -68,17 +67,17 @@ func (s *Service) CreateStaffChangeRequest(ctx context.Context, userID, requeste
 			return nil, ErrEmailInUse
 		}
 		if err != nil && !errors.Is(err, ErrUserNotFound) {
-			return nil, fmt.Errorf("usecase: check email: %w", err)
+			return nil, errors.Wrap(err, "usecase: check email")
 		}
 	}
 
 	payload, err := json.Marshal(change)
 	if err != nil {
-		return nil, fmt.Errorf("usecase: encode staff change: %w", err)
+		return nil, errors.Wrap(err, "usecase: encode staff change")
 	}
 	id, err := uuid.NewV7()
 	if err != nil {
-		return nil, fmt.Errorf("usecase: generate request id: %w", err)
+		return nil, errors.Wrap(err, "usecase: generate request id")
 	}
 
 	req, err := s.staffReqRepo.Create(ctx, &StaffChangeRequest{
@@ -88,7 +87,7 @@ func (s *Service) CreateStaffChangeRequest(ctx context.Context, userID, requeste
 		Changes:     string(payload),
 	})
 	if err != nil {
-		return nil, fmt.Errorf("usecase: create staff change request: %w", err)
+		return nil, errors.Wrap(err, "usecase: create staff change request")
 	}
 	return req, nil
 }
@@ -97,7 +96,7 @@ func (s *Service) CreateStaffChangeRequest(ctx context.Context, userID, requeste
 func (s *Service) ListMyStaffChangeRequests(ctx context.Context, requesterID string) ([]ListStaffChangeRequestsByRequesterRow, error) {
 	reqUUID, err := uuid.Parse(requesterID)
 	if err != nil {
-		return nil, fmt.Errorf("usecase: invalid requester id: %w", err)
+		return nil, errors.Wrap(err, "usecase: invalid requester id")
 	}
 	return s.staffReqRepo.ListByRequester(ctx, reqUUID, 50)
 }
@@ -111,11 +110,11 @@ func (s *Service) ListStaffChangeRequestsFiltered(ctx context.Context, status, q
 func (s *Service) ApproveStaffChangeRequest(ctx context.Context, id, decidedBy string) error {
 	reqUUID, err := uuid.Parse(id)
 	if err != nil {
-		return fmt.Errorf("usecase: invalid request id: %w", err)
+		return errors.Wrap(err, "usecase: invalid request id")
 	}
 	deciderUUID, err := uuid.Parse(decidedBy)
 	if err != nil {
-		return fmt.Errorf("usecase: invalid decider id: %w", err)
+		return errors.Wrap(err, "usecase: invalid decider id")
 	}
 
 	req, err := s.staffReqRepo.GetByID(ctx, reqUUID)
@@ -128,7 +127,7 @@ func (s *Service) ApproveStaffChangeRequest(ctx context.Context, id, decidedBy s
 
 	var change StaffChange
 	if err := json.Unmarshal([]byte(req.Changes), &change); err != nil {
-		return fmt.Errorf("usecase: decode staff change: %w", err)
+		return errors.Wrap(err, "usecase: decode staff change")
 	}
 	if err := validateSpecialtyIDs(change.Specialties); err != nil {
 		return err
@@ -148,11 +147,11 @@ func (s *Service) ApproveStaffChangeRequest(ctx context.Context, id, decidedBy s
 func (s *Service) RejectStaffChangeRequest(ctx context.Context, id, decidedBy, note string) error {
 	reqUUID, err := uuid.Parse(id)
 	if err != nil {
-		return fmt.Errorf("usecase: invalid request id: %w", err)
+		return errors.Wrap(err, "usecase: invalid request id")
 	}
 	deciderUUID, err := uuid.Parse(decidedBy)
 	if err != nil {
-		return fmt.Errorf("usecase: invalid decider id: %w", err)
+		return errors.Wrap(err, "usecase: invalid decider id")
 	}
 
 	req, err := s.staffReqRepo.GetByID(ctx, reqUUID)

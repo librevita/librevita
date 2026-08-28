@@ -2,11 +2,10 @@ package usecase
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"log/slog"
 	"strings"
 
+	"github.com/cockroachdb/errors"
 	"github.com/google/uuid"
 
 	"librevita.org/internal/core/clinicctx"
@@ -49,7 +48,7 @@ func (s *service) decryptValueWithDEK(clinicID, patientID uuid.UUID, dek, cipher
 func (s *service) AddIdentifier(ctx context.Context, clinicID, createdBy string, in Input) (*identifiermodel.Identifier, error) {
 	cUUID, err := uuid.Parse(clinicID)
 	if err != nil {
-		return nil, fmt.Errorf("identifier: invalid clinic id: %w", err)
+		return nil, errors.Wrap(err, "identifier: invalid clinic id")
 	}
 	strategy := s.resolve(in)
 	normalized, err := strategy.Normalize(in.Value)
@@ -78,7 +77,7 @@ func (s *service) AddIdentifier(ctx context.Context, clinicID, createdBy string,
 
 	id, err := uuid.NewV7()
 	if err != nil {
-		return nil, fmt.Errorf("identifier: generate id: %w", err)
+		return nil, errors.Wrap(err, "identifier: generate id")
 	}
 
 	var cb *uuid.UUID
@@ -116,7 +115,7 @@ func (s *service) FindByValue(ctx context.Context, clinicID, raw string) ([]*ide
 	}
 	cUUID, err := uuid.Parse(clinicID)
 	if err != nil {
-		return nil, fmt.Errorf("identifier: invalid clinic id: %w", err)
+		return nil, errors.Wrap(err, "identifier: invalid clinic id")
 	}
 	var found []*identifiermodel.Identifier
 	for _, strategy := range s.reg.DetectCandidates(raw) {
@@ -133,7 +132,7 @@ func (s *service) FindByValue(ctx context.Context, clinicID, raw string) ([]*ide
 			continue
 		}
 		if err != nil {
-			return nil, fmt.Errorf("identifier: find by value: %w", err)
+			return nil, errors.Wrap(err, "identifier: find by value")
 		}
 		value, err := s.decryptValue(ctx, cUUID, row.PatientID, row.System, row.ValueCiphertext, row.Nonce)
 		if err != nil {
@@ -159,16 +158,16 @@ func (s *service) FindByValue(ctx context.Context, clinicID, raw string) ([]*ide
 func (s *service) List(ctx context.Context, clinicID, patientID string) ([]*identifiermodel.Identifier, error) {
 	pUUID, err := uuid.Parse(patientID)
 	if err != nil {
-		return nil, fmt.Errorf("identifier: invalid patient id: %w", err)
+		return nil, errors.Wrap(err, "identifier: invalid patient id")
 	}
 	cUUID, err := uuid.Parse(clinicID)
 	if err != nil {
-		return nil, fmt.Errorf("identifier: invalid clinic id: %w", err)
+		return nil, errors.Wrap(err, "identifier: invalid clinic id")
 	}
 
 	exists, err := s.repo.PatientExists(ctx, cUUID, pUUID)
 	if err != nil {
-		return nil, fmt.Errorf("identifier: patient check: %w", err)
+		return nil, errors.Wrap(err, "identifier: patient check")
 	}
 	if !exists {
 		return nil, ErrNotFound
@@ -176,7 +175,7 @@ func (s *service) List(ctx context.Context, clinicID, patientID string) ([]*iden
 
 	rows, err := s.repo.ListByPatient(ctx, pUUID)
 	if err != nil {
-		return nil, fmt.Errorf("identifier: list: %w", err)
+		return nil, errors.Wrap(err, "identifier: list")
 	}
 	out := make([]*identifiermodel.Identifier, 0, len(rows))
 	deks, err := s.key.GetPatientDEKsForClinic(ctx, cUUID, []uuid.UUID{pUUID})
@@ -184,7 +183,7 @@ func (s *service) List(ctx context.Context, clinicID, patientID string) ([]*iden
 		if errors.Is(err, crypto.ErrKeyNotFound) || errors.Is(err, crypto.ErrKeyDestroyed) {
 			return out, nil
 		}
-		return nil, fmt.Errorf("identifier: load patient dek: %w", err)
+		return nil, errors.Wrap(err, "identifier: load patient dek")
 	}
 	defer func() {
 		for _, dek := range deks {
@@ -235,7 +234,7 @@ func (s *service) ListByPatients(ctx context.Context, patientIDs []string) (map[
 
 	rows, err := s.repo.ListByPatients(ctx, pUUIDs)
 	if err != nil {
-		return nil, fmt.Errorf("identifier: list by patients: %w", err)
+		return nil, errors.Wrap(err, "identifier: list by patients")
 	}
 	keysByClinic := make(map[uuid.UUID]map[uuid.UUID][]byte)
 	idsByClinic := make(map[uuid.UUID][]uuid.UUID)
@@ -252,7 +251,7 @@ func (s *service) ListByPatients(ctx context.Context, patientIDs []string) (map[
 	for cid, ids := range idsByClinic {
 		deks, err := s.key.GetPatientDEKsForClinic(ctx, cid, ids)
 		if err != nil {
-			return nil, fmt.Errorf("identifier: load patient deks: %w", err)
+			return nil, errors.Wrap(err, "identifier: load patient deks")
 		}
 		keysByClinic[cid] = deks
 		defer func(deks map[uuid.UUID][]byte) {
@@ -286,20 +285,20 @@ func (s *service) ListByPatients(ctx context.Context, patientIDs []string) (map[
 func (s *service) Remove(ctx context.Context, clinicID, patientID, identifierID string) error {
 	pUUID, err := uuid.Parse(patientID)
 	if err != nil {
-		return fmt.Errorf("identifier: invalid patient id: %w", err)
+		return errors.Wrap(err, "identifier: invalid patient id")
 	}
 	cUUID, err := uuid.Parse(clinicID)
 	if err != nil {
-		return fmt.Errorf("identifier: invalid clinic id: %w", err)
+		return errors.Wrap(err, "identifier: invalid clinic id")
 	}
 	idUUID, err := uuid.Parse(identifierID)
 	if err != nil {
-		return fmt.Errorf("identifier: invalid identifier id: %w", err)
+		return errors.Wrap(err, "identifier: invalid identifier id")
 	}
 
 	exists, err := s.repo.PatientExists(ctx, cUUID, pUUID)
 	if err != nil {
-		return fmt.Errorf("identifier: patient check: %w", err)
+		return errors.Wrap(err, "identifier: patient check")
 	}
 	if !exists {
 		return ErrNotFound

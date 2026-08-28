@@ -2,8 +2,9 @@ package policy
 
 import (
 	"context"
-	"fmt"
 	"time"
+
+	"github.com/cockroachdb/errors"
 
 	"github.com/google/uuid"
 
@@ -32,7 +33,7 @@ func (r *policyRepository) SeedDefaults(ctx context.Context, defaults map[string
 			Where(accesspolicy.NameEQ(name), accesspolicy.ClinicIDEQ(clinicID)).
 			Exist(ctx)
 		if err != nil {
-			return fmt.Errorf("policy repository: check %q: %w", name, err)
+			return errors.Wrapf(err, "policy repository: check %q", name)
 		}
 		if exists {
 			continue
@@ -40,12 +41,12 @@ func (r *policyRepository) SeedDefaults(ctx context.Context, defaults map[string
 
 		pID, err := uuid.NewV7()
 		if err != nil {
-			return fmt.Errorf("policy repository: uuid for %q: %w", name, err)
+			return errors.Wrapf(err, "policy repository: uuid for %q", name)
 		}
 
 		tx, err := r.client.Tx(ctx)
 		if err != nil {
-			return fmt.Errorf("policy repository: tx for %q: %w", name, err)
+			return errors.Wrapf(err, "policy repository: tx for %q", name)
 		}
 
 		pol, err := tx.AccessPolicy.Create().
@@ -56,7 +57,7 @@ func (r *policyRepository) SeedDefaults(ctx context.Context, defaults map[string
 			Save(ctx)
 		if err != nil {
 			_ = tx.Rollback()
-			return fmt.Errorf("policy repository: seed insert %q: %w", name, err)
+			return errors.Wrapf(err, "policy repository: seed insert %q", name)
 		}
 
 		_, err = tx.AccessPolicyVersion.Create().
@@ -66,11 +67,11 @@ func (r *policyRepository) SeedDefaults(ctx context.Context, defaults map[string
 			Save(ctx)
 		if err != nil {
 			_ = tx.Rollback()
-			return fmt.Errorf("policy repository: seed version %q: %w", name, err)
+			return errors.Wrapf(err, "policy repository: seed version %q", name)
 		}
 
 		if err := tx.Commit(); err != nil {
-			return fmt.Errorf("policy repository: commit seed %q: %w", name, err)
+			return errors.Wrapf(err, "policy repository: commit seed %q", name)
 		}
 	}
 	return nil
@@ -81,7 +82,7 @@ func (r *policyRepository) List(ctx context.Context) ([]PolicyRow, error) {
 		Order(ent.Asc(accesspolicy.FieldName)).
 		All(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("policy repository: list: %w", err)
+		return nil, errors.Wrap(err, "policy repository: list")
 	}
 
 	out := make([]PolicyRow, 0, len(rows))
@@ -99,7 +100,7 @@ func (r *policyRepository) List(ctx context.Context) ([]PolicyRow, error) {
 func (r *policyRepository) Set(ctx context.Context, name, expression string, actor Actor, origin string) error {
 	tx, err := r.client.Tx(ctx)
 	if err != nil {
-		return fmt.Errorf("policy repository: tx: %w", err)
+		return errors.Wrap(err, "policy repository: tx")
 	}
 
 	existing, err := tx.AccessPolicy.Query().
@@ -107,7 +108,7 @@ func (r *policyRepository) Set(ctx context.Context, name, expression string, act
 		Only(ctx)
 	if err != nil && !ent.IsNotFound(err) {
 		_ = tx.Rollback()
-		return fmt.Errorf("policy repository: lookup: %w", err)
+		return errors.Wrap(err, "policy repository: lookup")
 	}
 
 	var polID uuid.UUID
@@ -115,7 +116,7 @@ func (r *policyRepository) Set(ctx context.Context, name, expression string, act
 		pID, err := uuid.NewV7()
 		if err != nil {
 			_ = tx.Rollback()
-			return fmt.Errorf("policy repository: uuid: %w", err)
+			return errors.Wrap(err, "policy repository: uuid")
 		}
 		create := tx.AccessPolicy.Create().
 			SetID(pID).
@@ -127,7 +128,7 @@ func (r *policyRepository) Set(ctx context.Context, name, expression string, act
 		pol, err := create.Save(ctx)
 		if err != nil {
 			_ = tx.Rollback()
-			return fmt.Errorf("policy repository: create: %w", err)
+			return errors.Wrap(err, "policy repository: create")
 		}
 		polID = pol.ID
 	} else {
@@ -138,7 +139,7 @@ func (r *policyRepository) Set(ctx context.Context, name, expression string, act
 			Save(ctx)
 		if err != nil {
 			_ = tx.Rollback()
-			return fmt.Errorf("policy repository: update: %w", err)
+			return errors.Wrap(err, "policy repository: update")
 		}
 	}
 
@@ -157,11 +158,11 @@ func (r *policyRepository) Set(ctx context.Context, name, expression string, act
 	_, err = verCreate.Save(ctx)
 	if err != nil {
 		_ = tx.Rollback()
-		return fmt.Errorf("policy repository: version insert: %w", err)
+		return errors.Wrap(err, "policy repository: version insert")
 	}
 
 	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("policy repository: commit: %w", err)
+		return errors.Wrap(err, "policy repository: commit")
 	}
 	return nil
 }
@@ -174,7 +175,7 @@ func (r *policyRepository) History(ctx context.Context, name string, limit int) 
 		return nil, ErrPolicyNotFound
 	}
 	if err != nil {
-		return nil, fmt.Errorf("policy repository: lookup: %w", err)
+		return nil, errors.Wrap(err, "policy repository: lookup")
 	}
 
 	versions, err := r.client.AccessPolicyVersion.Query().
@@ -183,7 +184,7 @@ func (r *policyRepository) History(ctx context.Context, name string, limit int) 
 		Limit(limit).
 		All(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("policy repository: history: %w", err)
+		return nil, errors.Wrap(err, "policy repository: history")
 	}
 
 	out := make([]PolicyVersionRow, 0, len(versions))
@@ -205,7 +206,7 @@ func (r *policyRepository) History(ctx context.Context, name string, limit int) 
 func (r *policyRepository) Count(ctx context.Context) (int64, error) {
 	count, err := r.client.AccessPolicy.Query().Count(ctx)
 	if err != nil {
-		return 0, fmt.Errorf("policy repository: count: %w", err)
+		return 0, errors.Wrap(err, "policy repository: count")
 	}
 	return int64(count), nil
 }

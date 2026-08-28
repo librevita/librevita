@@ -1,8 +1,7 @@
 package crypto
 
 import (
-	"errors"
-	"fmt"
+	"github.com/cockroachdb/errors"
 )
 
 // KeyEnvelopeVersion identifies the envelope format used for wrapped DEKs.
@@ -35,11 +34,11 @@ func wrapKey(wrappingKey, plaintext []byte, scope byte, aad []byte) ([]byte, err
 
 	aead, err := NewAEADCipher(wrappingKey)
 	if err != nil {
-		return nil, fmt.Errorf("crypto: key envelope init: %w", err)
+		return nil, errors.Wrap(err, "crypto: key envelope init")
 	}
 	nonce, err := RandomBytes(SizeNonce)
 	if err != nil {
-		return nil, fmt.Errorf("crypto: key envelope nonce: %w", err)
+		return nil, errors.Wrap(err, "crypto: key envelope nonce")
 	}
 
 	header := []byte{keyEnvelopeMagic, KeyEnvelopeVersion, scope}
@@ -73,11 +72,11 @@ func unwrapKey(wrappingKey, envelope []byte, expectedScope byte, aad []byte) ([]
 
 	aead, err := NewAEADCipher(wrappingKey)
 	if err != nil {
-		return nil, fmt.Errorf("crypto: key envelope init: %w", err)
+		return nil, errors.Wrap(err, "crypto: key envelope init")
 	}
 	plaintext, err := aead.Open(nil, nonce, ciphertext, appendEnvelopeAAD(header, aad))
 	if err != nil {
-		return nil, fmt.Errorf("crypto: open key envelope: %w", err)
+		return nil, errors.Wrap(err, "crypto: open key envelope")
 	}
 	if len(plaintext) != SizeDEK {
 		ZeroBytes(plaintext)

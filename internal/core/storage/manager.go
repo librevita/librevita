@@ -7,13 +7,12 @@ package storage
 import (
 	"context"
 	"encoding/hex"
-	"errors"
-	"fmt"
 	"hash"
 	"io"
 	"log/slog"
 	"time"
 
+	"github.com/cockroachdb/errors"
 	"github.com/google/uuid"
 	"librevita.org/internal/core/crypto"
 )
@@ -153,7 +152,7 @@ func (m *FileManager) Upload(ctx context.Context, in UploadInput, data io.Reader
 	}
 	id, err := m.newID()
 	if err != nil {
-		return nil, fmt.Errorf("storage: generate object id: %w", err)
+		return nil, errors.Wrap(err, "storage: generate object id")
 	}
 	key := m.objectKey(in.Domain, in.ResourceID, id)
 
@@ -181,7 +180,7 @@ func (m *FileManager) Upload(ctx context.Context, in UploadInput, data io.Reader
 			m.log.Error("storage: upload compensation failed",
 				"key", key, "delete_error", derr, "index_error", err)
 		}
-		return nil, fmt.Errorf("storage: index %q: %w", key, err)
+		return nil, errors.Wrapf(err, "storage: index %q", key)
 	}
 	return created, nil
 }
@@ -205,13 +204,13 @@ func (m *FileManager) UploadEncrypted(ctx context.Context, in UploadInput, data 
 	}
 	id, err := m.newID()
 	if err != nil {
-		return nil, fmt.Errorf("storage: generate object id: %w", err)
+		return nil, errors.Wrap(err, "storage: generate object id")
 	}
 	keyName := m.objectKey(in.Domain, in.ResourceID, id)
 
 	checksum, err := crypto.NewDigest()
 	if err != nil {
-		return nil, fmt.Errorf("storage: checksum: %w", err)
+		return nil, errors.Wrap(err, "storage: checksum")
 	}
 	source := io.Reader(data)
 	if size >= 0 {
@@ -220,7 +219,7 @@ func (m *FileManager) UploadEncrypted(ctx context.Context, in UploadInput, data 
 	hashed := &hashingReader{source: source, hash: checksum}
 	encrypted, err := NewEncryptedReader(hashed, key, aad)
 	if err != nil {
-		return nil, fmt.Errorf("storage: encrypt upload: %w", err)
+		return nil, errors.Wrap(err, "storage: encrypt upload")
 	}
 	defer func() { _ = encrypted.Close() }()
 
@@ -233,7 +232,7 @@ func (m *FileManager) UploadEncrypted(ctx context.Context, in UploadInput, data 
 			m.log.Error("storage: encrypted upload size compensation failed",
 				"key", keyName, "delete_error", deleteErr)
 		}
-		return nil, fmt.Errorf("storage: encrypted upload size mismatch: got %d, want %d", hashed.n, size)
+		return nil, errors.Newf("storage: encrypted upload size mismatch: got %d, want %d", hashed.n, size)
 	}
 
 	stFile := StoredFile{
@@ -254,7 +253,7 @@ func (m *FileManager) UploadEncrypted(ctx context.Context, in UploadInput, data 
 			m.log.Error("storage: encrypted upload compensation failed",
 				"key", keyName, "delete_error", deleteErr, "index_error", err)
 		}
-		return nil, fmt.Errorf("storage: index %q: %w", keyName, err)
+		return nil, errors.Wrapf(err, "storage: index %q", keyName)
 	}
 	return created, nil
 }
@@ -301,7 +300,7 @@ const orphanGracePeriod = time.Hour
 func (m *FileManager) Reconcile(ctx context.Context) (int, error) {
 	objects, err := m.store.List(ctx, "")
 	if err != nil {
-		return 0, fmt.Errorf("storage: reconcile list: %w", err)
+		return 0, errors.Wrap(err, "storage: reconcile list")
 	}
 	removed := 0
 	for _, obj := range objects {

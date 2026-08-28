@@ -2,9 +2,9 @@ package usecase
 
 import (
 	"context"
-	"fmt"
 	"strings"
 
+	"github.com/cockroachdb/errors"
 	"github.com/google/uuid"
 )
 
@@ -14,7 +14,7 @@ const maxSpecialtyNameLen = 60
 func (s *Service) ListSpecialties(ctx context.Context, clinicID string) ([]Specialty, error) {
 	cUUID, err := uuid.Parse(clinicID)
 	if err != nil {
-		return nil, fmt.Errorf("usecase: invalid clinic id: %w", err)
+		return nil, errors.Wrap(err, "usecase: invalid clinic id")
 	}
 	return s.specialtyRepo.ListByClinic(ctx, cUUID)
 }
@@ -23,7 +23,7 @@ func (s *Service) ListSpecialties(ctx context.Context, clinicID string) ([]Speci
 func (s *Service) ListSpecialtiesPage(ctx context.Context, clinicID string, limit, offset int) ([]Specialty, int64, error) {
 	cUUID, err := uuid.Parse(clinicID)
 	if err != nil {
-		return nil, 0, fmt.Errorf("usecase: invalid clinic id: %w", err)
+		return nil, 0, errors.Wrap(err, "usecase: invalid clinic id")
 	}
 	return s.specialtyRepo.ListPageByClinic(ctx, cUUID, limit, offset)
 }
@@ -39,11 +39,11 @@ func (s *Service) CreateSpecialty(ctx context.Context, clinicID, name string) (*
 	}
 	cUUID, err := uuid.Parse(clinicID)
 	if err != nil {
-		return nil, fmt.Errorf("usecase: invalid clinic id: %w", err)
+		return nil, errors.Wrap(err, "usecase: invalid clinic id")
 	}
 	id, err := uuid.NewV7()
 	if err != nil {
-		return nil, fmt.Errorf("usecase: generate specialty id: %w", err)
+		return nil, errors.Wrap(err, "usecase: generate specialty id")
 	}
 	return s.specialtyRepo.Create(ctx, &Specialty{
 		ID:       id,
@@ -56,11 +56,11 @@ func (s *Service) CreateSpecialty(ctx context.Context, clinicID, name string) (*
 func (s *Service) DeleteSpecialty(ctx context.Context, clinicID, id string) error {
 	cUUID, err := uuid.Parse(clinicID)
 	if err != nil {
-		return fmt.Errorf("usecase: invalid clinic id: %w", err)
+		return errors.Wrap(err, "usecase: invalid clinic id")
 	}
 	spUUID, err := uuid.Parse(id)
 	if err != nil {
-		return fmt.Errorf("usecase: invalid specialty id: %w", err)
+		return errors.Wrap(err, "usecase: invalid specialty id")
 	}
 	return s.specialtyRepo.Delete(ctx, cUUID, spUUID)
 }
@@ -69,7 +69,7 @@ func (s *Service) DeleteSpecialty(ctx context.Context, clinicID, id string) erro
 func (s *Service) UserSpecialties(ctx context.Context, userID string) ([]Specialty, error) {
 	uUUID, err := uuid.Parse(userID)
 	if err != nil {
-		return nil, fmt.Errorf("usecase: invalid user id: %w", err)
+		return nil, errors.Wrap(err, "usecase: invalid user id")
 	}
 	return s.specialtyRepo.ListByUser(ctx, uUUID)
 }
@@ -93,11 +93,11 @@ func (s *Service) SetUserSpecialties(ctx context.Context, clinicID, userID strin
 	}
 	cUUID, err := uuid.Parse(clinicID)
 	if err != nil {
-		return fmt.Errorf("usecase: invalid clinic id: %w", err)
+		return errors.Wrap(err, "usecase: invalid clinic id")
 	}
 	uUUID, err := uuid.Parse(userID)
 	if err != nil {
-		return fmt.Errorf("usecase: invalid user id: %w", err)
+		return errors.Wrap(err, "usecase: invalid user id")
 	}
 
 	var validUUIDs []uuid.UUID
@@ -112,7 +112,7 @@ func (s *Service) SetUserSpecialties(ctx context.Context, clinicID, userID strin
 	if len(validUUIDs) > 0 {
 		ok, err := s.specialtyRepo.CheckClinicScope(ctx, cUUID, validUUIDs)
 		if err != nil {
-			return fmt.Errorf("usecase: check specialty scope: %w", err)
+			return errors.Wrap(err, "usecase: check specialty scope")
 		}
 		if !ok {
 			return ErrSpecialtyScope

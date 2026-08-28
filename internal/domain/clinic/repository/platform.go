@@ -2,8 +2,8 @@ package repository
 
 import (
 	"context"
-	"fmt"
 
+	"github.com/cockroachdb/errors"
 	"github.com/google/uuid"
 
 	"librevita.org/ent"
@@ -39,7 +39,7 @@ func NewPlatformUserRepository(client *ent.Client) PlatformUserRepository {
 func (r *platformUserRepository) Count(ctx context.Context) (int, error) {
 	n, err := r.client.PlatformUser.Query().Count(ctx)
 	if err != nil {
-		return 0, fmt.Errorf("platform user: count: %w", err)
+		return 0, errors.Wrap(err, "platform user: count")
 	}
 	return n, nil
 }
@@ -54,9 +54,9 @@ func (r *platformUserRepository) Create(ctx context.Context, u *PlatformUser) (*
 		Save(ctx)
 	if err != nil {
 		if ent.IsConstraintError(err) {
-			return nil, fmt.Errorf("platform user: email taken")
+			return nil, errors.New("platform user: email taken")
 		}
-		return nil, fmt.Errorf("platform user: create: %w", err)
+		return nil, errors.Wrap(err, "platform user: create")
 	}
 	return toPlatformUser(saved), nil
 }
@@ -67,7 +67,7 @@ func (r *platformUserRepository) GetByEmail(ctx context.Context, email string) (
 		if ent.IsNotFound(err) {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("platform user: get by email: %w", err)
+		return nil, errors.Wrap(err, "platform user: get by email")
 	}
 	return toPlatformUser(row), nil
 }
@@ -78,7 +78,7 @@ func (r *platformUserRepository) GetByID(ctx context.Context, id uuid.UUID) (*Pl
 		if ent.IsNotFound(err) {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("platform user: get by id: %w", err)
+		return nil, errors.Wrap(err, "platform user: get by id")
 	}
 	return toPlatformUser(row), nil
 }
