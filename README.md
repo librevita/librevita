@@ -280,22 +280,23 @@ implement it, selected with `storage.backend`:
   path-style addressing are configurable. The bucket is verified at startup so a misconfigured backend fails fast.
 
 Clinical attachments and document uploads are managed via `storage.Manager`, which enforces transparent streaming
-authenticated encryption using the target Patient DEK (`crypto.Encryptor`) with Patient URN authentication and SHA-256
-integrity verification before persistence. Domains interact with storage through clean hexagonal ports.
+authenticated encryption using the target Patient DEK (`crypto.NewAEADCipher`) with Patient URN authentication and unkeyed stream digest
+(`crypto.NewDigest`) verification before persistence. Domains interact with storage through clean hexagonal ports.
 
 ## Cryptographic Core, AL-FLE & Envelope Encryption
 
 LibreVita implements an enterprise-grade **Application-Layer Field-Level Encryption (AL-FLE) with Blind Indexing** architecture in `internal/core/crypto` and `internal/core/database/fle` (providing host-proof database persistence), column-level transparent authenticated encryption (AEAD), exact-match blind indexing, tokenized name search, and per-patient envelope encryption with physical key vault storage:
 
-- **Keyed Hasher (`crypto.Hasher`)** — provides keyed cryptographic hashing for blind indexing and session token verification with cryptographic agility:
+- **Keyed Hasher (`crypto.Hasher`) & Digest Primitives (`internal/core/crypto/digest.go`)** — provides keyed and unkeyed cryptographic hashing for blind indexing, audit trails, stream verification, and session token verification with cryptographic agility:
   - Formatted prefixed output: `<algorithm>$<hex_hash>` (e.g. `blake2s$3f4a...`).
-  - Active native-keyed engines: `blake2s` (default) and `blake2b`.
-  - Constant-time verification (`subtle.ConstantTimeCompare`) with legacy raw-hex fallback.
+  - Active native-keyed engines: `blake2s` (universal default, optimized for 32-bit hardware & universal compatibility) and `blake2b` (configurable via `crypto.hash_algorithm`).
+  - Low-level digest and secure random utilities: `crypto.NewDigest`, `crypto.NewDigestWithKey`, `crypto.Digest256`, `crypto.DigestReader`, `crypto.RandomBytes`, `crypto.RandomHex`, and constant-time verification (`crypto.ConstantTimeCompare`).
   - Deterministic blind index computation (`system || '\x00' || value`) ensuring cryptographic domain separation across entities (e.g. `patient.phone`, `patient.email`).
-- **Symmetric AEAD Encryptor (`crypto.Encryptor`)** — provides authenticated payload encryption for sensitive personal and clinical data:
+- **Symmetric AEAD Encryptor (`crypto.Encryptor`) & Ciphers (`internal/core/crypto/cipher.go`)** — provides authenticated payload and streaming encryption for sensitive personal and clinical data:
   - Self-Contained Envelope format with Magic Byte versioning at `ciphertext[0]`: `0x01` (`MagicByteXChaCha20Poly1305`) containing `[ Version (1B) | Nonce (24B) | Ciphertext + Poly1305 Tag ]`.
+  - Dedicated low-level AEAD instantiation: `crypto.NewAEADCipher(key)`, `crypto.NewAEADCipherByVersion(version, key)`, `crypto.SizeNonce` (24 bytes), and `crypto.SizeAuthTag` (16 bytes).
   - Cryptographic Agility: Future-proof architecture supporting algorithm migrations (e.g. AES-256-GCM with 12-byte nonces or Post-Quantum ciphers) without database migrations or schema alterations.
-  - Memory security: transient plaintext buffers are securely zeroized with `ZeroBytes`.
+  - Memory security: transient plaintext and key buffers are securely zeroized with `ZeroBytes`.
 - **AL-FLE Ent Extension (`internal/core/database/fle`)** — a compile-time, zero-reflection encryption and indexing layer built on the canonical `entc.Extension` API:
   - **Declarative Schema Annotations**: Sensitive fields are annotated once — `fle.SearchablePhone()`, `fle.SearchableEmail()`, `fle.SearchableDocument()`, `fle.SearchableName()`, or plain `fle.Searchable()` — stored as binary `BLOB`/`BYTEA` via `fle.EncryptedString()`.
   - **Static Codegen (`fle.Template`)**: An Ent template extension generates 100% typed Go hooks (`encryptPatientMutation`) and decrypt interceptors at build time, with zero use of `reflect` or `interface{}` at runtime. Encryptors, hashers, and patient DEK resolvers are resolved purely from `context.Context` — no global state, no mutex contention.
@@ -306,7 +307,7 @@ LibreVita implements an enterprise-grade **Application-Layer Field-Level Encrypt
   - `normalize.Phone`, `normalize.Email`, `normalize.Text` — deterministic canonicalization before hashing, ensuring blind index collisions between `+55 11 98888-7777` and `5511988887777` are avoided.
   - `normalize.NameTokens` — generates prefix n-grams (min 3 chars) of each word in a name, filtering Portuguese stop words via a compile-time `switch` jump table (`isStopWord`) with zero heap allocations. Used by the FLE template for tokenized name search.
 - **Envelope Encryption Hierarchy (`*crypto.Engine`)** — protects sensitive clinical data with physical state separation across 3 cryptographic tiers:
-  - **KEK (Key Encryption Key)** — derived via HKDF-BLAKE2b-256 from `LIBREVITA_MASTER_KEY` (`master_key`) using info string `librevita:kek:v1`. Kept strictly in memory and never written to persistent storage.
+  - **KEK (Key Encryption Key)** — derived via HKDF from `LIBREVITA_MASTER_KEY` (`master_key`) using info string `librevita:kek:v1`. Kept strictly in memory and never written to persistent storage.
   - **Clinic DEK** — a 32-byte key per clinic (`urn:librevita:clinic:<id>`), wrapped by the installation KEK. It wraps Patient DEKs and derives the clinic-scoped blind-index key; it does not encrypt patient PHI directly.
   - **Patient DEK** — a 32-byte random key per patient (`urn:librevita:clinic:<id>:patient:<id>`), wrapped by the Clinic DEK. Patient PHI and attachments are encrypted with XChaCha20-Poly1305 under this key; AAD is the Patient URN.
   - **Request-Scoped Key Cache (`crypto.WithRequestKeyCache`)** — ephemeral in-memory cache preventing redundant vault lookups and unwrapping operations during an HTTP request lifecycle, with guaranteed cryptographic memory zeroization upon request completion.
@@ -621,13 +622,13 @@ Abuse controls:
 All security-relevant and clinical events (register, login, logout, policy denials, patient create/update/archive, staff
 approvals, preference changes) are written to the `audit_log` table by `internal/core/audit`. The trail records actor,
 action, resource, result, IP, request id, and a detail message; passwords, tokens, and CSRF values are never stored.
-Each row carries a BLAKE2b signature chained to the previous entry, so modifying or reordering any entry breaks the
+Each row carries a cryptographic digest signature chained to the previous entry (`crypto.NewDigestWithKey`), so modifying or reordering any entry breaks the
 chain for every following row; database triggers make the table append-only. `GET /audit/integrity` recomputes the chain
 and reports the first broken entry. Rows are self-contained snapshots (Event Sourcing): the actor name, role, user
 agent, and resource name are denormalized onto every event. Recording is best-effort and never breaks the audited
 operation; the per-resource history powers the patient detail page.
 
-**Threat model of the chain:** the trail is _tamper-evidence_, not tamper-proof. The signature is unkeyed BLAKE2b over
+**Threat model of the chain:** the trail is _tamper-evidence_, not tamper-proof. The signature is a cryptographic digest over
 the previous signature and the row payload, so anyone with write access to the database (or the underlying files) can
 recompute the whole chain — the guarantee is that such an alteration is _detectable_ by running `GET /audit/integrity`,
 not that it is impossible. Detection depends on someone actually verifying; deployments that need stronger guarantees
