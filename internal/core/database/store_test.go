@@ -45,7 +45,7 @@ func TestStoreSQLiteAndEntClient(t *testing.T) {
 	err = store.Ent().Schema.Create(ctx)
 	require.NoError(t, err)
 
-	// Test Ent Patient entity operations (Zero-Knowledge)
+	// Test Ent Patient entity operations (AL-FLE)
 	clinicID := uuid.New()
 	_, err = store.Ent().Clinic.Create().
 		SetID(clinicID).
