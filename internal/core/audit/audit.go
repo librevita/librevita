@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
-	"log/slog"
 	"strings"
 	"time"
 
@@ -13,6 +12,7 @@ import (
 
 	"librevita.org/internal/core/clinicctx"
 	"librevita.org/internal/core/crypto"
+	"librevita.org/pkg/log"
 )
 
 // Event is the structured audit payload recorded for an operation.
@@ -76,15 +76,15 @@ type Repository interface {
 // Logger persists audit events to the database.
 type Logger struct {
 	repo Repository
-	log  *slog.Logger
+	log  log.Logger
 }
 
 // NewLogger is the Fx provider.
-func NewLogger(repo Repository, log *slog.Logger) (*Logger, error) {
+func NewLogger(repo Repository, logger log.Logger) (*Logger, error) {
 	if repo == nil {
 		return nil, errors.New("audit: repository is nil")
 	}
-	return &Logger{repo: repo, log: log}, nil
+	return &Logger{repo: repo, log: logger}, nil
 }
 
 // Recent returns the newest audit events, strictly before the cursor
@@ -110,9 +110,12 @@ func (l *Logger) ForResource(ctx context.Context, resource string, limit int) ([
 // operation.
 func (l *Logger) Record(ctx context.Context, ev Event) {
 	if !ev.Result.Valid() {
-		l.log.Error("audit record failed",
-			"action", ev.Action, "resource", ev.Resource, "result", ev.Result,
-			"error", "invalid result value")
+		l.log.ErrorContext(ctx, "audit record failed",
+			log.String("action", ev.Action),
+			log.String("resource", ev.Resource),
+			log.String("result", string(ev.Result)),
+			log.String("error", "invalid result value"),
+		)
 		return
 	}
 
@@ -124,13 +127,20 @@ func (l *Logger) Record(ctx context.Context, ev Event) {
 	}
 	prev, err := l.repo.LastSignature(ctx)
 	if err != nil {
-		l.log.Error("audit record failed", "action", ev.Action, "error", err)
+		l.log.ErrorContext(ctx, "audit record failed",
+			log.String("action", ev.Action),
+			log.Error(err),
+		)
 		return
 	}
 
 	signature := chainHash(prev, ev, createdAt)
 	if err := l.repo.Record(ctx, ev, createdAt, signature); err != nil {
-		l.log.Error("audit record failed", "action", ev.Action, "resource", ev.Resource, "error", err)
+		l.log.ErrorContext(ctx, "audit record failed",
+			log.String("action", ev.Action),
+			log.String("resource", ev.Resource),
+			log.Error(err),
+		)
 	}
 }
 

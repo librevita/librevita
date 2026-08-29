@@ -1,8 +1,6 @@
 package clinic
 
 import (
-	"log/slog"
-
 	"github.com/labstack/echo/v4"
 	"go.uber.org/fx"
 
@@ -12,6 +10,7 @@ import (
 	"librevita.org/internal/domain/clinic/model"
 	"librevita.org/internal/domain/clinic/repository"
 	"librevita.org/internal/domain/clinic/usecase"
+	"librevita.org/pkg/log"
 )
 
 // Module provides clinic-domain services and Host-based clinic resolution.
@@ -26,6 +25,6 @@ var Module = fx.Module("clinic",
 // registerHostMiddleware runs before Echo.Use middleware (Pre) so Host
 // is classified before CSRF and route auth, without the core server
 // package importing this domain.
-func registerHostMiddleware(e *echo.Echo, cfg *config.Config, clinics model.Repository, engine *crypto.Engine, log *slog.Logger) {
-	e.Pre(clinichttp.HostMiddleware(cfg, clinics, engine, log))
+func registerHostMiddleware(e *echo.Echo, cfg *config.Config, clinics model.Repository, engine *crypto.Engine, logger log.Logger) {
+	e.Pre(clinichttp.HostMiddleware(cfg, clinics, engine, logger))
 }

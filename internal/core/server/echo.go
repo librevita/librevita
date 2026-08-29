@@ -4,7 +4,6 @@
 package server
 
 import (
-	"log/slog"
 	"time"
 
 	"github.com/labstack/echo/v4"
@@ -13,6 +12,7 @@ import (
 
 	"librevita.org/internal/core/auth"
 	"librevita.org/internal/core/config"
+	"librevita.org/pkg/log"
 )
 
 type middlewareSkippers struct {
@@ -22,21 +22,28 @@ type middlewareSkippers struct {
 }
 
 // New creates the Echo instance and installs global middleware.
-func New(csrf *auth.CSRF, cfg *config.Config, log *slog.Logger, skip middlewareSkippers) *echo.Echo {
+func New(csrf *auth.CSRF, cfg *config.Config, logger log.Logger, skip middlewareSkippers) *echo.Echo {
 	e := echo.New()
 
 	e.HideBanner = true
 	e.HidePort = true
-	e.HTTPErrorHandler = ProblemErrorHandler
+	e.HTTPErrorHandler = ProblemErrorHandler(logger)
 	e.IPExtractor = clientIPExtractor(cfg.TrustedProxies)
 
-	// Middleware order is significant. Clinic Host resolution is
-	// registered with Echo.Pre from the clinic domain so this package
-	// does not import domain repositories.
-	e.Use(middleware.RequestID())
+	// RequestID is Pre so clinic Host resolution (also Pre) already has
+	// an id to correlate lookup failures.
+	e.Pre(middleware.RequestID())
 	// RequestLog sits outside Recover so recovered panics surface as 500s.
-	e.Use(RequestLog(log))
-	e.Use(middleware.Recover())
+	e.Use(RequestLog(logger))
+	e.Use(middleware.RecoverWithConfig(middleware.RecoverConfig{
+		LogErrorFunc: func(c echo.Context, err error, stack []byte) error {
+			logger.ErrorContext(c.Request().Context(), "panic recovered",
+				log.Error(err),
+				log.String("stack", string(stack)),
+			)
+			return echo.NewHTTPError(http.StatusInternalServerError)
+		},
+	}))
 	// Same-origin application; no CORS is configured. Do not add a
 	// permissive CORS middleware for future authenticated endpoints.
 	e.Use(SecurityHeaders(cfg))

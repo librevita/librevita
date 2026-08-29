@@ -26,8 +26,7 @@ Goose at startup.
 | `github.com/minio/minio-go/v7`             | v7.2.1    | Apache-2.0   | S3-compatible API client for file storage                         |
 | `github.com/breml/rootcerts`               | v0.3.7    | BSD-2-Clause | Trusted roots for S3-compatible API TLS connections               |
 | `go.uber.org/fx`                           | v1.24.0   | MIT          | Dependency injection container                                    |
-| `go.uber.org/zap`                          | v1.28.0   | MIT          | Structured logging (UTC)                                          |
-| `go.uber.org/zap/exp`                      | v0.3.0    | MIT          | Audit trail logging                                               |
+| `go.uber.org/zap`                          | v1.28.0   | MIT          | Structured logging backend (JSON in production, columnar in development) |
 | `gopkg.in/natefinch/lumberjack.v2`         | v2.2.1    | MIT          | Log rotation for file output                                      |
 | `github.com/knadh/koanf/v2`                | v2.3.6    | MIT          | Config loading core                                               |
 | `github.com/knadh/koanf/providers/env`     | v1.1.0    | MIT          | Environment variable provider                                     |

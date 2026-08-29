@@ -1,7 +1,6 @@
 package http_test
 
 import (
-	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -16,11 +15,12 @@ import (
 	"librevita.org/internal/core/config"
 	clinichttp "librevita.org/internal/domain/clinic/delivery/http"
 	"librevita.org/internal/domain/clinic/model"
+	"librevita.org/pkg/log"
 	modelmocks "librevita.org/tests/mocks/domain/clinic/model"
 )
 
 func TestHostMiddleware(t *testing.T) {
-	log := slog.New(slog.DiscardHandler)
+	logger := log.Nop()
 	cfg := &config.Config{BaseDomain: "lv.test"}
 	norteID := uuid.MustParse("01990000-0000-7000-8000-0000000000a1")
 
@@ -55,7 +55,7 @@ func TestHostMiddleware(t *testing.T) {
 			}
 
 			e := echo.New()
-			e.Pre(clinichttp.HostMiddleware(cfg, clinics, nil, log))
+			e.Pre(clinichttp.HostMiddleware(cfg, clinics, nil, logger))
 			handler := func(c echo.Context) error {
 				ctx := c.Request().Context()
 				if tc.apex {

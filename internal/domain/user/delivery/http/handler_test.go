@@ -2,7 +2,6 @@ package http_test
 
 import (
 	"context"
-	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -20,6 +19,7 @@ import (
 	clinicusecase "librevita.org/internal/domain/clinic/usecase"
 	httphandler "librevita.org/internal/domain/user/delivery/http"
 	"librevita.org/internal/domain/user/usecase"
+	"librevita.org/pkg/log"
 	auditmocks "librevita.org/tests/mocks/core/audit"
 	authmocks "librevita.org/tests/mocks/core/auth"
 	policymocks "librevita.org/tests/mocks/core/policy"
@@ -39,19 +39,19 @@ type userHandlerTestEnv struct {
 
 func newUserHandlerEnv(t *testing.T) *userHandlerTestEnv {
 	t.Helper()
-	log := slog.New(slog.DiscardHandler)
+	logger := log.Nop()
 
 	sessionRepo := authmocks.NewMockSessionRepository(t)
 	sessionRepo.EXPECT().CleanupExpired(mock.Anything, mock.Anything).Return(nil).Maybe()
 	sessionRepo.EXPECT().Create(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
 
-	sessions, err := auth.NewSessionManager(sessionRepo, &config.Config{Mode: "development"}, log)
+	sessions, err := auth.NewSessionManager(sessionRepo, &config.Config{Mode: "development"}, logger)
 	require.NoError(t, err)
 
 	auditRepo := auditmocks.NewMockRepository(t)
 	auditRepo.EXPECT().LastSignature(mock.Anything).Return("", nil).Maybe()
 	auditRepo.EXPECT().Record(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
-	auditLogger, err := audit.NewLogger(auditRepo, log)
+	auditLogger, err := audit.NewLogger(auditRepo, logger)
 	require.NoError(t, err)
 
 	userRepo := usermocks.NewMockUserRepository(t)
@@ -60,7 +60,7 @@ func newUserHandlerEnv(t *testing.T) *userHandlerTestEnv {
 	staffReqRepo := usermocks.NewMockStaffRequestRepository(t)
 	setupRepo := usermocks.NewMockSetupRepository(t)
 
-	svc := usecase.NewService(userRepo, roleRepo, specialtyRepo, staffReqRepo, setupRepo, sessions, auditLogger, log)
+	svc := usecase.NewService(userRepo, roleRepo, specialtyRepo, staffReqRepo, setupRepo, sessions, auditLogger, logger)
 	csrf := auth.NewCSRF(&config.Config{Mode: "development"})
 
 	policyRepo := policymocks.NewMockRepository(t)
@@ -73,12 +73,12 @@ func newUserHandlerEnv(t *testing.T) *userHandlerTestEnv {
 		})
 	}
 	policyRepo.EXPECT().List(mock.Anything).Return(defaultRows, nil).Maybe()
-	policies, err := policy.NewPolicyEngine(policyRepo, log)
+	policies, err := policy.NewPolicyEngine(policyRepo, logger)
 	require.NoError(t, err)
 	require.NoError(t, policies.Load(context.Background()))
 
 	patientRepo := patientmocks.NewMockPatientRepository(t)
-	patientSvc := usecase.NewService(userRepo, roleRepo, specialtyRepo, staffReqRepo, setupRepo, sessions, auditLogger, log)
+	patientSvc := usecase.NewService(userRepo, roleRepo, specialtyRepo, staffReqRepo, setupRepo, sessions, auditLogger, logger)
 	_ = patientRepo
 	_ = patientSvc
 
@@ -90,7 +90,7 @@ func newUserHandlerEnv(t *testing.T) *userHandlerTestEnv {
 	_ = fileStore
 	_ = fileIndex
 
-	h := httphandler.NewHandler(svc, nil, nil, nil, csrf, sessions, policies, auditLogger, clocks, nil, &config.Config{Mode: "development"}, log)
+	h := httphandler.NewHandler(svc, nil, nil, nil, csrf, sessions, policies, auditLogger, clocks, nil, &config.Config{Mode: "development"}, logger)
 	return &userHandlerTestEnv{
 		handler:     h,
 		sessions:    sessions,

@@ -2,12 +2,12 @@ package auth
 
 import (
 	"context"
-	"log/slog"
 	"time"
 
 	"go.uber.org/fx"
 
 	"librevita.org/internal/core/config"
+	"librevita.org/pkg/log"
 )
 
 // Module provides session management, password hashing, and authentication services.
@@ -21,8 +21,8 @@ var Module = fx.Module("auth",
 	fx.Invoke(registerSessionCleaner),
 )
 
-func provideSessionManager(repo SessionRepository, platform PlatformSessionRepository, cfg *config.Config, log *slog.Logger) (*SessionManager, error) {
-	m, err := NewSessionManager(repo, cfg, log)
+func provideSessionManager(repo SessionRepository, platform PlatformSessionRepository, cfg *config.Config, logger log.Logger) (*SessionManager, error) {
+	m, err := NewSessionManager(repo, cfg, logger)
 	if err != nil {
 		return nil, err
 	}
@@ -30,7 +30,7 @@ func provideSessionManager(repo SessionRepository, platform PlatformSessionRepos
 	return m, nil
 }
 
-func registerSessionCleaner(lc fx.Lifecycle, sessions *SessionManager, log *slog.Logger) {
+func registerSessionCleaner(lc fx.Lifecycle, sessions *SessionManager, logger log.Logger) {
 	lc.Append(fx.Hook{
 		OnStart: func(ctx context.Context) error {
 			go func() {
@@ -38,7 +38,7 @@ func registerSessionCleaner(lc fx.Lifecycle, sessions *SessionManager, log *slog
 				defer ticker.Stop()
 				for {
 					if err := sessions.CleanupExpired(ctx); err != nil {
-						log.Warn("auth: cleanup expired sessions", "error", err)
+						logger.Warn("auth: cleanup expired sessions", log.Error(err))
 					}
 					select {
 					case <-ticker.C:

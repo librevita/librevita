@@ -3,7 +3,6 @@ package database
 import (
 	"context"
 	"database/sql"
-	"log/slog"
 
 	"go.uber.org/fx"
 
@@ -11,6 +10,7 @@ import (
 	"librevita.org/internal/core/clinicctx"
 	"librevita.org/internal/core/crypto"
 	"librevita.org/internal/core/database/isolation"
+	"librevita.org/pkg/log"
 )
 
 // Module provides the main store, raw database handle, and Ent ORM client,
@@ -37,16 +37,20 @@ func entClient(store *Store, hasher crypto.Hasher, encryptor crypto.Encryptor, e
 	return client
 }
 
-func registerLifecycle(lc fx.Lifecycle, store *Store, log *slog.Logger) {
+func registerLifecycle(lc fx.Lifecycle, store *Store, logger log.Logger) {
 	lc.Append(fx.Hook{
 		OnStart: func(ctx context.Context) error {
 			// Apply the embedded migrations on boot for the active backend.
 			if db := store.SQL(); db != nil {
-				log.Info("applying embedded Goose migrations", "driver", store.Driver())
-				if err := MigrateWithDriver(ctx, db, store.Driver(), log); err != nil {
+				logger.Info("applying embedded Goose migrations",
+					log.String("driver", store.Driver()),
+				)
+				if err := MigrateWithDriver(ctx, db, store.Driver(), logger); err != nil {
 					return err
 				}
-				log.Info("Goose migrations applied", "driver", store.Driver())
+				logger.Info("Goose migrations applied",
+					log.String("driver", store.Driver()),
+				)
 			}
 			if client := store.Ent(); client != nil {
 				if err := SeedInitialData(clinicctx.WithSkipIsolation(ctx), client); err != nil {

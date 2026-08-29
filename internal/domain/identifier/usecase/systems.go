@@ -2,7 +2,6 @@ package usecase
 
 import (
 	"context"
-	"log/slog"
 	"strings"
 
 	"github.com/cockroachdb/errors"
@@ -18,12 +17,11 @@ const systemURNPrefix = "urn:librevita:id:"
 type systemsService struct {
 	repo identifiermodel.SystemRepository
 	reg  *identifiermodel.Registry
-	log  *slog.Logger
 }
 
 // NewSystemsService creates a new SystemsService implementation for administering document systems.
-func NewSystemsService(repo identifiermodel.SystemRepository, reg *identifiermodel.Registry, log *slog.Logger) SystemsService {
-	return &systemsService{repo: repo, reg: reg, log: log}
+func NewSystemsService(repo identifiermodel.SystemRepository, reg *identifiermodel.Registry) SystemsService {
+	return &systemsService{repo: repo, reg: reg}
 }
 
 // List returns every system, active and inactive, ordered by URN.

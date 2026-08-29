@@ -1,7 +1,6 @@
 package patient
 
 import (
-	"log/slog"
 	"time"
 
 	"github.com/labstack/echo/v4"
@@ -15,6 +14,7 @@ import (
 	"librevita.org/internal/domain/patient/delivery/http"
 	patientrepository "librevita.org/internal/domain/patient/repository"
 	"librevita.org/internal/domain/patient/usecase"
+	"librevita.org/pkg/log"
 )
 
 // Module wires the patient domain: usecase service, repository,
@@ -45,13 +45,13 @@ func registerHTTPRoutes(
 	policies *policy.PolicyEngine,
 	auditLogger *audit.Logger,
 	gate server.SetupGate,
-	log *slog.Logger,
+	logger log.Logger,
 ) {
 	setupGate := gate()
 	view := []echo.MiddlewareFunc{
 		setupGate,
-		server.RequireAuth(sessions, log),
-		server.RequirePolicy(policies, auditLogger, log, "patient.view"),
+		server.RequireAuth(sessions, logger),
+		server.RequirePolicy(policies, auditLogger, logger, "patient.view"),
 	}
 	lookupLimiter := server.NewRateLimiter(60, time.Minute)
 	lookup := append(view, server.RateLimit(lookupLimiter))
@@ -68,7 +68,7 @@ func registerHTTPRoutes(
 	e.POST("/patients/:id", h.Update, view...)
 	e.POST("/patients/:id/archive", h.Archive, view...)
 	e.POST("/patients/:id/restore", h.Restore, view...)
-	e.POST("/patients/:id/shred", h.Shred, setupGate, server.RequireAuth(sessions, log), server.RequirePolicy(policies, auditLogger, log, "patient.erase"))
+	e.POST("/patients/:id/shred", h.Shred, setupGate, server.RequireAuth(sessions, logger), server.RequirePolicy(policies, auditLogger, logger, "patient.erase"))
 	e.POST("/patients/bulk-archive", h.BulkArchive, view...)
 
 	// Clinical attachments

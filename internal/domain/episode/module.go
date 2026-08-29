@@ -1,8 +1,6 @@
 package episode
 
 import (
-	"log/slog"
-
 	"github.com/labstack/echo/v4"
 	"go.uber.org/fx"
 
@@ -13,6 +11,7 @@ import (
 	"librevita.org/internal/domain/episode/delivery/http"
 	episoderepository "librevita.org/internal/domain/episode/repository"
 	"librevita.org/internal/domain/episode/usecase"
+	"librevita.org/pkg/log"
 )
 
 // Module wires the SOAP chart domain (repository, use case, HTML).
@@ -31,18 +30,18 @@ func registerHTTPRoutes(
 	policies *policy.PolicyEngine,
 	auditLogger *audit.Logger,
 	gate server.SetupGate,
-	log *slog.Logger,
+	logger log.Logger,
 ) {
 	setupGate := gate()
 	view := []echo.MiddlewareFunc{
 		setupGate,
-		server.RequireAuth(sessions, log),
-		server.RequirePolicy(policies, auditLogger, log, "chart.view"),
+		server.RequireAuth(sessions, logger),
+		server.RequirePolicy(policies, auditLogger, logger, "chart.view"),
 	}
 	write := []echo.MiddlewareFunc{
 		setupGate,
-		server.RequireAuth(sessions, log),
-		server.RequirePolicy(policies, auditLogger, log, "chart.write"),
+		server.RequireAuth(sessions, logger),
+		server.RequirePolicy(policies, auditLogger, logger, "chart.write"),
 	}
 
 	e.GET("/patients/:id/episodes", h.List, view...)

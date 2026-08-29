@@ -2,7 +2,6 @@ package usecase
 
 import (
 	"context"
-	"log/slog"
 	"strings"
 
 	"github.com/cockroachdb/errors"
@@ -13,18 +12,19 @@ import (
 	"librevita.org/internal/core/database/fle"
 	identifiermodel "librevita.org/internal/domain/identifier/model"
 	"librevita.org/pkg/flow"
+	"librevita.org/pkg/log"
 )
 
 type service struct {
 	repo identifiermodel.IdentifierRepository
 	key  *crypto.MasterKey
 	reg  *identifiermodel.Registry
-	log  *slog.Logger
+	log  log.Logger
 }
 
 // NewService creates a new Service implementation for identifier management.
-func NewService(repo identifiermodel.IdentifierRepository, key *crypto.MasterKey, reg *identifiermodel.Registry, log *slog.Logger) Service {
-	return &service{repo: repo, key: key, reg: reg, log: log}
+func NewService(repo identifiermodel.IdentifierRepository, key *crypto.MasterKey, reg *identifiermodel.Registry, logger log.Logger) Service {
+	return &service{repo: repo, key: key, reg: reg, log: logger}
 }
 
 func (s *service) blindIndex(ctx context.Context, system, value string) (string, error) {
@@ -157,7 +157,11 @@ func (s *service) FindByValue(ctx context.Context, clinicID, raw string) ([]*ide
 		}
 		value, err := s.decryptValue(ctx, cUUID, row.PatientID, row.System, row.ValueCiphertext, row.Nonce)
 		if err != nil {
-			s.log.Error("identifier: blind index hit failed to decrypt", "system", row.System)
+			s.log.ErrorContext(ctx, "identifier: blind index hit failed to decrypt",
+				log.String("system", row.System),
+				log.Stringer("patient_id", row.PatientID),
+				log.Error(err),
+			)
 			continue
 		}
 		if string(value) != normalized {
@@ -222,7 +226,11 @@ func (s *service) List(ctx context.Context, clinicID, patientID string) ([]*iden
 		}
 		value, err := s.decryptValueWithDEK(cid, row.PatientID, dek, row.ValueCiphertext, row.Nonce)
 		if err != nil {
-			s.log.Error("identifier: failed to decrypt", "id", row.ID, "system", row.System, "error", err)
+			s.log.ErrorContext(ctx, "identifier: failed to decrypt",
+				log.Stringer("id", row.ID),
+				log.String("system", row.System),
+				log.Error(err),
+			)
 			continue
 		}
 		out = append(out, &identifiermodel.Identifier{
@@ -288,12 +296,18 @@ func (s *service) ListByPatients(ctx context.Context, patientIDs []string) (map[
 		}
 		dek, ok := keysByClinic[cid][row.PatientID]
 		if !ok {
-			s.log.Error("identifier: patient DEK unavailable", "patient_id", row.PatientID)
+			s.log.ErrorContext(ctx, "identifier: patient DEK unavailable",
+				log.Stringer("patient_id", row.PatientID),
+			)
 			continue
 		}
 		value, err := s.decryptValueWithDEK(cid, row.PatientID, dek, row.ValueCiphertext, row.Nonce)
 		if err != nil {
-			s.log.Error("identifier: failed to decrypt", "patient_id", row.PatientID, "system", row.System, "error", err)
+			s.log.ErrorContext(ctx, "identifier: failed to decrypt",
+				log.Stringer("patient_id", row.PatientID),
+				log.String("system", row.System),
+				log.Error(err),
+			)
 			continue
 		}
 		patientKey := row.PatientID.String()

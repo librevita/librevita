@@ -4,7 +4,6 @@ package usecase
 
 import (
 	"context"
-	"log/slog"
 	"strings"
 
 	"github.com/cockroachdb/errors"
@@ -47,16 +46,14 @@ var (
 // Service persists and validates patient records.
 type Service struct {
 	repo     PatientRepository
-	log      *slog.Logger
 	policies *policy.PolicyEngine
 	engine   *crypto.Engine
 }
 
 // NewService is the Fx provider.
-func NewService(repo PatientRepository, log *slog.Logger, policies *policy.PolicyEngine, engine *crypto.Engine) *Service {
+func NewService(repo PatientRepository, policies *policy.PolicyEngine, engine *crypto.Engine) *Service {
 	return &Service{
 		repo:     repo,
-		log:      log,
 		policies: policies,
 		engine:   engine,
 	}

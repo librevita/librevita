@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
-	"log/slog"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -40,6 +39,7 @@ import (
 	patientrepo "librevita.org/internal/domain/patient/repository"
 	"librevita.org/internal/domain/patient/usecase"
 	"librevita.org/internal/testutil"
+	"librevita.org/pkg/log"
 )
 
 var testAdminID = uuid.MustParse("01990000-0000-7000-8000-00000000000a")
@@ -47,7 +47,7 @@ var testAdminID = uuid.MustParse("01990000-0000-7000-8000-00000000000a")
 // newIdentifierServices wires the identifier subsystem against a
 // migrated database: a fixed master key, the registry seeded from the
 // migration rows, and the two services the handlers use.
-func newIdentifierServices(t *testing.T, client *ent.Client, key *crypto.MasterKey, log *slog.Logger) (identifierusecase.Service, identifierusecase.SystemsService) {
+func newIdentifierServices(t *testing.T, client *ent.Client, key *crypto.MasterKey, logger log.Logger) (identifierusecase.Service, identifierusecase.SystemsService) {
 	t.Helper()
 	reg := identifiermodel.NewRegistry()
 	sysRepo := identifierrepo.NewSystemRepository(client)
@@ -59,7 +59,7 @@ func newIdentifierServices(t *testing.T, client *ent.Client, key *crypto.MasterK
 		t.Fatal(err)
 	}
 	idRepo := identifierrepo.NewIdentifierRepository(client)
-	return identifierusecase.NewService(idRepo, key, reg, log), identifierusecase.NewSystemsService(sysRepo, reg, log)
+	return identifierusecase.NewService(idRepo, key, reg, logger), identifierusecase.NewSystemsService(sysRepo, reg)
 }
 
 func newDocEnv(t *testing.T) (*echo.Echo, *auth.SessionManager, *usecase.Service, *storage.FileManager) {
@@ -73,7 +73,7 @@ func newDocEnv(t *testing.T) (*echo.Echo, *auth.SessionManager, *usecase.Service
 func newDocEnvFull(t *testing.T, dir string) (*echo.Echo, *auth.SessionManager, *usecase.Service, *storage.FileManager, *ent.Client) {
 	t.Helper()
 	client := openDocDB(t)
-	log := slog.New(slog.DiscardHandler)
+	log := log.Nop()
 	sessions, err := auth.NewSessionManager(auth.NewSessionRepository(client), &config.Config{Mode: "development"}, log)
 	if err != nil {
 		t.Fatal(err)
@@ -129,9 +129,9 @@ func newDocEnvFull(t *testing.T, dir string) (*echo.Echo, *auth.SessionManager, 
 	}
 	client.Use(ent.FLEMutationHook(hasher, enc, masterKey))
 	client.Intercept(ent.FLEDecryptionInterceptor(enc, masterKey))
-	svc := usecase.NewService(patientrepo.NewPatientRepositoryWithEngine(client, masterKey), log, policies, masterKey)
+	svc := usecase.NewService(patientrepo.NewPatientRepositoryWithEngine(client, masterKey), policies, masterKey)
 	ids, systems := newIdentifierServices(t, client, masterKey, log)
-	h := NewHandler(svc, clinicusecase.NewClockProvider(clinicrepo.NewClinicRepository(client)), csrf, auditLogger, files, ids, systems, masterKey)
+	h := NewHandler(svc, clinicusecase.NewClockProvider(clinicrepo.NewClinicRepository(client)), csrf, auditLogger, files, ids, systems, masterKey, log)
 
 	e := echo.New()
 	e.Use(attachSeededClinic(masterKey, enc, hasher))
@@ -156,7 +156,7 @@ func openDocDB(t *testing.T) *ent.Client {
 	}
 	db.SetMaxOpenConns(1)
 	t.Cleanup(func() { _ = db.Close() })
-	if err := database.Migrate(context.Background(), db, slog.New(slog.DiscardHandler)); err != nil {
+	if err := database.Migrate(context.Background(), db, log.Nop()); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 

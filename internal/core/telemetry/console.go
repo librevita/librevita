@@ -1,21 +1,17 @@
 package telemetry
 
 import (
-	"bytes"
-	"context"
 	"fmt"
 	"io"
-	"log/slog"
+	"math"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 	"unicode"
-	"unicode/utf8"
 
-	"golang.org/x/term"
+	"go.uber.org/zap/zapcore"
 )
 
 const (
@@ -23,136 +19,120 @@ const (
 	consoleSourceWidth  = 20
 )
 
-type consoleHandler struct {
+type consoleCore struct {
+	zapcore.LevelEnabler
 	writer io.Writer
-	level  slog.Level
-	groups []string
-	attrs  []consoleAttr
+	fields []zapcore.Field
 }
 
-type consoleAttr struct {
-	groups []string
-	attr   slog.Attr
-}
-
-func newConsoleHandler(dst io.Writer) slog.Handler {
-	return &consoleHandler{
-		writer: newConsoleWriter(dst),
-		level:  slog.LevelDebug,
+func newConsoleCore(dst io.Writer, level zapcore.LevelEnabler) zapcore.Core {
+	return &consoleCore{
+		LevelEnabler: level,
+		writer:       newConsoleWriter(dst),
 	}
 }
 
-func (h *consoleHandler) Enabled(_ context.Context, level slog.Level) bool {
-	return level >= h.level
+func (c *consoleCore) With(fields []zapcore.Field) zapcore.Core {
+	clone := *c
+	clone.fields = append(append([]zapcore.Field(nil), c.fields...), fields...)
+	return &clone
 }
 
-func (h *consoleHandler) Handle(_ context.Context, record slog.Record) error {
+func (c *consoleCore) Check(ent zapcore.Entry, ce *zapcore.CheckedEntry) *zapcore.CheckedEntry {
+	if c.Enabled(ent.Level) {
+		return ce.AddCore(ent, c)
+	}
+	return ce
+}
+
+func (c *consoleCore) Write(ent zapcore.Entry, fields []zapcore.Field) error {
 	var line strings.Builder
-	line.WriteString(record.Time.UTC().Format("2006-01-02T15:04:05.000-07:00"))
+	line.WriteString(ent.Time.UTC().Format("2006-01-02T15:04:05.000-07:00"))
 	line.WriteString("   ")
-	fmt.Fprintf(&line, "%-5s", strings.ToUpper(record.Level.String()))
+	fmt.Fprintf(&line, "%-5s", strings.ToUpper(ent.Level.String()))
 	line.WriteByte(' ')
 
-	sourceInfo := record.Source()
 	source := "-"
-	if sourceInfo != nil && sourceInfo.File != "" {
-		source = filepath.Base(sourceInfo.File) + ":" + strconv.Itoa(sourceInfo.Line)
+	if ent.Caller.Defined {
+		source = filepath.Base(ent.Caller.File) + ":" + strconv.Itoa(ent.Caller.Line)
 	}
 	source = string(truncateRunes([]byte(source), consoleSourceWidth))
 	fmt.Fprintf(&line, "%-*s", consoleSourceWidth, source)
 	line.WriteString("   ")
-	line.WriteString(strings.ReplaceAll(record.Message, "\n", " "))
+	line.WriteString(strings.ReplaceAll(ent.Message, "\n", " "))
 
-	for _, attr := range h.attrs {
-		appendConsoleAttr(&line, attr.groups, attr.attr)
+	for _, field := range c.fields {
+		appendConsoleField(&line, field)
 	}
-	record.Attrs(func(attr slog.Attr) bool {
-		appendConsoleAttr(&line, h.groups, attr)
-		return true
-	})
+	for _, field := range fields {
+		appendConsoleField(&line, field)
+	}
 	line.WriteByte('\n')
 
-	_, err := h.writer.Write([]byte(line.String()))
+	_, err := c.writer.Write([]byte(line.String()))
 	return err
 }
 
-func (h *consoleHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
-	clone := h.clone()
-	for _, attr := range attrs {
-		clone.attrs = append(clone.attrs, consoleAttr{
-			groups: append([]string(nil), h.groups...),
-			attr:   attr,
-		})
+func (c *consoleCore) Sync() error {
+	if syncer, ok := c.writer.(zapcore.WriteSyncer); ok {
+		return syncer.Sync()
 	}
-	return clone
+	return nil
 }
 
-func (h *consoleHandler) WithGroup(name string) slog.Handler {
-	if name == "" {
-		return h
-	}
-	clone := h.clone()
-	clone.groups = append(clone.groups, name)
-	return clone
-}
-
-func (h *consoleHandler) clone() *consoleHandler {
-	clone := *h
-	clone.groups = append([]string(nil), h.groups...)
-	clone.attrs = append([]consoleAttr(nil), h.attrs...)
-	return &clone
-}
-
-func appendConsoleAttr(line *strings.Builder, groups []string, attr slog.Attr) {
-	attr.Value = attr.Value.Resolve()
-	if attr.Equal(slog.Attr{}) {
+func appendConsoleField(line *strings.Builder, field zapcore.Field) {
+	if field.Type == zapcore.SkipType || field.Type == zapcore.NamespaceType {
 		return
 	}
-
-	if attr.Value.Kind() == slog.KindGroup {
-		nestedGroups := append(append([]string(nil), groups...), attr.Key)
-		for _, child := range attr.Value.Group() {
-			appendConsoleAttr(line, nestedGroups, child)
-		}
-		return
-	}
-
-	keyParts := append(append([]string(nil), groups...), attr.Key)
-	key := strings.Trim(strings.Join(keyParts, "."), ".")
-	if key == "" {
-		return
-	}
-
 	line.WriteByte(' ')
-	line.WriteString(key)
+	line.WriteString(field.Key)
 	line.WriteByte('=')
-	line.WriteString(formatConsoleValue(attr.Value))
+	line.WriteString(formatConsoleField(field))
 }
 
-func formatConsoleValue(value slog.Value) string {
-	value = value.Resolve()
-	switch value.Kind() {
-	case slog.KindString:
-		return formatConsoleString(value.String())
-	case slog.KindBool:
-		return strconv.FormatBool(value.Bool())
-	case slog.KindInt64:
-		return strconv.FormatInt(value.Int64(), 10)
-	case slog.KindUint64:
-		return strconv.FormatUint(value.Uint64(), 10)
-	case slog.KindFloat64:
-		return strconv.FormatFloat(value.Float64(), 'g', -1, 64)
-	case slog.KindDuration:
-		return value.Duration().String()
-	case slog.KindTime:
-		return value.Time().UTC().Format(time.RFC3339Nano)
-	case slog.KindAny:
-		if value.Any() == nil {
+func formatConsoleField(field zapcore.Field) string {
+	switch field.Type {
+	case zapcore.StringType, zapcore.ByteStringType:
+		return formatConsoleString(field.String)
+	case zapcore.BoolType:
+		return strconv.FormatBool(field.Integer == 1)
+	case zapcore.Int64Type, zapcore.Int32Type, zapcore.Int16Type, zapcore.Int8Type,
+		zapcore.Uint64Type, zapcore.Uint32Type, zapcore.Uint16Type, zapcore.Uint8Type,
+		zapcore.UintptrType:
+		return strconv.FormatInt(field.Integer, 10)
+	case zapcore.Float64Type:
+		return strconv.FormatFloat(math.Float64frombits(uint64(field.Integer)), 'g', -1, 64) // #nosec G115 -- IEEE-754 bit pattern stored in int64
+	case zapcore.Float32Type:
+		return strconv.FormatFloat(float64(math.Float32frombits(uint32(field.Integer))), 'g', -1, 32) // #nosec G115 -- IEEE-754 bit pattern stored in int64
+	case zapcore.DurationType:
+		return time.Duration(field.Integer).String()
+	case zapcore.TimeType:
+		t := time.Unix(0, field.Integer)
+		if loc, ok := field.Interface.(*time.Location); ok && loc != nil {
+			t = t.In(loc)
+		}
+		return t.UTC().Format(time.RFC3339Nano)
+	case zapcore.ErrorType:
+		if field.Interface == nil {
 			return "nil"
 		}
-		return formatConsoleString(fmt.Sprint(value.Any()))
+		if err, ok := field.Interface.(error); ok {
+			return formatConsoleString(err.Error())
+		}
+		return formatConsoleString(fmt.Sprint(field.Interface))
+	case zapcore.StringerType:
+		if s, ok := field.Interface.(fmt.Stringer); ok && s != nil {
+			return formatConsoleString(s.String())
+		}
+		return "nil"
 	default:
-		return formatConsoleString(value.String())
+		if field.Interface != nil {
+			return formatConsoleString(fmt.Sprint(field.Interface))
+		}
+		if field.String != "" {
+			return formatConsoleString(field.String)
+		}
+		return strconv.FormatInt(field.Integer, 10)
 	}
 }
 
@@ -161,73 +141,16 @@ func formatConsoleString(value string) string {
 		return strconv.Quote(value)
 	}
 	for _, char := range value {
-		if unicode.IsSpace(char) || strings.ContainsRune("=\"", char) {
+		if unicode.IsSpace(char) || char == '=' || char == '"' {
 			return strconv.Quote(value)
 		}
 	}
 	return value
 }
 
-// consoleWriter keeps development logs on one bounded line.
-type consoleWriter struct {
-	dst   io.Writer
-	width int
-	mu    sync.Mutex
-}
-
-func newConsoleWriter(dst io.Writer) *consoleWriter {
-	return &consoleWriter{dst: dst, width: consoleWidth()}
-}
-
-func (w *consoleWriter) Write(p []byte) (int, error) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	inputLen := len(p)
-
-	if w.width <= 0 {
-		return w.dst.Write(p)
-	}
-
-	var out bytes.Buffer
-	for len(p) > 0 {
-		lineEnd := bytes.IndexByte(p, '\n')
-		line := p
-		newline := false
-		if lineEnd >= 0 {
-			line = p[:lineEnd]
-			newline = true
-		}
-
-		out.Write(truncateRunes(line, w.width))
-		if newline {
-			out.WriteByte('\n')
-			p = p[lineEnd+1:]
-		} else {
-			p = nil
-		}
-	}
-
-	_, err := w.dst.Write(out.Bytes())
-	if err != nil {
-		return 0, err
-	}
-	return inputLen, nil
-}
-
 func consoleWidth() int {
 	if columns, err := strconv.Atoi(os.Getenv("COLUMNS")); err == nil && columns > 0 {
 		return columns
 	}
-
-	if columns, _, err := term.GetSize(int(os.Stderr.Fd())); err == nil && columns > 0 {
-		return columns
-	}
-	return defaultConsoleWidth
-}
-
-func truncateRunes(line []byte, width int) []byte {
-	if width <= 0 || utf8.RuneCount(line) <= width {
-		return line
-	}
-	return []byte(string([]rune(string(line))[:width]))
+	return defaultConsoleWidthForFd()
 }

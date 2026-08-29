@@ -181,6 +181,7 @@ crypto:
   hash_algorithm: blake2s # blake2s (default) or blake2b
   encryption_cipher: xchacha20-poly1305 # xchacha20-poly1305 (default)
 logging:
+  level: info # debug, info, warn, or error; empty = debug in development, info in production
   mode: console # console, file or rotating
   file: # used when mode: file
     path: ./librevita.log
@@ -237,6 +238,7 @@ All configuration flags are:
 | `--crypto-hash-algorithm`      | `LIBREVITA_CRYPTO_HASH_ALGORITHM`            | Default cryptographic hash engine (`blake2s`, `blake2b`; default `blake2s`)                                                                                  |
 | `--crypto-encryption-cipher`   | `LIBREVITA_CRYPTO_ENCRYPTION_CIPHER`         | Default symmetric encryption cipher (`xchacha20-poly1305`; default `xchacha20-poly1305`)                                                                     |
 | `--log-mode`                   | `LIBREVITA_LOGGING_MODE`                     | `console`, `file`, or `rotating`                                                                                                                             |
+| `--log-level`                  | `LIBREVITA_LOGGING_LEVEL`                    | `debug`, `info`, `warn`, or `error`; empty = debug in development, info in production                                                                        |
 | `--log-file-path`              | `LIBREVITA_LOGGING_FILE_PATH`                | File destination (file mode)                                                                                                                                 |
 | `--log-rotating-path`          | `LIBREVITA_LOGGING_ROTATING_PATH`            | Rotating log file destination                                                                                                                                |
 | `--log-rotating-max-size`      | `LIBREVITA_LOGGING_ROTATING_MAX_SIZE_MB`     | Rotating file size in MB                                                                                                                                     |
@@ -351,11 +353,13 @@ Complex multi-step domain workflows and distributed operations are orchestrated 
 
 ## Logging
 
-The application uses `log/slog` with Zap and `zapslog`. Fx and Goose use the same logger.
+Application code logs through `librevita.org/pkg/log`. The facade uses typed Fields (the same model as Zap). Zap itself is confined to `internal/core/telemetry` and `pkg/log`. Fx (`telemetry.FxLogger`) and Goose share that logger.
 
 Development output is human-readable text with one record per line. Records are emitted as columns, not JSON. The source
 path is shortened to `file.go:line`, and lines are truncated to the terminal width. Set `COLUMNS` to override the
 detected width; the fallback is 120 columns.
+
+`logging.level` (`--log-level`, `LIBREVITA_LOGGING_LEVEL`) is `debug`, `info`, `warn`, or `error`. When empty, development defaults to debug and production to info. Goose verbose migration output is enabled only at debug.
 
 Production output is always JSON. The `logging.mode` switch selects the destination, and each mode has its own
 subsection (`logging.file.*`, `logging.rotating.*`), mirroring the storage layout:

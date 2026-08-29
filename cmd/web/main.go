@@ -4,13 +4,11 @@
 package main
 
 import (
-	"log/slog"
 	_ "time/tzdata"
 
 	_ "github.com/breml/rootcerts"
 	"github.com/spf13/pflag"
 	"go.uber.org/fx"
-	"go.uber.org/fx/fxevent"
 
 	"librevita.org/internal/core/audit"
 	"librevita.org/internal/core/auth"
@@ -42,12 +40,7 @@ func main() {
 		telemetry.Module,
 		vault.Module,
 		crypto.Module,
-		fx.WithLogger(func(log *slog.Logger) fxevent.Logger {
-			fxLogger := &fxevent.SlogLogger{Logger: log}
-			fxLogger.UseLogLevel(slog.LevelDebug)
-			fxLogger.UseErrorLevel(slog.LevelError)
-			return fxLogger
-		}),
+		fx.WithLogger(telemetry.FxLogger),
 		database.Module, // Runs embedded migrations during OnStart.
 		storage.Module,
 		audit.Module,

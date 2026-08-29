@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"log/slog"
 	"net/http"
 	"net/url"
 
@@ -12,6 +11,7 @@ import (
 	"librevita.org/internal/core/audit"
 	"librevita.org/internal/core/auth"
 	"librevita.org/internal/core/policy"
+	"librevita.org/pkg/log"
 )
 
 // LoginPath is the unauthenticated redirect destination.
@@ -47,7 +47,7 @@ func PrincipalCtx(ctx context.Context) *auth.Principal {
 
 // RequireAuth rejects unauthenticated requests. Browser requests are
 // redirected to the login page.
-func RequireAuth(s *auth.SessionManager, log *slog.Logger) echo.MiddlewareFunc {
+func RequireAuth(s *auth.SessionManager, logger log.Logger) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(ctx echo.Context) error {
 			cookie, err := ctx.Cookie(auth.SessionCookieName)
@@ -61,7 +61,7 @@ func RequireAuth(s *auth.SessionManager, log *slog.Logger) echo.MiddlewareFunc {
 					ctx.SetCookie(s.ClearCookie())
 					return redirectLogin(ctx)
 				}
-				log.Error("session lookup failed", "error", err)
+				logger.ErrorContext(ctx.Request().Context(), "session lookup failed", log.Error(err))
 				return echo.NewHTTPError(http.StatusInternalServerError)
 			}
 
@@ -79,7 +79,7 @@ func RequireAuth(s *auth.SessionManager, log *slog.Logger) echo.MiddlewareFunc {
 // RequirePolicy guards a route with the named CEL policy. It must run after
 // RequireAuth, which stores the principal in the request context. Denials
 // are written to the audit trail.
-func RequirePolicy(pe *policy.PolicyEngine, auditLogger *audit.Logger, log *slog.Logger, name string) echo.MiddlewareFunc {
+func RequirePolicy(pe *policy.PolicyEngine, auditLogger *audit.Logger, logger log.Logger, name string) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(ctx echo.Context) error {
 			p := Principal(ctx)
@@ -98,7 +98,10 @@ func RequirePolicy(pe *policy.PolicyEngine, auditLogger *audit.Logger, log *slog
 				Path:   ctx.Request().URL.Path,
 			}, policyResource(ctx), nil)
 			if err != nil {
-				log.Error("policy evaluation failed", "policy", name, "error", err)
+				logger.ErrorContext(ctx.Request().Context(), "policy evaluation failed",
+					log.String("policy", name),
+					log.Error(err),
+				)
 				return echo.NewHTTPError(http.StatusInternalServerError, "authorization failure")
 			}
 			if !allowed {

@@ -2,7 +2,6 @@ package database
 
 import (
 	"context"
-	"log/slog"
 	"path/filepath"
 	"testing"
 
@@ -12,6 +11,7 @@ import (
 
 	"librevita.org/ent/patient"
 	"librevita.org/internal/core/config"
+	"librevita.org/pkg/log"
 )
 
 func TestStoreSQLiteAndEntClient(t *testing.T) {
@@ -27,7 +27,7 @@ func TestStoreSQLiteAndEntClient(t *testing.T) {
 		},
 	}
 
-	logger := slog.New(slog.DiscardHandler)
+	logger := log.Nop()
 	store, err := NewStore(cfg, logger)
 	require.NoError(t, err)
 	defer func() { _ = store.Close() }()

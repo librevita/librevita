@@ -8,6 +8,8 @@ import (
 
 	"github.com/cockroachdb/errors"
 	"github.com/labstack/echo/v4"
+
+	"librevita.org/pkg/log"
 )
 
 // TestProblemErrorHandlerFormatsByClient pins the content negotiation:
@@ -28,7 +30,7 @@ func TestProblemErrorHandlerFormatsByClient(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			e := echo.New()
-			e.HTTPErrorHandler = ProblemErrorHandler
+			e.HTTPErrorHandler = ProblemErrorHandler(log.Nop())
 			e.GET("/missing", func(c echo.Context) error { return echo.ErrNotFound })
 
 			req := httptest.NewRequest(http.MethodGet, "/missing", nil)
@@ -56,7 +58,7 @@ func TestProblemErrorHandlerFormatsByClient(t *testing.T) {
 
 func TestProblemErrorHandlerWithHints(t *testing.T) {
 	e := echo.New()
-	e.HTTPErrorHandler = ProblemErrorHandler
+	e.HTTPErrorHandler = ProblemErrorHandler(log.Nop())
 	e.GET("/with-hint", func(c echo.Context) error {
 		err := echo.NewHTTPError(http.StatusBadRequest, "invalid configuration")
 		return errors.WithHint(err, "Please provide a valid database connection string.")
@@ -88,5 +90,49 @@ func TestProblemErrorHandlerWithHints(t *testing.T) {
 	bodyHTML := recHTML.Body.String()
 	if !strings.Contains(bodyHTML, "Please provide a valid database connection string.") {
 		t.Fatalf("bodyHTML %q missing hint", bodyHTML)
+	}
+}
+
+func TestProblemErrorHandlerLogsUnexpected(t *testing.T) {
+	recorder := log.NewRecorder()
+	e := echo.New()
+	e.HTTPErrorHandler = ProblemErrorHandler(recorder)
+	e.GET("/broken", func(c echo.Context) error { return errors.New("boom") })
+
+	req := httptest.NewRequest(http.MethodGet, "/broken", nil)
+	req.Header.Set("Accept", "application/json")
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500", rec.Code)
+	}
+	found := false
+	for _, r := range recorder.Records() {
+		if r.Message == "server error" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected server error log, got %v", recorder.Messages())
+	}
+}
+
+func TestProblemErrorHandlerSilentOnNotFound(t *testing.T) {
+	recorder := log.NewRecorder()
+	e := echo.New()
+	e.HTTPErrorHandler = ProblemErrorHandler(recorder)
+	e.GET("/missing", func(c echo.Context) error { return echo.ErrNotFound })
+
+	req := httptest.NewRequest(http.MethodGet, "/missing", nil)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", rec.Code)
+	}
+	if len(recorder.Records()) != 0 {
+		t.Fatalf("404 logged: %v", recorder.Messages())
 	}
 }

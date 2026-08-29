@@ -2,7 +2,7 @@ package database
 
 import (
 	"database/sql"
-	"log/slog"
+	"librevita.org/pkg/log"
 
 	"entgo.io/ent/dialect"
 	entsql "entgo.io/ent/dialect/sql"
@@ -23,7 +23,7 @@ type Store struct {
 }
 
 // NewStore is the Fx provider for the configured backend.
-func NewStore(cfg *config.Config, log *slog.Logger) (*Store, error) {
+func NewStore(cfg *config.Config, logger log.Logger) (*Store, error) {
 	switch cfg.Database.Driver {
 	case config.DriverPostgres:
 		db, err := openPostgres(cfg.Database.Postgres)
@@ -32,7 +32,10 @@ func NewStore(cfg *config.Config, log *slog.Logger) (*Store, error) {
 		}
 		drv := entsql.OpenDB(dialect.Postgres, db)
 		entClient := ent.NewClient(ent.Driver(drv))
-		log.Info("using PostgreSQL persistence", "host", cfg.Database.Postgres.Host, "database", cfg.Database.Postgres.Database)
+		logger.Info("using PostgreSQL persistence",
+			log.String("host", cfg.Database.Postgres.Host),
+			log.String("database", cfg.Database.Postgres.Database),
+		)
 		return &Store{driver: config.DriverPostgres, db: db, ent: entClient}, nil
 
 	case config.DriverDqlite:
@@ -42,7 +45,11 @@ func NewStore(cfg *config.Config, log *slog.Logger) (*Store, error) {
 		}
 		drv := entsql.OpenDB(dialect.SQLite, db)
 		entClient := ent.NewClient(ent.Driver(drv))
-		log.Info("using dqlite persistence", "addrs", cfg.Database.Dqlite.Addrs, "discovery_srv", cfg.Database.Dqlite.DiscoverySRV, "database", cfg.Database.Dqlite.Database)
+		logger.Info("using dqlite persistence",
+			log.String("addrs", cfg.Database.Dqlite.Addrs),
+			log.String("discovery_srv", cfg.Database.Dqlite.DiscoverySRV),
+			log.String("database", cfg.Database.Dqlite.Database),
+		)
 		return &Store{driver: config.DriverDqlite, db: db, ent: entClient}, nil
 
 	case config.DriverSQLite:
@@ -52,7 +59,9 @@ func NewStore(cfg *config.Config, log *slog.Logger) (*Store, error) {
 		}
 		drv := entsql.OpenDB(dialect.SQLite, db)
 		entClient := ent.NewClient(ent.Driver(drv))
-		log.Info("using SQLite/WAL persistence", "path", cfg.Database.SQLite.Path)
+		logger.Info("using SQLite/WAL persistence",
+			log.String("path", cfg.Database.SQLite.Path),
+		)
 		return &Store{driver: config.DriverSQLite, db: db, ent: entClient}, nil
 
 	default:

@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -20,12 +19,13 @@ import (
 	"librevita.org/internal/core/config"
 	"librevita.org/internal/core/policy"
 	"librevita.org/internal/ui"
+	"librevita.org/pkg/log"
 	auditmocks "librevita.org/tests/mocks/core/audit"
 	authmocks "librevita.org/tests/mocks/core/auth"
 	policymocks "librevita.org/tests/mocks/core/policy"
 )
 
-func testLogger() *slog.Logger { return slog.New(slog.DiscardHandler) }
+func testLogger() log.Logger { return log.Nop() }
 
 func newMockSessionManager(t *testing.T) (*auth.SessionManager, *authmocks.MockSessionRepository) {
 	t.Helper()

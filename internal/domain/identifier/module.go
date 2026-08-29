@@ -2,7 +2,6 @@ package identifier
 
 import (
 	"context"
-	"log/slog"
 
 	"github.com/labstack/echo/v4"
 	"go.uber.org/fx"
@@ -15,6 +14,7 @@ import (
 	identifiermodel "librevita.org/internal/domain/identifier/model"
 	"librevita.org/internal/domain/identifier/repository"
 	"librevita.org/internal/domain/identifier/usecase"
+	"librevita.org/pkg/log"
 )
 
 // Module wires the identifier domain: repositories, registry, usecase services,
@@ -30,18 +30,18 @@ var Module = fx.Module("identifier",
 	fx.Invoke(registerHTTPRoutes),
 )
 
-func loadIdentifierSystems(lc fx.Lifecycle, reg *identifiermodel.Registry, repo identifiermodel.SystemRepository, log *slog.Logger) {
+func loadIdentifierSystems(lc fx.Lifecycle, reg *identifiermodel.Registry, repo identifiermodel.SystemRepository, logger log.Logger) {
 	lc.Append(fx.Hook{
 		OnStart: func(ctx context.Context) error {
 			if err := repo.SeedDefaults(ctx); err != nil {
-				log.Warn("failed to seed default identifier systems", "error", err)
+				logger.Warn("failed to seed default identifier systems", log.Error(err))
 			}
 			rows, err := repo.ListActive(ctx)
 			if err != nil {
 				return err
 			}
 			if err := reg.Reload(rows); err != nil {
-				log.Warn("failed to load some identifier systems from db", "error", err)
+				logger.Warn("failed to load some identifier systems from db", log.Error(err))
 			}
 			return nil
 		},
@@ -55,13 +55,13 @@ func registerHTTPRoutes(
 	policies *policy.PolicyEngine,
 	auditLogger *audit.Logger,
 	gate server.SetupGate,
-	log *slog.Logger,
+	logger log.Logger,
 ) {
 	setupGate := gate()
 	admin := []echo.MiddlewareFunc{
 		setupGate,
-		server.RequireAuth(sessions, log),
-		server.RequirePolicy(policies, auditLogger, log, "admin.view"),
+		server.RequireAuth(sessions, logger),
+		server.RequirePolicy(policies, auditLogger, logger, "admin.view"),
 	}
 
 	// Identifier systems catalog

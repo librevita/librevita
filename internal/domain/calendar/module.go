@@ -1,8 +1,6 @@
 package calendar
 
 import (
-	"log/slog"
-
 	"github.com/labstack/echo/v4"
 	"go.uber.org/fx"
 
@@ -11,6 +9,7 @@ import (
 	"librevita.org/internal/core/policy"
 	"librevita.org/internal/core/server"
 	httphandler "librevita.org/internal/domain/calendar/delivery/http"
+	"librevita.org/pkg/log"
 )
 
 // Module provides the clinic calendar page. The schedule is a static mock
@@ -24,10 +23,10 @@ var Module = fx.Module("calendar",
 
 func registerRoutes(e *echo.Echo, h *httphandler.Handler, gate server.SetupGate,
 	sessions *auth.SessionManager, policies *policy.PolicyEngine,
-	auditLogger *audit.Logger, log *slog.Logger) {
+	auditLogger *audit.Logger, logger log.Logger) {
 	view := []echo.MiddlewareFunc{
-		gate(), server.RequireAuth(sessions, log),
-		server.RequirePolicy(policies, auditLogger, log, "calendar.view"),
+		gate(), server.RequireAuth(sessions, logger),
+		server.RequirePolicy(policies, auditLogger, logger, "calendar.view"),
 	}
 	e.GET("/calendar", h.Page, view...)
 }

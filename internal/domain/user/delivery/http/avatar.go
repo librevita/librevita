@@ -30,6 +30,7 @@ import (
 	"librevita.org/internal/core/storage"
 	"librevita.org/internal/domain/user/usecase"
 	"librevita.org/internal/ui/shared"
+	"librevita.org/pkg/log"
 )
 
 // avatarDomain is the attachment namespace for user avatars. It is a
@@ -260,7 +261,10 @@ func avatarDigest(payload []byte) string {
 func (h *Handler) removeAvatars(ctx context.Context, userID uuid.UUID, except uuid.UUID) int {
 	avatars, err := h.files.List(ctx, avatarDomain, userID)
 	if err != nil {
-		h.log.Warn("avatar list failed", "user_id", userID, "error", err)
+		h.log.WarnContext(ctx, "avatar list failed",
+			log.Stringer("user_id", userID),
+			log.Error(err),
+		)
 		return 0
 	}
 	removed := 0
@@ -269,7 +273,10 @@ func (h *Handler) removeAvatars(ctx context.Context, userID uuid.UUID, except uu
 			continue
 		}
 		if err := h.files.Delete(ctx, a.ID); err != nil {
-			h.log.Warn("avatar remove failed", "file_id", a.ID, "error", err)
+			h.log.WarnContext(ctx, "avatar remove failed",
+				log.Stringer("file_id", a.ID),
+				log.Error(err),
+			)
 			continue
 		}
 		removed++
