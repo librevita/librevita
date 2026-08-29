@@ -10,6 +10,7 @@ import (
 
 	"github.com/cockroachdb/errors"
 	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v4/middleware"
 	"go.uber.org/fx"
 
 	"librevita.org/internal/core/auth"
@@ -18,9 +19,19 @@ import (
 
 // Module manages the HTTP server lifecycle through Fx.
 var Module = fx.Module("server",
-	fx.Provide(New),
+	fx.Provide(provideEcho),
 	fx.Invoke(registerLifecycle, registerNotFound),
 )
+
+type middlewareSkippers struct {
+	fx.In
+	CSRF      []middleware.Skipper `group:"csrfSkip"`
+	BodyLimit []middleware.Skipper `group:"bodyLimitSkip"`
+}
+
+func provideEcho(csrf *auth.CSRF, cfg *config.Config, log *slog.Logger, skip middlewareSkippers) *echo.Echo {
+	return newEcho(csrf, cfg, log, skip.CSRF, skip.BodyLimit)
+}
 
 // registerLifecycle starts Echo asynchronously and shuts it down gracefully.
 func registerLifecycle(lc fx.Lifecycle, e *echo.Echo, cfg *config.Config, log *slog.Logger, shutdown fx.Shutdowner) {

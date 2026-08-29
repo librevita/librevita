@@ -19,6 +19,10 @@ import (
 
 // New creates the Echo instance and installs global middleware.
 func New(csrf *auth.CSRF, cfg *config.Config, log *slog.Logger) *echo.Echo {
+	return newEcho(csrf, cfg, log, nil, nil)
+}
+
+func newEcho(csrf *auth.CSRF, cfg *config.Config, log *slog.Logger, csrfSkip, bodyLimitSkip []middleware.Skipper) *echo.Echo {
 	e := echo.New()
 
 	e.HideBanner = true
@@ -64,12 +68,16 @@ func New(csrf *auth.CSRF, cfg *config.Config, log *slog.Logger) *echo.Echo {
 	e.Use(middleware.BodyLimitWithConfig(middleware.BodyLimitConfig{
 		Limit: "1M",
 		// File uploads have their own per-route limit; the document and
-		// avatar routes raise the cap themselves.
+		// avatar routes raise the cap themselves. Extra skippers come
+		// from communication modules (Fx group bodyLimitSkip).
 		Skipper: func(c echo.Context) bool {
-			return c.Path() == "/patients/:id/documents" || c.Path() == "/profile/avatar"
+			if c.Path() == "/patients/:id/documents" || c.Path() == "/profile/avatar" {
+				return true
+			}
+			return skipped(c, bodyLimitSkip)
 		},
 	}))
-	e.Use(CSRFMiddleware(csrf))
+	e.Use(CSRFMiddleware(csrf, csrfSkip...))
 
 	// Read timeouts protect against slow-loris attacks. WriteTimeout stays
 	// zero so that future Server-Sent Events are not interrupted.

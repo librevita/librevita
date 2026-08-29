@@ -88,6 +88,10 @@ func TestPolicyEvaluation(t *testing.T) {
 		{"admin may manage users", auth.RoleAdmin, "users.manage", true},
 		{"physician may not manage users", auth.RolePhysician, "users.manage", false},
 		{"receptionist may not manage users", auth.RoleReceptionist, "users.manage", false},
+		{"physician may write chart", auth.RolePhysician, "chart.write", true},
+		{"receptionist may not write chart", auth.RoleReceptionist, "chart.write", false},
+		{"patient may not write chart", auth.RolePatient, "chart.write", false},
+		{"physician may view chart", auth.RolePhysician, "chart.view", true},
 	}
 
 	for _, tc := range cases {

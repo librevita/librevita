@@ -1,0 +1,397 @@
+package views
+
+import (
+	"librevita.org/internal/core/auth"
+	"librevita.org/internal/ui/components"
+	"librevita.org/internal/ui/layouts"
+)
+
+// EpisodeRow is one note on the patient chart list.
+type EpisodeRow struct {
+	ID       string
+	When     string
+	Type     string
+	Status   string
+	Draft    bool
+	CanAmend bool
+}
+
+// FindingForm is one objective row on the SOAP form.
+type FindingForm struct {
+	Code    string
+	Display string
+	Value   string
+}
+
+// ProblemForm is one assessment row on the SOAP form.
+type ProblemForm struct {
+	Code    string
+	Display string
+	Text    string
+}
+
+// PlanForm is one plan activity row on the SOAP form.
+type PlanForm struct {
+	Kind        string
+	Description string
+}
+
+// EpisodeFormValues is the SOAP editor payload.
+type EpisodeFormValues struct {
+	Type       string
+	Class      string
+	OccurredAt string
+	Subjective string
+	Objective  string
+	Assessment string
+	Plan       string
+	Findings   []FindingForm
+	Problems   []ProblemForm
+	PlanItems  []PlanForm
+}
+
+// ChartSection is the patient-detail fragment (htmx).
+templ ChartSection(token string, patientID string, canWrite bool, rows []EpisodeRow) {
+	<section class="mt-4 rounded-lg border border-gray-200 bg-white p-6 shadow-sm dark:border-gray-700 dark:bg-gray-800">
+		<div class="flex items-center justify-between space-x-4">
+			<div>
+				<h3 class="text-base font-semibold text-gray-900 dark:text-white">Chart</h3>
+				<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">SOAP notes for this patient.</p>
+			</div>
+			if canWrite {
+				@components.ButtonLink("primary", "/patients/" + patientID + "/episodes/new", "New note", nil)
+			}
+		</div>
+		if len(rows) == 0 {
+			<p class="mt-4 text-sm text-gray-500 dark:text-gray-400">No notes yet.</p>
+		} else {
+			<ul class="mt-4 divide-y divide-gray-200 dark:divide-gray-700">
+				for _, row := range rows {
+					<li class="flex flex-wrap items-center justify-between gap-2 py-3">
+						<div>
+							<a class="text-sm font-medium text-indigo-700 hover:underline dark:text-indigo-400" href={ "/patients/" + patientID + "/episodes/" + row.ID }>{ row.Type }</a>
+							<p class="text-xs text-gray-500 dark:text-gray-400">{ row.When } · { row.Status }</p>
+						</div>
+						<div class="flex items-center space-x-2">
+							if canWrite && row.Draft {
+								@components.ButtonLink("secondary", "/patients/" + patientID + "/episodes/" + row.ID + "/edit", "Edit", nil)
+							}
+							if canWrite && row.CanAmend {
+								<form method="post" action={ "/patients/" + patientID + "/episodes/" + row.ID + "/amend" }>
+									<input type="hidden" name="_csrf" value={ token }>
+									@components.Button("secondary", "Amend", templ.Attributes{ "type": "submit" })
+								</form>
+							}
+						</div>
+					</li>
+				}
+			</ul>
+		}
+	</section>
+}
+
+// EpisodeFormPage is create or edit of a draft SOAP note.
+templ EpisodeFormPage(token string, p *auth.Principal, patientID, episodeID, patientName, errMsg string, values EpisodeFormValues) {
+	@layouts.App(episodeFormTitle(episodeID), token, p, "patients") {
+		<div class="mx-auto max-w-3xl p-4 lg:p-6">
+			@components.Card() {
+				@components.CardHeader(episodeFormTitle(episodeID)) {
+					<a class="inline-flex items-center rounded-lg p-2 text-sm font-medium text-indigo-700 hover:bg-gray-100 dark:text-indigo-400 dark:hover:bg-gray-700" href={ "/patients/" + patientID }>{ patientName }</a>
+				}
+				@EpisodeForm(token, patientID, episodeID, errMsg, values)
+			}
+		</div>
+	}
+}
+
+templ EpisodeForm(token string, patientID, episodeID, errMsg string, values EpisodeFormValues) {
+	<form method="post" action={ episodeFormAction(patientID, episodeID) } class="space-y-6">
+		<input type="hidden" name="_csrf" value={ token }>
+		if errMsg != "" {
+			<div class="mb-4">@components.Alert(errMsg, false)</div>
+		}
+		<fieldset class="space-y-4">
+			<legend class="text-sm font-semibold text-gray-900 dark:text-white">Visit</legend>
+			<div class="flex flex-wrap space-x-4">
+				<div class="flex-1">
+					@components.Field("episode_type", "Type") {
+						@components.Select("episode_type", "", templ.Attributes{ "id": "episode_type" }) {
+							@opt("consultation", "Consultation", values.Type)
+							@opt("anamnesis", "Anamnesis", values.Type)
+							@opt("evolution", "Evolution", values.Type)
+							@opt("prescription", "Prescription", values.Type)
+							@opt("exam_request", "Exam request", values.Type)
+							@opt("diagnostic", "Diagnostic", values.Type)
+						}
+					}
+				</div>
+				<div class="flex-1">
+					@components.Field("class", "Setting") {
+						@components.Select("class", "", templ.Attributes{ "id": "class" }) {
+							@opt("ambulatory", "Ambulatory", values.Class)
+							@opt("emergency", "Emergency", values.Class)
+							@opt("inpatient", "Inpatient", values.Class)
+							@opt("virtual", "Virtual", values.Class)
+						}
+					}
+				</div>
+			</div>
+			@components.Field("occurred_at", "Occurred at") {
+				@components.Input("occurred_at", "", templ.Attributes{ "id": "occurred_at", "type": "datetime-local", "value": values.OccurredAt, "required": true })
+			}
+		</fieldset>
+		<fieldset class="space-y-4">
+			<legend class="text-sm font-semibold text-gray-900 dark:text-white">SOAP</legend>
+			@components.Field("subjective", "Subjective") {
+				@components.Textarea("subjective", "min-h-24", templ.Attributes{ "id": "subjective", "rows": "4" }) {
+					{ values.Subjective }
+				}
+			}
+			@components.Field("objective", "Objective") {
+				@components.Textarea("objective", "min-h-24", templ.Attributes{ "id": "objective", "rows": "4" }) {
+					{ values.Objective }
+				}
+			}
+			@components.Field("assessment", "Assessment") {
+				@components.Textarea("assessment", "min-h-24", templ.Attributes{ "id": "assessment", "rows": "4" }) {
+					{ values.Assessment }
+				}
+			}
+			@components.Field("plan", "Plan") {
+				@components.Textarea("plan", "min-h-24", templ.Attributes{ "id": "plan", "rows": "4" }) {
+					{ values.Plan }
+				}
+			}
+		</fieldset>
+		<fieldset class="space-y-3">
+			<legend class="text-sm font-semibold text-gray-900 dark:text-white">Findings</legend>
+			for _, row := range values.Findings {
+				<div class="grid gap-3 sm:grid-cols-3">
+					@components.Input("finding_code", "", templ.Attributes{ "placeholder": "Code", "value": row.Code })
+					@components.Input("finding_display", "", templ.Attributes{ "placeholder": "Display", "value": row.Display })
+					@components.Input("finding_value", "", templ.Attributes{ "placeholder": "Value", "value": row.Value })
+				</div>
+			}
+			@components.Button("secondary", "Add finding", templ.Attributes{ "type": "submit", "name": "add", "value": "finding" })
+		</fieldset>
+		<fieldset class="space-y-3">
+			<legend class="text-sm font-semibold text-gray-900 dark:text-white">Problems</legend>
+			for _, row := range values.Problems {
+				<div class="grid gap-3 sm:grid-cols-3">
+					@components.Input("problem_code", "", templ.Attributes{ "placeholder": "Code", "value": row.Code })
+					@components.Input("problem_display", "", templ.Attributes{ "placeholder": "Display", "value": row.Display })
+					@components.Input("problem_text", "", templ.Attributes{ "placeholder": "Narrative", "value": row.Text })
+				</div>
+			}
+			@components.Button("secondary", "Add problem", templ.Attributes{ "type": "submit", "name": "add", "value": "problem" })
+		</fieldset>
+		<fieldset class="space-y-3">
+			<legend class="text-sm font-semibold text-gray-900 dark:text-white">Plan items</legend>
+			for _, row := range values.PlanItems {
+				<div class="grid gap-3 sm:grid-cols-2">
+					@components.Select("plan_kind", "", nil) {
+						@opt("medication", "Medication", row.Kind)
+						@opt("procedure", "Procedure", row.Kind)
+						@opt("exam", "Exam", row.Kind)
+						@opt("appointment", "Appointment", row.Kind)
+						@opt("instruction", "Instruction", row.Kind)
+					}
+					@components.Input("plan_description", "", templ.Attributes{ "placeholder": "Description", "value": row.Description })
+				</div>
+			}
+			@components.Button("secondary", "Add plan item", templ.Attributes{ "type": "submit", "name": "add", "value": "plan" })
+		</fieldset>
+		<div class="flex flex-wrap items-center space-x-3">
+			@components.Button("primary", "Save draft", templ.Attributes{ "type": "submit" })
+			if episodeID != "" {
+				@components.Button("secondary", "Save and finalize", templ.Attributes{ "type": "submit", "name": "finalize", "value": "1" })
+			}
+			<a class="text-sm font-medium text-gray-600 hover:text-indigo-600 dark:text-gray-300" href={ "/patients/" + patientID }>Cancel</a>
+		</div>
+	</form>
+}
+
+// EpisodeViewPage is the read-only SOAP note.
+templ EpisodeViewPage(token string, p *auth.Principal, patientID, patientName string, ep EpisodeView, canWrite bool) {
+	@layouts.App("SOAP note", token, p, "patients") {
+		<div class="mx-auto max-w-3xl p-4 lg:p-6">
+			@components.Card() {
+				@components.CardHeader(ep.Type) {
+					<a class="inline-flex items-center rounded-lg p-2 text-sm font-medium text-indigo-700 hover:bg-gray-100 dark:text-indigo-400 dark:hover:bg-gray-700" href={ "/patients/" + patientID }>{ patientName }</a>
+				}
+				<p class="text-sm text-gray-500 dark:text-gray-400">{ ep.When } · { ep.Status } · { ep.Class }</p>
+				if ep.PredecessorID != "" {
+					<p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+						Amends
+						<a class="text-indigo-700 hover:underline dark:text-indigo-400" href={ "/patients/" + patientID + "/episodes/" + ep.PredecessorID }>previous note</a>
+					</p>
+				}
+				<div class="mt-6 space-y-4 text-sm">
+					@soapBlock("Subjective", ep.Subjective)
+					@soapBlock("Objective", ep.Objective)
+					@soapBlock("Assessment", ep.Assessment)
+					@soapBlock("Plan", ep.Plan)
+				</div>
+				if len(ep.Findings) > 0 {
+					<h4 class="mt-6 text-sm font-semibold text-gray-900 dark:text-white">Findings</h4>
+					<ul class="mt-2 list-disc space-y-1 pl-5 text-sm text-gray-700 dark:text-gray-300">
+						for _, f := range ep.Findings {
+							<li>{ f }</li>
+						}
+					</ul>
+				}
+				if len(ep.Problems) > 0 {
+					<h4 class="mt-6 text-sm font-semibold text-gray-900 dark:text-white">Problems</h4>
+					<ul class="mt-2 list-disc space-y-1 pl-5 text-sm text-gray-700 dark:text-gray-300">
+						for _, pr := range ep.Problems {
+							<li>{ pr }</li>
+						}
+					</ul>
+				}
+				if len(ep.PlanItems) > 0 {
+					<h4 class="mt-6 text-sm font-semibold text-gray-900 dark:text-white">Plan items</h4>
+					<ul class="mt-2 list-disc space-y-1 pl-5 text-sm text-gray-700 dark:text-gray-300">
+						for _, item := range ep.PlanItems {
+							<li>{ item }</li>
+						}
+					</ul>
+				}
+				<div class="mt-6 flex flex-wrap items-center space-x-3">
+					if canWrite && ep.Draft {
+						@components.ButtonLink("primary", "/patients/" + patientID + "/episodes/" + ep.ID + "/edit", "Edit", nil)
+						<form method="post" action={ "/patients/" + patientID + "/episodes/" + ep.ID + "/finalize" }>
+							<input type="hidden" name="_csrf" value={ token }>
+							@components.Button("secondary", "Finalize", templ.Attributes{ "type": "submit" })
+						</form>
+					}
+					if canWrite && ep.CanAmend {
+						<form method="post" action={ "/patients/" + patientID + "/episodes/" + ep.ID + "/amend" }>
+							<input type="hidden" name="_csrf" value={ token }>
+							@components.Button("primary", "Amend", templ.Attributes{ "type": "submit" })
+						</form>
+					}
+				</div>
+			}
+		</div>
+	}
+}
+
+// EpisodeView is the read-only SOAP note for the view page.
+type EpisodeView struct {
+	ID            string
+	Type          string
+	Class         string
+	Status        string
+	When          string
+	Draft         bool
+	Finalized     bool
+	CanAmend      bool
+	PredecessorID string
+	Subjective    string
+	Objective     string
+	Assessment    string
+	Plan          string
+	Findings      []string
+	Problems      []string
+	PlanItems     []string
+}
+
+templ soapBlock(title, body string) {
+	<div>
+		<h4 class="font-semibold text-gray-900 dark:text-white">{ title }</h4>
+		<p class="mt-1 whitespace-pre-wrap text-gray-700 dark:text-gray-300">{ orDash(body) }</p>
+	</div>
+}
+
+templ opt(value, label, current string) {
+	if current == value {
+		<option value={ value } selected>{ label }</option>
+	} else {
+		<option value={ value }>{ label }</option>
+	}
+}
+
+func episodeFormTitle(id string) string {
+	if id == "" {
+		return "New SOAP note"
+	}
+	return "Edit SOAP note"
+}
+
+func episodeFormAction(patientID, episodeID string) string {
+	if episodeID == "" {
+		return "/patients/" + patientID + "/episodes"
+	}
+	return "/patients/" + patientID + "/episodes/" + episodeID
+}
+
+func orDash(s string) string {
+	if s == "" {
+		return "—"
+	}
+	return s
+}
+
+func PlanKindLabel(k string) string {
+	switch k {
+	case "medication":
+		return "Medication"
+	case "procedure":
+		return "Procedure"
+	case "exam":
+		return "Exam"
+	case "appointment":
+		return "Appointment"
+	case "instruction":
+		return "Instruction"
+	default:
+		return k
+	}
+}
+
+func TypeLabel(t string) string {
+	switch t {
+	case "consultation":
+		return "Consultation"
+	case "anamnesis":
+		return "Anamnesis"
+	case "evolution":
+		return "Evolution"
+	case "prescription":
+		return "Prescription"
+	case "exam_request":
+		return "Exam request"
+	case "diagnostic":
+		return "Diagnostic"
+	default:
+		return t
+	}
+}
+
+func StatusLabel(s string) string {
+	switch s {
+	case "draft":
+		return "Draft"
+	case "finalized":
+		return "Finalized"
+	case "archived":
+		return "Archived"
+	default:
+		return s
+	}
+}
+
+func ClassLabel(s string) string {
+	switch s {
+	case "ambulatory":
+		return "Ambulatory"
+	case "emergency":
+		return "Emergency"
+	case "inpatient":
+		return "Inpatient"
+	case "virtual":
+		return "Virtual"
+	default:
+		return s
+	}
+}

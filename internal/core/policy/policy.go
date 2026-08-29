@@ -91,6 +91,11 @@ var DefaultPolicies = map[string]string{
 	// a patient reads their own. Write stays admin/physician.
 	"patient.document.read":  `principal.role in ['admin', 'physician', 'receptionist'] || (principal.role == 'patient' && resource.patient_id == principal.patient_id && principal.patient_id != '')`,
 	"patient.document.write": `principal.role in ['admin', 'physician']`,
+
+	// SOAP chart: staff read any clinic note; a patient reads only their
+	// own (resource.patient_id). Write is restricted to clinicians.
+	"chart.view":  `principal.role in ['admin', 'physician', 'receptionist'] || (principal.role == 'patient' && resource.patient_id == principal.patient_id && principal.patient_id != '')`,
+	"chart.write": `principal.role in ['admin', 'physician']`,
 }
 
 // RequestInfo is the request side of the policy evaluation context.

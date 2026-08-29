@@ -12,9 +12,8 @@ import (
 	"librevita.org/internal/core/database/fle"
 )
 
-// Episode holds the schema definition for Medical Records, Clinical Notes, and Encounters.
-// All clinical PHI (anamnesis, physical exam, diagnostic hypotheses, prescriptions, clinical notes)
-// is stored encrypted transparently via ValueScanner.
+// Episode holds the schema definition for a SOAP clinical note (one encounter).
+// Narrative SOAP sections and structured children are encrypted with the Patient DEK.
 type Episode struct {
 	ent.Schema
 }
@@ -30,11 +29,15 @@ func (Episode) Fields() []ent.Field {
 		field.UUID("patient_id", uuid.UUID{}).
 			Comment("Patient ID"),
 		field.UUID("user_id", uuid.UUID{}).
-			Comment("Attending physician / clinician ID"),
+			Comment("Attending physician / author ID"),
 		field.UUID("appointment_id", uuid.UUID{}).
 			Optional().
 			Nillable().
 			Comment("Linked appointment ID if applicable"),
+		field.UUID("predecessor_id", uuid.UUID{}).
+			Optional().
+			Nillable().
+			Comment("Finalized episode this note amends"),
 		field.Enum("episode_type").
 			Values("consultation", "anamnesis", "evolution", "prescription", "exam_request", "diagnostic").
 			Default("consultation").
@@ -43,23 +46,38 @@ func (Episode) Fields() []ent.Field {
 			Values("draft", "finalized", "archived").
 			Default("draft").
 			Comment("Lifecycle status of the episode"),
+		field.Enum("class").
+			Values("ambulatory", "emergency", "inpatient", "virtual").
+			Default("ambulatory").
+			Comment("Care setting of the visit"),
+		field.Time("occurred_at").
+			Default(time.Now).
+			Comment("Encounter start / note time"),
+		field.Time("ended_at").
+			Optional().
+			Nillable().
+			Comment("Encounter end time if known"),
 
-		// Confidential Clinical PHI Fields (Stored as BLOB/BYTEA in DB, strings in Go):
-		field.String("notes").
+		field.String("subjective").
 			SchemaType(blobType).
 			ValueScanner(fle.EncryptedString()).
 			Optional().
-			Comment("Clinical notes / anamnesis / consultation details (stored as BLOB/BYTEA in DB)"),
-		field.String("prescription").
+			Comment("SOAP Subjective narrative (BLOB/BYTEA)"),
+		field.String("objective").
 			SchemaType(blobType).
 			ValueScanner(fle.EncryptedString()).
 			Optional().
-			Comment("Prescription and medical orders (stored as BLOB/BYTEA in DB)"),
-		field.String("diagnostic").
+			Comment("SOAP Objective narrative (BLOB/BYTEA)"),
+		field.String("assessment").
 			SchemaType(blobType).
 			ValueScanner(fle.EncryptedString()).
 			Optional().
-			Comment("Diagnostic hypotheses / CID (stored as BLOB/BYTEA in DB)"),
+			Comment("SOAP Assessment narrative (BLOB/BYTEA)"),
+		field.String("plan").
+			SchemaType(blobType).
+			ValueScanner(fle.EncryptedString()).
+			Optional().
+			Comment("SOAP Plan narrative (BLOB/BYTEA)"),
 
 		field.Time("created_at").
 			Default(time.Now).
@@ -92,6 +110,15 @@ func (Episode) Edges() []ent.Edge {
 			Ref("episodes").
 			Field("appointment_id").
 			Unique(),
+		edge.To("amendment", Episode.Type).
+			Unique(),
+		edge.From("predecessor", Episode.Type).
+			Ref("amendment").
+			Unique().
+			Field("predecessor_id"),
+		edge.To("findings", Finding.Type),
+		edge.To("problems", Problem.Type),
+		edge.To("plan_items", PlanItem.Type),
 	}
 }
 
@@ -103,5 +130,7 @@ func (Episode) Indexes() []ent.Index {
 		index.Fields("user_id", "created_at"),
 		index.Fields("episode_type"),
 		index.Fields("status"),
+		index.Fields("predecessor_id").
+			Unique(),
 	}
 }

@@ -113,3 +113,27 @@ func TestCSRFAcceptsHeaderToken(t *testing.T) {
 		t.Fatalf("POST with valid header token status = %d, want 200", rec.Code)
 	}
 }
+
+func TestCSRFSkipperExemptsRoute(t *testing.T) {
+	csrf := testCSRF()
+	e := echo.New()
+	e.Use(CSRFMiddleware(csrf, func(c echo.Context) bool {
+		return c.Request().URL.Path == "/hook"
+	}))
+	e.POST("/hook", func(c echo.Context) error { return c.String(http.StatusOK, "ok") })
+	e.POST("/other", func(c echo.Context) error { return c.String(http.StatusOK, "ok") })
+
+	req := httptest.NewRequest(http.MethodPost, "/hook", strings.NewReader(`{}`))
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("skipped POST status = %d, want 200", rec.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/other", strings.NewReader(`{}`))
+	rec = httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("non-skipped POST status = %d, want 403", rec.Code)
+	}
+}

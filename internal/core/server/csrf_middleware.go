@@ -4,6 +4,7 @@ import (
 	"net/http"
 
 	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v4/middleware"
 
 	"librevita.org/internal/core/auth"
 )
@@ -17,10 +18,15 @@ const (
 // cookie pattern. Forms must include the token in the _csrf field; HTMX and
 // fetch requests may send it in the X-CSRF-Token header. The cookie is
 // created only by CSRFToken (when a page renders), so every issued token
-// matches the cookie the browser stores.
-func CSRFMiddleware(c *auth.CSRF) echo.MiddlewareFunc {
+// matches the cookie the browser stores. Optional skippers let a
+// communication module exempt its own routes without teaching this
+// package about them.
+func CSRFMiddleware(c *auth.CSRF, skippers ...middleware.Skipper) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(ctx echo.Context) error {
+			if skipped(ctx, skippers) {
+				return next(ctx)
+			}
 			cookie, err := ctx.Cookie(auth.CSRFCookieName)
 			if err == nil && cookie.Value == "" {
 				cookie = nil
@@ -44,6 +50,15 @@ func CSRFMiddleware(c *auth.CSRF) echo.MiddlewareFunc {
 			return next(ctx)
 		}
 	}
+}
+
+func skipped(ctx echo.Context, skippers []middleware.Skipper) bool {
+	for _, skip := range skippers {
+		if skip != nil && skip(ctx) {
+			return true
+		}
+	}
+	return false
 }
 
 // CSRFToken returns the token stored in the request cookie, creating and
