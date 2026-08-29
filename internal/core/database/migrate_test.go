@@ -3,7 +3,6 @@ package database
 import (
 	"context"
 	"database/sql"
-	"log/slog"
 	"testing"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
@@ -12,6 +11,7 @@ import (
 	_ "modernc.org/sqlite"
 
 	"librevita.org/internal/core/config"
+	"librevita.org/pkg/log"
 )
 
 func TestMigrateSQLite(t *testing.T) {
@@ -21,7 +21,7 @@ func TestMigrateSQLite(t *testing.T) {
 	t.Cleanup(func() { db.Close() })
 	ctx := context.Background()
 
-	err = Migrate(ctx, db, slog.New(slog.DiscardHandler))
+	err = Migrate(ctx, db, log.Nop())
 	require.NoError(t, err)
 
 	// Verify all expected business tables are created by SQLite migrations.
@@ -61,7 +61,7 @@ func TestMigratePostgres(t *testing.T) {
 		t.Skipf("skipping postgres migration test (database not reachable): %v", err)
 	}
 
-	err = MigrateWithDriver(ctx, db, config.DriverPostgres, slog.New(slog.DiscardHandler))
+	err = MigrateWithDriver(ctx, db, config.DriverPostgres, log.Nop())
 	require.NoError(t, err)
 
 	// Verify all expected business tables are created in PostgreSQL

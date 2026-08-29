@@ -5,7 +5,6 @@ import (
 	"context"
 	"database/sql"
 	"image"
-	"log/slog"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -34,6 +33,7 @@ import (
 	userrepo "librevita.org/internal/domain/user/repository"
 	"librevita.org/internal/domain/user/usecase"
 	"librevita.org/internal/testutil"
+	"librevita.org/pkg/log"
 )
 
 // testAdminID is the seeded admin used by the avatar fixtures.
@@ -46,7 +46,7 @@ func mustFileManager(t *testing.T, client *ent.Client) *storage.FileManager {
 	if err != nil {
 		t.Fatal(err)
 	}
-	fm, err := storage.NewFileManager(storage.NewIndexRepository(client), s, slog.New(slog.DiscardHandler))
+	fm, err := storage.NewFileManager(storage.NewIndexRepository(client), s, log.Nop())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -56,16 +56,16 @@ func mustFileManager(t *testing.T, client *ent.Client) *storage.FileManager {
 func newAvatarEnv(t *testing.T) (*echo.Echo, *auth.SessionManager, *storage.FileManager, *ent.Client) {
 	t.Helper()
 	client := openAvatarDB(t)
-	log := slog.New(slog.DiscardHandler)
-	sessions, err := auth.NewSessionManager(auth.NewSessionRepository(client), &config.Config{Mode: "development"}, log)
+	logger := log.Nop()
+	sessions, err := auth.NewSessionManager(auth.NewSessionRepository(client), &config.Config{Mode: "development"}, logger)
 	if err != nil {
 		t.Fatal(err)
 	}
-	auditLogger, err := audit.NewLogger(audit.NewAuditRepository(client), log)
+	auditLogger, err := audit.NewLogger(audit.NewAuditRepository(client), logger)
 	if err != nil {
 		t.Fatal(err)
 	}
-	policies, err := policy.NewPolicyEngine(policy.NewPolicyRepository(client), log)
+	policies, err := policy.NewPolicyEngine(policy.NewPolicyRepository(client), logger)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,13 +79,13 @@ func newAvatarEnv(t *testing.T) (*echo.Echo, *auth.SessionManager, *storage.File
 	staffReqRepo := userrepo.NewStaffRequestRepository(client)
 	setupRepo := userrepo.NewSetupRepository(client)
 
-	svc := usecase.NewService(userRepo, roleRepo, specialtyRepo, staffReqRepo, setupRepo, sessions, auditLogger, log)
+	svc := usecase.NewService(userRepo, roleRepo, specialtyRepo, staffReqRepo, setupRepo, sessions, auditLogger, logger)
 	if err := testutil.User(context.Background(), client, "01990000-0000-7000-8000-00000000000a", "admin@example.org", "admin", "x"); err != nil {
 		t.Fatalf("seed admin: %v", err)
 	}
 	files := mustFileManager(t, client)
 	csrf := auth.NewCSRF(&config.Config{Mode: "development"})
-	h := NewHandler(svc, nil, nil, nil, csrf, sessions, policies, auditLogger, clinicusecase.NewClockProvider(clinicrepo.NewClinicRepository(client)), files, &config.Config{Mode: "development"}, log)
+	h := NewHandler(svc, nil, nil, nil, csrf, sessions, policies, auditLogger, clinicusecase.NewClockProvider(clinicrepo.NewClinicRepository(client)), files, &config.Config{Mode: "development"}, logger)
 
 	e := echo.New()
 	e.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
@@ -96,13 +96,13 @@ func newAvatarEnv(t *testing.T) (*echo.Echo, *auth.SessionManager, *storage.File
 			return next(c)
 		}
 	})
-	e.GET("/profile/avatar", h.Avatar, server.RequireAuth(sessions, log))
+	e.GET("/profile/avatar", h.Avatar, server.RequireAuth(sessions, logger))
 	e.POST("/profile/avatar", h.AvatarUpload,
-		server.RequireAuth(sessions, log),
-		server.RequirePolicy(policies, auditLogger, log, "profile.update"))
+		server.RequireAuth(sessions, logger),
+		server.RequirePolicy(policies, auditLogger, logger, "profile.update"))
 	e.POST("/profile/avatar/remove", h.AvatarRemove,
-		server.RequireAuth(sessions, log),
-		server.RequirePolicy(policies, auditLogger, log, "profile.update"))
+		server.RequireAuth(sessions, logger),
+		server.RequirePolicy(policies, auditLogger, logger, "profile.update"))
 	return e, sessions, files, client
 }
 
@@ -114,7 +114,7 @@ func openAvatarDB(t *testing.T) *ent.Client {
 	}
 	db.SetMaxOpenConns(1)
 	t.Cleanup(func() { _ = db.Close() })
-	if err := database.Migrate(context.Background(), db, slog.New(slog.DiscardHandler)); err != nil {
+	if err := database.Migrate(context.Background(), db, log.Nop()); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
 

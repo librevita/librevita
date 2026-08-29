@@ -2,36 +2,36 @@
 package telemetry
 
 import (
-	"log/slog"
 	"os"
+	"strings"
 
 	"go.uber.org/fx"
 	"go.uber.org/zap"
-	"go.uber.org/zap/exp/zapslog"
 	"go.uber.org/zap/zapcore"
 
 	"librevita.org/internal/core/config"
+	"librevita.org/pkg/log"
 )
 
-// LoggerResult exposes slog to application code and zap for lifecycle flush.
+// LoggerResult exposes the application logger and zap for lifecycle flush.
 type LoggerResult struct {
 	fx.Out
 
-	Logger *slog.Logger
+	Logger log.Logger
 	Zap    *zap.Logger
 	Sink   *LogSink
 }
 
 // NewLogger is the Fx provider for the structured application logger.
 // Production uses JSON; development uses bounded text columns.
-
 func NewLogger(cfg *config.Config) (LoggerResult, error) {
 	var (
 		zapLogger *zap.Logger
-		handler   slog.Handler
 		sink      *LogSink
 		err       error
 	)
+
+	level := zapLevelFromConfig(cfg.Logging.Level)
 
 	if cfg.IsProduction() {
 		zapConfig := zap.NewProductionConfig()
@@ -44,24 +44,30 @@ func NewLogger(cfg *config.Config) (LoggerResult, error) {
 		core := zapcore.NewCore(
 			zapcore.NewJSONEncoder(zapConfig.EncoderConfig),
 			output,
-			zapConfig.Level,
+			level,
 		)
-		zapLogger = zap.New(core, zap.AddCaller(), zap.AddStacktrace(zapcore.ErrorLevel))
-		handler = zapslog.NewHandler(zapLogger.Core(), zapslog.WithCaller(true))
+		zapLogger = zap.New(core, zap.AddCaller(), zap.AddCallerSkip(1), zap.AddStacktrace(zapcore.ErrorLevel))
 	} else {
-		zapLogger, err = zap.NewDevelopment()
-		if err != nil {
-			return LoggerResult{}, err
-		}
-		// Zap's console encoder renders structured context as JSON. Use a
-		// column-oriented slog handler for development output instead.
-		handler = newConsoleHandler(os.Stderr)
+		zapLogger = zap.New(newConsoleCore(os.Stderr, level), zap.AddCaller(), zap.AddCallerSkip(1))
 		sink = &LogSink{}
 	}
 
 	return LoggerResult{
-		Logger: slog.New(handler),
+		Logger: newAppLogger(zapLogger),
 		Zap:    zapLogger,
 		Sink:   sink,
 	}, nil
+}
+
+func zapLevelFromConfig(level string) zapcore.Level {
+	switch strings.ToLower(strings.TrimSpace(level)) {
+	case config.LogLevelDebug:
+		return zapcore.DebugLevel
+	case config.LogLevelWarn:
+		return zapcore.WarnLevel
+	case config.LogLevelError:
+		return zapcore.ErrorLevel
+	default:
+		return zapcore.InfoLevel
+	}
 }

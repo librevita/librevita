@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
-	"log/slog"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -18,6 +17,7 @@ import (
 	"librevita.org/internal/core/config"
 	"librevita.org/internal/core/crypto"
 	"librevita.org/internal/core/vault"
+	"librevita.org/pkg/log"
 )
 
 const testKey = "nAmIvOXVc0vb6M9G7P9q2j2yK1WxP3sJ8q5dR4tU6wA="
@@ -139,21 +139,21 @@ func TestBlindIndexDeterministicAndSeparated(t *testing.T) {
 }
 
 func TestNewFromConfigKeyPolicy(t *testing.T) {
-	log := slog.New(slog.DiscardHandler)
+	logger := log.Nop()
 	v := mustVault(t)
 
 	for _, env := range []string{"production", "staging"} {
 		cfg := &config.Config{Mode: env}
-		_, err := crypto.NewFromConfig(cfg, v, log)
+		_, err := crypto.NewFromConfig(cfg, v, logger)
 		assert.Error(t, err, "NewFromConfig(%s) without key should fail", env)
 	}
 
 	cfg := &config.Config{Mode: "production", MasterKey: testKey}
-	_, err := crypto.NewFromConfig(cfg, v, log)
+	_, err := crypto.NewFromConfig(cfg, v, logger)
 	require.NoError(t, err)
 
 	dev := &config.Config{Mode: "development"}
-	eng, err := crypto.NewFromConfig(dev, v, log)
+	eng, err := crypto.NewFromConfig(dev, v, logger)
 	require.NoError(t, err)
 
 	ct, nonce, err := eng.Seal(nil, []byte("value"))
@@ -179,7 +179,7 @@ func TestFxModuleIntegration(t *testing.T) {
 	app := fxtest.New(t,
 		fx.Provide(
 			func() *config.Config { return cfg },
-			func() *slog.Logger { return slog.New(slog.DiscardHandler) },
+			func() log.Logger { return log.Nop() },
 		),
 		vault.Module,
 		crypto.Module,

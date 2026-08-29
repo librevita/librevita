@@ -2,12 +2,12 @@ package crypto
 
 import (
 	"encoding/base64"
-	"log/slog"
 
 	"github.com/cockroachdb/errors"
 	"go.uber.org/fx"
 
 	"librevita.org/internal/core/config"
+	"librevita.org/pkg/log"
 )
 
 // Module provides cryptographic contracts (Hasher, Encryptor, Engine)
@@ -21,8 +21,8 @@ var Module = fx.Module("crypto",
 )
 
 // NewHasherFromConfig provides a Hasher instance configured from application settings.
-func NewHasherFromConfig(cfg *config.Config, log *slog.Logger) (Hasher, error) {
-	rawMasterKey, err := resolveMasterKey(cfg, log)
+func NewHasherFromConfig(cfg *config.Config, logger log.Logger) (Hasher, error) {
+	rawMasterKey, err := resolveMasterKey(cfg, logger)
 	if err != nil {
 		return nil, errors.Wrap(err, "crypto: hasher init")
 	}
@@ -40,8 +40,8 @@ func NewHasherFromConfig(cfg *config.Config, log *slog.Logger) (Hasher, error) {
 }
 
 // NewEncryptorFromConfig provides an Encryptor instance configured from application settings.
-func NewEncryptorFromConfig(cfg *config.Config, log *slog.Logger) (Encryptor, error) {
-	rawMasterKey, err := resolveMasterKey(cfg, log)
+func NewEncryptorFromConfig(cfg *config.Config, logger log.Logger) (Encryptor, error) {
+	rawMasterKey, err := resolveMasterKey(cfg, logger)
 	if err != nil {
 		return nil, errors.Wrap(err, "crypto: encryptor init")
 	}
@@ -59,12 +59,12 @@ func NewEncryptorFromConfig(cfg *config.Config, log *slog.Logger) (Encryptor, er
 }
 
 // NewFromConfig is the Fx provider for Engine/MasterKey with KeyVault.
-func NewFromConfig(cfg *config.Config, vault KeyVault, log *slog.Logger) (*Engine, error) {
+func NewFromConfig(cfg *config.Config, vault KeyVault, logger log.Logger) (*Engine, error) {
 	if vault == nil {
 		return nil, errors.New("crypto: key vault is required")
 	}
 
-	rawMasterKey, err := resolveMasterKey(cfg, log)
+	rawMasterKey, err := resolveMasterKey(cfg, logger)
 	if err != nil {
 		return nil, errors.Wrap(err, "crypto: engine init")
 	}
@@ -83,13 +83,13 @@ func NewFromConfig(cfg *config.Config, vault KeyVault, log *slog.Logger) (*Engin
 	return deriveEngine(rawMasterKey, vault, WithEngineHashAlgorithm(algo), WithEngineEncryptionCipher(cipher))
 }
 
-func resolveMasterKey(cfg *config.Config, log *slog.Logger) ([]byte, error) {
+func resolveMasterKey(cfg *config.Config, logger log.Logger) ([]byte, error) {
 	masterKey := cfg.MasterKey
 	if masterKey == "" {
 		if !cfg.IsDevelopment() {
 			return nil, errors.New("master key is required outside development (LIBREVITA_MASTER_KEY)")
 		}
-		log.Warn("no master key configured; using an ephemeral key (encrypted values reset on restart)")
+		logger.Warn("no master key configured; using an ephemeral key (encrypted values reset on restart)")
 		raw, err := RandomBytes(SizeDEK)
 		if err != nil {
 			return nil, errors.Wrap(err, "generate ephemeral master key")

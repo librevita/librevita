@@ -16,17 +16,19 @@ import (
 	"librevita.org/internal/core/server"
 	episodemodel "librevita.org/internal/domain/episode/model"
 	"librevita.org/internal/domain/episode/usecase"
+	"librevita.org/pkg/log"
 )
 
 // Handler serves the SOAP FHIR R4 facade.
 type Handler struct {
 	svc   *usecase.Service
 	audit *audit.Logger
+	log   log.Logger
 }
 
 // NewHandler is the Fx provider.
-func NewHandler(svc *usecase.Service, auditLogger *audit.Logger) *Handler {
-	return &Handler{svc: svc, audit: auditLogger}
+func NewHandler(svc *usecase.Service, auditLogger *audit.Logger, logger log.Logger) *Handler {
+	return &Handler{svc: svc, audit: auditLogger, log: logger}
 }
 
 // Metadata returns the CapabilityStatement.
@@ -90,7 +92,7 @@ func (h *Handler) CreateBundle(c echo.Context) error {
 		action, "episode:"+saved.ID.String(), saved.ID.String(), saved.Status.String()))
 	out, err := ToDocumentBundle(*saved, DocumentContext{AuthorName: principal.Name})
 	if err != nil {
-		return writeOutcome(c, http.StatusInternalServerError, "fatal", "exception", err.Error())
+		return h.fhirInternal(c, err)
 	}
 	status := http.StatusOK
 	if action == "chart.create" {
@@ -116,7 +118,7 @@ func (h *Handler) GetEncounter(c echo.Context) error {
 	}
 	bundle, err := ToDocumentBundle(*ep, DocumentContext{AuthorName: server.Principal(c).Name})
 	if err != nil {
-		return writeOutcome(c, http.StatusInternalServerError, "fatal", "exception", err.Error())
+		return h.fhirInternal(c, err)
 	}
 	for _, e := range bundle.Entry {
 		if PeekType(e.Resource) == "Encounter" {
@@ -150,7 +152,7 @@ func (h *Handler) SearchEncounter(c echo.Context) error {
 	for i := range list {
 		b, err := ToDocumentBundle(list[i], DocumentContext{})
 		if err != nil {
-			return writeOutcome(c, http.StatusInternalServerError, "fatal", "exception", err.Error())
+			return h.fhirInternal(c, err)
 		}
 		for _, e := range b.Entry {
 			if PeekType(e.Resource) == "Encounter" {
@@ -178,7 +180,7 @@ func (h *Handler) writeEpisodeBundle(c echo.Context, rawID string) error {
 	}
 	out, err := ToDocumentBundle(*ep, DocumentContext{AuthorName: name})
 	if err != nil {
-		return writeOutcome(c, http.StatusInternalServerError, "fatal", "exception", err.Error())
+		return h.fhirInternal(c, err)
 	}
 	h.recordChartView(c, "episode:"+ep.ID.String(), ep.ID.String(), ep.Status.String())
 	return writeFHIR(c, http.StatusOK, out)
@@ -225,8 +227,15 @@ func (h *Handler) fhirError(c echo.Context, err error) error {
 	case errors.Is(err, episodemodel.ErrInvalidSOAP):
 		return writeOutcome(c, http.StatusBadRequest, "error", "invalid", err.Error())
 	default:
-		return writeOutcome(c, http.StatusInternalServerError, "fatal", "exception", err.Error())
+		return h.fhirInternal(c, err)
 	}
+}
+
+func (h *Handler) fhirInternal(c echo.Context, err error) error {
+	h.log.ErrorContext(c.Request().Context(), "fhir internal error",
+		log.Error(err),
+	)
+	return writeOutcome(c, http.StatusInternalServerError, "fatal", "exception", "internal error")
 }
 
 func writeFHIR(c echo.Context, status int, v any) error {

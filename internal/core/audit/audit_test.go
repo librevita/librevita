@@ -3,7 +3,6 @@ package audit_test
 import (
 	"context"
 	"database/sql"
-	"log/slog"
 	"testing"
 
 	"entgo.io/ent/dialect"
@@ -15,6 +14,7 @@ import (
 	"librevita.org/ent"
 	"librevita.org/internal/core/audit"
 	"librevita.org/internal/core/database"
+	"librevita.org/pkg/log"
 )
 
 func openAuditTest(t *testing.T) (*sql.DB, audit.Repository) {
@@ -24,7 +24,7 @@ func openAuditTest(t *testing.T) (*sql.DB, audit.Repository) {
 	db.SetMaxOpenConns(1)
 	t.Cleanup(func() { _ = db.Close() })
 
-	err = database.Migrate(context.Background(), db, slog.New(slog.DiscardHandler))
+	err = database.Migrate(context.Background(), db, log.Nop())
 	require.NoError(t, err)
 
 	drv := entsql.OpenDB(dialect.SQLite, db)
@@ -37,7 +37,7 @@ func openAuditTest(t *testing.T) (*sql.DB, audit.Repository) {
 
 func TestRecordPersistsEvent(t *testing.T) {
 	db, repo := openAuditTest(t)
-	logger, err := audit.NewLogger(repo, slog.New(slog.DiscardHandler))
+	logger, err := audit.NewLogger(repo, log.Nop())
 	require.NoError(t, err)
 
 	logger.Record(context.Background(), audit.Event{
@@ -58,13 +58,13 @@ func TestRecordPersistsEvent(t *testing.T) {
 }
 
 func TestRecordRequiresRepository(t *testing.T) {
-	_, err := audit.NewLogger(nil, slog.New(slog.DiscardHandler))
+	_, err := audit.NewLogger(nil, log.Nop())
 	assert.Error(t, err)
 }
 
 func TestRecordSwallowsWriteErrors(t *testing.T) {
 	db, repo := openAuditTest(t)
-	logger, err := audit.NewLogger(repo, slog.New(slog.DiscardHandler))
+	logger, err := audit.NewLogger(repo, log.Nop())
 	require.NoError(t, err)
 	db.Close()
 
@@ -75,7 +75,7 @@ func TestRecordSwallowsWriteErrors(t *testing.T) {
 
 func TestHashChain(t *testing.T) {
 	db, repo := openAuditTest(t)
-	logger := slog.New(slog.DiscardHandler)
+	logger := log.Nop()
 	l, err := audit.NewLogger(repo, logger)
 	require.NoError(t, err)
 	ctx := context.Background()
@@ -108,7 +108,7 @@ func TestHashChain(t *testing.T) {
 
 func TestAuditLogAppendOnly(t *testing.T) {
 	db, repo := openAuditTest(t)
-	l, err := audit.NewLogger(repo, slog.New(slog.DiscardHandler))
+	l, err := audit.NewLogger(repo, log.Nop())
 	require.NoError(t, err)
 	ctx := context.Background()
 	l.Record(ctx, audit.Event{Action: "login", Resource: "user", Result: audit.AuditResultSuccess})

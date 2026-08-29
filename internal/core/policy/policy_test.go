@@ -3,7 +3,6 @@ package policy
 import (
 	"context"
 	"database/sql"
-	"log/slog"
 	"testing"
 
 	"entgo.io/ent/dialect"
@@ -18,6 +17,7 @@ import (
 	"librevita.org/internal/core/auth"
 	"librevita.org/internal/core/clinicctx"
 	"librevita.org/internal/core/database"
+	"librevita.org/pkg/log"
 )
 
 func pctx() context.Context {
@@ -26,7 +26,7 @@ func pctx() context.Context {
 
 func testPolicyEngine(t *testing.T) *PolicyEngine {
 	t.Helper()
-	pe, err := NewPolicyEngine(openPolicyDB(t), slog.New(slog.DiscardHandler))
+	pe, err := NewPolicyEngine(openPolicyDB(t), log.Nop())
 	require.NoError(t, err)
 	err = pe.Load(pctx())
 	require.NoError(t, err)
@@ -41,7 +41,7 @@ func openPolicyDB(t *testing.T) Repository {
 	db.SetMaxOpenConns(1)
 	t.Cleanup(func() { _ = db.Close() })
 
-	err = database.Migrate(context.Background(), db, slog.New(slog.DiscardHandler))
+	err = database.Migrate(context.Background(), db, log.Nop())
 	require.NoError(t, err)
 
 	drv := entsql.OpenDB(dialect.SQLite, db)
@@ -126,7 +126,7 @@ func TestPolicyRejectsNonBoolean(t *testing.T) {
 	prog, err := env.Program(ast)
 	require.NoError(t, err)
 
-	pe := &PolicyEngine{progs: map[uuid.UUID]map[string]cel.Program{uuid.Nil: {"weird": prog}}, log: slog.New(slog.DiscardHandler)}
+	pe := &PolicyEngine{progs: map[uuid.UUID]map[string]cel.Program{uuid.Nil: {"weird": prog}}, log: log.Nop()}
 	p := &auth.Principal{ID: "01990000-0000-7000-8000-000000000001", Email: "u@example.org", Name: "User", Role: auth.RoleAdmin}
 
 	_, err = pe.Allowed(context.Background(), "weird", p, RequestInfo{})
@@ -135,7 +135,7 @@ func TestPolicyRejectsNonBoolean(t *testing.T) {
 
 func TestPoliciesSeededFromDefaults(t *testing.T) {
 	db := openPolicyDB(t)
-	pe, err := NewPolicyEngine(db, slog.New(slog.DiscardHandler))
+	pe, err := NewPolicyEngine(db, log.Nop())
 	require.NoError(t, err)
 	err = pe.Load(pctx())
 	require.NoError(t, err)
@@ -156,7 +156,7 @@ func TestPoliciesSeededFromDefaults(t *testing.T) {
 
 func TestSetUpdatesPolicy(t *testing.T) {
 	db := openPolicyDB(t)
-	pe, err := NewPolicyEngine(db, slog.New(slog.DiscardHandler))
+	pe, err := NewPolicyEngine(db, log.Nop())
 	require.NoError(t, err)
 
 	p := &auth.Principal{ID: "id", Email: "u@example.org", Name: "User", Role: auth.RolePatient}
@@ -172,7 +172,7 @@ func TestSetUpdatesPolicy(t *testing.T) {
 
 func TestSetRejectsInvalidExpression(t *testing.T) {
 	db := openPolicyDB(t)
-	pe, err := NewPolicyEngine(db, slog.New(slog.DiscardHandler))
+	pe, err := NewPolicyEngine(db, log.Nop())
 	require.NoError(t, err)
 
 	// Broken CEL.
@@ -191,14 +191,14 @@ func TestSetRejectsInvalidExpression(t *testing.T) {
 
 func TestSetPersistsAcrossRestart(t *testing.T) {
 	db := openPolicyDB(t)
-	pe, err := NewPolicyEngine(db, slog.New(slog.DiscardHandler))
+	pe, err := NewPolicyEngine(db, log.Nop())
 	require.NoError(t, err)
 
 	err = pe.Set(pctx(), "users.register", `false`, Actor{ID: "u1", Email: "admin@example.org"})
 	require.NoError(t, err)
 
 	// A new engine over the same database must pick up the stored value.
-	pe2, err := NewPolicyEngine(db, slog.New(slog.DiscardHandler))
+	pe2, err := NewPolicyEngine(db, log.Nop())
 	require.NoError(t, err)
 	err = pe2.Load(pctx())
 	require.NoError(t, err)
@@ -210,7 +210,7 @@ func TestSetPersistsAcrossRestart(t *testing.T) {
 
 func TestConcurrentReadsDuringSet(t *testing.T) {
 	db := openPolicyDB(t)
-	pe, err := NewPolicyEngine(db, slog.New(slog.DiscardHandler))
+	pe, err := NewPolicyEngine(db, log.Nop())
 	require.NoError(t, err)
 	err = pe.Load(pctx())
 	require.NoError(t, err)
@@ -233,7 +233,7 @@ func TestConcurrentReadsDuringSet(t *testing.T) {
 
 func TestSetRecordsVersionWithActor(t *testing.T) {
 	db := openPolicyDB(t)
-	pe, err := NewPolicyEngine(db, slog.New(slog.DiscardHandler))
+	pe, err := NewPolicyEngine(db, log.Nop())
 	require.NoError(t, err)
 	err = pe.Load(pctx())
 	require.NoError(t, err)
@@ -271,7 +271,7 @@ func TestSetRecordsVersionWithActor(t *testing.T) {
 
 func TestSetRejectedChangeHasNoVersion(t *testing.T) {
 	db := openPolicyDB(t)
-	pe, err := NewPolicyEngine(db, slog.New(slog.DiscardHandler))
+	pe, err := NewPolicyEngine(db, log.Nop())
 	require.NoError(t, err)
 	err = pe.Load(pctx())
 	require.NoError(t, err)
@@ -286,7 +286,7 @@ func TestSetRejectedChangeHasNoVersion(t *testing.T) {
 
 func TestPolicyIDIsStableUUIDv7(t *testing.T) {
 	db := openPolicyDB(t)
-	pe, err := NewPolicyEngine(db, slog.New(slog.DiscardHandler))
+	pe, err := NewPolicyEngine(db, log.Nop())
 	require.NoError(t, err)
 	err = pe.Load(pctx())
 	require.NoError(t, err)
@@ -327,7 +327,7 @@ func TestPolicyIDIsStableUUIDv7(t *testing.T) {
 
 func TestSetRejectsSelfLockout(t *testing.T) {
 	db := openPolicyDB(t)
-	pe, err := NewPolicyEngine(db, slog.New(slog.DiscardHandler))
+	pe, err := NewPolicyEngine(db, log.Nop())
 	require.NoError(t, err)
 	err = pe.Load(pctx())
 	require.NoError(t, err)
@@ -353,7 +353,7 @@ func TestSetRejectsSelfLockout(t *testing.T) {
 
 func TestRejectedSelfLockoutKeepsPreviousPolicy(t *testing.T) {
 	db := openPolicyDB(t)
-	pe, err := NewPolicyEngine(db, slog.New(slog.DiscardHandler))
+	pe, err := NewPolicyEngine(db, log.Nop())
 	require.NoError(t, err)
 	err = pe.Load(pctx())
 	require.NoError(t, err)

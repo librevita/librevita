@@ -3,7 +3,6 @@ package usecase_test
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"sync"
 	"testing"
 
@@ -18,6 +17,7 @@ import (
 	"librevita.org/internal/core/config"
 	usermodel "librevita.org/internal/domain/user/model"
 	"librevita.org/internal/domain/user/usecase"
+	"librevita.org/pkg/log"
 	auditmocks "librevita.org/tests/mocks/core/audit"
 	authmocks "librevita.org/tests/mocks/core/auth"
 	usermocks "librevita.org/tests/mocks/domain/user/model"
@@ -37,7 +37,7 @@ type testEnv struct {
 
 func newTestEnv(t *testing.T) *testEnv {
 	t.Helper()
-	log := slog.New(slog.DiscardHandler)
+	logger := log.Nop()
 	userRepo := usermocks.NewMockUserRepository(t)
 	roleRepo := usermocks.NewMockRoleRepository(t)
 	specialtyRepo := usermocks.NewMockSpecialtyRepository(t)
@@ -50,13 +50,13 @@ func newTestEnv(t *testing.T) *testEnv {
 	auditRepo.EXPECT().Record(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
 	sessionRepo.EXPECT().CleanupExpired(mock.Anything, mock.Anything).Return(nil).Maybe()
 
-	sessions, err := auth.NewSessionManager(sessionRepo, &config.Config{Mode: "development"}, log)
+	sessions, err := auth.NewSessionManager(sessionRepo, &config.Config{Mode: "development"}, logger)
 	require.NoError(t, err)
 
-	auditLogger, err := audit.NewLogger(auditRepo, log)
+	auditLogger, err := audit.NewLogger(auditRepo, logger)
 	require.NoError(t, err)
 
-	svc := usecase.NewService(userRepo, roleRepo, specialtyRepo, staffReqRepo, setupRepo, sessions, auditLogger, log)
+	svc := usecase.NewService(userRepo, roleRepo, specialtyRepo, staffReqRepo, setupRepo, sessions, auditLogger, logger)
 
 	return &testEnv{
 		userRepo:      userRepo,

@@ -2,7 +2,7 @@ package usecase_test
 
 import (
 	"context"
-	"log/slog"
+	"librevita.org/pkg/log"
 	"testing"
 	"time"
 
@@ -84,11 +84,11 @@ func setupTestServices(t *testing.T) (
 
 	idRepoMock := identifiermocks.NewMockIdentifierRepository(t)
 	sysRepoMock := identifiermocks.NewMockSystemRepository(t)
-	log := slog.New(slog.DiscardHandler)
+	log := log.Nop()
 
 	svc := usecase.NewService(idRepoMock, key, reg, log)
 	idRepoMock.EXPECT().AllowsSystem(mock.Anything, mock.Anything, mock.Anything).Return(true, nil).Maybe()
-	systemsSvc := usecase.NewSystemsService(sysRepoMock, reg, log)
+	systemsSvc := usecase.NewSystemsService(sysRepoMock, reg)
 
 	return idRepoMock, sysRepoMock, vaultMock, svc, systemsSvc, reg
 }

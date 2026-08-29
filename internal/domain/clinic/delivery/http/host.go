@@ -1,7 +1,7 @@
 package http
 
 import (
-	"log/slog"
+	"librevita.org/pkg/log"
 	"net/http"
 	"strings"
 
@@ -19,7 +19,7 @@ import (
 // HostMiddleware resolves the clinic from Host, attaches clinicctx, and
 // wires FLE to the Clinic DEK. Unknown slugs are 404; Host values outside
 // the allowlist are 400. /healthz and /static skip Host.
-func HostMiddleware(cfg *config.Config, clinics model.Repository, engine *crypto.Engine, log *slog.Logger) echo.MiddlewareFunc {
+func HostMiddleware(cfg *config.Config, clinics model.Repository, engine *crypto.Engine, logger log.Logger) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
 			path := c.Request().URL.Path
@@ -40,7 +40,10 @@ func HostMiddleware(cfg *config.Config, clinics model.Repository, engine *crypto
 
 			row, err := clinics.GetBySlug(ctx, classified.Slug)
 			if err != nil {
-				log.Error("clinic lookup failed", "slug", classified.Slug, "error", err)
+				logger.ErrorContext(ctx, "clinic lookup failed",
+					log.String("slug", classified.Slug),
+					log.Error(err),
+				)
 				return echo.NewHTTPError(http.StatusInternalServerError)
 			}
 			if row == nil {
@@ -65,13 +68,19 @@ func HostMiddleware(cfg *config.Config, clinics model.Repository, engine *crypto
 					dek, dekErr = engine.EnsureClinicDEK(ctx, row.ID)
 				}
 				if dekErr != nil {
-					log.Error("clinic DEK unavailable", "clinic_id", row.ID, "error", dekErr)
+					logger.ErrorContext(ctx, "clinic DEK unavailable",
+						log.Stringer("clinic_id", row.ID),
+						log.Error(dekErr),
+					)
 					return echo.NewHTTPError(http.StatusInternalServerError)
 				}
 				enc, encErr := crypto.NewEncryptor(dek)
 				if encErr != nil {
 					crypto.ZeroBytes(dek)
-					log.Error("clinic encryptor", "clinic_id", row.ID, "error", encErr)
+					logger.ErrorContext(ctx, "clinic encryptor",
+						log.Stringer("clinic_id", row.ID),
+						log.Error(encErr),
+					)
 					return echo.NewHTTPError(http.StatusInternalServerError)
 				}
 				algorithm := cfg.Crypto.HashAlgorithm
@@ -81,7 +90,10 @@ func HostMiddleware(cfg *config.Config, clinics model.Repository, engine *crypto
 				h, hErr := crypto.NewHasherFromDEK(dek, crypto.WithHashAlgorithm(algorithm))
 				crypto.ZeroBytes(dek)
 				if hErr != nil {
-					log.Error("clinic hasher", "clinic_id", row.ID, "error", hErr)
+					logger.ErrorContext(ctx, "clinic hasher",
+						log.Stringer("clinic_id", row.ID),
+						log.Error(hErr),
+					)
 					return echo.NewHTTPError(http.StatusInternalServerError)
 				}
 				ctx = fle.WithEncryptor(ctx, enc)

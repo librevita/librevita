@@ -1,7 +1,6 @@
 package fhir
 
 import (
-	"log/slog"
 	"strings"
 
 	"github.com/labstack/echo/v4"
@@ -10,6 +9,7 @@ import (
 
 	"librevita.org/internal/core/auth"
 	"librevita.org/internal/core/server"
+	"librevita.org/pkg/log"
 )
 
 // Module is the replaceable FHIR R4 communication facade. It depends on
@@ -46,11 +46,11 @@ func registerHTTPRoutes(
 	h *Handler,
 	sessions *auth.SessionManager,
 	gate server.SetupGate,
-	log *slog.Logger,
+	logger log.Logger,
 ) {
 	authn := []echo.MiddlewareFunc{
 		gate(),
-		server.RequireAuth(sessions, log),
+		server.RequireAuth(sessions, logger),
 	}
 	write := append(authn, middleware.BodyLimit("2M"))
 

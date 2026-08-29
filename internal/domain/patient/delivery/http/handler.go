@@ -23,6 +23,7 @@ import (
 	patientmodel "librevita.org/internal/domain/patient/model"
 	"librevita.org/internal/domain/patient/usecase"
 	"librevita.org/internal/ui/components"
+	"librevita.org/pkg/log"
 )
 
 const (
@@ -52,14 +53,15 @@ type Handler struct {
 	ids     identifierusecase.Service
 	systems identifierusecase.SystemsService
 	engine  *crypto.Engine
+	log     log.Logger
 }
 
 // NewHandler is the Fx provider.
 func NewHandler(svc *usecase.Service, clocks *clinicusecase.ClockProvider,
 	csrf *auth.CSRF, auditLogger *audit.Logger, files *storage.FileManager,
-	ids identifierusecase.Service, systems identifierusecase.SystemsService, engine *crypto.Engine) *Handler {
+	ids identifierusecase.Service, systems identifierusecase.SystemsService, engine *crypto.Engine, logger log.Logger) *Handler {
 	return &Handler{svc: svc, clocks: clocks, csrf: csrf, audit: auditLogger,
-		files: files, ids: ids, systems: systems, engine: engine}
+		files: files, ids: ids, systems: systems, engine: engine, log: logger}
 }
 
 // List renders the registry page or, for htmx requests, only the table
@@ -560,9 +562,21 @@ func (h *Handler) BulkArchive(c echo.Context) error {
 		}
 		pt, err := h.svc.Get(ctx, clinicID, id.String())
 		if err != nil {
+			if !bulkArchiveSkipExpected(err) {
+				h.log.WarnContext(ctx, "bulk archive: skip patient",
+					log.String("patient_id", id.String()),
+					log.Error(err),
+				)
+			}
 			continue
 		}
 		if err := h.authorizePatientEdit(c, uuidStrPtr(pt.CreatedBy), pt.ID.String(), patientmodel.PatientStatus(pt.Status)); err != nil {
+			if !bulkArchiveSkipExpected(err) {
+				h.log.WarnContext(ctx, "bulk archive: skip patient",
+					log.String("patient_id", id.String()),
+					log.Error(err),
+				)
+			}
 			continue
 		}
 		if err := h.svc.SetStatus(ctx, clinicID, id.String(), patientmodel.PatientStatusInactive); err == nil {
@@ -810,4 +824,12 @@ func (h *Handler) authorizePatientEdit(c echo.Context, createdBy *string, ptID s
 		return err
 	}
 	return nil
+}
+
+func bulkArchiveSkipExpected(err error) bool {
+	if errors.Is(err, usecase.ErrNotFound) || errors.Is(err, usecase.ErrForbidden) {
+		return true
+	}
+	var he *echo.HTTPError
+	return errors.As(err, &he) && he.Code == http.StatusForbidden
 }

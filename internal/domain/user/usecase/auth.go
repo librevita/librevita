@@ -3,7 +3,7 @@ package usecase
 
 import (
 	"context"
-	"log/slog"
+	"librevita.org/pkg/log"
 	"strings"
 
 	"github.com/cockroachdb/errors"
@@ -49,7 +49,7 @@ type Service struct {
 	setupRepo     SetupRepository
 	sessions      *auth.SessionManager
 	audit         *audit.Logger
-	log           *slog.Logger
+	log           log.Logger
 	dummyHash     string
 }
 
@@ -62,11 +62,11 @@ func NewService(
 	setupRepo SetupRepository,
 	sessions *auth.SessionManager,
 	auditLogger *audit.Logger,
-	log *slog.Logger,
+	logger log.Logger,
 ) *Service {
 	dummyHash, err := auth.HashPassword("dummy-password-for-timing")
 	if err != nil {
-		log.Error("failed to precompute dummy password hash", "error", err)
+		logger.Error("failed to precompute dummy password hash", log.Error(err))
 	}
 	return &Service{
 		userRepo:      userRepo,
@@ -76,7 +76,7 @@ func NewService(
 		setupRepo:     setupRepo,
 		sessions:      sessions,
 		audit:         auditLogger,
-		log:           log,
+		log:           logger,
 		dummyHash:     dummyHash,
 	}
 }
@@ -252,7 +252,10 @@ func (s *Service) Login(ctx context.Context, c Credentials) (*auth.Principal, st
 
 	ok, err := auth.VerifyPassword(u.PasswordHash, c.Password)
 	if err != nil {
-		s.log.Warn("stored password hash rejected", "user_id", u.ID)
+		s.log.Warn("stored password hash rejected",
+			log.Stringer("user_id", u.ID),
+			log.Error(err),
+		)
 		s.timingDummy(c.Password)
 		s.auditLogin(ctx, u.ID.String(), email, "malformed stored hash")
 		return nil, "", ErrInvalidCredentials

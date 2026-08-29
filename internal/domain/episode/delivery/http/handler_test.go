@@ -2,7 +2,7 @@ package http_test
 
 import (
 	"context"
-	"log/slog"
+	"librevita.org/pkg/log"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -106,7 +106,7 @@ func fillHTTPSuccessor(byID map[uuid.UUID]episodemodel.Episode, ep *episodemodel
 
 func setupHandler(t *testing.T, repo *memRepo, auditRepo *auditmocks.MockRepository) *episodehttp.Handler {
 	t.Helper()
-	log := slog.New(slog.DiscardHandler)
+	log := log.Nop()
 	auditLogger, err := audit.NewLogger(auditRepo, log)
 	require.NoError(t, err)
 	policyRepo := policymocks.NewMockRepository(t)
@@ -119,7 +119,7 @@ func setupHandler(t *testing.T, repo *memRepo, auditRepo *auditmocks.MockReposit
 	policies, err := policy.NewPolicyEngine(policyRepo, log)
 	require.NoError(t, err)
 	require.NoError(t, policies.Load(context.Background()))
-	return episodehttp.NewHandler(usecase.NewService(repo, log, policies), nil, &clinicusecase.ClockProvider{}, &auth.CSRF{}, auditLogger)
+	return episodehttp.NewHandler(usecase.NewService(repo, policies), nil, &clinicusecase.ClockProvider{}, &auth.CSRF{}, auditLogger)
 }
 
 func TestListFragment(t *testing.T) {

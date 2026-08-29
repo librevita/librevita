@@ -2,7 +2,7 @@ package usecase_test
 
 import (
 	"context"
-	"log/slog"
+	"librevita.org/pkg/log"
 	"testing"
 	"time"
 
@@ -70,12 +70,12 @@ func setupPatientTest(t *testing.T) (
 	}
 	policyRepoMock.EXPECT().List(mock.Anything).Return(defaultRows, nil).Maybe()
 
-	policies, err := policy.NewPolicyEngine(policyRepoMock, slog.New(slog.DiscardHandler))
+	policies, err := policy.NewPolicyEngine(policyRepoMock, log.Nop())
 	require.NoError(t, err)
 	require.NoError(t, policies.Load(context.Background()))
 
 	repoMock := patientmocks.NewMockPatientRepository(t)
-	svc := usecase.NewService(repoMock, slog.New(slog.DiscardHandler), policies, nil)
+	svc := usecase.NewService(repoMock, policies, nil)
 
 	return repoMock, svc
 }

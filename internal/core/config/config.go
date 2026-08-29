@@ -35,6 +35,11 @@ const (
 	LogModeConsole  = "console"
 	LogModeFile     = "file"
 	LogModeRotating = "rotating"
+
+	LogLevelDebug = "debug"
+	LogLevelInfo  = "info"
+	LogLevelWarn  = "warn"
+	LogLevelError = "error"
 )
 
 const (
@@ -290,6 +295,10 @@ type LoggingConfig struct {
 	// Mode is LogModeConsole, LogModeFile or LogModeRotating.
 	Mode string `koanf:"mode"`
 
+	// Level is LogLevelDebug, LogLevelInfo, LogLevelWarn or LogLevelError.
+	// Empty means debug in development and info in production.
+	Level string `koanf:"level"`
+
 	// Console configures stderr output (no settings today).
 	Console ConsoleLogConfig `koanf:"console"`
 
@@ -387,6 +396,7 @@ func RegisterFlags(fs *pflag.FlagSet) {
 	stringFlag(fs, "db-dqlite-discovery-srv", "", "DNS SRV record seeding the dqlite node candidates, e.g. _dqlite._tcp.librevita.svc.cluster.local")
 	stringFlag(fs, "db-dqlite-database", defaultDqliteDatabase, "dqlite database name")
 	stringFlag(fs, "log-mode", defaultLogMode, "production log mode: console, file, or rotating")
+	stringFlag(fs, "log-level", "", "log level: debug, info, warn, or error")
 	stringFlag(fs, "log-file-path", "", "log file path (file mode)")
 	stringFlag(fs, "log-rotating-path", "", "rotating log file path")
 	intFlag(fs, "log-rotating-max-size", defaultLogSizeMB, "rotating log maximum size in MB")
@@ -567,6 +577,14 @@ func (c *Config) normalize() {
 	if c.Logging.Mode == "" {
 		c.Logging.Mode = defaultLogMode
 	}
+	c.Logging.Level = strings.ToLower(strings.TrimSpace(c.Logging.Level))
+	if c.Logging.Level == "" {
+		if c.IsProduction() {
+			c.Logging.Level = LogLevelInfo
+		} else {
+			c.Logging.Level = LogLevelDebug
+		}
+	}
 	if strings.TrimSpace(c.Logging.File.Path) == "" {
 		c.Logging.File.Path = filepath.Join(c.DataDir, "librevita.log")
 	}
@@ -671,10 +689,16 @@ func (c *Config) validate() error {
 
 	switch c.Logging.Mode {
 	case LogModeConsole, LogModeFile, LogModeRotating:
-		return nil
 	default:
 		return errors.Newf("config: invalid logging.mode %q (use %q, %q, or %q)",
 			c.Logging.Mode, LogModeConsole, LogModeFile, LogModeRotating)
+	}
+	switch c.Logging.Level {
+	case "", LogLevelDebug, LogLevelInfo, LogLevelWarn, LogLevelError:
+		return nil
+	default:
+		return errors.Newf("config: invalid logging.level %q (use %q, %q, %q, or %q)",
+			c.Logging.Level, LogLevelDebug, LogLevelInfo, LogLevelWarn, LogLevelError)
 	}
 }
 
@@ -740,6 +764,8 @@ func mapFlagKey(name string) string {
 		return "database.dqlite.database"
 	case "log-mode", "log_mode":
 		return "logging.mode"
+	case "log-level", "log_level":
+		return "logging.level"
 	case "log-file-path", "log_file_path":
 		return "logging.file.path"
 	case "log-rotating-path", "log_rotating_path":
@@ -844,6 +870,8 @@ func mapEnvironmentKey(key string) string {
 		return "database.dqlite.database"
 	case "logging_mode":
 		return "logging.mode"
+	case "logging_level":
+		return "logging.level"
 	case "logging_file_path":
 		return "logging.file.path"
 	case "logging_rotating_path":

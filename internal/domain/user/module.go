@@ -2,7 +2,6 @@
 package user
 
 import (
-	"log/slog"
 	"time"
 
 	"github.com/labstack/echo/v4"
@@ -16,6 +15,7 @@ import (
 	httphandler "librevita.org/internal/domain/user/delivery/http"
 	"librevita.org/internal/domain/user/repository"
 	"librevita.org/internal/domain/user/usecase"
+	"librevita.org/pkg/log"
 )
 
 // Per-client rate limits. Setup is the only way to become the initial
@@ -57,7 +57,7 @@ func bodyLimitSkipper() middleware.Skipper {
 }
 
 func registerRoutes(e *echo.Echo, h *httphandler.Handler, sessions *auth.SessionManager,
-	policies *policy.PolicyEngine, auditLogger *audit.Logger, log *slog.Logger) {
+	policies *policy.PolicyEngine, auditLogger *audit.Logger, logger log.Logger) {
 
 	loginLimiter := server.NewRateLimiter(loginLimit, limitWindow)
 	registerLimiter := server.NewRateLimiter(registerLimit, limitWindow)
@@ -66,52 +66,52 @@ func registerRoutes(e *echo.Echo, h *httphandler.Handler, sessions *auth.Session
 
 	e.GET("/setup", h.SetupPage)
 	e.POST("/setup", h.Setup, server.RateLimit(setupLimiter))
-	e.GET("/clinics/new", h.ProvisionPage, server.RequireAuth(sessions, log))
-	e.POST("/clinics", h.Provision, server.RequireAuth(sessions, log), server.RateLimit(setupLimiter))
+	e.GET("/clinics/new", h.ProvisionPage, server.RequireAuth(sessions, logger))
+	e.POST("/clinics", h.Provision, server.RequireAuth(sessions, logger), server.RateLimit(setupLimiter))
 	e.GET("/auth/login", h.LoginPage, gate)
 	e.POST("/auth/login", h.Login, gate, server.RateLimit(loginLimiter))
 	// Registration is never public; the users.register policy decides who
 	// may create accounts.
-	e.GET("/auth/register", h.RegisterPage, gate, server.RequireAuth(sessions, log), server.RequirePolicy(policies, auditLogger, log, "users.register"))
-	e.POST("/auth/register", h.Register, gate, server.RequireAuth(sessions, log), server.RequirePolicy(policies, auditLogger, log, "users.register"), server.RateLimit(registerLimiter))
-	e.POST("/auth/logout", h.Logout, gate, server.RequireAuth(sessions, log))
+	e.GET("/auth/register", h.RegisterPage, gate, server.RequireAuth(sessions, logger), server.RequirePolicy(policies, auditLogger, logger, "users.register"))
+	e.POST("/auth/register", h.Register, gate, server.RequireAuth(sessions, logger), server.RequirePolicy(policies, auditLogger, logger, "users.register"), server.RateLimit(registerLimiter))
+	e.POST("/auth/logout", h.Logout, gate, server.RequireAuth(sessions, logger))
 
-	e.GET("/", h.Home, gate, server.RequireAuth(sessions, log), server.RequirePolicy(policies, auditLogger, log, "dashboard.view"))
-	e.GET("/activity/recent", h.HomeActivity, gate, server.RequireAuth(sessions, log), server.RequirePolicy(policies, auditLogger, log, "dashboard.view"))
-	e.GET("/profile", h.ProfilePage, gate, server.RequireAuth(sessions, log), server.RequirePolicy(policies, auditLogger, log, "dashboard.view"))
-	e.POST("/profile", h.ProfileUpdate, gate, server.RequireAuth(sessions, log), server.RequirePolicy(policies, auditLogger, log, "profile.update"))
-	e.GET("/profile/avatar", h.Avatar, gate, server.RequireAuth(sessions, log), server.RequirePolicy(policies, auditLogger, log, "dashboard.view"))
-	e.POST("/profile/avatar", h.AvatarUpload, gate, server.RequireAuth(sessions, log), server.RequirePolicy(policies, auditLogger, log, "profile.update"), middleware.BodyLimit("2M"))
-	e.POST("/profile/avatar/remove", h.AvatarRemove, gate, server.RequireAuth(sessions, log), server.RequirePolicy(policies, auditLogger, log, "profile.update"))
-	e.GET("/users/:id/avatar", h.UserAvatar, gate, server.RequireAuth(sessions, log), server.RequirePolicy(policies, auditLogger, log, "users.manage"))
-	e.GET("/policies", h.AdminPoliciesPage, gate, server.RequireAuth(sessions, log), server.RequirePolicy(policies, auditLogger, log, "admin.view"))
-	e.POST("/policies", h.AdminPolicySave, gate, server.RequireAuth(sessions, log), server.RequirePolicy(policies, auditLogger, log, "admin.view"))
-	e.POST("/policies/reset", h.AdminPolicyReset, gate, server.RequireAuth(sessions, log), server.RequirePolicy(policies, auditLogger, log, "admin.view"))
-	e.GET("/users", h.UsersPage, gate, server.RequireAuth(sessions, log), server.RequirePolicy(policies, auditLogger, log, "users.manage"))
-	e.GET("/users/new", h.UserNewPage, gate, server.RequireAuth(sessions, log), server.RequirePolicy(policies, auditLogger, log, "users.manage"))
-	e.POST("/users", h.UserCreate, gate, server.RequireAuth(sessions, log), server.RequirePolicy(policies, auditLogger, log, "users.manage"))
-	e.GET("/users/:id/edit", h.UserEditPage, gate, server.RequireAuth(sessions, log), server.RequirePolicy(policies, auditLogger, log, "users.manage"))
-	e.POST("/users/:id", h.UserUpdate, gate, server.RequireAuth(sessions, log), server.RequirePolicy(policies, auditLogger, log, "users.manage"))
-	e.POST("/users/:id/status", h.UserStatus, gate, server.RequireAuth(sessions, log), server.RequirePolicy(policies, auditLogger, log, "users.manage"))
-	e.GET("/specialties", h.SpecialtiesPage, gate, server.RequireAuth(sessions, log), server.RequirePolicy(policies, auditLogger, log, "users.manage"))
-	e.POST("/specialties", h.SpecialtyCreate, gate, server.RequireAuth(sessions, log), server.RequirePolicy(policies, auditLogger, log, "users.manage"))
-	e.POST("/specialties/:id/delete", h.SpecialtyDelete, gate, server.RequireAuth(sessions, log), server.RequirePolicy(policies, auditLogger, log, "users.manage"))
-	e.GET("/roles", h.RolesPage, gate, server.RequireAuth(sessions, log), server.RequirePolicy(policies, auditLogger, log, "users.manage"))
-	e.POST("/roles", h.RoleCreate, gate, server.RequireAuth(sessions, log), server.RequirePolicy(policies, auditLogger, log, "users.manage"))
-	e.POST("/roles/:id/rename", h.RoleRename, gate, server.RequireAuth(sessions, log), server.RequirePolicy(policies, auditLogger, log, "users.manage"))
-	e.POST("/roles/:id/clinical", h.RoleClinical, gate, server.RequireAuth(sessions, log), server.RequirePolicy(policies, auditLogger, log, "users.manage"))
-	e.POST("/roles/:id/delete", h.RoleDelete, gate, server.RequireAuth(sessions, log), server.RequirePolicy(policies, auditLogger, log, "users.manage"))
+	e.GET("/", h.Home, gate, server.RequireAuth(sessions, logger), server.RequirePolicy(policies, auditLogger, logger, "dashboard.view"))
+	e.GET("/activity/recent", h.HomeActivity, gate, server.RequireAuth(sessions, logger), server.RequirePolicy(policies, auditLogger, logger, "dashboard.view"))
+	e.GET("/profile", h.ProfilePage, gate, server.RequireAuth(sessions, logger), server.RequirePolicy(policies, auditLogger, logger, "dashboard.view"))
+	e.POST("/profile", h.ProfileUpdate, gate, server.RequireAuth(sessions, logger), server.RequirePolicy(policies, auditLogger, logger, "profile.update"))
+	e.GET("/profile/avatar", h.Avatar, gate, server.RequireAuth(sessions, logger), server.RequirePolicy(policies, auditLogger, logger, "dashboard.view"))
+	e.POST("/profile/avatar", h.AvatarUpload, gate, server.RequireAuth(sessions, logger), server.RequirePolicy(policies, auditLogger, logger, "profile.update"), middleware.BodyLimit("2M"))
+	e.POST("/profile/avatar/remove", h.AvatarRemove, gate, server.RequireAuth(sessions, logger), server.RequirePolicy(policies, auditLogger, logger, "profile.update"))
+	e.GET("/users/:id/avatar", h.UserAvatar, gate, server.RequireAuth(sessions, logger), server.RequirePolicy(policies, auditLogger, logger, "users.manage"))
+	e.GET("/policies", h.AdminPoliciesPage, gate, server.RequireAuth(sessions, logger), server.RequirePolicy(policies, auditLogger, logger, "admin.view"))
+	e.POST("/policies", h.AdminPolicySave, gate, server.RequireAuth(sessions, logger), server.RequirePolicy(policies, auditLogger, logger, "admin.view"))
+	e.POST("/policies/reset", h.AdminPolicyReset, gate, server.RequireAuth(sessions, logger), server.RequirePolicy(policies, auditLogger, logger, "admin.view"))
+	e.GET("/users", h.UsersPage, gate, server.RequireAuth(sessions, logger), server.RequirePolicy(policies, auditLogger, logger, "users.manage"))
+	e.GET("/users/new", h.UserNewPage, gate, server.RequireAuth(sessions, logger), server.RequirePolicy(policies, auditLogger, logger, "users.manage"))
+	e.POST("/users", h.UserCreate, gate, server.RequireAuth(sessions, logger), server.RequirePolicy(policies, auditLogger, logger, "users.manage"))
+	e.GET("/users/:id/edit", h.UserEditPage, gate, server.RequireAuth(sessions, logger), server.RequirePolicy(policies, auditLogger, logger, "users.manage"))
+	e.POST("/users/:id", h.UserUpdate, gate, server.RequireAuth(sessions, logger), server.RequirePolicy(policies, auditLogger, logger, "users.manage"))
+	e.POST("/users/:id/status", h.UserStatus, gate, server.RequireAuth(sessions, logger), server.RequirePolicy(policies, auditLogger, logger, "users.manage"))
+	e.GET("/specialties", h.SpecialtiesPage, gate, server.RequireAuth(sessions, logger), server.RequirePolicy(policies, auditLogger, logger, "users.manage"))
+	e.POST("/specialties", h.SpecialtyCreate, gate, server.RequireAuth(sessions, logger), server.RequirePolicy(policies, auditLogger, logger, "users.manage"))
+	e.POST("/specialties/:id/delete", h.SpecialtyDelete, gate, server.RequireAuth(sessions, logger), server.RequirePolicy(policies, auditLogger, logger, "users.manage"))
+	e.GET("/roles", h.RolesPage, gate, server.RequireAuth(sessions, logger), server.RequirePolicy(policies, auditLogger, logger, "users.manage"))
+	e.POST("/roles", h.RoleCreate, gate, server.RequireAuth(sessions, logger), server.RequirePolicy(policies, auditLogger, logger, "users.manage"))
+	e.POST("/roles/:id/rename", h.RoleRename, gate, server.RequireAuth(sessions, logger), server.RequirePolicy(policies, auditLogger, logger, "users.manage"))
+	e.POST("/roles/:id/clinical", h.RoleClinical, gate, server.RequireAuth(sessions, logger), server.RequirePolicy(policies, auditLogger, logger, "users.manage"))
+	e.POST("/roles/:id/delete", h.RoleDelete, gate, server.RequireAuth(sessions, logger), server.RequirePolicy(policies, auditLogger, logger, "users.manage"))
 
 	// Physician directory and the approval workflow.
-	e.GET("/staff", h.StaffPage, gate, server.RequireAuth(sessions, log), server.RequirePolicy(policies, auditLogger, log, "staff.view"))
-	e.GET("/staff/new", h.StaffCreatePage, gate, server.RequireAuth(sessions, log), server.RequirePolicy(policies, auditLogger, log, "staff.edit"))
-	e.POST("/staff", h.StaffCreate, gate, server.RequireAuth(sessions, log), server.RequirePolicy(policies, auditLogger, log, "staff.edit"))
-	e.GET("/staff/:id/edit", h.StaffEditPage, gate, server.RequireAuth(sessions, log), server.RequirePolicy(policies, auditLogger, log, "staff.view"))
-	e.POST("/staff/:id", h.StaffUpdate, gate, server.RequireAuth(sessions, log), server.RequirePolicy(policies, auditLogger, log, "staff.edit"))
-	e.POST("/staff/:id/request", h.StaffRequestChange, gate, server.RequireAuth(sessions, log), server.RequirePolicy(policies, auditLogger, log, "staff.request"))
-	e.GET("/staff/my-requests", h.MyStaffRequestsPage, gate, server.RequireAuth(sessions, log), server.RequirePolicy(policies, auditLogger, log, "staff.request"))
-	e.GET("/staff/requests", h.StaffRequestsPage, gate, server.RequireAuth(sessions, log), server.RequirePolicy(policies, auditLogger, log, "staff.approve"))
-	e.GET("/audit/integrity", h.AuditIntegrity, gate, server.RequireAuth(sessions, log), server.RequirePolicy(policies, auditLogger, log, "admin.view"))
-	e.POST("/staff/requests/:id/approve", h.StaffRequestApprove, gate, server.RequireAuth(sessions, log), server.RequirePolicy(policies, auditLogger, log, "staff.approve"))
-	e.POST("/staff/requests/:id/reject", h.StaffRequestReject, gate, server.RequireAuth(sessions, log), server.RequirePolicy(policies, auditLogger, log, "staff.approve"))
+	e.GET("/staff", h.StaffPage, gate, server.RequireAuth(sessions, logger), server.RequirePolicy(policies, auditLogger, logger, "staff.view"))
+	e.GET("/staff/new", h.StaffCreatePage, gate, server.RequireAuth(sessions, logger), server.RequirePolicy(policies, auditLogger, logger, "staff.edit"))
+	e.POST("/staff", h.StaffCreate, gate, server.RequireAuth(sessions, logger), server.RequirePolicy(policies, auditLogger, logger, "staff.edit"))
+	e.GET("/staff/:id/edit", h.StaffEditPage, gate, server.RequireAuth(sessions, logger), server.RequirePolicy(policies, auditLogger, logger, "staff.view"))
+	e.POST("/staff/:id", h.StaffUpdate, gate, server.RequireAuth(sessions, logger), server.RequirePolicy(policies, auditLogger, logger, "staff.edit"))
+	e.POST("/staff/:id/request", h.StaffRequestChange, gate, server.RequireAuth(sessions, logger), server.RequirePolicy(policies, auditLogger, logger, "staff.request"))
+	e.GET("/staff/my-requests", h.MyStaffRequestsPage, gate, server.RequireAuth(sessions, logger), server.RequirePolicy(policies, auditLogger, logger, "staff.request"))
+	e.GET("/staff/requests", h.StaffRequestsPage, gate, server.RequireAuth(sessions, logger), server.RequirePolicy(policies, auditLogger, logger, "staff.approve"))
+	e.GET("/audit/integrity", h.AuditIntegrity, gate, server.RequireAuth(sessions, logger), server.RequirePolicy(policies, auditLogger, logger, "admin.view"))
+	e.POST("/staff/requests/:id/approve", h.StaffRequestApprove, gate, server.RequireAuth(sessions, logger), server.RequirePolicy(policies, auditLogger, logger, "staff.approve"))
+	e.POST("/staff/requests/:id/reject", h.StaffRequestReject, gate, server.RequireAuth(sessions, logger), server.RequirePolicy(policies, auditLogger, logger, "staff.approve"))
 }

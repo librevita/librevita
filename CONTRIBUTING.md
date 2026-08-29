@@ -51,6 +51,21 @@ version there (and the same `GO_VERSION` in the CI workflow).
 - Tests: domain use cases are unit-tested; handlers have HTTP tests; the audit
   chain, storage saga, and reconciler have dedicated suites
 
+## Logging
+
+Application code logs through `librevita.org/pkg/log` with typed Fields
+(`log.String`, `log.Error`, ...). Do not import `log/slog` or `go.uber.org/zap`
+outside `pkg/log` and `internal/core/telemetry`.
+
+- Name logger parameters `logger`, not `log`, so Field constructors (`log.String`, `log.Error`) stay in scope
+- Use the `*Context` methods when a `context.Context` is available so `request_id` is attached
+- Log swallowed errors at the call site. HTTP 500s that return `err` to Echo are logged by `ProblemErrorHandler`; do not double-log
+- Do not log 4xx as errors; RequestLog already records them at Warn
+- Never log PHI (identifier plaintext, SOAP notes, decrypted patient fields)
+- Log messages are English
+
+`loggercheck` covers leftover `log/slog` and Zap sugared kv. It cannot check `pkg/log`: its custom rules treat extra arguments as key/value pairs and would reject typed Fields. The compiler is the check (`...Field`). Do not add `pkg/log` to `loggercheck.rules`.
+
 ## Schema changes
 
 Migrations are the single source of truth. Edit `db/migrations/`, then:

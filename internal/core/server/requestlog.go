@@ -1,12 +1,13 @@
 package server
 
 import (
-	"log/slog"
 	"net/http"
 	"time"
 
 	"github.com/cockroachdb/errors"
 	"github.com/labstack/echo/v4"
+
+	"librevita.org/pkg/log"
 )
 
 // RequestLog returns middleware that logs one line per served request:
@@ -18,10 +19,18 @@ import (
 // The level follows the status code: Info for 2xx, Warn for 4xx, Error
 // for 5xx. It sits outside Recover in the chain so a recovered panic
 // surfaces in the log as a 500.
-func RequestLog(log *slog.Logger) echo.MiddlewareFunc {
+func RequestLog(logger log.Logger) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
 			req := c.Request()
+			rid := c.Response().Header().Get(echo.HeaderXRequestID)
+			if rid == "" {
+				rid = req.Header.Get(echo.HeaderXRequestID)
+			}
+			if rid != "" {
+				c.SetRequest(req.WithContext(log.WithRequestID(req.Context(), rid)))
+				req = c.Request()
+			}
 			if req.URL.Path == healthzPath {
 				return next(c)
 			}
@@ -47,26 +56,21 @@ func RequestLog(log *slog.Logger) echo.MiddlewareFunc {
 				}
 			}
 
-			attrs := []slog.Attr{
-				slog.String("method", req.Method),
-				slog.String("path", req.URL.Path),
-				slog.Int("status", status),
-				slog.Duration("latency", time.Since(start)),
-				slog.String("remote", c.RealIP()),
-			}
-			if rid := c.Response().Header().Get(echo.HeaderXRequestID); rid != "" {
-				attrs = append(attrs, slog.String("request_id", rid))
-			} else if rid := req.Header.Get(echo.HeaderXRequestID); rid != "" {
-				attrs = append(attrs, slog.String("request_id", rid))
+			fields := []log.Field{
+				log.String("method", req.Method),
+				log.String("path", req.URL.Path),
+				log.Int("status", status),
+				log.Duration("latency", time.Since(start)),
+				log.String("remote", c.RealIP()),
 			}
 
 			switch {
 			case status >= http.StatusInternalServerError:
-				log.LogAttrs(req.Context(), slog.LevelError, "request", attrs...)
+				logger.ErrorContext(req.Context(), "request", fields...)
 			case status >= http.StatusBadRequest:
-				log.LogAttrs(req.Context(), slog.LevelWarn, "request", attrs...)
+				logger.WarnContext(req.Context(), "request", fields...)
 			default:
-				log.LogAttrs(req.Context(), slog.LevelInfo, "request", attrs...)
+				logger.InfoContext(req.Context(), "request", fields...)
 			}
 			return err
 		}

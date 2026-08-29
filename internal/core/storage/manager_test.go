@@ -3,7 +3,6 @@ package storage
 import (
 	"bytes"
 	"io"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"librevita.org/internal/core/crypto"
+	"librevita.org/pkg/log"
 )
 
 // ageBlob rewinds the file mtime of a locally stored blob, so the
@@ -35,9 +35,9 @@ func testManager(t *testing.T) (*FileManager, *Local) {
 	return m, store
 }
 
-func testLogger(t *testing.T) *slog.Logger {
+func testLogger(t *testing.T) log.Logger {
 	t.Helper()
-	return slog.New(slog.DiscardHandler)
+	return log.Nop()
 }
 
 var (

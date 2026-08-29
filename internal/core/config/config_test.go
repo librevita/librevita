@@ -38,6 +38,7 @@ func TestLoadPrecedence(t *testing.T) {
 	assert.Equal(t, "node1:9001,node2:9001", cfg.Database.Dqlite.Addrs)
 	assert.Equal(t, "lv", cfg.Database.Dqlite.Database)
 	assert.Equal(t, LogModeConsole, cfg.Logging.Mode)
+	assert.Equal(t, LogLevelInfo, cfg.Logging.Level)
 	assert.Equal(t, defaultLogSizeMB, cfg.Logging.Rotating.MaxSizeMB)
 	assert.True(t, cfg.Logging.Rotating.Compress)
 }
@@ -158,10 +159,10 @@ func TestDqliteEnvKeysRejectAliases(t *testing.T) {
 }
 
 func TestLoggingEnvKeysRejectAliases(t *testing.T) {
-	for _, alias := range []string{"log_mode", "log_path", "logging_path", "log_max_size_mb", "logging_max_size_mb", "log_max_backups", "logging_max_backups", "log_max_age_days", "logging_max_age_days", "log_compress", "logging_compress"} {
+	for _, alias := range []string{"log_mode", "log_level", "log_path", "logging_path", "log_max_size_mb", "logging_max_size_mb", "log_max_backups", "logging_max_backups", "log_max_age_days", "logging_max_age_days", "log_compress", "logging_compress"} {
 		assert.Empty(t, mapEnvironmentKey(alias), "%s should have no alias", alias)
 	}
-	for _, canonical := range []string{"logging_mode", "logging_file_path", "logging_rotating_path", "logging_rotating_max_size_mb", "logging_rotating_max_backups", "logging_rotating_max_age_days", "logging_rotating_compress"} {
+	for _, canonical := range []string{"logging_mode", "logging_level", "logging_file_path", "logging_rotating_path", "logging_rotating_max_size_mb", "logging_rotating_max_backups", "logging_rotating_max_age_days", "logging_rotating_compress"} {
 		assert.NotEmpty(t, mapEnvironmentKey(canonical), "%s should map to a key", canonical)
 	}
 }

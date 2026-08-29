@@ -2,7 +2,7 @@ package usecase_test
 
 import (
 	"context"
-	"log/slog"
+	"librevita.org/pkg/log"
 	"testing"
 	"time"
 
@@ -124,10 +124,10 @@ func setupEpisodeSvc(t *testing.T, repo *memRepo) *usecase.Service {
 		defaultRows = append(defaultRows, policy.PolicyRow{Name: name, Expression: expr})
 	}
 	policyRepoMock.EXPECT().List(mock.Anything).Return(defaultRows, nil).Maybe()
-	policies, err := policy.NewPolicyEngine(policyRepoMock, slog.New(slog.DiscardHandler))
+	policies, err := policy.NewPolicyEngine(policyRepoMock, log.Nop())
 	require.NoError(t, err)
 	require.NoError(t, policies.Load(context.Background()))
-	return usecase.NewService(repo, slog.New(slog.DiscardHandler), policies)
+	return usecase.NewService(repo, policies)
 }
 
 func TestCreateGetFinalize(t *testing.T) {

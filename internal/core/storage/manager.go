@@ -9,13 +9,13 @@ import (
 	"encoding/hex"
 	"hash"
 	"io"
-	"log/slog"
 	"time"
 
 	"github.com/cockroachdb/errors"
 	"github.com/google/uuid"
 	"librevita.org/internal/core/crypto"
 	"librevita.org/pkg/flow"
+	"librevita.org/pkg/log"
 )
 
 // StoredFile is the master-index metadata of one stored file.
@@ -63,17 +63,17 @@ type IndexRepository interface {
 type FileManager struct {
 	store Store
 	repo  IndexRepository
-	log   *slog.Logger
+	log   log.Logger
 	// newID is injectable for tests; defaults to uuid.NewV7.
 	newID func() (uuid.UUID, error)
 }
 
 // NewFileManager is the Fx provider.
-func NewFileManager(repo IndexRepository, store Store, log *slog.Logger) (*FileManager, error) {
+func NewFileManager(repo IndexRepository, store Store, logger log.Logger) (*FileManager, error) {
 	if repo == nil {
 		return nil, errors.New("storage: the master index requires the index repository")
 	}
-	return &FileManager{store: store, repo: repo, log: log, newID: uuid.NewV7}, nil
+	return &FileManager{store: store, repo: repo, log: logger, newID: uuid.NewV7}, nil
 }
 
 // Access classes of stored files.
@@ -167,8 +167,10 @@ func (m *FileManager) Upload(ctx context.Context, in UploadInput, data io.Reader
 			return perr
 		}, func() error {
 			if derr := m.store.Delete(ctx, key); derr != nil {
-				m.log.Error("storage: upload compensation failed",
-					"key", key, "delete_error", derr)
+				m.log.ErrorContext(ctx, "storage: upload compensation failed",
+					log.String("key", key),
+					log.NamedError("delete_error", derr),
+				)
 				return derr
 			}
 			return nil
@@ -255,8 +257,10 @@ func (m *FileManager) UploadEncrypted(ctx context.Context, in UploadInput, data 
 			return nil
 		}, func() error {
 			if derr := m.store.Delete(ctx, keyName); derr != nil {
-				m.log.Error("storage: encrypted upload compensation failed",
-					"key", keyName, "delete_error", derr)
+				m.log.ErrorContext(ctx, "storage: encrypted upload compensation failed",
+					log.String("key", keyName),
+					log.NamedError("delete_error", derr),
+				)
 				return derr
 			}
 			return nil
@@ -319,8 +323,10 @@ func (m *FileManager) Delete(ctx context.Context, id uuid.UUID) error {
 		return err
 	}
 	if err := m.store.Delete(ctx, key); err != nil {
-		m.log.Warn("storage: blob delete left an orphan for the reconciler",
-			"key", key, "error", err)
+		m.log.WarnContext(ctx, "storage: blob delete left an orphan for the reconciler",
+			log.String("key", key),
+			log.Error(err),
+		)
 	}
 	return nil
 }
@@ -337,7 +343,10 @@ func (m *FileManager) Reconcile(ctx context.Context) (int, error) {
 	for _, obj := range objects {
 		exists, err := m.repo.KeyExists(ctx, obj.Key)
 		if err != nil {
-			m.log.Warn("storage: reconcile lookup failed", "key", obj.Key, "error", err)
+			m.log.WarnContext(ctx, "storage: reconcile lookup failed",
+				log.String("key", obj.Key),
+				log.Error(err),
+			)
 			continue
 		}
 		if exists {
@@ -347,13 +356,18 @@ func (m *FileManager) Reconcile(ctx context.Context) (int, error) {
 			continue
 		}
 		if err := m.store.Delete(ctx, obj.Key); err != nil {
-			m.log.Warn("storage: reconcile delete failed", "key", obj.Key, "error", err)
+			m.log.WarnContext(ctx, "storage: reconcile delete failed",
+				log.String("key", obj.Key),
+				log.Error(err),
+			)
 			continue
 		}
 		removed++
 	}
 	if removed > 0 {
-		m.log.Info("storage: reconciled orphaned objects", "removed", removed)
+		m.log.InfoContext(ctx, "storage: reconciled orphaned objects",
+			log.Int("removed", removed),
+		)
 	}
 	return removed, nil
 }

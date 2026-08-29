@@ -2,7 +2,7 @@ package storage
 
 import (
 	"context"
-	"log/slog"
+	"librevita.org/pkg/log"
 	"path/filepath"
 	"time"
 
@@ -36,7 +36,7 @@ const reconcileInterval = 15 * time.Minute
 // have no master-index row, compensating uploads that crashed between
 // the blob write and the index write. The first pass runs shortly after
 // startup, then every reconcileInterval.
-func registerReconciler(lc fx.Lifecycle, manager *FileManager, log *slog.Logger) {
+func registerReconciler(lc fx.Lifecycle, manager *FileManager, logger log.Logger) {
 	lc.Append(fx.Hook{
 		OnStart: func(ctx context.Context) error {
 			go func() {
@@ -44,7 +44,7 @@ func registerReconciler(lc fx.Lifecycle, manager *FileManager, log *slog.Logger)
 				defer ticker.Stop()
 				for {
 					if _, err := manager.Reconcile(ctx); err != nil {
-						log.Warn("storage reconcile failed", "error", err)
+						logger.Warn("storage reconcile failed", log.Error(err))
 					}
 					select {
 					case <-ticker.C:
@@ -59,18 +59,24 @@ func registerReconciler(lc fx.Lifecycle, manager *FileManager, log *slog.Logger)
 }
 
 // NewStore builds the backend named by the configuration.
-func NewStore(cfg *config.Config, log *slog.Logger) (Store, error) {
+func NewStore(cfg *config.Config, logger log.Logger) (Store, error) {
 	switch cfg.Storage.Backend {
 	case "", BackendLocal:
 		dir := cfg.Storage.Local.Dir
 		if dir == "" {
 			dir = filepath.Join(cfg.DataDir, "files")
 		}
-		log.Info("file storage backend", "backend", BackendLocal, "dir", dir)
+		logger.Info("file storage backend",
+			log.String("backend", BackendLocal),
+			log.String("dir", dir),
+		)
 		return NewLocal(dir)
 	case BackendS3:
-		log.Info("file storage backend", "backend", BackendS3,
-			"endpoint", cfg.Storage.S3.Endpoint, "bucket", cfg.Storage.S3.Bucket)
+		logger.Info("file storage backend",
+			log.String("backend", BackendS3),
+			log.String("endpoint", cfg.Storage.S3.Endpoint),
+			log.String("bucket", cfg.Storage.S3.Bucket),
+		)
 		return NewS3(S3Config{
 			Endpoint:  cfg.Storage.S3.Endpoint,
 			Bucket:    cfg.Storage.S3.Bucket,
@@ -94,14 +100,16 @@ func (e *configInvalidError) Error() string {
 // registerLifecycle verifies the backend at startup. The local backend
 // creates its root during construction; the S3 backend checks the
 // bucket. Verification failures abort the startup.
-func registerLifecycle(lc fx.Lifecycle, store Store, log *slog.Logger) {
+func registerLifecycle(lc fx.Lifecycle, store Store, logger log.Logger) {
 	lc.Append(fx.Hook{
 		OnStart: func(ctx context.Context) error {
 			if v, ok := store.(*S3); ok {
 				if err := v.Verify(ctx); err != nil {
 					return err
 				}
-				log.Info("file storage backend verified", "backend", BackendS3)
+				logger.Info("file storage backend verified",
+					log.String("backend", BackendS3),
+				)
 			}
 			return nil
 		},

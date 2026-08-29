@@ -5,7 +5,6 @@ import (
 	"context"
 	"database/sql"
 	"encoding/base64"
-	"log/slog"
 	"net/http"
 	"strings"
 	"testing"
@@ -23,6 +22,7 @@ import (
 	"librevita.org/internal/core/config"
 	"librevita.org/internal/core/database"
 	"librevita.org/internal/testutil"
+	"librevita.org/pkg/log"
 )
 
 const testUserID = "01990000-0000-7000-8000-000000000001"
@@ -34,8 +34,8 @@ func openSessionTest(t *testing.T) *ent.Client {
 	db.SetMaxOpenConns(1)
 	t.Cleanup(func() { _ = db.Close() })
 
-	log := slog.New(slog.DiscardHandler)
-	err = database.Migrate(context.Background(), db, log)
+	logger := log.Nop()
+	err = database.Migrate(context.Background(), db, logger)
 	require.NoError(t, err)
 
 	drv := entsql.OpenDB(dialect.SQLite, db)
@@ -59,7 +59,7 @@ func newManager(t *testing.T, client *ent.Client, ttl time.Duration) *SessionMan
 		repo:   NewSessionRepository(client),
 		ttl:    ttl,
 		secure: false,
-		log:    slog.New(slog.DiscardHandler),
+		log:    log.Nop(),
 	}
 }
 
@@ -147,14 +147,14 @@ func TestSessionRejectsDeactivatedUser(t *testing.T) {
 }
 
 func TestSessionManagerRequiresClient(t *testing.T) {
-	_, err := NewSessionManager(nil, &config.Config{Mode: "development"}, slog.New(slog.DiscardHandler))
+	_, err := NewSessionManager(nil, &config.Config{Mode: "development"}, log.Nop())
 	assert.Error(t, err)
 }
 
 func TestSessionManagerRequiresKeyInProduction(t *testing.T) {
 	client := openSessionTest(t)
 	cfg := &config.Config{Mode: "production"}
-	_, err := NewSessionManager(NewSessionRepository(client), cfg, slog.New(slog.DiscardHandler))
+	_, err := NewSessionManager(NewSessionRepository(client), cfg, log.Nop())
 	assert.Error(t, err)
 }
 
@@ -162,7 +162,7 @@ func TestSessionManagerRejectsMalformedKey(t *testing.T) {
 	client := openSessionTest(t)
 	for _, key := range []string{"not-base64!!", base64.StdEncoding.EncodeToString([]byte("short"))} {
 		cfg := &config.Config{Mode: "production", PasetoKey: key}
-		_, err := NewSessionManager(NewSessionRepository(client), cfg, slog.New(slog.DiscardHandler))
+		_, err := NewSessionManager(NewSessionRepository(client), cfg, log.Nop())
 		assert.Error(t, err, "NewSessionManager with key %q should fail", key)
 	}
 }
@@ -170,7 +170,7 @@ func TestSessionManagerRejectsMalformedKey(t *testing.T) {
 func TestSessionManagerAcceptsConfiguredKey(t *testing.T) {
 	client := openSessionTest(t)
 	key := base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{0x42}, 32))
-	m, err := NewSessionManager(NewSessionRepository(client), &config.Config{Mode: "production", PasetoKey: key}, slog.New(slog.DiscardHandler))
+	m, err := NewSessionManager(NewSessionRepository(client), &config.Config{Mode: "production", PasetoKey: key}, log.Nop())
 	require.NoError(t, err)
 
 	seedUser(t, client, testUserID)
@@ -213,31 +213,31 @@ func flipByte(b byte) byte {
 
 func TestSessionManagerKeyBoundary(t *testing.T) {
 	client := openSessionTest(t)
-	log := slog.New(slog.DiscardHandler)
+	logger := log.Nop()
 
 	for _, env := range []string{"production", "staging", "prod", "test"} {
-		_, err := NewSessionManager(NewSessionRepository(client), &config.Config{Mode: env}, log)
+		_, err := NewSessionManager(NewSessionRepository(client), &config.Config{Mode: env}, logger)
 		assert.Error(t, err, "env %q must require a paseto key", env)
 	}
 
-	m, err := NewSessionManager(NewSessionRepository(client), &config.Config{Mode: "development"}, log)
+	m, err := NewSessionManager(NewSessionRepository(client), &config.Config{Mode: "development"}, logger)
 	require.NoError(t, err)
 	assert.False(t, m.secure, "development cookies must not use Secure")
 
-	m, err = NewSessionManager(NewSessionRepository(client), &config.Config{Mode: "staging", PasetoKey: base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{0x42}, 32))}, log)
+	m, err = NewSessionManager(NewSessionRepository(client), &config.Config{Mode: "staging", PasetoKey: base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{0x42}, 32))}, logger)
 	require.NoError(t, err)
 	assert.True(t, m.secure, "non-development cookies must use Secure")
 }
 
 func TestSessionCookieAttributes(t *testing.T) {
 	client := openSessionTest(t)
-	log := slog.New(slog.DiscardHandler)
+	logger := log.Nop()
 
-	dev, err := NewSessionManager(NewSessionRepository(client), &config.Config{Mode: "development"}, log)
+	dev, err := NewSessionManager(NewSessionRepository(client), &config.Config{Mode: "development"}, logger)
 	require.NoError(t, err)
 	prod, err := NewSessionManager(NewSessionRepository(client), &config.Config{
 		Mode: "production", PasetoKey: base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{0x42}, 32)),
-	}, log)
+	}, logger)
 	require.NoError(t, err)
 
 	for name, m := range map[string]*SessionManager{"development": dev, "production": prod} {

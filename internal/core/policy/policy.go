@@ -13,7 +13,6 @@ package policy
 
 import (
 	"context"
-	"log/slog"
 	"sync"
 	"time"
 
@@ -24,6 +23,7 @@ import (
 
 	"librevita.org/internal/core/auth"
 	"librevita.org/internal/core/clinicctx"
+	"librevita.org/pkg/log"
 )
 
 // Every expression receives the same variables:
@@ -147,7 +147,7 @@ type PolicyEngine struct {
 	mu    sync.RWMutex
 	progs map[uuid.UUID]map[string]cel.Program
 	repo  Repository
-	log   *slog.Logger
+	log   log.Logger
 
 	clinicID clinicIDResolver
 	setMu    sync.Mutex
@@ -169,7 +169,7 @@ func (pe *PolicyEngine) SetClockProvider(clocks clinicIDResolver) {
 }
 
 // NewPolicyEngine is the Fx provider.
-func NewPolicyEngine(repo Repository, log *slog.Logger) (*PolicyEngine, error) {
+func NewPolicyEngine(repo Repository, logger log.Logger) (*PolicyEngine, error) {
 	if repo == nil {
 		return nil, errors.New("policy: requires the policy repository")
 	}
@@ -188,7 +188,7 @@ func NewPolicyEngine(repo Repository, log *slog.Logger) (*PolicyEngine, error) {
 		env:   env,
 		progs: make(map[uuid.UUID]map[string]cel.Program),
 		repo:  repo,
-		log:   log,
+		log:   logger,
 	}, nil
 }
 
@@ -197,6 +197,7 @@ func NewPolicyEngine(repo Repository, log *slog.Logger) (*PolicyEngine, error) {
 func (pe *PolicyEngine) Load(ctx context.Context) error {
 	id, ok := clinicctx.ClinicID(ctx)
 	if !ok {
+		pe.log.InfoContext(ctx, "policy load skipped: no clinic in context")
 		return nil
 	}
 	return pe.loadClinic(ctx, id)
@@ -221,6 +222,10 @@ func (pe *PolicyEngine) loadClinic(ctx context.Context, id uuid.UUID) error {
 	pe.mu.Lock()
 	pe.progs[id] = compiled
 	pe.mu.Unlock()
+	pe.log.InfoContext(ctx, "policies loaded",
+		log.Stringer("clinic_id", id),
+		log.Int("count", len(compiled)),
+	)
 	return nil
 }
 

@@ -2,7 +2,6 @@ package server
 
 import (
 	"context"
-	"log/slog"
 	"net"
 	"net/http"
 	"strconv"
@@ -14,6 +13,7 @@ import (
 
 	"librevita.org/internal/core/auth"
 	"librevita.org/internal/core/config"
+	"librevita.org/pkg/log"
 )
 
 // Module manages the HTTP server lifecycle through Fx.
@@ -23,21 +23,23 @@ var Module = fx.Module("server",
 )
 
 // registerLifecycle starts Echo asynchronously and shuts it down gracefully.
-func registerLifecycle(lc fx.Lifecycle, e *echo.Echo, cfg *config.Config, log *slog.Logger, shutdown fx.Shutdowner) {
+func registerLifecycle(lc fx.Lifecycle, e *echo.Echo, cfg *config.Config, logger log.Logger, shutdown fx.Shutdowner) {
 	lc.Append(fx.Hook{
 		OnStart: func(context.Context) error {
 			go func() {
-				log.Info("HTTP server listening", "addr", net.JoinHostPort(cfg.HTTPBind, strconv.Itoa(cfg.HTTPPort)))
+				logger.Info("HTTP server listening",
+					log.String("addr", net.JoinHostPort(cfg.HTTPBind, strconv.Itoa(cfg.HTTPPort))),
+				)
 				httpAddr := net.JoinHostPort(cfg.HTTPBind, strconv.Itoa(cfg.HTTPPort))
 				if err := e.Start(httpAddr); err != nil && !errors.Is(err, http.ErrServerClosed) {
-					log.Error("HTTP server failed", "error", err)
+					logger.Error("HTTP server failed", log.Error(err))
 					_ = shutdown.Shutdown()
 				}
 			}()
 			return nil
 		},
 		OnStop: func(ctx context.Context) error {
-			log.Info("shutting down HTTP server")
+			logger.Info("shutting down HTTP server")
 			return e.Shutdown(ctx)
 		},
 	})

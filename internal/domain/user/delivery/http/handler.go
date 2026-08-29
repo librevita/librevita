@@ -3,7 +3,7 @@ package http
 
 import (
 	"context"
-	"log/slog"
+	"librevita.org/pkg/log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -41,7 +41,7 @@ type Handler struct {
 	clocks   *clinicusecase.ClockProvider
 	files    *storage.FileManager
 	cfg      *config.Config
-	log      *slog.Logger
+	log      log.Logger
 }
 
 // NewHandler is the Fx provider.
@@ -49,10 +49,10 @@ func NewHandler(svc *usecase.Service, patients *patientusecase.Service,
 	platform *clinicusecase.PlatformService, systems identifiermodel.SystemRepository,
 	csrf *auth.CSRF, sessions *auth.SessionManager,
 	policies *policy.PolicyEngine, auditLogger *audit.Logger, clocks *clinicusecase.ClockProvider,
-	files *storage.FileManager, cfg *config.Config, log *slog.Logger) *Handler {
+	files *storage.FileManager, cfg *config.Config, logger log.Logger) *Handler {
 	return &Handler{svc: svc, patients: patients, platform: platform, systems: systems,
 		csrf: csrf, sessions: sessions, policies: policies, audit: auditLogger,
-		clocks: clocks, files: files, cfg: cfg, log: log}
+		clocks: clocks, files: files, cfg: cfg, log: logger}
 }
 
 // SetupGate redirects clinic hosts to /setup while onboarded_at is null.

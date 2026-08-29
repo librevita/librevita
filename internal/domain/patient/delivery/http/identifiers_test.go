@@ -2,7 +2,7 @@ package http
 
 import (
 	"context"
-	"log/slog"
+	"librevita.org/pkg/log"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -66,7 +66,7 @@ func attachSeededClinic(engine *crypto.Engine, enc crypto.Encryptor, hasher cryp
 func newIdentEnv(t *testing.T) (*echo.Echo, *auth.SessionManager, *usecase.Service, *audit.Logger, *ent.Client) {
 	t.Helper()
 	client := openDocDB(t)
-	log := slog.New(slog.DiscardHandler)
+	log := log.Nop()
 	sessions, err := auth.NewSessionManager(auth.NewSessionRepository(client), &config.Config{Mode: "development"}, log)
 	if err != nil {
 		t.Fatal(err)
@@ -120,9 +120,9 @@ func newIdentEnv(t *testing.T) (*echo.Echo, *auth.SessionManager, *usecase.Servi
 	}
 	client.Use(ent.FLEMutationHook(hasher, enc, masterKey))
 	client.Intercept(ent.FLEDecryptionInterceptor(enc, masterKey))
-	svc := usecase.NewService(patientrepo.NewPatientRepositoryWithEngine(client, masterKey), log, policies, masterKey)
+	svc := usecase.NewService(patientrepo.NewPatientRepositoryWithEngine(client, masterKey), policies, masterKey)
 	ids, systems := newIdentifierServices(t, client, masterKey, log)
-	h := NewHandler(svc, clinicusecase.NewClockProvider(clinicrepo.NewClinicRepository(client)), csrf, auditLogger, files, ids, systems, masterKey)
+	h := NewHandler(svc, clinicusecase.NewClockProvider(clinicrepo.NewClinicRepository(client)), csrf, auditLogger, files, ids, systems, masterKey, log)
 
 	e := echo.New()
 	e.Use(attachSeededClinic(masterKey, enc, hasher))

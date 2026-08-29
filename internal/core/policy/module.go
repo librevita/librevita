@@ -2,7 +2,6 @@ package policy
 
 import (
 	"context"
-	"log/slog"
 
 	"go.uber.org/fx"
 
@@ -27,7 +26,7 @@ func wireClinicContext(pe *PolicyEngine, clocks *usecase.ClockProvider) {
 	pe.SetClockProvider(clocks)
 }
 
-func registerLifecycle(lc fx.Lifecycle, pe *PolicyEngine, log *slog.Logger) {
+func registerLifecycle(lc fx.Lifecycle, pe *PolicyEngine) {
 	lc.Append(fx.Hook{
 		OnStart: func(ctx context.Context) error {
 			return pe.Load(ctx)

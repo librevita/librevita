@@ -3,7 +3,6 @@ package storage
 import (
 	"context"
 	"database/sql"
-	"log/slog"
 	"strings"
 	"testing"
 
@@ -18,6 +17,7 @@ import (
 	"librevita.org/ent/storageobject"
 	"librevita.org/internal/core/clinicctx"
 	"librevita.org/internal/core/database"
+	"librevita.org/pkg/log"
 )
 
 // openIndexDB opens an in-memory SQLite with every migration applied.
@@ -29,7 +29,7 @@ func openIndexDB(t *testing.T) (*sql.DB, *ent.Client) {
 	db.SetMaxOpenConns(1)
 	t.Cleanup(func() { _ = db.Close() })
 
-	err = database.Migrate(context.Background(), db, slog.New(slog.DiscardHandler))
+	err = database.Migrate(context.Background(), db, log.Nop())
 	require.NoError(t, err)
 
 	drv := entsql.OpenDB(dialect.SQLite, db)

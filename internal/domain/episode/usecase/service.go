@@ -2,7 +2,6 @@ package usecase
 
 import (
 	"context"
-	"log/slog"
 	"time"
 
 	"github.com/cockroachdb/errors"
@@ -33,13 +32,12 @@ var (
 // Service coordinates SOAP chart persistence and authorization.
 type Service struct {
 	repo     EpisodeRepository
-	log      *slog.Logger
 	policies *policy.PolicyEngine
 }
 
 // NewService is the Fx provider.
-func NewService(repo EpisodeRepository, log *slog.Logger, policies *policy.PolicyEngine) *Service {
-	return &Service{repo: repo, log: log, policies: policies}
+func NewService(repo EpisodeRepository, policies *policy.PolicyEngine) *Service {
+	return &Service{repo: repo, policies: policies}
 }
 
 // Create inserts a draft SOAP episode.

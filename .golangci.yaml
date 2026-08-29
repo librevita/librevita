@@ -15,7 +15,8 @@ linters:
     - misspell
     - gosec
     - bodyclose
-    - sloglint
+    - loggercheck
+    - forbidigo
   settings:
     gosec:
       # G104 duplicates errcheck (which already allows the idiomatic
@@ -33,6 +34,31 @@ linters:
         - (*multipart.Writer).Close
         - (*os.File).Close
         - os.Remove
+    loggercheck:
+      # Catch leftover slog and zap.SugaredLogger kv. Do not list pkg/log:
+      # custom rules are kv-style and would false-positive on ...Field.
+      zap: true
+      slog: true
+      kitlog: false
+      klog: false
+      logr: false
+      require-string-key: true
+      no-printf-like: true
+    forbidigo:
+      analyze-types: true
+      forbid:
+        - pattern: slog\.(Debug|Info|Warn|Error|Log|New)
+          msg: use librevita.org/pkg/log instead of log/slog
+        - pattern: zap\.(New|NewProduction|NewDevelopment)
+          msg: construct zap loggers in internal/core/telemetry only
+  exclusions:
+    rules:
+      - path: internal/core/telemetry/
+        linters:
+          - forbidigo
+      - path: pkg/log/
+        linters:
+          - forbidigo
 issues:
   exclude-files:
     - "**/*_templ.go"

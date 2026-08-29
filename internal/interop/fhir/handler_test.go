@@ -3,7 +3,7 @@ package fhir
 import (
 	"context"
 	"encoding/json"
-	"log/slog"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -22,16 +22,17 @@ import (
 	"librevita.org/internal/core/policy"
 	episodemodel "librevita.org/internal/domain/episode/model"
 	"librevita.org/internal/domain/episode/usecase"
+	"librevita.org/pkg/log"
 	auditmocks "librevita.org/tests/mocks/core/audit"
 	policymocks "librevita.org/tests/mocks/core/policy"
 )
 
 func TestMetadata(t *testing.T) {
 	auditRepo := auditmocks.NewMockRepository(t)
-	log := slog.New(slog.DiscardHandler)
+	log := log.Nop()
 	auditLogger, err := audit.NewLogger(auditRepo, log)
 	require.NoError(t, err)
-	h := NewHandler(nil, auditLogger)
+	h := NewHandler(nil, auditLogger, log)
 
 	e := echo.New()
 	req := httptest.NewRequest(http.MethodGet, "/fhir/r4/metadata", nil)
@@ -54,10 +55,10 @@ func TestMetadata(t *testing.T) {
 
 func TestCreateBundleRejectsInvalidJSON(t *testing.T) {
 	auditRepo := auditmocks.NewMockRepository(t)
-	log := slog.New(slog.DiscardHandler)
+	log := log.Nop()
 	auditLogger, err := audit.NewLogger(auditRepo, log)
 	require.NoError(t, err)
-	h := NewHandler(nil, auditLogger)
+	h := NewHandler(nil, auditLogger, log)
 
 	e := echo.New()
 	req := httptest.NewRequest(http.MethodPost, "/fhir/r4/Bundle", strings.NewReader("{"))
@@ -72,6 +73,24 @@ func TestCreateBundleRejectsInvalidJSON(t *testing.T) {
 	var oo OperationOutcome
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &oo))
 	assert.Equal(t, "OperationOutcome", oo.ResourceType)
+}
+
+func TestFHIRErrorHidesInternalError(t *testing.T) {
+	auditRepo := auditmocks.NewMockRepository(t)
+	auditLogger, err := audit.NewLogger(auditRepo, log.Nop())
+	require.NoError(t, err)
+	rec := log.NewRecorder()
+	h := NewHandler(nil, auditLogger, rec)
+
+	e := echo.New()
+	req := httptest.NewRequest(http.MethodGet, "/fhir/r4/Encounter/x", nil)
+	w := httptest.NewRecorder()
+	c := e.NewContext(req, w)
+	require.NoError(t, h.fhirError(c, errors.New("secret internals")))
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+	assert.NotContains(t, w.Body.String(), "secret internals")
+	assert.Contains(t, w.Body.String(), `"diagnostics":"internal error"`)
+	assert.Contains(t, rec.Messages(), "fhir internal error")
 }
 
 type memEpisodeRepo struct {
@@ -151,7 +170,7 @@ func fillFHIRSuccessor(byID map[uuid.UUID]episodemodel.Episode, ep *episodemodel
 
 func viewTestHandler(t *testing.T, auditRepo *auditmocks.MockRepository, ep episodemodel.Episode) (*Handler, uuid.UUID) {
 	t.Helper()
-	log := slog.New(slog.DiscardHandler)
+	log := log.Nop()
 	auditLogger, err := audit.NewLogger(auditRepo, log)
 	require.NoError(t, err)
 	policyRepo := policymocks.NewMockRepository(t)
@@ -165,7 +184,7 @@ func viewTestHandler(t *testing.T, auditRepo *auditmocks.MockRepository, ep epis
 	require.NoError(t, err)
 	require.NoError(t, policies.Load(context.Background()))
 	repo := &memEpisodeRepo{byID: map[uuid.UUID]episodemodel.Episode{ep.ID: ep}}
-	return NewHandler(usecase.NewService(repo, log, policies), auditLogger), ep.ClinicID
+	return NewHandler(usecase.NewService(repo, policies), auditLogger, log), ep.ClinicID
 }
 
 func sampleEpisode() episodemodel.Episode {

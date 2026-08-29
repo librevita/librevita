@@ -2,7 +2,6 @@ package http_test
 
 import (
 	"context"
-	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -24,6 +23,7 @@ import (
 	deliveryhttp "librevita.org/internal/domain/identifier/delivery/http"
 	identifiermodel "librevita.org/internal/domain/identifier/model"
 	"librevita.org/internal/domain/identifier/usecase"
+	"librevita.org/pkg/log"
 	auditmocks "librevita.org/tests/mocks/core/audit"
 	authmocks "librevita.org/tests/mocks/core/auth"
 	policymocks "librevita.org/tests/mocks/core/policy"
@@ -40,7 +40,7 @@ type httpTestEnv struct {
 
 func newHTTPEnv(t *testing.T) *httpTestEnv {
 	t.Helper()
-	log := slog.New(slog.DiscardHandler)
+	logger := log.Nop()
 
 	sessionRepoMock := authmocks.NewMockSessionRepository(t)
 	sessionRepoMock.EXPECT().CleanupExpired(mock.Anything, mock.Anything).Return(nil).Maybe()
@@ -55,13 +55,13 @@ func newHTTPEnv(t *testing.T) *httpTestEnv {
 		},
 	}, nil).Maybe()
 
-	sessions, err := auth.NewSessionManager(sessionRepoMock, &config.Config{Mode: "development"}, log)
+	sessions, err := auth.NewSessionManager(sessionRepoMock, &config.Config{Mode: "development"}, logger)
 	require.NoError(t, err)
 
 	auditRepoMock := auditmocks.NewMockRepository(t)
 	auditRepoMock.EXPECT().LastSignature(mock.Anything).Return("", nil).Maybe()
 	auditRepoMock.EXPECT().Record(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
-	auditLogger, err := audit.NewLogger(auditRepoMock, log)
+	auditLogger, err := audit.NewLogger(auditRepoMock, logger)
 	require.NoError(t, err)
 
 	policyRepoMock := policymocks.NewMockRepository(t)
@@ -75,7 +75,7 @@ func newHTTPEnv(t *testing.T) *httpTestEnv {
 	}
 	policyRepoMock.EXPECT().List(mock.Anything).Return(defaultRows, nil).Maybe()
 
-	policies, err := policy.NewPolicyEngine(policyRepoMock, log)
+	policies, err := policy.NewPolicyEngine(policyRepoMock, logger)
 	require.NoError(t, err)
 	require.NoError(t, policies.Load(context.Background()))
 
@@ -85,8 +85,8 @@ func newHTTPEnv(t *testing.T) *httpTestEnv {
 
 	e := echo.New()
 	admin := []echo.MiddlewareFunc{
-		server.RequireAuth(sessions, log),
-		server.RequirePolicy(policies, auditLogger, log, "admin.view"),
+		server.RequireAuth(sessions, logger),
+		server.RequirePolicy(policies, auditLogger, logger, "admin.view"),
 	}
 	e.GET("/identifier-systems", h.IdentifierSystemsPage, admin...)
 	e.POST("/identifier-systems", h.IdentifierSystemCreate, admin...)

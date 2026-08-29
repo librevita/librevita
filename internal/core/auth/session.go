@@ -7,7 +7,6 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"time"
 
@@ -17,6 +16,7 @@ import (
 	"librevita.org/internal/core/clinicctx"
 	"librevita.org/internal/core/config"
 	"librevita.org/internal/core/crypto"
+	"librevita.org/pkg/log"
 )
 
 // SessionCookieName is the name of the session cookie.
@@ -76,11 +76,11 @@ type SessionManager struct {
 	hasher   crypto.Hasher
 	ttl      time.Duration
 	secure   bool
-	log      *slog.Logger
+	log      log.Logger
 }
 
 // NewSessionManager is the Fx provider.
-func NewSessionManager(repo SessionRepository, cfg *config.Config, log *slog.Logger) (*SessionManager, error) {
+func NewSessionManager(repo SessionRepository, cfg *config.Config, logger log.Logger) (*SessionManager, error) {
 	if repo == nil {
 		return nil, errors.New("auth: session repository is nil")
 	}
@@ -94,7 +94,7 @@ func NewSessionManager(repo SessionRepository, cfg *config.Config, log *slog.Log
 			err := errors.New("auth: paseto key is required outside development (LIBREVITA_PASETO_KEY)")
 			return nil, errors.WithHint(err, "Gere uma chave simétrica segura de 32 bytes em base64 e configure na variável LIBREVITA_PASETO_KEY.")
 		}
-		log.Warn("no paseto key configured; using an ephemeral key (sessions reset on restart)")
+		logger.Warn("no paseto key configured; using an ephemeral key (sessions reset on restart)")
 		var randErr error
 		raw, randErr = crypto.RandomBytes(32)
 		if randErr != nil {
@@ -132,7 +132,7 @@ func NewSessionManager(repo SessionRepository, cfg *config.Config, log *slog.Log
 		hasher: hasher,
 		ttl:    sessionTTL,
 		secure: secure,
-		log:    log,
+		log:    logger,
 	}, nil
 }
 
