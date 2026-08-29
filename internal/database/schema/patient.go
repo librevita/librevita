@@ -130,6 +130,9 @@ func (Patient) Edges() []ent.Edge {
 		edge.To("identifiers", PatientIdentifier.Type),
 		edge.To("appointments", Appointment.Type),
 		edge.To("episodes", Episode.Type),
+		edge.To("findings", Finding.Type),
+		edge.To("problems", Problem.Type),
+		edge.To("plan_items", PlanItem.Type),
 	}
 }
 

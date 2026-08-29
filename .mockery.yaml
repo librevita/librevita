@@ -49,6 +49,10 @@ packages:
     config:
       all: true
       dir: "tests/mocks/domain/identifier/usecase"
+  librevita.org/internal/domain/episode/model:
+    config:
+      all: true
+      dir: "tests/mocks/domain/episode/model"
   librevita.org/internal/domain/patient/model:
     config:
       all: true

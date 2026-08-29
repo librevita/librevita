@@ -423,13 +423,13 @@ errors.
 
 ### Domain Architecture
 
-Each domain (`clinic`, `user`, `patient`, `identifier`, `calendar`) follows Clean Architecture with these layers:
+Each domain (`clinic`, `user`, `patient`, `identifier`, `calendar`, `episode`) follows Clean Architecture with these layers:
 
 - **`model/`** — pure domain core: structs, value types, domain errors, and repository interfaces. Zero dependencies
   on `usecase/`, `repository/`, or `ent/`.
 - **`repository/`** — infrastructure adapters implementing the `model/` interfaces using `ent.Client`.
 - **`usecase/`** — application services coordinating business logic, importing `model/`.
-- **`delivery/http/`** — HTTP handlers consuming `usecase/` services and `model/` types.
+- **`delivery/http/`** — HTTP handlers consuming `usecase/` services and `model/` types. Episode HTML is nested under the patient record; FHIR R4 is a separate interop module (see [FHIR R4](#fhir-r4)).
 - **`module.go`** — Fx composition root wiring the layers together.
 
 ## Migrations
@@ -479,7 +479,7 @@ Echo is created and managed by Fx. Routes:
 | GET    | `/patients`                                      | Patient registry (search, filter, pager)                         |
 | GET    | `/patients/new`                                  | Registration form                                                |
 | POST   | `/patients`                                      | Register a patient (optionally with an identification document)  |
-| GET    | `/patients/:id`                                  | Patient detail (documents, identifiers, history)                 |
+| GET    | `/patients/:id`                                  | Patient detail (chart, documents, identifiers, history)          |
 | GET    | `/patients/:id/edit`                             | Edit form                                                        |
 | POST   | `/patients/:id`                                  | Save edits (optionally adds an identification document)          |
 | POST   | `/patients/:id/archive`                          | Archive a patient                                                |
@@ -495,6 +495,14 @@ Echo is created and managed by Fx. Routes:
 | GET    | `/identifier-systems/check-fields`               | Conditional check-digit fields of the system form                |
 | POST   | `/patients/:id/documents`                        | Upload a clinical attachment (25 MiB limit)                      |
 | GET    | `/patients/:id/documents/:fileID`                | Download a clinical attachment (audited)                         |
+| GET    | `/patients/:id/episodes`                         | Chart fragment (SOAP notes on the patient detail page)           |
+| GET    | `/patients/:id/episodes/new`                     | New SOAP note                                                    |
+| POST   | `/patients/:id/episodes`                         | Create a draft SOAP note                                         |
+| GET    | `/patients/:id/episodes/:episodeID`              | Read a SOAP note                                                 |
+| GET    | `/patients/:id/episodes/:episodeID/edit`         | Edit a draft SOAP note                                           |
+| POST   | `/patients/:id/episodes/:episodeID`              | Save a draft (optional finalize)                                 |
+| POST   | `/patients/:id/episodes/:episodeID/finalize`     | Lock a draft note                                                |
+| POST   | `/patients/:id/episodes/:episodeID/amend`        | Open successor draft of a finalized note (linear chain)          |
 | GET    | `/users`                                         | Staff account list                                               |
 | GET    | `/users/new`                                     | Account creation form                                            |
 | POST   | `/users`                                         | Create an account                                                |
@@ -524,7 +532,37 @@ Echo is created and managed by Fx. Routes:
 | POST   | `/staff/requests/:id/reject`                     | Reject a change request with a note                              |
 | GET    | `/audit/integrity`                               | Verify the append-only audit hash chain                          |
 
-HTTP errors use RFC 7807 `application/problem+json` responses.
+HTTP errors use RFC 7807 `application/problem+json` responses. FHIR R4 is documented separately below.
+
+## FHIR R4
+
+SOAP notes live in the episode domain (Ent + Patient DEK). FHIR R4 is a replaceable
+communication module in `internal/interop/fhir` (`fhir.Module` in `cmd/web`), not a domain
+layer. The adapter maps an `Episode` to a document `Bundle` (Encounter, Composition with
+LOINC SOAP sections, Observation, Condition, ClinicalImpression, CarePlan). Those
+children are not independently readable or writable. `POST /fhir/r4/Bundle` writes
+a SOAP document (201 on create, 200 on update/finalize), not a FHIR transaction.
+A `finalized` note is immutable; an amendment is a new Episode on a linear
+`replaces` chain (`predecessor_id` unique). Details:
+`docs/adr/0003-hybrid-fhir-soap.md`.
+
+Base URL: `/fhir/r4`. Content-Type: `application/fhir+json`. Auth is the clinic session
+cookie. The interop module registers CSRF and global body-limit skippers for this prefix;
+`internal/core/server` has no FHIR paths. Errors are `OperationOutcome`, not RFC 7807.
+Writes and reads are audited (`chart.create` / `update` / `finalize` / `view`). Policies:
+`chart.view`, `chart.write`.
+
+This is not a general-purpose FHIR server: no `$everything`, history, PATCH, SMART-on-FHIR,
+or MedicationRequest/ServiceRequest in this slice. A future R5 is a sibling module, not a
+rewrite of Episode.
+
+| Method | Route                                    | Purpose                                                      |
+| ------ | ---------------------------------------- | ------------------------------------------------------------ |
+| GET    | `/fhir/r4/metadata`                      | CapabilityStatement (`fhirVersion` 4.0.1)                    |
+| POST   | `/fhir/r4/Bundle`                        | SOAP document write (201 create / 200 update; 2 MiB limit)   |
+| GET    | `/fhir/r4/Composition/:id/$document`     | SOAP document Bundle (Encounter, Composition, children)      |
+| GET    | `/fhir/r4/Encounter/:id`                 | Encounter for one episode                                    |
+| GET    | `/fhir/r4/Encounter`                     | Search encounters by `patient`                               |
 
 ## Domains
 
@@ -547,6 +585,10 @@ The clinical and administrative features are organized in `internal/domain`:
 - **Staff & specialties** — the clinic specialty catalog and the physician directory. Receptionists propose profile
   changes (name, email, specialties) that an administrator approves or rejects; the request snapshots the previous
   profile so the diff stays readable, and the whole flow (list, history, filters, pagination) is audited.
+- **Episodes (SOAP chart)** — clinical notes as a domain aggregate (`Episode` + SOAP narrative + `Finding` /
+  `Problem` / `PlanItem`), encrypted with the Patient DEK. HTML lives under `/patients/:id/episodes`. Finding and problem codes use a keyed blind index
+  (`fle.SearchableDocument`) for exact-match lookup. `finalized` notes are immutable; an amendment is a new Episode on a linear `replaces` chain.
+  Policies: `chart.view`, `chart.write`. The FHIR R4 wire facade is documented under [FHIR R4](#fhir-r4).
 - **Calendar** — schedule and appointment overview with responsive monthly views, timezone-aware date calculations, and
   patient-level privacy boundaries.
 - **Users** — account management with relational roles: create staff accounts, change roles and status, and manage

@@ -12,8 +12,11 @@ import (
 	"librevita.org/ent"
 	"librevita.org/ent/appointment"
 	"librevita.org/ent/episode"
+	"librevita.org/ent/finding"
 	"librevita.org/ent/patient"
 	"librevita.org/ent/patientidentifier"
+	"librevita.org/ent/planitem"
+	"librevita.org/ent/problem"
 	"librevita.org/internal/core/crypto"
 	"librevita.org/internal/core/database"
 	patientmodel "librevita.org/internal/domain/patient/model"
@@ -337,6 +340,33 @@ func (r *patientRepository) DeleteAggregate(ctx context.Context, clinicID, patie
 					).
 					Exec(ctx)
 				return errors.Wrap(err, "patient repository: delete identifiers")
+			},
+			func() error {
+				_, err := tx.Finding.Delete().
+					Where(
+						finding.ClinicIDEQ(clinicID),
+						finding.PatientIDEQ(patientID),
+					).
+					Exec(ctx)
+				return errors.Wrap(err, "patient repository: delete findings")
+			},
+			func() error {
+				_, err := tx.Problem.Delete().
+					Where(
+						problem.ClinicIDEQ(clinicID),
+						problem.PatientIDEQ(patientID),
+					).
+					Exec(ctx)
+				return errors.Wrap(err, "patient repository: delete problems")
+			},
+			func() error {
+				_, err := tx.PlanItem.Delete().
+					Where(
+						planitem.ClinicIDEQ(clinicID),
+						planitem.PatientIDEQ(patientID),
+					).
+					Exec(ctx)
+				return errors.Wrap(err, "patient repository: delete plan items")
 			},
 			func() error {
 				_, err := tx.Episode.Delete().

@@ -24,9 +24,11 @@ import (
 	"librevita.org/internal/core/vault"
 	"librevita.org/internal/domain/calendar"
 	"librevita.org/internal/domain/clinic"
+	"librevita.org/internal/domain/episode"
 	"librevita.org/internal/domain/identifier"
 	"librevita.org/internal/domain/patient"
 	"librevita.org/internal/domain/user"
+	"librevita.org/internal/interop/fhir"
 	"librevita.org/internal/ui"
 	"librevita.org/internal/ui/components"
 )
@@ -59,5 +61,7 @@ func main() {
 		user.Module,
 		identifier.Module,
 		patient.Module,
+		episode.Module,
+		fhir.Module,
 	).Run()
 }

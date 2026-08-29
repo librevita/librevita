@@ -41,6 +41,7 @@ func TestMigrateSQLite(t *testing.T) {
 		"policies", "policy_versions", "patients", "specialties",
 		"user_specialties", "staff_change_requests", "storage_objects",
 		"identifier_systems", "patient_identifiers", "appointments", "episodes",
+		"findings", "problems", "plan_items",
 	}
 	for _, name := range expected {
 		assert.True(t, tables[name], "sqlite table %q was not created by migrations", name)
@@ -80,6 +81,7 @@ func TestMigratePostgres(t *testing.T) {
 		"policies", "policy_versions", "patients", "specialties",
 		"user_specialties", "staff_change_requests", "storage_objects",
 		"identifier_systems", "patient_identifiers", "appointments", "episodes",
+		"findings", "problems", "plan_items",
 	}
 	for _, name := range expected {
 		assert.True(t, tables[name], "postgres table %q was not created by migrations", name)
