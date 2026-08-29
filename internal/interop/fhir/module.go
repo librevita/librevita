@@ -17,8 +17,14 @@ import (
 var Module = fx.Module("fhir-r4",
 	fx.Provide(
 		NewHandler,
-		fx.Annotate(csrfSkipper, fx.ResultTags(`group:"csrfSkip"`)),
-		fx.Annotate(bodyLimitSkipper, fx.ResultTags(`group:"bodyLimitSkip"`)),
+		fx.Annotate(
+			csrfSkipper,
+			fx.ResultTags(`group:"csrfSkip"`),
+		),
+		fx.Annotate(
+			bodyLimitSkipper,
+			fx.ResultTags(`group:"bodyLimitSkip"`),
+		),
 	),
 	fx.Invoke(registerHTTPRoutes),
 )

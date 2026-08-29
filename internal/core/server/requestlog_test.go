@@ -74,7 +74,7 @@ func TestRequestLogErrorOnServerError(t *testing.T) {
 func TestRequestLogSkipsHealthz(t *testing.T) {
 	var buf bytes.Buffer
 	e := requestLogFixture(t, &buf)
-	serveLogged(e, "/healthz")
+	serveLogged(e, healthzPath)
 
 	if buf.Len() != 0 {
 		t.Fatalf("healthz was logged:\n%s", buf.String())

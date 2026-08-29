@@ -10,6 +10,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v4/middleware"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -264,7 +265,7 @@ func TestNotFoundPublicPaths(t *testing.T) {
 }
 
 func TestSecurityHeadersAreStrict(t *testing.T) {
-	e := New(auth.NewCSRF(&config.Config{Mode: "development"}), &config.Config{Mode: "development"}, testLogger())
+	e := New(auth.NewCSRF(&config.Config{Mode: "development"}), &config.Config{Mode: "development"}, testLogger(), middlewareSkippers{})
 	e.GET("/x", func(c echo.Context) error { return c.NoContent(http.StatusOK) })
 
 	req := httptest.NewRequest(http.MethodGet, "/x", nil)
@@ -287,7 +288,7 @@ func TestSecurityHeadersAreStrict(t *testing.T) {
 }
 
 func TestSecurityHeadersHSTSIsConfigurable(t *testing.T) {
-	e := New(auth.NewCSRF(&config.Config{Mode: "development"}), &config.Config{Mode: "development", HSTSMaxAge: 31536000}, testLogger())
+	e := New(auth.NewCSRF(&config.Config{Mode: "development"}), &config.Config{Mode: "development", HSTSMaxAge: 31536000}, testLogger(), middlewareSkippers{})
 	e.GET("/x", func(c echo.Context) error { return c.NoContent(http.StatusOK) })
 
 	req := httptest.NewRequest(http.MethodGet, "/x", nil)
@@ -299,7 +300,11 @@ func TestSecurityHeadersHSTSIsConfigurable(t *testing.T) {
 
 func TestBodyLimitRaisesAvatarUploadCap(t *testing.T) {
 	csrf := auth.NewCSRF(&config.Config{Mode: "development"})
-	e := New(csrf, &config.Config{Mode: "development"}, testLogger())
+	e := New(csrf, &config.Config{Mode: "development"}, testLogger(), middlewareSkippers{
+		BodyLimit: []middleware.Skipper{
+			func(c echo.Context) bool { return c.Path() == "/profile/avatar" },
+		},
+	})
 	e.POST("/profile/avatar", func(c echo.Context) error { return c.NoContent(http.StatusOK) })
 	e.POST("/profile", func(c echo.Context) error { return c.NoContent(http.StatusOK) })
 

@@ -41,8 +41,20 @@ var Module = fx.Module("user",
 	fx.Provide(func(h *httphandler.Handler) server.SetupGate {
 		return h.SetupGate
 	}),
+	fx.Provide(
+		fx.Annotate(
+			bodyLimitSkipper,
+			fx.ResultTags(`group:"bodyLimitSkip"`),
+		),
+	),
 	fx.Invoke(registerRoutes),
 )
+
+func bodyLimitSkipper() middleware.Skipper {
+	return func(c echo.Context) bool {
+		return c.Path() == "/profile/avatar"
+	}
+}
 
 func registerRoutes(e *echo.Echo, h *httphandler.Handler, sessions *auth.SessionManager,
 	policies *policy.PolicyEngine, auditLogger *audit.Logger, log *slog.Logger) {

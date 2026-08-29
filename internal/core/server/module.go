@@ -10,7 +10,6 @@ import (
 
 	"github.com/cockroachdb/errors"
 	"github.com/labstack/echo/v4"
-	"github.com/labstack/echo/v4/middleware"
 	"go.uber.org/fx"
 
 	"librevita.org/internal/core/auth"
@@ -19,19 +18,9 @@ import (
 
 // Module manages the HTTP server lifecycle through Fx.
 var Module = fx.Module("server",
-	fx.Provide(provideEcho),
+	fx.Provide(New),
 	fx.Invoke(registerLifecycle, registerNotFound),
 )
-
-type middlewareSkippers struct {
-	fx.In
-	CSRF      []middleware.Skipper `group:"csrfSkip"`
-	BodyLimit []middleware.Skipper `group:"bodyLimitSkip"`
-}
-
-func provideEcho(csrf *auth.CSRF, cfg *config.Config, log *slog.Logger, skip middlewareSkippers) *echo.Echo {
-	return newEcho(csrf, cfg, log, skip.CSRF, skip.BodyLimit)
-}
 
 // registerLifecycle starts Echo asynchronously and shuts it down gracefully.
 func registerLifecycle(lc fx.Lifecycle, e *echo.Echo, cfg *config.Config, log *slog.Logger, shutdown fx.Shutdowner) {
@@ -65,7 +54,7 @@ func registerNotFound(e *echo.Echo, sessions *auth.SessionManager) {
 			return echo.ErrNotFound
 		}
 		path := req.URL.Path
-		if path == LoginPath || path == "/setup" || strings.HasPrefix(path, "/static/") || path == "/healthz" {
+		if path == LoginPath || path == "/setup" || strings.HasPrefix(path, "/static/") || path == healthzPath {
 			return echo.ErrNotFound
 		}
 		if cookie, err := c.Cookie(auth.SessionCookieName); err == nil {

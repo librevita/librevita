@@ -23,8 +23,20 @@ var Module = fx.Module("patient",
 	fx.Provide(patientrepository.NewPatientRepositoryWithEngine),
 	fx.Provide(usecase.NewService),
 	fx.Provide(http.NewHandler),
+	fx.Provide(
+		fx.Annotate(
+			bodyLimitSkipper,
+			fx.ResultTags(`group:"bodyLimitSkip"`),
+		),
+	),
 	fx.Invoke(registerHTTPRoutes),
 )
+
+func bodyLimitSkipper() middleware.Skipper {
+	return func(c echo.Context) bool {
+		return c.Path() == "/patients/:id/documents"
+	}
+}
 
 func registerHTTPRoutes(
 	e *echo.Echo,
