@@ -22,7 +22,7 @@ func RequestLog(log *slog.Logger) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
 			req := c.Request()
-			if req.URL.Path == "/healthz" {
+			if req.URL.Path == healthzPath {
 				return next(c)
 			}
 
