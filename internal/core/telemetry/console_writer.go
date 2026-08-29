@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"io"
 	"os"
-	"strconv"
 	"sync"
 	"unicode/utf8"
 
