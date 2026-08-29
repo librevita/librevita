@@ -15,8 +15,8 @@ fixes, features, documentation, and tests.
 ## First-time setup
 
 ```sh
-task gen        # writes generated sources (templ, sqlc, assets) for editors
-task all        # runs tests, vet, lint, builds the binary and the image
+task gen        # Ent models, mocks, and templ views (needed for the editor)
+task all        # tests, vet, lint, audits, production binary, and OCI image
 ```
 
 `task all` is the full validation gate; the CI runs the same tasks split
@@ -31,7 +31,7 @@ task vet        # go vet
 task lint       # golangci-lint (config: .golangci.yaml)
 task audit      # govulncheck (source + binary) and npm audit
 task tidy       # sync go.mod/go.sum
-task gen-schema # regenerate db/schema/schema.sql from migrations
+task db-diff -- name=describe_the_change  # Goose migrations from the Ent schema
 ```
 
 Cache discipline: the Go build cache, the npm cache and the Taskfile
@@ -42,7 +42,8 @@ version there (and the same `GO_VERSION` in the CI workflow).
 
 ## Style and conventions
 
-- Code, logs, comments, and commit messages are in English
+- Code, logs, comments, commit messages, and UI chrome are in English
+- Validator catalogs may include `pt-BR` for field errors; that is not a translated UI
 - Conventional commit messages (`fix:`, `feat:`, `refactor:`, `docs:`, ...)
 - `gofmt` and `golangci-lint` must pass (`task lint`)
 - Go code must build with `CGO_ENABLED=0` (the production image is scratch)
@@ -68,13 +69,15 @@ outside `pkg/log` and `internal/core/telemetry`.
 
 ## Schema changes
 
-Migrations are the single source of truth. Edit `db/migrations/`, then:
+The Ent schema in `internal/database/schema` is the model. Versioned SQL
+is Goose under `internal/database/migrations/{sqlite,postgres}` (embedded
+and applied at process start). To add a change:
 
-```sh
-task gen   # regenerates db/schema/schema.sql and the sqlc repositories
-```
+1. Edit the Ent schema
+2. Generate migrations: `task db-diff -- name=add_patient_model`
+3. Run `task gen` so the Ent client and templ views match
 
-The consolidated schema is derived, not versioned.
+Do not hand-edit generated `ent/` output. There is no sqlc path.
 
 ## Submitting a pull request
 

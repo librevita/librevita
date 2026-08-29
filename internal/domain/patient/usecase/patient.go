@@ -1,5 +1,5 @@
 // Package usecase holds the patient domain service: validation and
-// persistence of patient records with transparent Zero-Knowledge encryption.
+// persistence of patient records with application-layer field encryption.
 package usecase
 
 import (
