@@ -9,8 +9,8 @@ import (
 	"entgo.io/ent/entc/gen"
 	"entgo.io/ent/entc/load"
 	"github.com/cockroachdb/errors"
-	"librevita.org/internal/core/database/check"
-	"librevita.org/internal/core/database/fle"
+	"librevita.org/internal/database/codegen/check"
+	"librevita.org/internal/database/codegen/fle"
 )
 
 func main() {

@@ -26,7 +26,7 @@ Goose at startup.
 | `github.com/minio/minio-go/v7`             | v7.2.1    | Apache-2.0   | S3-compatible API client for file storage                         |
 | `github.com/breml/rootcerts`               | v0.3.7    | BSD-2-Clause | Trusted roots for S3-compatible API TLS connections               |
 | `go.uber.org/fx`                           | v1.24.0   | MIT          | Dependency injection container                                    |
-| `go.uber.org/zap`                          | v1.28.0   | MIT          | Structured logging backend (JSON in production, columnar in development) |
+| `go.uber.org/zap`                          | v1.28.0   | MIT          | Structured logging backend                                        |
 | `gopkg.in/natefinch/lumberjack.v2`         | v2.2.1    | MIT          | Log rotation for file output                                      |
 | `github.com/knadh/koanf/v2`                | v2.3.6    | MIT          | Config loading core                                               |
 | `github.com/knadh/koanf/providers/env`     | v1.1.0    | MIT          | Environment variable provider                                     |
@@ -149,7 +149,7 @@ templ and interaction stays with htmx and the first-party TypeScript modules as 
 
 ## Vendored files
 
-| File                                       | Source                                                         | License          | Notes                                                                            |
-| ------------------------------------------ | -------------------------------------------------------------- | ---------------- | -------------------------------------------------------------------------------- |
-| `internal/ui/static/illustrations/404.svg` | flowbite-admin-dashboard `static/images/illustrations/404.svg` | MIT (Themesberg) | Astronaut illustration shown on the error page for non-server errors. Unchanged. |
-| `internal/ui/static/illustrations/500.svg` | flowbite-admin-dashboard `static/images/illustrations/500.svg` | MIT (Themesberg) | Astronaut illustration shown on 5xx error pages. Unchanged.                      |
+| File                                       | Source                                                         | License          | Notes                                                                                                 |
+| ------------------------------------------ | -------------------------------------------------------------- | ---------------- | ----------------------------------------------------------------------------------------------------- |
+| `internal/ui/static/illustrations/404.png` | flowbite-admin-dashboard `static/images/illustrations/404.svg` | MIT (Themesberg) | Astronaut illustration shown on the error page for non-server errors. Extracted and optimized to PNG. |
+| `internal/ui/static/illustrations/500.png` | flowbite-admin-dashboard `static/images/illustrations/500.svg` | MIT (Themesberg) | Astronaut illustration shown on 5xx error pages. Extracted and optimized to PNG.                      |

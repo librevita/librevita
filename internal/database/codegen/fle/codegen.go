@@ -5,6 +5,7 @@ import (
 	"entgo.io/ent/entc/load"
 	"entgo.io/ent/schema/field"
 	"github.com/cockroachdb/errors"
+	"librevita.org/internal/core/database/fle"
 )
 
 // Generate runs the Ent code generation pipeline with automatic Field-Level Encryption blind index injection.
@@ -53,7 +54,7 @@ func Generate(schemaDir, targetDir string) error {
 func TransformSchemas(schemas []*load.Schema) error {
 	for _, schema := range schemas {
 		for _, f := range schema.Fields {
-			ann, ok := f.Annotations[AnnotationName]
+			ann, ok := f.Annotations[fle.AnnotationName]
 			if !ok {
 				continue
 			}

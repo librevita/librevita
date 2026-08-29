@@ -67,6 +67,7 @@ tasks:
       - go generate ./internal/database/schema
     sources:
       - internal/database/schema/**/*.go
+      - internal/database/codegen/**/*.go
       - internal/core/database/fle/*.go
     generates:
       - ent/doc.go
@@ -324,6 +325,15 @@ tasks:
       - go.mod
       - go.sum
       - sqlc.yaml
+    generates:
+      - bin/{{.NAME}}
+  # Build and compress the production binary with UPX (bin/NAME).
+  build-compressed:
+    desc: Build the production binary and compress with UPX (bin/{{.NAME}})
+    deps:
+      - build
+    cmds:
+      - upx --best --lzma bin/{{.NAME}}
     generates:
       - bin/{{.NAME}}
   # Fast, unoptimized binary for the development loop: bin/NAME-dev.
