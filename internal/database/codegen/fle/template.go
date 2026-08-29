@@ -5,6 +5,7 @@ import (
 	"text/template"
 
 	"entgo.io/ent/entc/gen"
+	"librevita.org/internal/core/database/fle"
 )
 
 // Template is the official Ent extension template for Field-Level Encryption (FLE).
@@ -23,7 +24,7 @@ var Template = gen.MustParse(gen.NewTemplate("fle_hooks").
 	Parse(fleTemplate))
 
 func isNameField(f *gen.Field) bool {
-	if ann, ok := f.Annotations[AnnotationName]; ok {
+	if ann, ok := f.Annotations[fle.AnnotationName]; ok {
 		if m, ok := ann.(map[string]any); ok {
 			if norm, ok := m["normalizer"].(string); ok && strings.ToLower(norm) == "name" {
 				return true
@@ -47,7 +48,7 @@ func hasTokenIndex(n *gen.Type, f *gen.Field) bool {
 }
 
 func normalizerFunc(f *gen.Field) string {
-	if ann, ok := f.Annotations[AnnotationName]; ok {
+	if ann, ok := f.Annotations[fle.AnnotationName]; ok {
 		if m, ok := ann.(map[string]any); ok {
 			if norm, ok := m["normalizer"].(string); ok && norm != "" {
 				switch strings.ToLower(norm) {
@@ -79,7 +80,7 @@ func normalizerFunc(f *gen.Field) string {
 }
 
 func isSearchableField(f *gen.Field) bool {
-	if ann, ok := f.Annotations[AnnotationName]; ok {
+	if ann, ok := f.Annotations[fle.AnnotationName]; ok {
 		if m, ok := ann.(map[string]any); ok {
 			if s, ok := m["searchable"].(bool); ok && s {
 				return true
@@ -99,7 +100,7 @@ func isEncryptedField(f *gen.Field) bool {
 	if f.HasValueScanner() {
 		return true
 	}
-	if ann, ok := f.Annotations[AnnotationName]; ok {
+	if ann, ok := f.Annotations[fle.AnnotationName]; ok {
 		if m, ok := ann.(map[string]any); ok {
 			if e, ok := m["encrypted"].(bool); ok && e {
 				return true
