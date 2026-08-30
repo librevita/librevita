@@ -96,43 +96,38 @@ func forgetDEK(ctx context.Context, key string) {
 func (e *Engine) cachedDEK(ctx context.Context, key string, load func() ([]byte, error)) ([]byte, error) {
 	cache := requestCacheFromContext(ctx)
 	if cache == nil {
-		if e.metrics != nil {
-			e.metrics.vaultGet.Add(1)
-		}
+		e.recordVaultGet()
 		return load()
 	}
 	if dek, ok := cache.get(key); ok {
-		if e.metrics != nil {
-			e.metrics.cacheHit.Add(1)
-		}
+		e.recordCacheHit()
 		return dek, nil
 	}
+	e.recordCacheMiss()
+	return e.loadThroughSingleflight(cache, key, load)
+}
+
+func (e *Engine) recordVaultGet() {
+	if e.metrics != nil {
+		e.metrics.vaultGet.Add(1)
+	}
+}
+
+func (e *Engine) recordCacheHit() {
+	if e.metrics != nil {
+		e.metrics.cacheHit.Add(1)
+	}
+}
+
+func (e *Engine) recordCacheMiss() {
 	if e.metrics != nil {
 		e.metrics.cacheMiss.Add(1)
 	}
+}
 
+func (e *Engine) loadThroughSingleflight(cache *requestKeyCache, key string, load func() ([]byte, error)) ([]byte, error) {
 	value, err, _ := cache.sf.Do(key, func() (any, error) {
-		if dek, ok := cache.get(key); ok {
-			return dek, nil
-		}
-		if e.metrics != nil {
-			e.metrics.vaultGet.Add(1)
-		}
-		dek, err := load()
-		if err != nil {
-			return nil, err
-		}
-		if len(dek) != SizeDEK {
-			ZeroBytes(dek)
-			return nil, ErrInvalidDEK
-		}
-		cache.put(key, dek)
-		ZeroBytes(dek)
-		stored, ok := cache.get(key)
-		if !ok {
-			return nil, ErrInvalidDEK
-		}
-		return stored, nil
+		return e.loadAndStoreDEK(cache, key, load)
 	})
 	if err != nil {
 		return nil, err
@@ -142,6 +137,28 @@ func (e *Engine) cachedDEK(ctx context.Context, key string, load func() ([]byte,
 		return nil, ErrInvalidDEK
 	}
 	return cloneBytes(dek), nil
+}
+
+func (e *Engine) loadAndStoreDEK(cache *requestKeyCache, key string, load func() ([]byte, error)) (any, error) {
+	if dek, ok := cache.get(key); ok {
+		return dek, nil
+	}
+	e.recordVaultGet()
+	dek, err := load()
+	if err != nil {
+		return nil, err
+	}
+	if len(dek) != SizeDEK {
+		ZeroBytes(dek)
+		return nil, ErrInvalidDEK
+	}
+	cache.put(key, dek)
+	ZeroBytes(dek)
+	stored, ok := cache.get(key)
+	if !ok {
+		return nil, ErrInvalidDEK
+	}
+	return stored, nil
 }
 
 func cloneBytes(in []byte) []byte {

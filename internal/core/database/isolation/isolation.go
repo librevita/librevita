@@ -67,29 +67,50 @@ func QueryInterceptor() ent.Interceptor {
 func MutationHook() ent.Hook {
 	return func(next ent.Mutator) ent.Mutator {
 		return ent.MutateFunc(func(ctx context.Context, m ent.Mutation) (ent.Value, error) {
-			if clinicctx.IsolationSkipped(ctx) {
-				return next.Mutate(ctx, m)
-			}
-			if _, ok := clinicScopedTypes[m.Type()]; !ok {
-				return next.Mutate(ctx, m)
-			}
-			id, ok := clinicctx.ClinicID(ctx)
-			if !ok {
-				return nil, clinicctx.ErrMissingClinic
-			}
-			if m.Op().Is(ent.OpCreate) {
-				if setter, ok := m.(clinicIDMutation); ok {
-					if existing, set := setter.ClinicID(); set && existing != uuid.Nil && existing != id {
-						return nil, errors.New("isolation: clinic_id mismatch")
-					}
-					setter.SetClinicID(id)
-				}
-			} else if wp, ok := m.(wherePMutation); ok {
-				wp.WhereP(func(s *sql.Selector) {
-					s.Where(sql.EQ(s.C("clinic_id"), id))
-				})
-			}
-			return next.Mutate(ctx, m)
+			return isolateMutation(ctx, next, m)
 		})
 	}
+}
+
+func isolateMutation(ctx context.Context, next ent.Mutator, m ent.Mutation) (ent.Value, error) {
+	if clinicctx.IsolationSkipped(ctx) {
+		return next.Mutate(ctx, m)
+	}
+	if _, ok := clinicScopedTypes[m.Type()]; !ok {
+		return next.Mutate(ctx, m)
+	}
+	id, ok := clinicctx.ClinicID(ctx)
+	if !ok {
+		return nil, clinicctx.ErrMissingClinic
+	}
+	if m.Op().Is(ent.OpCreate) {
+		if err := applyCreateClinicID(m, id); err != nil {
+			return nil, err
+		}
+	} else {
+		restrictMutationToClinic(m, id)
+	}
+	return next.Mutate(ctx, m)
+}
+
+func applyCreateClinicID(m ent.Mutation, id uuid.UUID) error {
+	setter, ok := m.(clinicIDMutation)
+	if !ok {
+		return nil
+	}
+	if existing, set := setter.ClinicID(); set && existing != uuid.Nil && existing != id {
+		return errors.New("isolation: clinic_id mismatch")
+	}
+	setter.SetClinicID(id)
+	return nil
+}
+
+func restrictMutationToClinic(m ent.Mutation, id uuid.UUID) {
+	wp, ok := m.(wherePMutation)
+	if !ok {
+		return
+	}
+	wp.WhereP(func(s *sql.Selector) {
+		s.Where(sql.EQ(s.C("clinic_id"), id))
+	})
 }

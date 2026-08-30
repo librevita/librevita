@@ -338,34 +338,35 @@ func (s *Service) List(ctx context.Context, clinicID, q, status, field string, l
 		return nil, 0, errors.Wrap(err, "usecase: list patients")
 	}
 
-	total := len(patients)
-	filtered := make([]Patient, 0, total)
-	trimmedQ := strings.ToLower(strings.TrimSpace(q))
+	filtered := filterPatients(patients, strings.ToLower(strings.TrimSpace(q)), field)
+	return paginatePatients(filtered, limit, offset), int64(len(filtered)), nil
+}
 
+func filterPatients(patients []Patient, trimmedQ, field string) []Patient {
+	filtered := make([]Patient, 0, len(patients))
 	for _, pt := range patients {
-		if trimmedQ != "" {
-			matchesName := matchWordPrefix(pt.DisplayName, trimmedQ)
-			matchesEmail := pt.Email != nil && strings.HasPrefix(strings.ToLower(*pt.Email), trimmedQ)
-
-			switch field {
-			case "name":
-				if !matchesName {
-					continue
-				}
-			case "email":
-				if !matchesEmail {
-					continue
-				}
-			default:
-				if !matchesName && !matchesEmail {
-					continue
-				}
-			}
+		if trimmedQ != "" && !patientMatches(pt, trimmedQ, field) {
+			continue
 		}
 		filtered = append(filtered, pt)
 	}
+	return filtered
+}
 
-	// Apply pagination over filtered list
+func patientMatches(pt Patient, trimmedQ, field string) bool {
+	matchesName := matchWordPrefix(pt.DisplayName, trimmedQ)
+	matchesEmail := pt.Email != nil && strings.HasPrefix(strings.ToLower(*pt.Email), trimmedQ)
+	switch field {
+	case "name":
+		return matchesName
+	case "email":
+		return matchesEmail
+	default:
+		return matchesName || matchesEmail
+	}
+}
+
+func paginatePatients(filtered []Patient, limit, offset int) []Patient {
 	start := offset
 	if start > len(filtered) {
 		start = len(filtered)
@@ -374,8 +375,7 @@ func (s *Service) List(ctx context.Context, clinicID, q, status, field string, l
 	if end > len(filtered) {
 		end = len(filtered)
 	}
-
-	return filtered[start:end], int64(len(filtered)), nil
+	return filtered[start:end]
 }
 
 func (s *Service) listOptimized(
@@ -386,43 +386,70 @@ func (s *Service) listOptimized(
 	status *patientmodel.PatientStatus,
 	limit, offset int,
 ) ([]Patient, int64, error) {
-	var nameTokens []string
-	var emailBlindIndex string
-	if q != "" {
-		hasher := fle.ResolveHasher(ctx, nil)
-		if hasher == nil {
-			return nil, 0, errors.New("usecase: clinic hasher is required for patient search")
-		}
-		searchEmail := field == "email" || (field == "" && strings.Contains(q, "@"))
-		if searchEmail {
-			var err error
-			emailBlindIndex, err = hasher.BlindIndex("patient.email", normalizer.Email(q))
-			if err != nil {
-				return nil, 0, errors.Wrap(err, "usecase: hash patient email search")
-			}
-		} else {
-			for _, word := range strings.Fields(normalizer.Text(q)) {
-				tokens := normalizer.NameTokens(word)
-				if len(tokens) == 0 {
-					continue
-				}
-				token := tokens[len(tokens)-1]
-				hash, err := hasher.BlindIndex("patient.token", token)
-				if err != nil {
-					return nil, 0, errors.Wrap(err, "usecase: hash patient name search")
-				}
-				nameTokens = append(nameTokens, hash)
-			}
-			if len(nameTokens) == 0 {
-				return []Patient{}, 0, nil
-			}
-		}
+	sq, err := searchBlindIndexes(ctx, q, field)
+	if err != nil {
+		return nil, 0, err
 	}
-
-	candidates, total, err := repo.ListCandidates(ctx, clinicID, status, nameTokens, emailBlindIndex, limit, offset)
+	if sq.empty {
+		return []Patient{}, 0, nil
+	}
+	candidates, total, err := repo.ListCandidates(ctx, clinicID, status, sq.nameTokens, sq.emailBlindIndex, limit, offset)
 	if err != nil {
 		return nil, 0, errors.Wrap(err, "usecase: list patient candidates")
 	}
+	return hydrateCandidates(ctx, repo, clinicID, candidates, total)
+}
+
+type searchQuery struct {
+	nameTokens      []string
+	emailBlindIndex string
+	empty           bool
+}
+
+func searchBlindIndexes(ctx context.Context, q, field string) (searchQuery, error) {
+	if q == "" {
+		return searchQuery{}, nil
+	}
+	hasher := fle.ResolveHasher(ctx, nil)
+	if hasher == nil {
+		return searchQuery{}, errors.New("usecase: clinic hasher is required for patient search")
+	}
+	if field == "email" || (field == "" && strings.Contains(q, "@")) {
+		emailBlindIndex, err := hasher.BlindIndex("patient.email", normalizer.Email(q))
+		if err != nil {
+			return searchQuery{}, errors.Wrap(err, "usecase: hash patient email search")
+		}
+		return searchQuery{emailBlindIndex: emailBlindIndex}, nil
+	}
+	return nameSearchTokens(hasher, q)
+}
+
+func nameSearchTokens(hasher crypto.Hasher, q string) (searchQuery, error) {
+	var nameTokens []string
+	for _, word := range strings.Fields(normalizer.Text(q)) {
+		tokens := normalizer.NameTokens(word)
+		if len(tokens) == 0 {
+			continue
+		}
+		hash, err := hasher.BlindIndex("patient.token", tokens[len(tokens)-1])
+		if err != nil {
+			return searchQuery{}, errors.Wrap(err, "usecase: hash patient name search")
+		}
+		nameTokens = append(nameTokens, hash)
+	}
+	if len(nameTokens) == 0 {
+		return searchQuery{empty: true}, nil
+	}
+	return searchQuery{nameTokens: nameTokens}, nil
+}
+
+func hydrateCandidates(
+	ctx context.Context,
+	repo patientmodel.PatientQueryRepository,
+	clinicID uuid.UUID,
+	candidates []patientmodel.PatientCandidate,
+	total int,
+) ([]Patient, int64, error) {
 	ids := make([]uuid.UUID, 0, len(candidates))
 	for _, candidate := range candidates {
 		ids = append(ids, candidate.ID)

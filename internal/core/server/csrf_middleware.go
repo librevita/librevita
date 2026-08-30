@@ -24,32 +24,36 @@ const (
 func CSRFMiddleware(c *auth.CSRF, skippers ...middleware.Skipper) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(ctx echo.Context) error {
-			if skipped(ctx, skippers) {
-				return next(ctx)
-			}
-			cookie, err := ctx.Cookie(auth.CSRFCookieName)
-			if err == nil && cookie.Value == "" {
-				cookie = nil
-			}
-
-			switch ctx.Request().Method {
-			case http.MethodGet, http.MethodHead, http.MethodOptions, http.MethodTrace:
-				// Read-only requests never need validation.
-			default:
-				if cookie == nil {
-					return echo.NewHTTPError(http.StatusForbidden, "CSRF cookie missing")
-				}
-				submitted := ctx.FormValue(csrfFormField)
-				if submitted == "" {
-					submitted = ctx.Request().Header.Get(csrfHeaderName)
-				}
-				if !auth.ValidCSRF(submitted, cookie.Value) {
-					return echo.NewHTTPError(http.StatusForbidden, "invalid CSRF token")
-				}
-			}
-			return next(ctx)
+			return checkCSRF(ctx, next, skippers)
 		}
 	}
+}
+
+func checkCSRF(ctx echo.Context, next echo.HandlerFunc, skippers []middleware.Skipper) error {
+	if skipped(ctx, skippers) {
+		return next(ctx)
+	}
+	cookie, err := ctx.Cookie(auth.CSRFCookieName)
+	if err == nil && cookie.Value == "" {
+		cookie = nil
+	}
+
+	switch ctx.Request().Method {
+	case http.MethodGet, http.MethodHead, http.MethodOptions, http.MethodTrace:
+		// Read-only requests never need validation.
+	default:
+		if cookie == nil {
+			return echo.NewHTTPError(http.StatusForbidden, "CSRF cookie missing")
+		}
+		submitted := ctx.FormValue(csrfFormField)
+		if submitted == "" {
+			submitted = ctx.Request().Header.Get(csrfHeaderName)
+		}
+		if !auth.ValidCSRF(submitted, cookie.Value) {
+			return echo.NewHTTPError(http.StatusForbidden, "invalid CSRF token")
+		}
+	}
+	return next(ctx)
 }
 
 func skipped(ctx echo.Context, skippers []middleware.Skipper) bool {

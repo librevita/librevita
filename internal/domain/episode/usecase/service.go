@@ -282,13 +282,31 @@ func prepareUpdate(ep, existing *Episode) error {
 }
 
 func assignChildIDs(ep *Episode) error {
+	if err := assignFindings(ep); err != nil {
+		return err
+	}
+	if err := assignProblems(ep); err != nil {
+		return err
+	}
+	return assignPlanItems(ep)
+}
+
+func ensureV7(id *uuid.UUID, wrap string) error {
+	if *id != uuid.Nil {
+		return nil
+	}
+	v, err := uuid.NewV7()
+	if err != nil {
+		return errors.Wrap(err, wrap)
+	}
+	*id = v
+	return nil
+}
+
+func assignFindings(ep *Episode) error {
 	for i := range ep.Findings {
-		if ep.Findings[i].ID == uuid.Nil {
-			id, err := uuid.NewV7()
-			if err != nil {
-				return errors.Wrap(err, "usecase: finding id")
-			}
-			ep.Findings[i].ID = id
+		if err := ensureV7(&ep.Findings[i].ID, "usecase: finding id"); err != nil {
+			return err
 		}
 		ep.Findings[i].ClinicID = ep.ClinicID
 		ep.Findings[i].PatientID = ep.PatientID
@@ -300,13 +318,13 @@ func assignChildIDs(ep *Episode) error {
 			ep.Findings[i].EffectiveAt = ep.OccurredAt
 		}
 	}
+	return nil
+}
+
+func assignProblems(ep *Episode) error {
 	for i := range ep.Problems {
-		if ep.Problems[i].ID == uuid.Nil {
-			id, err := uuid.NewV7()
-			if err != nil {
-				return errors.Wrap(err, "usecase: problem id")
-			}
-			ep.Problems[i].ID = id
+		if err := ensureV7(&ep.Problems[i].ID, "usecase: problem id"); err != nil {
+			return err
 		}
 		ep.Problems[i].ClinicID = ep.ClinicID
 		ep.Problems[i].PatientID = ep.PatientID
@@ -324,13 +342,13 @@ func assignChildIDs(ep *Episode) error {
 			ep.Problems[i].Rank = i + 1
 		}
 	}
+	return nil
+}
+
+func assignPlanItems(ep *Episode) error {
 	for i := range ep.PlanItems {
-		if ep.PlanItems[i].ID == uuid.Nil {
-			id, err := uuid.NewV7()
-			if err != nil {
-				return errors.Wrap(err, "usecase: plan item id")
-			}
-			ep.PlanItems[i].ID = id
+		if err := ensureV7(&ep.PlanItems[i].ID, "usecase: plan item id"); err != nil {
+			return err
 		}
 		ep.PlanItems[i].ClinicID = ep.ClinicID
 		ep.PlanItems[i].PatientID = ep.PatientID

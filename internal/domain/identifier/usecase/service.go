@@ -248,15 +248,7 @@ func (s *service) List(ctx context.Context, clinicID, patientID string) ([]*iden
 // ListByPatients returns the decrypted values of a page of patients.
 func (s *service) ListByPatients(ctx context.Context, patientIDs []string) (map[string][]string, error) {
 	out := make(map[string][]string, len(patientIDs))
-	if len(patientIDs) == 0 {
-		return out, nil
-	}
-	var pUUIDs []uuid.UUID
-	for _, pid := range patientIDs {
-		if u, err := uuid.Parse(pid); err == nil {
-			pUUIDs = append(pUUIDs, u)
-		}
-	}
+	pUUIDs := parsePatientUUIDs(patientIDs)
 	if len(pUUIDs) == 0 {
 		return out, nil
 	}
@@ -265,13 +257,45 @@ func (s *service) ListByPatients(ctx context.Context, patientIDs []string) (map[
 	if err != nil {
 		return nil, errors.Wrap(err, "identifier: list by patients")
 	}
+	keysByClinic, cleanup, err := s.loadDEKsByClinic(ctx, rows)
+	if err != nil {
+		return nil, err
+	}
+	defer cleanup()
+	s.decryptIdentifierRows(ctx, rows, keysByClinic, out)
+	return out, nil
+}
+
+func parsePatientUUIDs(patientIDs []string) []uuid.UUID {
+	var pUUIDs []uuid.UUID
+	for _, pid := range patientIDs {
+		if u, err := uuid.Parse(pid); err == nil {
+			pUUIDs = append(pUUIDs, u)
+		}
+	}
+	return pUUIDs
+}
+
+func recordClinicID(ctx context.Context, row identifiermodel.IdentifierRecord) uuid.UUID {
+	if row.ClinicID != uuid.Nil {
+		return row.ClinicID
+	}
+	cid, _ := clinicctx.ClinicID(ctx)
+	return cid
+}
+
+func (s *service) loadDEKsByClinic(ctx context.Context, rows []identifiermodel.IdentifierRecord) (map[uuid.UUID]map[uuid.UUID][]byte, func(), error) {
 	keysByClinic := make(map[uuid.UUID]map[uuid.UUID][]byte)
+	cleanup := func() {
+		for _, deks := range keysByClinic {
+			for _, dek := range deks {
+				crypto.ZeroBytes(dek)
+			}
+		}
+	}
 	idsByClinic := make(map[uuid.UUID][]uuid.UUID)
 	for _, row := range rows {
-		cid := row.ClinicID
-		if cid == uuid.Nil {
-			cid, _ = clinicctx.ClinicID(ctx)
-		}
+		cid := recordClinicID(ctx, row)
 		if cid == uuid.Nil {
 			continue
 		}
@@ -280,20 +304,17 @@ func (s *service) ListByPatients(ctx context.Context, patientIDs []string) (map[
 	for cid, ids := range idsByClinic {
 		deks, err := s.key.GetPatientDEKsForClinic(ctx, cid, ids)
 		if err != nil {
-			return nil, errors.Wrap(err, "identifier: load patient deks")
+			cleanup()
+			return nil, func() {}, errors.Wrap(err, "identifier: load patient deks")
 		}
 		keysByClinic[cid] = deks
-		defer func(deks map[uuid.UUID][]byte) {
-			for _, dek := range deks {
-				crypto.ZeroBytes(dek)
-			}
-		}(deks)
 	}
+	return keysByClinic, cleanup, nil
+}
+
+func (s *service) decryptIdentifierRows(ctx context.Context, rows []identifiermodel.IdentifierRecord, keysByClinic map[uuid.UUID]map[uuid.UUID][]byte, out map[string][]string) {
 	for _, row := range rows {
-		cid := row.ClinicID
-		if cid == uuid.Nil {
-			cid, _ = clinicctx.ClinicID(ctx)
-		}
+		cid := recordClinicID(ctx, row)
 		dek, ok := keysByClinic[cid][row.PatientID]
 		if !ok {
 			s.log.ErrorContext(ctx, "identifier: patient DEK unavailable",
@@ -313,7 +334,6 @@ func (s *service) ListByPatients(ctx context.Context, patientIDs []string) (map[
 		patientKey := row.PatientID.String()
 		out[patientKey] = append(out[patientKey], string(value))
 	}
-	return out, nil
 }
 
 // Remove deletes one identifier of the patient, scoped to the clinic.
