@@ -382,5 +382,3 @@ func TestTrustedProxiesAndHSTSMappings(t *testing.T) {
 	assert.Equal(t, "hsts_max_age", mapFlagKey("hsts-max-age"))
 	assert.Equal(t, "hsts_max_age", mapEnvironmentKey("hsts_max_age"))
 }
-
-
