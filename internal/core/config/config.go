@@ -34,7 +34,7 @@ const (
 
 	keyConfigFile = "config_file"
 
-	defaultMode           = "development"
+	defaultMode           = "production"
 	defaultHTTPBind       = "0.0.0.0"
 	defaultHTTPPort       = 8080
 	defaultDataDir        = "./data"
@@ -53,8 +53,8 @@ type Config struct {
 	// ConfigFile is the file that was loaded, if any.
 	ConfigFile string `koanf:"config_file"`
 
-	// Mode is the runtime mode: "development" or "production". Every
-	// value other than "development" is treated as a persistent
+	// Mode is the runtime mode: "production" (default) or "development".
+	// Every value other than "development" is treated as a persistent
 	// deployment (secrets required, Secure cookies).
 	Mode string `koanf:"mode"`
 
@@ -67,7 +67,7 @@ type Config struct {
 
 	// BaseDomain is the DNS suffix used to resolve clinics from Host
 	// (`{slug}.{base_domain}`). Apex is this value or `www.` plus this
-	// value. Required outside development; defaults to lv.test in
+	// value. Required in production; defaults to lv.test in
 	// development.
 	BaseDomain string `koanf:"base_domain"`
 
@@ -104,14 +104,14 @@ type Config struct {
 
 	// PasetoKey is the base64-encoded 32-byte key for PASETO v4.local
 	// session tokens. Required outside development; generated at startup
-	// otherwise.
+	// in development if omitted.
 	PasetoKey string `koanf:"paseto_key"`
 
 	// MasterKey is the base64-encoded 32-byte master key for field-level
 	// encryption and blind indexes of patient identifiers. Required
 	// outside development; an ephemeral key is generated at startup
-	// otherwise (previously encrypted values become undecryptable on
-	// restart).
+	// in development if omitted (previously encrypted values become
+	// undecryptable on restart).
 	MasterKey string `koanf:"master_key"`
 
 	// Crypto configures cryptographic agility defaults (hashing algorithm and encryption version).
