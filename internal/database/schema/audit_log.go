@@ -1,8 +1,6 @@
 package schema
 
 import (
-	"time"
-
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/entsql"
 	"entgo.io/ent/schema"
@@ -10,6 +8,8 @@ import (
 	"entgo.io/ent/schema/field"
 	"entgo.io/ent/schema/index"
 	"github.com/google/uuid"
+
+	"librevita.org/internal/database/schema/mixin"
 )
 
 // AuditLog holds the schema definition for the immutable AuditLog entity.
@@ -21,6 +21,13 @@ type AuditLog struct {
 func (AuditLog) Annotations() []schema.Annotation {
 	return []schema.Annotation{
 		entsql.Annotation{Table: "audit_log"},
+	}
+}
+
+// Mixin of the AuditLog.
+func (AuditLog) Mixin() []ent.Mixin {
+	return []ent.Mixin{
+		mixin.CreatedAt{},
 	}
 }
 
@@ -66,9 +73,6 @@ func (AuditLog) Fields() []ent.Field {
 			Default(""),
 		field.String("resource_name").
 			Default(""),
-		field.Time("created_at").
-			Default(time.Now).
-			Immutable(),
 		field.String("signature").
 			NotEmpty().
 			Comment("BLAKE2b cryptographic chain hash"),

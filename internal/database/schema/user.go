@@ -1,13 +1,13 @@
 package schema
 
 import (
-	"time"
-
 	"entgo.io/ent"
 	"entgo.io/ent/schema/edge"
 	"entgo.io/ent/schema/field"
 	"entgo.io/ent/schema/index"
 	"github.com/google/uuid"
+
+	"librevita.org/internal/database/schema/mixin"
 )
 
 // User holds the schema definition for the User entity.
@@ -15,14 +15,18 @@ type User struct {
 	ent.Schema
 }
 
+// Mixin of the User.
+func (User) Mixin() []ent.Mixin {
+	return []ent.Mixin{
+		mixin.UUID{},
+		mixin.Clinic{},
+		mixin.Time{},
+	}
+}
+
 // Fields of the User.
 func (User) Fields() []ent.Field {
 	return []ent.Field{
-		field.UUID("id", uuid.UUID{}).
-			Default(newUUIDv7).
-			Immutable(),
-		field.UUID("clinic_id", uuid.UUID{}).
-			Comment("Owning clinic; users are never shared across clinics"),
 		field.String("email").
 			NotEmpty().
 			Comment("Email unique per clinic (clinic_id, email)"),
@@ -45,12 +49,6 @@ func (User) Fields() []ent.Field {
 			Values("system", "light", "dark").
 			Default("system").
 			Comment("User UI theme preference"),
-		field.Time("created_at").
-			Default(time.Now).
-			Immutable(),
-		field.Time("updated_at").
-			Default(time.Now).
-			UpdateDefault(time.Now),
 	}
 }
 

@@ -8,6 +8,8 @@ import (
 	"entgo.io/ent/schema/field"
 	"entgo.io/ent/schema/index"
 	"github.com/google/uuid"
+
+	"librevita.org/internal/database/schema/mixin"
 )
 
 // PlatformSession is a PASETO session bound to a platform_users row.
@@ -22,18 +24,18 @@ func (PlatformSession) Annotations() []schema.Annotation {
 	}
 }
 
+// Mixin of the PlatformSession.
+func (PlatformSession) Mixin() []ent.Mixin {
+	return []ent.Mixin{
+		mixin.Session{},
+	}
+}
+
 // Fields of the PlatformSession.
 func (PlatformSession) Fields() []ent.Field {
 	return []ent.Field{
-		field.String("id").
-			StorageKey("token_hash").
-			NotEmpty().
-			Immutable().
-			Comment("Keyed BLAKE2b-256 fingerprint of the PASETO v4.local token id (jti)"),
 		field.UUID("platform_user_id", uuid.UUID{}).
 			Comment("Authenticated platform operator"),
-		field.Time("expires_at").
-			Comment("Expiration timestamp"),
 	}
 }
 
@@ -52,6 +54,5 @@ func (PlatformSession) Edges() []ent.Edge {
 func (PlatformSession) Indexes() []ent.Index {
 	return []ent.Index{
 		index.Fields("platform_user_id"),
-		index.Fields("expires_at"),
 	}
 }

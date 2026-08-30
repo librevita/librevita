@@ -1,13 +1,13 @@
 package schema
 
 import (
-	"time"
-
 	"entgo.io/ent"
 	"entgo.io/ent/schema/edge"
 	"entgo.io/ent/schema/field"
 	"entgo.io/ent/schema/index"
 	"github.com/google/uuid"
+
+	"librevita.org/internal/database/schema/mixin"
 )
 
 // PatientIdentifier holds the schema definition for encrypted Patient Identifiers.
@@ -15,14 +15,18 @@ type PatientIdentifier struct {
 	ent.Schema
 }
 
+// Mixin of the PatientIdentifier.
+func (PatientIdentifier) Mixin() []ent.Mixin {
+	return []ent.Mixin{
+		mixin.UUID{},
+		mixin.Clinic{},
+		mixin.Time{},
+	}
+}
+
 // Fields of the PatientIdentifier.
 func (PatientIdentifier) Fields() []ent.Field {
 	return []ent.Field{
-		field.UUID("id", uuid.UUID{}).
-			Default(newUUIDv7).
-			Immutable(),
-		field.UUID("clinic_id", uuid.UUID{}).
-			Comment("Denormalized clinic_id for UNIQUE(clinic_id, blind_index)"),
 		field.UUID("patient_id", uuid.UUID{}).
 			Comment("Belonging patient ID"),
 		field.String("system").
@@ -42,12 +46,6 @@ func (PatientIdentifier) Fields() []ent.Field {
 		field.UUID("created_by", uuid.UUID{}).
 			Optional().
 			Nillable(),
-		field.Time("created_at").
-			Default(time.Now).
-			Immutable(),
-		field.Time("updated_at").
-			Default(time.Now).
-			UpdateDefault(time.Now),
 	}
 }
 

@@ -9,7 +9,8 @@ import (
 	"entgo.io/ent/schema/edge"
 	"entgo.io/ent/schema/field"
 	"entgo.io/ent/schema/index"
-	"github.com/google/uuid"
+
+	"librevita.org/internal/database/schema/mixin"
 )
 
 // AccessPolicy holds the schema definition for dynamic CEL authorization policies.
@@ -24,14 +25,17 @@ func (AccessPolicy) Annotations() []schema.Annotation {
 	}
 }
 
+// Mixin of the AccessPolicy.
+func (AccessPolicy) Mixin() []ent.Mixin {
+	return []ent.Mixin{
+		mixin.UUID{},
+		mixin.Clinic{},
+	}
+}
+
 // Fields of the AccessPolicy.
 func (AccessPolicy) Fields() []ent.Field {
 	return []ent.Field{
-		field.UUID("id", uuid.UUID{}).
-			Default(newUUIDv7).
-			Immutable(),
-		field.UUID("clinic_id", uuid.UUID{}).
-			Comment("Owning clinic; DefaultPolicies are copied at clinic onboard"),
 		field.String("name").
 			NotEmpty().
 			Comment("Permission name unique per clinic: dashboard.view, patient.edit, etc."),

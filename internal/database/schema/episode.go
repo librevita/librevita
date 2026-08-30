@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 
 	"librevita.org/internal/core/database/fle"
+	"librevita.org/internal/database/schema/mixin"
 )
 
 // Episode holds the schema definition for a SOAP clinical note (one encounter).
@@ -18,14 +19,18 @@ type Episode struct {
 	ent.Schema
 }
 
+// Mixin of the Episode.
+func (Episode) Mixin() []ent.Mixin {
+	return []ent.Mixin{
+		mixin.UUID{},
+		mixin.Clinic{},
+		mixin.Time{},
+	}
+}
+
 // Fields of the Episode.
 func (Episode) Fields() []ent.Field {
 	return []ent.Field{
-		field.UUID("id", uuid.UUID{}).
-			Default(newUUIDv7).
-			Immutable(),
-		field.UUID("clinic_id", uuid.UUID{}).
-			Comment("Clinic tenant ID"),
 		field.UUID("patient_id", uuid.UUID{}).
 			Comment("Patient ID"),
 		field.UUID("user_id", uuid.UUID{}).
@@ -78,13 +83,6 @@ func (Episode) Fields() []ent.Field {
 			ValueScanner(fle.EncryptedString()).
 			Optional().
 			Comment("SOAP Plan narrative (BLOB/BYTEA)"),
-
-		field.Time("created_at").
-			Default(time.Now).
-			Immutable(),
-		field.Time("updated_at").
-			Default(time.Now).
-			UpdateDefault(time.Now),
 	}
 }
 
