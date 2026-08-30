@@ -16,6 +16,8 @@ func TestLoadPrecedence(t *testing.T) {
 	t.Setenv("LIBREVITA_MODE", "production")
 	t.Setenv("LIBREVITA_BASE_DOMAIN", "lv.example")
 	t.Setenv("LIBREVITA_DATABASE_SQLITE_PATH", "env.db")
+	t.Setenv("LIBREVITA_PASETO_KEY", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=")
+	t.Setenv("LIBREVITA_MASTER_KEY", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=")
 
 	configFile := filepath.Join(t.TempDir(), "config.yaml")
 	configYAML := []byte("mode: development\nhttp_bind: '127.0.0.1'\nhttp_port: 9000\ndatabase:\n  driver: sqlite\n  sqlite:\n    path: file.db\n  dqlite:\n    addrs: node1:9001,node2:9001\n    database: lv\n")
@@ -61,6 +63,7 @@ func TestValidateDqliteAddrs(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			cfg := &Config{
+				Mode:     "development",
 				Database: DatabaseConfig{Driver: DriverDqlite, Dqlite: DqliteConfig{Addrs: tc.addrs, DiscoverySRV: tc.srv, Database: "lv"}},
 				Logging:  LoggingConfig{Mode: LogModeConsole},
 			}
@@ -189,6 +192,7 @@ func TestValidateTrustedProxies(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			cfg := &Config{
+				Mode:           "development",
 				Database:       DatabaseConfig{Driver: DriverSQLite},
 				Logging:        LoggingConfig{Mode: LogModeConsole},
 				TrustedProxies: tc.proxies,
@@ -204,7 +208,7 @@ func TestValidateTrustedProxies(t *testing.T) {
 }
 
 func TestValidateHTTPPort(t *testing.T) {
-	cfg := &Config{Database: DatabaseConfig{Driver: DriverSQLite}, Logging: LoggingConfig{Mode: LogModeConsole}}
+	cfg := &Config{Mode: "development", Database: DatabaseConfig{Driver: DriverSQLite}, Logging: LoggingConfig{Mode: LogModeConsole}}
 	cfg.normalize()
 	assert.Equal(t, defaultHTTPPort, cfg.HTTPPort)
 
@@ -217,6 +221,7 @@ func TestValidateHTTPPort(t *testing.T) {
 
 func TestVaultConfigDefaultsAndValidation(t *testing.T) {
 	cfg := &Config{
+		Mode:     "development",
 		DataDir:  "/tmp/librevita",
 		Database: DatabaseConfig{Driver: DriverSQLite},
 		Logging:  LoggingConfig{Mode: LogModeConsole},
@@ -234,6 +239,7 @@ func TestVaultConfigDefaultsAndValidation(t *testing.T) {
 
 func TestPostgresConfigDefaultsAndValidation(t *testing.T) {
 	cfg := &Config{
+		Mode: "development",
 		Database: DatabaseConfig{
 			Driver: DriverPostgres,
 			Postgres: PostgresConfig{
@@ -294,3 +300,58 @@ func TestPostgresFlagsAndEnvMapping(t *testing.T) {
 		assert.NotEmpty(t, mapEnvironmentKey(k), "env %s should map to a key", k)
 	}
 }
+
+func TestDefaultModeIsProduction(t *testing.T) {
+	flags := pflag.NewFlagSet("test-default-mode", pflag.ContinueOnError)
+	RegisterFlags(flags)
+	err := flags.Parse([]string{})
+	require.NoError(t, err)
+
+	cfg := &Config{}
+	cfg.normalize()
+	assert.Equal(t, "production", cfg.Mode)
+	assert.True(t, cfg.IsProduction())
+	assert.False(t, cfg.IsDevelopment())
+}
+
+func TestProductionModeRequiresKeysAndDomain(t *testing.T) {
+	// 1. Missing BaseDomain, PasetoKey, MasterKey
+	cfg := &Config{Mode: "production", Logging: LoggingConfig{Mode: LogModeConsole}}
+	cfg.normalize()
+	err := cfg.validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "base_domain is required in production")
+
+	// 2. BaseDomain provided, but missing PasetoKey and MasterKey
+	cfg.BaseDomain = "app.librevita.org"
+	err = cfg.validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "paseto_key is required outside development")
+
+	// 3. PasetoKey provided, but missing MasterKey
+	cfg.PasetoKey = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=" // valid 32-byte base64
+	err = cfg.validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "master_key is required outside development")
+
+	// 4. Invalid key length / format
+	cfg.MasterKey = "not-valid-base64!"
+	err = cfg.validate()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "master_key must be a valid base64 32-byte string")
+
+	// 5. All valid
+	cfg.MasterKey = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+	err = cfg.validate()
+	assert.NoError(t, err)
+}
+
+func TestDevelopmentModeAllowsEmptyKeys(t *testing.T) {
+	cfg := &Config{Mode: "development", Logging: LoggingConfig{Mode: LogModeConsole}}
+	cfg.normalize()
+	assert.Equal(t, "lv.test", cfg.BaseDomain)
+	assert.Empty(t, cfg.PasetoKey)
+	assert.Empty(t, cfg.MasterKey)
+	assert.NoError(t, cfg.validate())
+}
+

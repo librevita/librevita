@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/base64"
 	"net"
 	"path/filepath"
 	"strings"
@@ -123,6 +124,28 @@ func (c *Config) validate() error {
 	if c.IsProduction() && strings.TrimSpace(c.BaseDomain) == "" {
 		err := errors.New("config: base_domain is required in production (LIBREVITA_BASE_DOMAIN)")
 		return errors.WithHint(err, "Configure a variável de ambiente LIBREVITA_BASE_DOMAIN com o domínio público da instalação (ex: app.librevita.org).")
+	}
+	if !c.IsDevelopment() {
+		if strings.TrimSpace(c.PasetoKey) == "" {
+			err := errors.New("config: paseto_key is required outside development (LIBREVITA_PASETO_KEY)")
+			return errors.WithHint(err, "Gere uma chave simétrica segura de 32 bytes em base64 (ex: openssl rand -base64 32) e configure LIBREVITA_PASETO_KEY.")
+		}
+		if strings.TrimSpace(c.MasterKey) == "" {
+			err := errors.New("config: master_key is required outside development (LIBREVITA_MASTER_KEY)")
+			return errors.WithHint(err, "Gere uma chave simétrica segura de 32 bytes em base64 (ex: openssl rand -base64 32) e configure LIBREVITA_MASTER_KEY.")
+		}
+	}
+	if c.PasetoKey != "" {
+		raw, err := base64.StdEncoding.DecodeString(c.PasetoKey)
+		if err != nil || len(raw) != 32 {
+			return errors.New("config: paseto_key must be a valid base64 32-byte string")
+		}
+	}
+	if c.MasterKey != "" {
+		raw, err := base64.StdEncoding.DecodeString(c.MasterKey)
+		if err != nil || len(raw) != 32 {
+			return errors.New("config: master_key must be a valid base64 32-byte string")
+		}
 	}
 	if err := c.validateCrypto(); err != nil {
 		return err

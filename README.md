@@ -178,9 +178,12 @@ Requirements: [Task](https://taskfile.dev/install) 3.x, a Go toolchain (the Task
 ```sh
 task gen    # Ent models, schema helpers, templ views (needed for the editor and the first build)
 task dev    # unoptimized binary at bin/librevita-dev
+./bin/librevita-dev --mode=development
 ```
 
-Default mode is `development`: listen on `0.0.0.0:8080`, `base_domain` is `lv.test`, and **ephemeral** PASETO and master keys are generated if unset. Encrypted rows and sessions from a previous run will not decrypt after restart unless you set `LIBREVITA_PASETO_KEY` and `LIBREVITA_MASTER_KEY` (base64, 32 bytes).
+Default mode is `production`. In production, `LIBREVITA_BASE_DOMAIN`, `LIBREVITA_PASETO_KEY`, and `LIBREVITA_MASTER_KEY` (base64, 32 bytes) are strictly required on startup to ensure persistence and prevent accidental data loss.
+
+For local development and testing, pass `--mode=development` (or set `LIBREVITA_MODE=development`): listen on `0.0.0.0:8080`, `base_domain` defaults to `lv.test`, and **ephemeral** in-memory PASETO and master keys are generated if unset (note: data from an ephemeral run will not decrypt after restart).
 
 Clinic routing uses the `Host` header. Map the apex (and later each clinic slug) in `/etc/hosts`:
 
@@ -403,7 +406,7 @@ All configuration flags:
 | Flag                           | Environment variable                         | Purpose                                                                                                                                                      |
 | ------------------------------ | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `--config`                     | `LIBREVITA_CONFIG`                           | Configuration file path                                                                                                                                      |
-| `--mode`                       | `LIBREVITA_MODE`                             | Runtime mode: `development` or `production`                                                                                                                  |
+| `--mode`                       | `LIBREVITA_MODE`                             | Runtime mode: `production` (default) or `development`                                                                                                        |
 | `--http-bind`                  | `LIBREVITA_HTTP_BIND`                        | HTTP bind address (`0.0.0.0`, `127.0.0.1`, ...)                                                                                                              |
 | `--http-port`                  | `LIBREVITA_HTTP_PORT`                        | HTTP listen port (default `8080`)                                                                                                                            |
 | `--base-domain`                | `LIBREVITA_BASE_DOMAIN`                      | DNS suffix for clinic hosts (`{slug}.{base_domain}`); default `lv.test` outside production; required in production                                           |

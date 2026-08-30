@@ -20,10 +20,10 @@ import (
 // than once.
 func RegisterFlags(fs *pflag.FlagSet) {
 	stringFlag(fs, "config", "", "configuration file (.yaml, .yml, or .json)")
-	stringFlag(fs, "mode", defaultMode, "runtime mode: development or production")
+	stringFlag(fs, "mode", defaultMode, "runtime mode: production or development")
 	stringFlag(fs, "http-bind", defaultHTTPBind, "HTTP bind address (0.0.0.0, 127.0.0.1, ...)")
 	intFlag(fs, "http-port", defaultHTTPPort, "HTTP listen port")
-	stringFlag(fs, "base-domain", "", "DNS suffix for clinic hosts ({slug}.{base-domain}; default lv.test in development)")
+	stringFlag(fs, "base-domain", "", "DNS suffix for clinic hosts ({slug}.{base-domain}; required in production, default lv.test in development)")
 	stringFlag(fs, "trusted-proxies", "", "comma-separated proxy IPs allowed to set X-Forwarded-For")
 	intFlag(fs, "hsts-max-age", 0, "Strict-Transport-Security max-age in seconds (0 disables; HTTPS deployments only)")
 	stringFlag(fs, "data-dir", defaultDataDir, "base directory for database and logs")

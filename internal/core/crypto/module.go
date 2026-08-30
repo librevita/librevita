@@ -87,7 +87,8 @@ func resolveMasterKey(cfg *config.Config, logger log.Logger) ([]byte, error) {
 	masterKey := cfg.MasterKey
 	if masterKey == "" {
 		if !cfg.IsDevelopment() {
-			return nil, errors.New("master key is required outside development (LIBREVITA_MASTER_KEY)")
+			err := errors.New("master key is required outside development (LIBREVITA_MASTER_KEY)")
+			return nil, errors.WithHint(err, "Gere uma chave simétrica segura de 32 bytes em base64 (ex: openssl rand -base64 32) e configure LIBREVITA_MASTER_KEY.")
 		}
 		logger.Warn("no master key configured; using an ephemeral key (encrypted values reset on restart)")
 		raw, err := RandomBytes(SizeDEK)
