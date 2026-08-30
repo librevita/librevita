@@ -355,3 +355,32 @@ func TestDevelopmentModeAllowsEmptyKeys(t *testing.T) {
 	assert.NoError(t, cfg.validate())
 }
 
+func TestMapFlagKeyHyphenAndUnderscoreInterchangeable(t *testing.T) {
+	pairs := [][2]string{
+		{"http-bind", "http_bind"},
+		{"db-postgres-url", "db_postgres_url"},
+		{"db-sqlite-path", "db_sqlite_path"},
+		{"storage-s3-endpoint", "storage_s3_endpoint"},
+		{"vault-hashicorp-token", "vault_hashicorp_token"},
+		{"crypto-hash-algorithm", "crypto_hash_algorithm"},
+		{"log-rotating-max-size", "log_rotating_max_size"},
+		{"log-rotating-max-age", "log_rotating_max_age"},
+		{"trusted-proxies", "trusted_proxies"},
+		{"hsts-max-age", "hsts_max_age"},
+	}
+	for _, pair := range pairs {
+		hyphenKey := mapFlagKey(pair[0])
+		underscoreKey := mapFlagKey(pair[1])
+		assert.NotEmpty(t, hyphenKey, "flag %s should not be empty", pair[0])
+		assert.Equal(t, hyphenKey, underscoreKey, "flag %s and %s should map to same koanf key", pair[0], pair[1])
+	}
+}
+
+func TestTrustedProxiesAndHSTSMappings(t *testing.T) {
+	assert.Equal(t, "trusted_proxies", mapFlagKey("trusted-proxies"))
+	assert.Equal(t, "trusted_proxies", mapEnvironmentKey("trusted_proxies"))
+	assert.Equal(t, "hsts_max_age", mapFlagKey("hsts-max-age"))
+	assert.Equal(t, "hsts_max_age", mapEnvironmentKey("hsts_max_age"))
+}
+
+

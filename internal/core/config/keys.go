@@ -2,166 +2,124 @@ package config
 
 import "strings"
 
-// flagKeys maps CLI flag names (hyphen or underscore) onto Koanf keys.
-var flagKeys = map[string]string{ // #nosec G101 -- Koanf field paths, not credentials.
-	"config":                     keyConfigFile,
-	"config-file":                keyConfigFile,
-	"config_file":                keyConfigFile,
-	"mode":                       "mode",
-	"http-bind":                  "http_bind",
-	"http_bind":                  "http_bind",
-	"http-port":                  "http_port",
-	"http_port":                  "http_port",
-	"base-domain":                "base_domain",
-	"base_domain":                "base_domain",
-	"data-dir":                   "data_dir",
-	"data_dir":                   "data_dir",
-	"db-driver":                  "database.driver",
-	"db_driver":                  "database.driver",
-	"db-sqlite-path":             "database.sqlite.path",
-	"db_sqlite_path":             "database.sqlite.path",
-	"db-postgres-url":            "database.postgres.url",
-	"db_postgres_url":            "database.postgres.url",
-	"db-postgres-host":           "database.postgres.host",
-	"db_postgres_host":           "database.postgres.host",
-	"db-postgres-port":           "database.postgres.port",
-	"db_postgres_port":           "database.postgres.port",
-	"db-postgres-user":           "database.postgres.user",
-	"db_postgres_user":           "database.postgres.user",
-	"db-postgres-password":       "database.postgres.password",
-	"db_postgres_password":       "database.postgres.password",
-	"db-postgres-database":       "database.postgres.database",
-	"db_postgres_database":       "database.postgres.database",
-	"db-postgres-sslmode":        "database.postgres.sslmode",
-	"db_postgres_sslmode":        "database.postgres.sslmode",
-	"db-postgres-max-open-conns": "database.postgres.max_open_conns",
-	"db_postgres_max_open_conns": "database.postgres.max_open_conns",
-	"db-postgres-max-idle-conns": "database.postgres.max_idle_conns",
-	"db_postgres_max_idle_conns": "database.postgres.max_idle_conns",
-	"db-dqlite-addrs":            "database.dqlite.addrs",
-	"db_dqlite_addrs":            "database.dqlite.addrs",
-	"db-dqlite-discovery-srv":    "database.dqlite.discovery_srv",
-	"db_dqlite_discovery_srv":    "database.dqlite.discovery_srv",
-	"db-dqlite-database":         "database.dqlite.database",
-	"db_dqlite_database":         "database.dqlite.database",
-	"log-mode":                   "logging.mode",
-	"log_mode":                   "logging.mode",
-	"log-level":                  "logging.level",
-	"log_level":                  "logging.level",
-	"log-file-path":              "logging.file.path",
-	"log_file_path":              "logging.file.path",
-	"log-rotating-path":          "logging.rotating.path",
-	"log_rotating_path":          "logging.rotating.path",
-	"log-rotating-max-size":      "logging.rotating.max_size_mb",
-	"log_rotating_max_size":      "logging.rotating.max_size_mb",
-	"log-rotating-max-backups":   "logging.rotating.max_backups",
-	"log_rotating_max_backups":   "logging.rotating.max_backups",
-	"log-rotating-max-age":       "logging.rotating.max_age_days",
-	"log_rotating_max_age":       "logging.rotating.max_age_days",
-	"log-rotating-compress":      "logging.rotating.compress",
-	"log_rotating_compress":      "logging.rotating.compress",
-	"paseto-key":                 "paseto_key",
-	"paseto_key":                 "paseto_key",
-	"master-key":                 "master_key",
-	"master_key":                 "master_key",
-	"auth-max-concurrent-hashes": "auth.max_concurrent_hashes",
-	"auth_max_concurrent_hashes": "auth.max_concurrent_hashes",
-	"storage-backend":            "storage.backend",
-	"storage_backend":            "storage.backend",
-	"storage-local-dir":          "storage.local.dir",
-	"storage_local_dir":          "storage.local.dir",
-	"storage-s3-endpoint":        "storage.s3.endpoint",
-	"storage_s3_endpoint":        "storage.s3.endpoint",
-	"storage-s3-bucket":          "storage.s3.bucket",
-	"storage_s3_bucket":          "storage.s3.bucket",
-	"storage-s3-access-key":      "storage.s3.access_key",
-	"storage_s3_access_key":      "storage.s3.access_key",
-	"storage-s3-secret-key":      "storage.s3.secret_key",
-	"storage_s3_secret_key":      "storage.s3.secret_key",
-	"storage-s3-region":          "storage.s3.region",
-	"storage_s3_region":          "storage.s3.region",
-	"storage-s3-secure":          "storage.s3.secure",
-	"storage_s3_secure":          "storage.s3.secure",
-	"storage-s3-path-style":      "storage.s3.path_style",
-	"storage_s3_path_style":      "storage.s3.path_style",
-	"vault-backend":              "vault.backend",
-	"vault_backend":              "vault.backend",
-	"vault-bbolt-path":           "vault.bbolt.path",
-	"vault_bbolt_path":           "vault.bbolt.path",
-	"vault-nats-url":             "vault.nats.url",
-	"vault_nats_url":             "vault.nats.url",
-	"vault-nats-bucket":          "vault.nats.bucket",
-	"vault_nats_bucket":          "vault.nats.bucket",
-	"vault-etcd-endpoints":       "vault.etcd.endpoints",
-	"vault_etcd_endpoints":       "vault.etcd.endpoints",
-	"vault-etcd-prefix":          "vault.etcd.prefix",
-	"vault_etcd_prefix":          "vault.etcd.prefix",
-	"vault-hashicorp-address":    "vault.hashicorp.address",
-	"vault_hashicorp_address":    "vault.hashicorp.address",
-	"vault-hashicorp-token":      "vault.hashicorp.token",
-	"vault_hashicorp_token":      "vault.hashicorp.token",
-	"vault-hashicorp-mount":      "vault.hashicorp.mount",
-	"vault_hashicorp_mount":      "vault.hashicorp.mount",
+// configKeys is the canonical list of Koanf configuration properties.
+var configKeys = []string{
+	// Top-level
+	"mode",
+	"http_bind",
+	"http_port",
+	"base_domain",
+	"trusted_proxies",
+	"hsts_max_age",
+	"data_dir",
+	"paseto_key",
+	"master_key",
+
+	// Auth
+	"auth.max_concurrent_hashes",
+
+	// Database (flags use db- prefix)
+	"database.driver",
+	"database.sqlite.path",
+	"database.postgres.url",
+	"database.postgres.host",
+	"database.postgres.port",
+	"database.postgres.user",
+	"database.postgres.password",
+	"database.postgres.database",
+	"database.postgres.sslmode",
+	"database.postgres.max_open_conns",
+	"database.postgres.max_idle_conns",
+	"database.dqlite.addrs",
+	"database.dqlite.discovery_srv",
+	"database.dqlite.database",
+
+	// Logging (flags use log- prefix)
+	"logging.mode",
+	"logging.level",
+	"logging.file.path",
+	"logging.rotating.path",
+	"logging.rotating.max_size_mb",
+	"logging.rotating.max_backups",
+	"logging.rotating.max_age_days",
+	"logging.rotating.compress",
+
+	// Storage
+	"storage.backend",
+	"storage.local.dir",
+	"storage.s3.endpoint",
+	"storage.s3.bucket",
+	"storage.s3.access_key",
+	"storage.s3.secret_key",
+	"storage.s3.region",
+	"storage.s3.secure",
+	"storage.s3.path_style",
+
+	// Vault
+	"vault.backend",
+	"vault.bbolt.path",
+	"vault.nats.url",
+	"vault.nats.bucket",
+	"vault.etcd.endpoints",
+	"vault.etcd.prefix",
+	"vault.hashicorp.address",
+	"vault.hashicorp.token",
+	"vault.hashicorp.mount",
+
+	// Crypto
+	"crypto.hash_algorithm",
+	"crypto.encryption_cipher",
 }
 
-// envKeys maps LIBREVITA_* suffixes (after the prefix is stripped) onto Koanf keys.
-var envKeys = map[string]string{ // #nosec G101 -- Koanf field paths, not credentials.
-	"config":                           keyConfigFile,
-	"mode":                             "mode",
-	"http_bind":                        "http_bind",
-	"http_addr":                        "http_bind",
-	"http_port":                        "http_port",
-	"base_domain":                      "base_domain",
-	"data_dir":                         "data_dir",
-	"database_driver":                  "database.driver",
-	"database_sqlite_path":             "database.sqlite.path",
-	"database_postgres_url":            "database.postgres.url",
-	"database_postgres_host":           "database.postgres.host",
-	"database_postgres_port":           "database.postgres.port",
-	"database_postgres_user":           "database.postgres.user",
-	"database_postgres_password":       "database.postgres.password",
-	"database_postgres_database":       "database.postgres.database",
-	"database_postgres_sslmode":        "database.postgres.sslmode",
-	"database_postgres_max_open_conns": "database.postgres.max_open_conns",
-	"database_postgres_max_idle_conns": "database.postgres.max_idle_conns",
-	"database_dqlite_addrs":            "database.dqlite.addrs",
-	"database_dqlite_discovery_srv":    "database.dqlite.discovery_srv",
-	"database_dqlite_database":         "database.dqlite.database",
-	"logging_mode":                     "logging.mode",
-	"logging_level":                    "logging.level",
-	"logging_file_path":                "logging.file.path",
-	"logging_rotating_path":            "logging.rotating.path",
-	"logging_rotating_max_size_mb":     "logging.rotating.max_size_mb",
-	"logging_rotating_max_backups":     "logging.rotating.max_backups",
-	"logging_rotating_max_age_days":    "logging.rotating.max_age_days",
-	"logging_rotating_compress":        "logging.rotating.compress",
-	"paseto_key":                       "paseto_key",
-	"master_key":                       "master_key",
-	"auth_max_concurrent_hashes":       "auth.max_concurrent_hashes",
-	"storage_backend":                  "storage.backend",
-	"storage_local_dir":                "storage.local.dir",
-	"storage_s3_endpoint":              "storage.s3.endpoint",
-	"storage_s3_bucket":                "storage.s3.bucket",
-	"storage_s3_access_key":            "storage.s3.access_key",
-	"storage_s3_secret_key":            "storage.s3.secret_key",
-	"storage_s3_region":                "storage.s3.region",
-	"storage_s3_secure":                "storage.s3.secure",
-	"storage_s3_path_style":            "storage.s3.path_style",
-	"vault_backend":                    "vault.backend",
-	"vault_bbolt_path":                 "vault.bbolt.path",
-	"vault_nats_url":                   "vault.nats.url",
-	"vault_nats_bucket":                "vault.nats.bucket",
-	"vault_etcd_endpoints":             "vault.etcd.endpoints",
-	"vault_etcd_prefix":                "vault.etcd.prefix",
-	"vault_hashicorp_address":          "vault.hashicorp.address",
-	"vault_hashicorp_token":            "vault.hashicorp.token",
-	"vault_hashicorp_mount":            "vault.hashicorp.mount",
-	"crypto_hash_algorithm":            "crypto.hash_algorithm",
-	"crypto_encryption_cipher":         "crypto.encryption_cipher",
+// Specific CLI flag aliases.
+var flagAliases = map[string]string{ // #nosec G101 -- Koanf field paths, not credentials.
+	"config":                keyConfigFile,
+	"config-file":           keyConfigFile,
+	"log-rotating-max-size": "logging.rotating.max_size_mb",
+	"log-rotating-max-age":  "logging.rotating.max_age_days",
+}
+
+// Specific environment variable aliases.
+var envAliases = map[string]string{ // #nosec G101 -- Koanf field paths, not credentials.
+	"config":    keyConfigFile,
+	"http_addr": "http_bind",
+}
+
+var (
+	flagKeys = make(map[string]string)
+	envKeys  = make(map[string]string)
+)
+
+func init() {
+	for _, k := range configKeys {
+		flagKeys[koanfToFlag(k)] = k
+		envKeys[koanfToEnv(k)] = k
+	}
+	for alias, k := range flagAliases {
+		flagKeys[strings.ReplaceAll(alias, "_", "-")] = k
+	}
+	for alias, k := range envAliases {
+		envKeys[alias] = k
+	}
+}
+
+func koanfToFlag(k string) string {
+	s := strings.ReplaceAll(strings.ReplaceAll(k, ".", "-"), "_", "-")
+	if strings.HasPrefix(s, "database-") {
+		return "db-" + strings.TrimPrefix(s, "database-")
+	}
+	if strings.HasPrefix(s, "logging-") {
+		return "log-" + strings.TrimPrefix(s, "logging-")
+	}
+	return s
+}
+
+func koanfToEnv(k string) string {
+	return strings.ReplaceAll(k, ".", "_")
 }
 
 func mapFlagKey(name string) string {
-	return flagKeys[strings.ToLower(name)]
+	return flagKeys[strings.ToLower(strings.ReplaceAll(name, "_", "-"))]
 }
 
 func mapEnvironmentKey(key string) string {
