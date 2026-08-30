@@ -17,7 +17,19 @@ linters:
     - bodyclose
     - loggercheck
     - forbidigo
+    - cyclop
+    - gocognit
   settings:
+    cyclop:
+      # Reports functions whose cyclomatic complexity is greater than
+      # this value. Ratcheted to the current maximum (mapEnvironmentKey).
+      # package-average stays at the default 0 (disabled).
+      max-complexity: 53
+    gocognit:
+      # Reports functions whose cognitive complexity is at least this
+      # value. Complementary to cyclop (nesting and compound booleans).
+      # Ratcheted one above the current maximum (InjectEnumChecks is 66).
+      min-complexity: 67
     gosec:
       # G104 duplicates errcheck (which already allows the idiomatic
       # close/rollback defers via exclude-functions).
@@ -59,6 +71,10 @@ linters:
       - path: pkg/log/
         linters:
           - forbidigo
+      - path: _test\.go
+        linters:
+          - cyclop
+          - gocognit
 issues:
   exclude-files:
     - "**/*_templ.go"
