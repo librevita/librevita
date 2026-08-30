@@ -22,15 +22,13 @@ linters:
   settings:
     cyclop:
       # Reports functions whose cyclomatic complexity is greater than
-      # this value. Target is 10 (cyclop default). Ratcheted to the
-      # current maximum (formatConsoleField) after splitting functions
-      # that were ≥ 20.
+      # this value. Cap is 20 (19 is allowed; 20+ fails).
       # package-average stays at the default 0 (disabled).
       max-complexity: 19
     gocognit:
       # Reports functions whose cognitive complexity is at least this
       # value. Complementary to cyclop (nesting and compound booleans).
-      # Target is 10. Ratcheted to 20 after splitting functions that were ≥ 20.
+      # Cap is 20 (20+ fails).
       min-complexity: 20
     gosec:
       # G104 duplicates errcheck (which already allows the idiomatic
