@@ -153,105 +153,165 @@ func ToDocumentBundle(ep episodemodel.Episode, ctx DocumentContext) (*Bundle, er
 	return out, nil
 }
 
+type bundleResources struct {
+	comp         Composition
+	enc          Encounter
+	plan         CarePlan
+	observations []Observation
+	conditions   []Condition
+	hasComp      bool
+	hasEnc       bool
+}
+
 // FromDocumentBundle maps a FHIR document (or transaction) Bundle onto an Episode.
 func FromDocumentBundle(b *Bundle) (*episodemodel.Episode, error) {
 	if b == nil {
 		return nil, episodemodel.ErrInvalidSOAP
 	}
-	var comp Composition
-	var enc Encounter
-	var plan CarePlan
-	var observations []Observation
-	var conditions []Condition
-	var hasComp, hasEnc bool
+	res, err := collectBundleResources(b)
+	if err != nil {
+		return nil, err
+	}
+	return episodeFromResources(res), nil
+}
+
+func collectBundleResources(b *Bundle) (*bundleResources, error) {
+	var r bundleResources
 	for _, e := range b.Entry {
-		switch PeekType(e.Resource) {
-		case "Composition":
-			if err := json.Unmarshal(e.Resource, &comp); err != nil {
-				return nil, episodemodel.ErrInvalidSOAP
-			}
-			hasComp = true
-		case "Encounter":
-			if err := json.Unmarshal(e.Resource, &enc); err != nil {
-				return nil, episodemodel.ErrInvalidSOAP
-			}
-			hasEnc = true
-		case "Observation":
-			var o Observation
-			if err := json.Unmarshal(e.Resource, &o); err != nil {
-				return nil, episodemodel.ErrInvalidSOAP
-			}
-			observations = append(observations, o)
-		case "Condition":
-			var c Condition
-			if err := json.Unmarshal(e.Resource, &c); err != nil {
-				return nil, episodemodel.ErrInvalidSOAP
-			}
-			conditions = append(conditions, c)
-		case "CarePlan":
-			if err := json.Unmarshal(e.Resource, &plan); err != nil {
-				return nil, episodemodel.ErrInvalidSOAP
-			}
+		if err := r.add(e); err != nil {
+			return nil, err
 		}
 	}
-	if !hasComp || !hasEnc {
+	if !r.hasComp || !r.hasEnc {
 		return nil, episodemodel.ErrInvalidSOAP
 	}
+	return &r, nil
+}
 
+func (r *bundleResources) add(e BundleEntry) error {
+	switch PeekType(e.Resource) {
+	case "Composition":
+		return r.setComposition(e.Resource)
+	case "Encounter":
+		return r.setEncounter(e.Resource)
+	case "Observation":
+		return r.addObservation(e.Resource)
+	case "Condition":
+		return r.addCondition(e.Resource)
+	case "CarePlan":
+		return unmarshalResource(e.Resource, &r.plan)
+	}
+	return nil
+}
+
+func (r *bundleResources) setComposition(raw json.RawMessage) error {
+	if err := unmarshalResource(raw, &r.comp); err != nil {
+		return err
+	}
+	r.hasComp = true
+	return nil
+}
+
+func (r *bundleResources) setEncounter(raw json.RawMessage) error {
+	if err := unmarshalResource(raw, &r.enc); err != nil {
+		return err
+	}
+	r.hasEnc = true
+	return nil
+}
+
+func (r *bundleResources) addObservation(raw json.RawMessage) error {
+	var o Observation
+	if err := unmarshalResource(raw, &o); err != nil {
+		return err
+	}
+	r.observations = append(r.observations, o)
+	return nil
+}
+
+func (r *bundleResources) addCondition(raw json.RawMessage) error {
+	var c Condition
+	if err := unmarshalResource(raw, &c); err != nil {
+		return err
+	}
+	r.conditions = append(r.conditions, c)
+	return nil
+}
+
+func unmarshalResource(raw json.RawMessage, dst any) error {
+	if err := json.Unmarshal(raw, dst); err != nil {
+		return episodemodel.ErrInvalidSOAP
+	}
+	return nil
+}
+
+func episodeFromResources(r *bundleResources) *episodemodel.Episode {
 	ep := &episodemodel.Episode{
 		Type:   episodemodel.EpisodeTypeConsultation,
-		Status: statusFromComposition(comp.Status),
-		Class:  classFromCoding(enc.Class),
-		SOAP:   soapFromSections(comp.Section),
+		Status: statusFromComposition(r.comp.Status),
+		Class:  classFromCoding(r.enc.Class),
+		SOAP:   soapFromSections(r.comp.Section),
 	}
-	if id, ok := parseUUID(comp.ID); ok {
+	applyBundleIDs(ep, r)
+	applyBundleTimes(ep, r)
+	applyBundleChildren(ep, r)
+	return ep
+}
+
+func applyBundleIDs(ep *episodemodel.Episode, r *bundleResources) {
+	if id, ok := parseUUID(r.comp.ID); ok {
 		ep.ID = id
-	} else if id, ok := parseUUID(enc.ID); ok {
+	} else if id, ok := parseUUID(r.enc.ID); ok {
 		ep.ID = id
 	}
-	if pid, ok := parseTypedRef(enc.Subject, "Patient"); ok {
+	if pid, ok := parseTypedRef(r.enc.Subject, "Patient"); ok {
 		ep.PatientID = pid
-	} else if pid, ok := parseTypedRef(comp.Subject, "Patient"); ok {
+	} else if pid, ok := parseTypedRef(r.comp.Subject, "Patient"); ok {
 		ep.PatientID = pid
 	}
-	if aid, ok := parseTypedRef(firstAuthor(comp, enc), "Practitioner"); ok {
+	if aid, ok := parseTypedRef(firstAuthor(r.comp, r.enc), "Practitioner"); ok {
 		ep.AuthorID = aid
 	}
-	if pred := predecessorFromRelatesTo(comp.RelatesTo); pred != nil {
+	if pred := predecessorFromRelatesTo(r.comp.RelatesTo); pred != nil {
 		ep.PredecessorID = pred
 	}
-	if t, ok := parseTime(comp.Date); ok {
+}
+
+func applyBundleTimes(ep *episodemodel.Episode, r *bundleResources) {
+	if t, ok := parseTime(r.comp.Date); ok {
 		ep.OccurredAt = t
-	} else if enc.Period != nil {
-		if t, ok := parseTime(enc.Period.Start); ok {
+	} else if r.enc.Period != nil {
+		if t, ok := parseTime(r.enc.Period.Start); ok {
 			ep.OccurredAt = t
 		}
 	}
-	if enc.Period != nil {
-		if t, ok := parseTime(enc.Period.End); ok {
+	if r.enc.Period != nil {
+		if t, ok := parseTime(r.enc.Period.End); ok {
 			ep.EndedAt = &t
 		}
 	}
-	if typ, ok := episodeTypeFrom(enc.Type); ok {
+	if typ, ok := episodeTypeFrom(r.enc.Type); ok {
 		ep.Type = typ
 	}
-	for _, o := range observations {
+}
+
+func applyBundleChildren(ep *episodemodel.Episode, r *bundleResources) {
+	for _, o := range r.observations {
 		ep.Findings = append(ep.Findings, findingFromObservation(o))
 	}
-	for i, c := range conditions {
+	for i, c := range r.conditions {
 		p := problemFromCondition(c)
 		if p.Rank < 1 {
 			p.Rank = i + 1
 		}
 		ep.Problems = append(ep.Problems, p)
 	}
-	for _, act := range plan.Activity {
+	for _, act := range r.plan.Activity {
 		if act.Detail == nil {
 			continue
 		}
 		ep.PlanItems = append(ep.PlanItems, planItemFromDetail(*act.Detail))
 	}
-	return ep, nil
 }
 
 func section(code, title, text string, entry []Reference) CompositionSection {

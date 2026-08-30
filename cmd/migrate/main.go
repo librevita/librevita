@@ -147,57 +147,91 @@ func formatSQL(stmt string) string {
 	return stmt
 }
 
-func splitTopLevelCommas(s string) []string {
-	var parts []string
-	var current strings.Builder
-	depth := 0
-	inSingleQuote := false
-	inDoubleQuote := false
-	inBacktick := false
+type commaSplitter struct {
+	parts         []string
+	current       strings.Builder
+	depth         int
+	inSingleQuote bool
+	inDoubleQuote bool
+	inBacktick    bool
+}
 
+func (s *commaSplitter) inQuote() bool {
+	return s.inSingleQuote || s.inDoubleQuote || s.inBacktick
+}
+
+func (s *commaSplitter) feed(ch byte) {
+	switch ch {
+	case '\'':
+		s.toggleSingle()
+	case '"':
+		s.toggleDouble()
+	case '`':
+		s.toggleBacktick()
+	case '(':
+		s.openParen()
+	case ')':
+		s.closeParen()
+	case ',':
+		s.comma()
+	default:
+		s.current.WriteByte(ch)
+	}
+}
+
+func (s *commaSplitter) toggleSingle() {
+	if !s.inDoubleQuote && !s.inBacktick {
+		s.inSingleQuote = !s.inSingleQuote
+	}
+	s.current.WriteByte('\'')
+}
+
+func (s *commaSplitter) toggleDouble() {
+	if !s.inSingleQuote && !s.inBacktick {
+		s.inDoubleQuote = !s.inDoubleQuote
+	}
+	s.current.WriteByte('"')
+}
+
+func (s *commaSplitter) toggleBacktick() {
+	if !s.inSingleQuote && !s.inDoubleQuote {
+		s.inBacktick = !s.inBacktick
+	}
+	s.current.WriteByte('`')
+}
+
+func (s *commaSplitter) openParen() {
+	if !s.inQuote() {
+		s.depth++
+	}
+	s.current.WriteByte('(')
+}
+
+func (s *commaSplitter) closeParen() {
+	if !s.inQuote() {
+		s.depth--
+	}
+	s.current.WriteByte(')')
+}
+
+func (s *commaSplitter) comma() {
+	if s.depth == 0 && !s.inQuote() {
+		s.parts = append(s.parts, s.current.String())
+		s.current.Reset()
+		return
+	}
+	s.current.WriteByte(',')
+}
+
+func splitTopLevelCommas(s string) []string {
+	var sp commaSplitter
 	for i := 0; i < len(s); i++ {
-		ch := s[i]
-		switch ch {
-		case '\'':
-			if !inDoubleQuote && !inBacktick {
-				inSingleQuote = !inSingleQuote
-			}
-			current.WriteByte(ch)
-		case '"':
-			if !inSingleQuote && !inBacktick {
-				inDoubleQuote = !inDoubleQuote
-			}
-			current.WriteByte(ch)
-		case '`':
-			if !inSingleQuote && !inDoubleQuote {
-				inBacktick = !inBacktick
-			}
-			current.WriteByte(ch)
-		case '(':
-			if !inSingleQuote && !inDoubleQuote && !inBacktick {
-				depth++
-			}
-			current.WriteByte(ch)
-		case ')':
-			if !inSingleQuote && !inDoubleQuote && !inBacktick {
-				depth--
-			}
-			current.WriteByte(ch)
-		case ',':
-			if depth == 0 && !inSingleQuote && !inDoubleQuote && !inBacktick {
-				parts = append(parts, current.String())
-				current.Reset()
-			} else {
-				current.WriteByte(ch)
-			}
-		default:
-			current.WriteByte(ch)
-		}
+		sp.feed(s[i])
 	}
-	if current.Len() > 0 {
-		parts = append(parts, current.String())
+	if sp.current.Len() > 0 {
+		sp.parts = append(sp.parts, sp.current.String())
 	}
-	return parts
+	return sp.parts
 }
 
 func main() {

@@ -54,91 +54,109 @@ func Generate(schemaDir, targetDir string) error {
 func TransformSchemas(schemas []*load.Schema) error {
 	for _, schema := range schemas {
 		for _, f := range schema.Fields {
-			ann, ok := f.Annotations[fle.AnnotationName]
-			if !ok {
-				continue
+			if err := injectSearchableField(schema, f); err != nil {
+				return err
 			}
-			m, ok := ann.(map[string]any)
-			if !ok {
-				continue
-			}
-			var isSearchable bool
-			if s, ok := m["searchable"].(bool); ok && s {
-				isSearchable = true
-			} else if s, ok := m["Searchable"].(bool); ok && s {
-				isSearchable = true
-			}
-			if !isSearchable {
-				continue
-			}
-
-			var normalizer string
-			if n, ok := m["normalizer"].(string); ok {
-				normalizer = n
-			} else if n, ok := m["Normalizer"].(string); ok {
-				normalizer = n
-			}
-
-			if normalizer == "name" {
-				tokenFieldName := f.Name + "_token_index"
-				var hasTokens bool
-				for _, existing := range schema.Fields {
-					if existing.Name == tokenFieldName {
-						hasTokens = true
-						break
-					}
-				}
-				if !hasTokens {
-					tokensDesc := field.JSON(tokenFieldName, []string{}).
-						Optional().
-						Comment("Blind index token hashes of n-grams for fast tokenized search on " + f.Name).
-						Descriptor()
-
-					loadTokensFld, err := load.NewField(tokensDesc)
-					if err != nil {
-						return errors.Wrapf(err, "fle codegen: create %s field", tokenFieldName)
-					}
-					loadTokensFld.Position = &load.Position{}
-					schema.Fields = append(schema.Fields, loadTokensFld)
-				}
-				continue
-			}
-
-			blindFieldName := f.Name + "_blind_index"
-			var exists bool
-			for _, existing := range schema.Fields {
-				if existing.Name == blindFieldName {
-					exists = true
-					break
-				}
-			}
-			if exists {
-				continue
-			}
-
-			desc := field.String(blindFieldName).
-				Optional().
-				Comment("Keyed hash index for exact search on " + f.Name).
-				Descriptor()
-
-			loadFld, err := load.NewField(desc)
-			if err != nil {
-				return errors.Wrapf(err, "fle codegen: create blind index field %s", blindFieldName)
-			}
-			loadFld.Position = &load.Position{}
-			schema.Fields = append(schema.Fields, loadFld)
-
-			idxFields := []string{blindFieldName}
-			for _, ef := range schema.Fields {
-				if ef.Name == "clinic_id" {
-					idxFields = []string{"clinic_id", blindFieldName}
-					break
-				}
-			}
-			schema.Indexes = append(schema.Indexes, &load.Index{
-				Fields: idxFields,
-			})
 		}
 	}
 	return nil
+}
+
+func injectSearchableField(schema *load.Schema, f *load.Field) error {
+	m, ok := searchableAnnotation(f)
+	if !ok {
+		return nil
+	}
+	if annotationString(m, "normalizer", "Normalizer") == "name" {
+		return injectNameTokens(schema, f)
+	}
+	return injectBlindIndex(schema, f)
+}
+
+func searchableAnnotation(f *load.Field) (map[string]any, bool) {
+	ann, ok := f.Annotations[fle.AnnotationName]
+	if !ok {
+		return nil, false
+	}
+	m, ok := ann.(map[string]any)
+	if !ok {
+		return nil, false
+	}
+	if annotationBool(m, "searchable", "Searchable") {
+		return m, true
+	}
+	return nil, false
+}
+
+func annotationBool(m map[string]any, keys ...string) bool {
+	for _, k := range keys {
+		if s, ok := m[k].(bool); ok && s {
+			return true
+		}
+	}
+	return false
+}
+
+func annotationString(m map[string]any, keys ...string) string {
+	for _, k := range keys {
+		if n, ok := m[k].(string); ok {
+			return n
+		}
+	}
+	return ""
+}
+
+func schemaHasField(schema *load.Schema, name string) bool {
+	for _, existing := range schema.Fields {
+		if existing.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+func injectNameTokens(schema *load.Schema, f *load.Field) error {
+	tokenFieldName := f.Name + "_token_index"
+	if schemaHasField(schema, tokenFieldName) {
+		return nil
+	}
+	tokensDesc := field.JSON(tokenFieldName, []string{}).
+		Optional().
+		Comment("Blind index token hashes of n-grams for fast tokenized search on " + f.Name).
+		Descriptor()
+	loadTokensFld, err := load.NewField(tokensDesc)
+	if err != nil {
+		return errors.Wrapf(err, "fle codegen: create %s field", tokenFieldName)
+	}
+	loadTokensFld.Position = &load.Position{}
+	schema.Fields = append(schema.Fields, loadTokensFld)
+	return nil
+}
+
+func injectBlindIndex(schema *load.Schema, f *load.Field) error {
+	blindFieldName := f.Name + "_blind_index"
+	if schemaHasField(schema, blindFieldName) {
+		return nil
+	}
+	desc := field.String(blindFieldName).
+		Optional().
+		Comment("Keyed hash index for exact search on " + f.Name).
+		Descriptor()
+	loadFld, err := load.NewField(desc)
+	if err != nil {
+		return errors.Wrapf(err, "fle codegen: create blind index field %s", blindFieldName)
+	}
+	loadFld.Position = &load.Position{}
+	schema.Fields = append(schema.Fields, loadFld)
+	schema.Indexes = append(schema.Indexes, &load.Index{
+		Fields: blindIndexFields(schema, blindFieldName),
+	})
+	return nil
+}
+
+func blindIndexFields(schema *load.Schema, blindFieldName string) []string {
+	if schemaHasField(schema, "clinic_id") {
+		return []string{"clinic_id", blindFieldName}
+	}
+	return []string{blindFieldName}
 }

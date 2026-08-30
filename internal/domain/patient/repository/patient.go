@@ -50,37 +50,7 @@ func (r *patientRepository) Create(ctx context.Context, p patientmodel.Patient) 
 		SetClinicID(p.ClinicID).
 		SetDisplayName(p.DisplayName).
 		SetStatus(patient.Status(p.Status))
-
-	if p.BirthDate != nil && *p.BirthDate != "" {
-		create.SetBirthDate(*p.BirthDate)
-	}
-	if p.Sex != "" {
-		create.SetSex(string(p.Sex))
-	}
-	if p.Phone != nil && *p.Phone != "" {
-		create.SetPhone(*p.Phone)
-	}
-	if p.Email != nil && *p.Email != "" {
-		create.SetEmail(*p.Email)
-	}
-	if p.Street != nil && *p.Street != "" {
-		create.SetStreet(*p.Street)
-	}
-	if p.City != nil && *p.City != "" {
-		create.SetCity(*p.City)
-	}
-	if p.State != nil && *p.State != "" {
-		create.SetState(*p.State)
-	}
-	if p.PostalCode != nil && *p.PostalCode != "" {
-		create.SetPostalCode(*p.PostalCode)
-	}
-	if p.Notes != nil && *p.Notes != "" {
-		create.SetNotes(*p.Notes)
-	}
-	if p.CreatedBy != nil {
-		create.SetCreatedBy(*p.CreatedBy)
-	}
+	applyOptionalCreate(create, p)
 
 	saved, err := create.Save(ctx)
 	if err != nil {
@@ -156,56 +126,7 @@ func (r *patientRepository) Update(ctx context.Context, p patientmodel.Patient) 
 		SetDisplayName(p.DisplayName).
 		SetStatus(patient.Status(p.Status)).
 		SetUpdatedAt(time.Now())
-
-	if p.BirthDate != nil && *p.BirthDate != "" {
-		update.SetBirthDate(*p.BirthDate)
-	} else {
-		update.ClearBirthDate()
-	}
-
-	if p.Sex != "" {
-		update.SetSex(string(p.Sex))
-	} else {
-		update.ClearSex()
-	}
-
-	if p.Phone != nil && *p.Phone != "" {
-		update.SetPhone(*p.Phone)
-	}
-
-	if p.Email != nil && *p.Email != "" {
-		update.SetEmail(*p.Email)
-	}
-
-	if p.Street != nil && *p.Street != "" {
-		update.SetStreet(*p.Street)
-	} else {
-		update.ClearStreet()
-	}
-
-	if p.City != nil && *p.City != "" {
-		update.SetCity(*p.City)
-	} else {
-		update.ClearCity()
-	}
-
-	if p.State != nil && *p.State != "" {
-		update.SetState(*p.State)
-	} else {
-		update.ClearState()
-	}
-
-	if p.PostalCode != nil && *p.PostalCode != "" {
-		update.SetPostalCode(*p.PostalCode)
-	} else {
-		update.ClearPostalCode()
-	}
-
-	if p.Notes != nil && *p.Notes != "" {
-		update.SetNotes(*p.Notes)
-	} else {
-		update.ClearNotes()
-	}
+	applyOptionalUpdate(update, p)
 
 	updated, err := update.Save(ctx)
 	if err != nil {
@@ -215,6 +136,53 @@ func (r *patientRepository) Update(ctx context.Context, p patientmodel.Patient) 
 		return nil, errors.Wrap(err, "patient repository: update")
 	}
 	return toDomainPatient(updated), nil
+}
+
+func applyOptionalCreate(create *ent.PatientCreate, p patientmodel.Patient) {
+	setPtr(p.BirthDate, create.SetBirthDate)
+	if p.Sex != "" {
+		create.SetSex(string(p.Sex))
+	}
+	setPtr(p.Phone, create.SetPhone)
+	setPtr(p.Email, create.SetEmail)
+	setPtr(p.Street, create.SetStreet)
+	setPtr(p.City, create.SetCity)
+	setPtr(p.State, create.SetState)
+	setPtr(p.PostalCode, create.SetPostalCode)
+	setPtr(p.Notes, create.SetNotes)
+	if p.CreatedBy != nil {
+		create.SetCreatedBy(*p.CreatedBy)
+	}
+}
+
+func applyOptionalUpdate(update *ent.PatientUpdateOne, p patientmodel.Patient) {
+	setOrClear(p.BirthDate, update.SetBirthDate, update.ClearBirthDate)
+	if p.Sex != "" {
+		update.SetSex(string(p.Sex))
+	} else {
+		update.ClearSex()
+	}
+	setPtr(p.Phone, update.SetPhone)
+	setPtr(p.Email, update.SetEmail)
+	setOrClear(p.Street, update.SetStreet, update.ClearStreet)
+	setOrClear(p.City, update.SetCity, update.ClearCity)
+	setOrClear(p.State, update.SetState, update.ClearState)
+	setOrClear(p.PostalCode, update.SetPostalCode, update.ClearPostalCode)
+	setOrClear(p.Notes, update.SetNotes, update.ClearNotes)
+}
+
+func setPtr[T any](s *string, set func(string) T) {
+	if s != nil && *s != "" {
+		set(*s)
+	}
+}
+
+func setOrClear[T any](s *string, set func(string) T, clear func() T) {
+	if s != nil && *s != "" {
+		set(*s)
+		return
+	}
+	clear()
 }
 
 func (r *patientRepository) BulkSetStatus(ctx context.Context, clinicID uuid.UUID, patientIDs []uuid.UUID, status patientmodel.PatientStatus) (int, error) {
