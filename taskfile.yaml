@@ -229,14 +229,6 @@ tasks:
       - frontend
     cmds:
       - 'PATH={{.ROOT_DIR}}/.tools/bin:$PATH golangci-lint run'
-  go-complexity:
-    desc: 'Report cyclomatic/cognitive complexity (config: .golangci.complexity.yaml)'
-    deps:
-      - tools
-      - gen
-      - frontend
-    cmds:
-      - 'PATH={{.ROOT_DIR}}/.tools/bin:$PATH golangci-lint run --config .golangci.complexity.yaml'
   # Scan the module for known vulnerabilities (Go Vulnerability Database,
   # source analysis: reports only symbols the code actually calls).
   go-vuln-source:
@@ -305,10 +297,6 @@ tasks:
     desc: Run golangci-lint against generated sources
     deps:
       - go-lint
-  complexity:
-    desc: Report cyclomatic and cognitive complexity (does not fail)
-    deps:
-      - go-complexity
   # Security audits: the Go module scan (govulncheck), the binary scan
   # and the npm audit.
   audit:
