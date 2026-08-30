@@ -29,6 +29,7 @@ task dev        # fast unoptimized binary (bin/librevita-dev)
 task test       # Go test suite + frontend unit tests
 task vet        # go vet
 task lint       # golangci-lint (config: .golangci.yaml)
+task complexity # cyclop + gocognit report (config: .golangci.complexity.yaml)
 task audit      # govulncheck (source + binary) and npm audit
 task tidy       # sync go.mod/go.sum
 task db-diff -- name=describe_the_change  # Goose migrations from the Ent schema

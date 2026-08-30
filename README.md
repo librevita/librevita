@@ -207,6 +207,7 @@ task image                  # OCI image (podman by default; task image -- IMG=do
 task test                   # Go test suite + frontend unit tests
 task vet                    # go vet
 task lint                   # golangci-lint
+task complexity             # cyclop + gocognit report (does not fail)
 task audit                  # govulncheck (source + binary) and npm audit
 task tidy                   # sync go.mod/go.sum
 task cross -- os=linux arch=riscv64
