@@ -106,7 +106,7 @@ func TestDqliteSpike(t *testing.T) {
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = v.Close() })
 
-	engine, err := crypto.NewEngine("nAmIvOXVc0vb6M9G7P9q2j2yK1WxP3sJ8q5dR4tU6wA=", v)
+	engine, err := crypto.NewEngine("nAmIvOXVc0vb6M9G7P9q2j2yK1WxP3sJ8q5dR4tU6wA=", v) // gitleaks:allow
 	patientSvc := usecase.NewService(patientrepo.NewPatientRepository(client), nil, engine)
 	createdPt, err := patientSvc.Create(context.Background(), clinicID, adminID, usecase.PatientInput{
 		DisplayName: "P",
@@ -130,7 +130,7 @@ func TestDqliteSpike(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	masterKey, err := crypto.NewMasterKey("nAmIvOXVc0vb6M9G7P9q2j2yK1WxP3sJ8q5dR4tU6wA=", v)
+	masterKey, err := crypto.NewMasterKey("nAmIvOXVc0vb6M9G7P9q2j2yK1WxP3sJ8q5dR4tU6wA=", v) // gitleaks:allow
 	require.NoError(t, err)
 
 	idRepo := identifierrepo.NewIdentifierRepository(client)

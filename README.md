@@ -201,6 +201,7 @@ Full flags, production keys, TLS/DNS, and database drivers: [Production: keys, T
 - Go (`go.mod` floor; `GOTOOLCHAIN` uses Taskfile `GO_VERSION`, currently `go1.26.6`, auto-downloaded when the local toolchain is older)
 - Node 24 LTS (`.nvmrc`) for the frontend pipeline
 - Podman or Docker only for `task image`
+- curl for `task hadolint` / `task zizmor` (pinned GitHub release binaries)
 
 ```sh
 task gen                    # regenerate Ent models, schema helpers, and templ views
@@ -209,8 +210,8 @@ task build                  # optimized production binary (bin/librevita)
 task image                  # OCI image (podman by default; task image -- IMG=docker)
 task test                   # Go test suite + frontend unit tests
 task vet                    # go vet
-task lint                   # golangci-lint
-task audit                  # govulncheck (source + binary) and npm audit
+task lint                   # golangci-lint, hadolint, actionlint, and zizmor
+task audit                  # govulncheck (source + binary), npm audit, OSV-Scanner, gitleaks
 task tidy                   # sync go.mod/go.sum
 task cross -- os=linux arch=riscv64
 task cross -- os=linux arch=loong64
@@ -219,7 +220,7 @@ task cross -- os=linux arch=mips64
 
 `task build` writes `bin/librevita`; `task dev` writes `bin/librevita-dev`. Cross builds write names such as `bin/librevita-linux-riscv64`. Every Go command uses the pinned toolchain with `CGO_ENABLED=0` (static binaries). `task gen` is a dependency of build, test, and vet; it also writes generated sources for the editor. Incremental work comes from the Go cache, the npm cache, and Taskfile `sources`/`generates` gates.
 
-Pinned tools (templ, golangci-lint, govulncheck) install into `.tools/bin` from the bare Go toolchain (`task tools`), independent of application modules. `task frontend` runs `npm ci`, type-check, Tailwind, and esbuild, each gated on its own inputs.
+Pinned tools (templ, golangci-lint, govulncheck, osv-scanner, gitleaks, actionlint) install into `.tools/bin` from the bare Go toolchain (`task tools` / `task tools-osv` / `task tools-gitleaks` / `task tools-actionlint`), independent of application modules. hadolint and zizmor are pinned GitHub release binaries (`task tools-hadolint`, `task tools-zizmor`) with SHA-256 checks. `task frontend` runs `npm ci`, type-check, Tailwind, and esbuild, each gated on its own inputs.
 
 ## Frontend and supported browsers
 

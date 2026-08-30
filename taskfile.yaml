@@ -30,6 +30,29 @@ vars:
   GOLANGCI_VERSION: v2.12.2
   GOVULN_VERSION: v1.1.4
   MOCKERY_VERSION: v2.53.6
+  OSV_VERSION: v2.5.1
+  GITLEAKS_VERSION: v8.29.1
+  ACTIONLINT_VERSION: v1.7.9
+  HADOLINT_VERSION: v2.14.0
+  ZIZMOR_VERSION: 1.29.0
+  # SHA-256 of GitHub release binaries/archives (not the inner payload of
+  # a tarball). Bump together with HADOLINT_VERSION / ZIZMOR_VERSION.
+  HADOLINT_SHA256_LINUX_AMD64: 6bf226944684f56c84dd014e8b979d27425c0148f61b3bd99bcc6f39e9dc5a47
+  HADOLINT_SHA256_LINUX_ARM64: 331f1d3511b84a4f1e3d18d52fec284723e4019552f4f47b19322a53ce9a40ed
+  HADOLINT_SHA256_DARWIN_AMD64: 2b69a853433f1eca522ffb921cd490bd1321424d03331fd8390f93b7fb4a02e9
+  HADOLINT_SHA256_DARWIN_ARM64: 3625e2e9f43dcfe7bd38738a5f5520ed50ce39ed28485266e6803dd7bc197b10
+  ZIZMOR_SHA256_LINUX_AMD64: dd96df044a6e8538d5f423790f453bdd03d49e5b2bcc38214acc41a2f1297839
+  ZIZMOR_SHA256_LINUX_ARM64: 415eaa7c0a06479a701b8e44a3e812c1047decc848ec4bede7bd6bbf49f22d20
+  ZIZMOR_SHA256_DARWIN_AMD64: 648b72ab9941a7f2a8d65d7b68a8e76cef789538c8df3a3950384d38423375b0
+  ZIZMOR_SHA256_DARWIN_ARM64: 720322fade9e83a9c7953944c438f2ba942636b86b96a8f0e6b15ce94c8a6b6f
+  # Progressive quality floors (same idea as cyclop max-complexity: 19).
+  # Lower these as findings are cleared: error → warning → info → style
+  # (hadolint) / high → medium → low → informational (zizmor).
+  HADOLINT_FAILURE_THRESHOLD: style
+  ZIZMOR_MIN_SEVERITY: low
+  # regular hides low-severity pedantic audits (template-injection on
+  # github.repository, undocumented-permissions, concurrency-limits).
+  ZIZMOR_PERSONA: pedantic
 tasks:
   # ------------------------------------------------------------------------
   # Tools and generated sources
@@ -56,6 +79,95 @@ tasks:
       - .tools/bin/golangci-lint
       - .tools/bin/govulncheck
       - .tools/bin/mockery
+  # OSV-Scanner is a Go tool like the ones above, but it is a large compile
+  # and is only needed by `osv-scan`, so it stays off the `tools` path that
+  # `go-lint` already depends on.
+  tools-osv:
+    desc: Install the pinned OSV-Scanner into .tools/bin
+    cmds:
+      - 'GOBIN={{.ROOT_DIR}}/.tools/bin go install github.com/google/osv-scanner/v2/cmd/osv-scanner@{{.OSV_VERSION}}'
+    sources:
+      - taskfile.yaml
+    generates:
+      - .tools/bin/osv-scanner
+  # gitleaks and actionlint are Go tools like OSV-Scanner; they stay off
+  # the `tools` path so `go-lint` does not wait on them.
+  tools-gitleaks:
+    desc: Install the pinned gitleaks CLI into .tools/bin
+    cmds:
+      - 'GOBIN={{.ROOT_DIR}}/.tools/bin go install github.com/zricethezav/gitleaks/v8@{{.GITLEAKS_VERSION}}'
+    sources:
+      - taskfile.yaml
+    generates:
+      - .tools/bin/gitleaks
+  tools-actionlint:
+    desc: Install the pinned actionlint CLI into .tools/bin
+    cmds:
+      - 'GOBIN={{.ROOT_DIR}}/.tools/bin go install github.com/rhysd/actionlint/cmd/actionlint@{{.ACTIONLINT_VERSION}}'
+    sources:
+      - taskfile.yaml
+    generates:
+      - .tools/bin/actionlint
+  # hadolint is Haskell and zizmor is Rust: there is no `go install`.
+  # Release binaries/archives are fetched over HTTPS and checked against
+  # the SHA-256 pins above (linux/darwin, amd64/arm64). curl is required.
+  tools-hadolint:
+    desc: Install the pinned hadolint CLI into .tools/bin
+    cmds:
+      - mkdir -p {{.ROOT_DIR}}/.tools/bin
+      - |
+        set -euo pipefail
+        case "{{OS}}-{{ARCH}}" in
+          linux-amd64)  target=linux-x86_64; sha={{.HADOLINT_SHA256_LINUX_AMD64}} ;;
+          linux-arm64)  target=linux-arm64; sha={{.HADOLINT_SHA256_LINUX_ARM64}} ;;
+          darwin-amd64) target=macos-x86_64; sha={{.HADOLINT_SHA256_DARWIN_AMD64}} ;;
+          darwin-arm64) target=macos-arm64; sha={{.HADOLINT_SHA256_DARWIN_ARM64}} ;;
+          *) echo "unsupported {{OS}}/{{ARCH}} for hadolint" >&2; exit 1 ;;
+        esac
+        tmp=$(mktemp -d)
+        trap 'rm -rf "$tmp"' EXIT
+        bin="$tmp/hadolint"
+        curl -fsSL -o "$bin" "https://github.com/hadolint/hadolint/releases/download/{{.HADOLINT_VERSION}}/hadolint-${target}"
+        if command -v sha256sum >/dev/null 2>&1; then
+          echo "$sha  $bin" | sha256sum -c -
+        else
+          actual=$(shasum -a 256 "$bin" | awk '{print $1}')
+          [ "$actual" = "$sha" ]
+        fi
+        install -m 755 "$bin" "{{.ROOT_DIR}}/.tools/bin/hadolint"
+    sources:
+      - taskfile.yaml
+    generates:
+      - .tools/bin/hadolint
+  tools-zizmor:
+    desc: Install the pinned zizmor CLI into .tools/bin
+    cmds:
+      - mkdir -p {{.ROOT_DIR}}/.tools/bin
+      - |
+        set -euo pipefail
+        case "{{OS}}-{{ARCH}}" in
+          linux-amd64)  target=x86_64-unknown-linux-gnu; sha={{.ZIZMOR_SHA256_LINUX_AMD64}} ;;
+          linux-arm64)  target=aarch64-unknown-linux-gnu; sha={{.ZIZMOR_SHA256_LINUX_ARM64}} ;;
+          darwin-amd64) target=x86_64-apple-darwin; sha={{.ZIZMOR_SHA256_DARWIN_AMD64}} ;;
+          darwin-arm64) target=aarch64-apple-darwin; sha={{.ZIZMOR_SHA256_DARWIN_ARM64}} ;;
+          *) echo "unsupported {{OS}}/{{ARCH}} for zizmor" >&2; exit 1 ;;
+        esac
+        tmp=$(mktemp -d)
+        trap 'rm -rf "$tmp"' EXIT
+        archive="$tmp/zizmor.tar.gz"
+        curl -fsSL -o "$archive" "https://github.com/zizmorcore/zizmor/releases/download/v{{.ZIZMOR_VERSION}}/zizmor-${target}.tar.gz"
+        if command -v sha256sum >/dev/null 2>&1; then
+          echo "$sha  $archive" | sha256sum -c -
+        else
+          actual=$(shasum -a 256 "$archive" | awk '{print $1}')
+          [ "$actual" = "$sha" ]
+        fi
+        tar -xzf "$archive" -C "$tmp"
+        install -m 755 "$tmp/zizmor" "{{.ROOT_DIR}}/.tools/bin/zizmor"
+    sources:
+      - taskfile.yaml
+    generates:
+      - .tools/bin/zizmor
   # Generated Ent entities and versioned migration helpers. The bootstrap
   # file seeds the target package so `ent generate` can resolve the ent
   # package path on a clean checkout (ent/ is not tracked).
@@ -278,7 +390,56 @@ tasks:
     deps:
       - node-deps
     cmds:
-      - npm audit --audit-level=high
+      - npm audit --audit-level=low
+  # Lockfile scan against OSV.dev (Go + npm). Go call analysis is on by
+  # default and needs generated sources the same way govulncheck source
+  # mode does; npm has no call graph, so every advisory in
+  # package-lock.json is reported. --all-vulns is the progressive cap
+  # (uncalled and unimportant advisories fail too); scan still has no
+  # CVSS fail floor, so remaining exceptions stay in osv-scanner.toml.
+  osv-scan:
+    desc: Scan go.mod and package-lock.json against the OSV database
+    deps:
+      - tools-osv
+      - gen
+      - frontend
+    cmds:
+      - 'PATH={{.ROOT_DIR}}/.tools/bin:$PATH osv-scanner scan source --all-vulns --lockfile=go.mod --lockfile=package-lock.json'
+  # Dockerfile linter. --failure-threshold matches cyclop: findings
+  # below the cap are still printed but do not fail the gate.
+  hadolint:
+    desc: Lint the Dockerfile with hadolint
+    deps:
+      - tools-hadolint
+    cmds:
+      - 'PATH={{.ROOT_DIR}}/.tools/bin:$PATH hadolint --failure-threshold {{.HADOLINT_FAILURE_THRESHOLD}} Dockerfile'
+  # Secret scan of the git history available in the clone (full locally;
+  # the scanners CI job fetches all commits). Config: .gitleaks.toml.
+  # Git mode skips .gitignore paths such as a local .env.
+  gitleaks:
+    desc: 'Scan git history for secrets (config: .gitleaks.toml)'
+    deps:
+      - tools-gitleaks
+    cmds:
+      - 'PATH={{.ROOT_DIR}}/.tools/bin:$PATH gitleaks git {{.ROOT_DIR}} --config={{.ROOT_DIR}}/.gitleaks.toml --no-banner'
+  # GitHub Actions workflow linter (syntax and expressions). Complements
+  # zizmor, which flags security findings and workflow code smells.
+  actionlint:
+    desc: Lint GitHub Actions workflows with actionlint
+    deps:
+      - tools-actionlint
+    cmds:
+      - 'PATH={{.ROOT_DIR}}/.tools/bin:$PATH actionlint'
+  # Workflow security and code smells (persona pedantic). Online audits
+  # (impostor commits, unpinned actions that need the API) run when
+  # GH_TOKEN or GITHUB_TOKEN is set; otherwise only offline audits run.
+  # --min-severity matches cyclop: findings below the cap are omitted.
+  zizmor:
+    desc: Lint GitHub Actions workflows with zizmor (security and code smells)
+    deps:
+      - tools-zizmor
+    cmds:
+      - 'PATH={{.ROOT_DIR}}/.tools/bin:$PATH zizmor --persona={{.ZIZMOR_PERSONA}} --min-severity={{.ZIZMOR_MIN_SEVERITY}} .'
   # ------------------------------------------------------------------------
   # Public targets
   # ------------------------------------------------------------------------
@@ -294,17 +455,22 @@ tasks:
     deps:
       - go-vet
   lint:
-    desc: Run golangci-lint against generated sources
+    desc: Run golangci-lint, hadolint, actionlint, and zizmor
     deps:
       - go-lint
-  # Security audits: the Go module scan (govulncheck), the binary scan
-  # and the npm audit.
+      - hadolint
+      - actionlint
+      - zizmor
+  # Security audits: the Go module scan (govulncheck), the binary scan,
+  # npm audit, OSV-Scanner, and gitleaks.
   audit:
-    desc: Security audits (Go source, Go binary, npm)
+    desc: Security audits (Go source, Go binary, npm, OSV, gitleaks)
     deps:
       - go-vuln-source
       - go-vuln-binary
       - node-audit
+      - osv-scan
+      - gitleaks
   # Build the application binary: stripped production build writing
   # bin/NAME.
   build:

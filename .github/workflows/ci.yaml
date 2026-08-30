@@ -3,6 +3,9 @@ on:
   push:
     branches: [master]
   pull_request:
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 env:
@@ -14,8 +17,10 @@ jobs:
     env:
       CGO_ENABLED: '0'
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           # Same version as the Taskfile's GO_VERSION var.
           go-version: 1.26.6
@@ -23,7 +28,7 @@ jobs:
       # The Go tasks depend on the frontend build (embedded assets), so
       # npm must run on the pinned Node like the node job — the runner's
       # system Node is not a supported version.
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           # Same version as .nvmrc.
           node-version: 24.19.0
@@ -31,22 +36,24 @@ jobs:
       # installed through the Go toolchain so setup-go's cache covers it.
       - name: Install Task
         run: go install github.com/go-task/task/v3/cmd/task@v3.52.0
-      # The pinned tools (templ, golangci-lint, govulncheck) live
-      # in .tools/bin; the key changes whenever the Taskfile's version
+      # The pinned Go tools (templ, golangci-lint, govulncheck, mockery)
+      # live in .tools/bin; the key changes whenever the Taskfile's version
       # pins change. PRs from forks read the base branch's cache only.
       - name: Cache pinned Go tools
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: .tools/bin
           key: go-tools-${{ hashFiles('taskfile.yaml') }}
       - name: Regenerate sources
         run: task gen
       # Go-only gate: the npm consumers (node-test, node-audit) run on
-      # the node job with the pinned Node 24 (LTS); the frontend build that
-      # the Go tasks depend on works with any modern Node on the runner.
+      # the node job with the pinned Node 24 (LTS); OSV-Scanner,
+      # gitleaks, hadolint, actionlint, and zizmor run on the scanners
+      # job. The frontend build that the Go tasks depend on works with
+      # any modern Node on the runner.
       - name: Gate
         run: task go-test go-vet go-lint go-vuln-source go-vuln-binary build
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: binary
           path: bin/librevita
@@ -55,8 +62,10 @@ jobs:
     name: Node (check, assets, test, audit)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           # Same version as .nvmrc.
           node-version: 24.19.0
@@ -65,17 +74,51 @@ jobs:
       - run: npm run check
       - run: npm run assets
       - run: npm test
-      - run: npm audit --audit-level=high
+      - run: npm audit --audit-level=low
+  scanners:
+    name: Scanners (OSV, gitleaks, hadolint, actionlint, zizmor)
+    runs-on: ubuntu-24.04
+    env:
+      CGO_ENABLED: '0'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # Full history: gitleaks git scans every commit in the clone.
+          fetch-depth: 0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: 1.26.6
+          cache: true
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 24.19.0
+          cache: npm
+      - name: Install Task
+        run: go install github.com/go-task/task/v3/cmd/task@v3.52.0
+      - name: Cache pinned tools
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: .tools/bin
+          key: scanners-${{ hashFiles('taskfile.yaml') }}
+      # osv-scan runs Go call analysis, so generated sources and the
+      # frontend embed must exist. The other scanners do not need them.
+      - name: Gate
+        run: task osv-scan gitleaks hadolint actionlint zizmor
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
   image:
     name: OCI image
     needs: go
     runs-on: ubuntu-24.04
     permissions:
       contents: read
-      packages: write
+      packages: write # Push the validated image to GHCR on master.
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: binary
           path: bin/
@@ -85,9 +128,14 @@ jobs:
         run: docker build -t librevita:ci -f Dockerfile .
       - name: Login to GHCR
         if: github.ref == 'refs/heads/master'
-        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_USER: ${{ github.actor }}
+        run: echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
       - name: Push image
         if: github.ref == 'refs/heads/master'
+        env:
+          IMAGE_NAME: ghcr.io/${{ github.repository }}
         run: |
-          docker tag librevita:ci ghcr.io/${{ github.repository }}:latest
-          docker push ghcr.io/${{ github.repository }}:latest
+          docker tag librevita:ci "${IMAGE_NAME}:latest"
+          docker push "${IMAGE_NAME}:latest"

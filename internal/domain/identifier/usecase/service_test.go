@@ -21,7 +21,7 @@ import (
 var (
 	testClinicID = uuid.MustParse("00000000-0000-0000-0000-000000000001")
 	testUserID   = uuid.MustParse("00000000-0000-0000-0000-000000000002")
-	testKeyB64   = "nAmIvOXVc0vb6M9G7P9q2j2yK1WxP3sJ8q5dR4tU6wA="
+	testKeyB64   = "nAmIvOXVc0vb6M9G7P9q2j2yK1WxP3sJ8q5dR4tU6wA=" // gitleaks:allow
 )
 
 func defaultTestSystems() []*identifiermodel.IdentifierSystem {
