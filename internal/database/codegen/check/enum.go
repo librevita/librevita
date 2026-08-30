@@ -15,83 +15,92 @@ import (
 // snake_case naming aligned with the table name (e.g., "staff_change_requests_status_check").
 func InjectEnumChecks(schemas []*load.Schema) error {
 	annKey := entsql.Annotation{}.Name()
-
 	for _, s := range schemas {
 		tblName := tableName(s)
 		tableChecks := make(map[string]string)
-
 		for _, f := range s.Fields {
-			if f.Info == nil || f.Info.Type != field.TypeEnum || len(f.Enums) == 0 {
+			name, expr, ok := enumCheckForField(f, tblName, annKey)
+			if !ok {
 				continue
 			}
-
-			colName := f.StorageKey
-			if colName == "" {
-				colName = f.Name
-			}
-
-			quotedVals := make([]string, 0, len(f.Enums))
-			for _, e := range f.Enums {
-				val := e.V
-				if val == "" {
-					val = e.N
-				}
-				quotedVals = append(quotedVals, fmt.Sprintf("'%s'", val))
-			}
-
-			checkExpr := fmt.Sprintf("%s IN (%s)", colName, strings.Join(quotedVals, ", "))
-			checkName := fmt.Sprintf("%s_%s_check", tblName, colName)
-			tableChecks[checkName] = checkExpr
-
-			// Also set on field level
-			if f.Annotations == nil {
-				f.Annotations = make(map[string]any)
-			}
-			f.Annotations[annKey] = entsql.Annotation{
-				Check: checkExpr,
-			}
+			tableChecks[name] = expr
 		}
-
 		if len(tableChecks) > 0 {
-			if s.Annotations == nil {
-				s.Annotations = make(map[string]any)
-			}
-			if existing, ok := s.Annotations[annKey]; ok {
-				if ann, ok := existing.(entsql.Annotation); ok {
-					if ann.Checks == nil {
-						ann.Checks = make(map[string]string)
-					}
-					for k, v := range tableChecks {
-						ann.Checks[k] = v
-					}
-					s.Annotations[annKey] = ann
-				} else if annPtr, ok := existing.(*entsql.Annotation); ok {
-					if annPtr.Checks == nil {
-						annPtr.Checks = make(map[string]string)
-					}
-					for k, v := range tableChecks {
-						annPtr.Checks[k] = v
-					}
-				} else if annMap, ok := existing.(map[string]any); ok {
-					var checks map[string]any
-					if chk, ok := annMap["checks"].(map[string]any); ok {
-						checks = chk
-					} else {
-						checks = make(map[string]any)
-						annMap["checks"] = checks
-					}
-					for k, v := range tableChecks {
-						checks[k] = v
-					}
-				}
-			} else {
-				s.Annotations[annKey] = entsql.Annotation{
-					Checks: tableChecks,
-				}
-			}
+			mergeTableChecks(s, annKey, tableChecks)
 		}
 	}
 	return nil
+}
+
+func enumCheckForField(f *load.Field, tblName, annKey string) (string, string, bool) {
+	if f.Info == nil || f.Info.Type != field.TypeEnum || len(f.Enums) == 0 {
+		return "", "", false
+	}
+	colName := f.StorageKey
+	if colName == "" {
+		colName = f.Name
+	}
+	quotedVals := make([]string, 0, len(f.Enums))
+	for _, e := range f.Enums {
+		val := e.V
+		if val == "" {
+			val = e.N
+		}
+		quotedVals = append(quotedVals, fmt.Sprintf("'%s'", val))
+	}
+	checkExpr := fmt.Sprintf("%s IN (%s)", colName, strings.Join(quotedVals, ", "))
+	if f.Annotations == nil {
+		f.Annotations = make(map[string]any)
+	}
+	f.Annotations[annKey] = entsql.Annotation{Check: checkExpr}
+	return fmt.Sprintf("%s_%s_check", tblName, colName), checkExpr, true
+}
+
+func mergeTableChecks(s *load.Schema, annKey string, tableChecks map[string]string) {
+	if s.Annotations == nil {
+		s.Annotations = make(map[string]any)
+	}
+	existing, ok := s.Annotations[annKey]
+	if !ok {
+		s.Annotations[annKey] = entsql.Annotation{Checks: tableChecks}
+		return
+	}
+	mergeExistingChecks(s, annKey, existing, tableChecks)
+}
+
+func mergeExistingChecks(s *load.Schema, annKey string, existing any, tableChecks map[string]string) {
+	if ann, ok := existing.(entsql.Annotation); ok {
+		mergeAnnotationChecks(&ann, tableChecks)
+		s.Annotations[annKey] = ann
+		return
+	}
+	if annPtr, ok := existing.(*entsql.Annotation); ok {
+		mergeAnnotationChecks(annPtr, tableChecks)
+		return
+	}
+	if annMap, ok := existing.(map[string]any); ok {
+		mergeMapChecks(annMap, tableChecks)
+	}
+}
+
+func mergeAnnotationChecks(ann *entsql.Annotation, tableChecks map[string]string) {
+	if ann.Checks == nil {
+		ann.Checks = make(map[string]string)
+	}
+	for k, v := range tableChecks {
+		ann.Checks[k] = v
+	}
+}
+
+func mergeMapChecks(annMap map[string]any, tableChecks map[string]string) {
+	checks, ok := annMap["checks"].(map[string]any)
+	if !ok {
+		checks = make(map[string]any)
+		annMap["checks"] = checks
+	}
+	for k, v := range tableChecks {
+		checks[k] = v
+	}
 }
 
 func tableName(s *load.Schema) string {

@@ -278,83 +278,108 @@ func replaceChildren(ctx context.Context, tx *ent.Tx, ep episodemodel.Episode) e
 		return errors.Wrap(err, "episode repository: clear plan items")
 	}
 	for _, f := range ep.Findings {
-		c := tx.Finding.Create().
-			SetID(f.ID).
-			SetClinicID(ep.ClinicID).
-			SetPatientID(ep.PatientID).
-			SetEpisodeID(ep.ID).
-			SetStatus(finding.Status(f.Status)).
-			SetValueKind(finding.ValueKind(f.Value.Kind)).
-			SetEffectiveAt(f.EffectiveAt).
-			SetCodeSystem(f.Code.System).
-			SetCode(f.Code.Code).
-			SetDisplay(f.Code.Display)
-		switch f.Value.Kind {
-		case episodemodel.FindingValueQuantity:
-			if f.Value.Quantity != nil {
-				c.SetValueNumber(strconv.FormatFloat(f.Value.Quantity.Value, 'G', -1, 64))
-				c.SetValueUnit(f.Value.Quantity.Unit)
-				c.SetValueUcum(f.Value.Quantity.Code)
-			}
-		case episodemodel.FindingValueString:
-			c.SetValueText(f.Value.String)
-		case episodemodel.FindingValueBoolean:
-			if f.Value.Boolean != nil && *f.Value.Boolean {
-				c.SetValueBool("true")
-			} else {
-				c.SetValueBool("false")
-			}
-		case episodemodel.FindingValueCoded:
-			if f.Value.Coded != nil {
-				c.SetValueCodedSystem(f.Value.Coded.System)
-				c.SetValueCodedCode(f.Value.Coded.Code)
-				c.SetValueCodedDisplay(f.Value.Coded.Display)
-			}
-		}
-		if _, err := c.Save(ctx); err != nil {
-			return errors.Wrap(err, "episode repository: create finding")
+		if err := insertFinding(ctx, tx, ep, f); err != nil {
+			return err
 		}
 	}
 	for _, p := range ep.Problems {
-		c := tx.Problem.Create().
-			SetID(p.ID).
-			SetClinicID(ep.ClinicID).
-			SetPatientID(ep.PatientID).
-			SetEpisodeID(ep.ID).
-			SetClinicalStatus(problem.ClinicalStatus(p.ClinicalStatus)).
-			SetVerificationStatus(problem.VerificationStatus(p.VerificationStatus)).
-			SetCategory(problem.Category(p.Category)).
-			SetRank(p.Rank).
-			SetCodeSystem(p.Code.System).
-			SetCode(p.Code.Code).
-			SetDisplay(p.Code.Display)
-		if p.Text != "" {
-			c.SetText(p.Text)
-		}
-		if _, err := c.Save(ctx); err != nil {
-			return errors.Wrap(err, "episode repository: create problem")
+		if err := insertProblem(ctx, tx, ep, p); err != nil {
+			return err
 		}
 	}
 	for _, item := range ep.PlanItems {
-		c := tx.PlanItem.Create().
-			SetID(item.ID).
-			SetClinicID(ep.ClinicID).
-			SetPatientID(ep.PatientID).
-			SetEpisodeID(ep.ID).
-			SetKind(planitem.Kind(item.Kind)).
-			SetStatus(planitem.Status(item.Status)).
-			SetCodeSystem(item.Code.System).
-			SetCode(item.Code.Code).
-			SetDisplay(item.Code.Display)
-		if item.Description != "" {
-			c.SetDescription(item.Description)
+		if err := insertPlanItem(ctx, tx, ep, item); err != nil {
+			return err
 		}
-		if item.ScheduledAt != nil {
-			c.SetScheduledAt(*item.ScheduledAt)
+	}
+	return nil
+}
+
+func insertFinding(ctx context.Context, tx *ent.Tx, ep episodemodel.Episode, f episodemodel.Finding) error {
+	c := tx.Finding.Create().
+		SetID(f.ID).
+		SetClinicID(ep.ClinicID).
+		SetPatientID(ep.PatientID).
+		SetEpisodeID(ep.ID).
+		SetStatus(finding.Status(f.Status)).
+		SetValueKind(finding.ValueKind(f.Value.Kind)).
+		SetEffectiveAt(f.EffectiveAt).
+		SetCodeSystem(f.Code.System).
+		SetCode(f.Code.Code).
+		SetDisplay(f.Code.Display)
+	applyFindingValue(c, f)
+	if _, err := c.Save(ctx); err != nil {
+		return errors.Wrap(err, "episode repository: create finding")
+	}
+	return nil
+}
+
+func applyFindingValue(c *ent.FindingCreate, f episodemodel.Finding) {
+	switch f.Value.Kind {
+	case episodemodel.FindingValueQuantity:
+		if f.Value.Quantity != nil {
+			c.SetValueNumber(strconv.FormatFloat(f.Value.Quantity.Value, 'G', -1, 64))
+			c.SetValueUnit(f.Value.Quantity.Unit)
+			c.SetValueUcum(f.Value.Quantity.Code)
 		}
-		if _, err := c.Save(ctx); err != nil {
-			return errors.Wrap(err, "episode repository: create plan item")
+	case episodemodel.FindingValueString:
+		c.SetValueText(f.Value.String)
+	case episodemodel.FindingValueBoolean:
+		if f.Value.Boolean != nil && *f.Value.Boolean {
+			c.SetValueBool("true")
+		} else {
+			c.SetValueBool("false")
 		}
+	case episodemodel.FindingValueCoded:
+		if f.Value.Coded != nil {
+			c.SetValueCodedSystem(f.Value.Coded.System)
+			c.SetValueCodedCode(f.Value.Coded.Code)
+			c.SetValueCodedDisplay(f.Value.Coded.Display)
+		}
+	}
+}
+
+func insertProblem(ctx context.Context, tx *ent.Tx, ep episodemodel.Episode, p episodemodel.Problem) error {
+	c := tx.Problem.Create().
+		SetID(p.ID).
+		SetClinicID(ep.ClinicID).
+		SetPatientID(ep.PatientID).
+		SetEpisodeID(ep.ID).
+		SetClinicalStatus(problem.ClinicalStatus(p.ClinicalStatus)).
+		SetVerificationStatus(problem.VerificationStatus(p.VerificationStatus)).
+		SetCategory(problem.Category(p.Category)).
+		SetRank(p.Rank).
+		SetCodeSystem(p.Code.System).
+		SetCode(p.Code.Code).
+		SetDisplay(p.Code.Display)
+	if p.Text != "" {
+		c.SetText(p.Text)
+	}
+	if _, err := c.Save(ctx); err != nil {
+		return errors.Wrap(err, "episode repository: create problem")
+	}
+	return nil
+}
+
+func insertPlanItem(ctx context.Context, tx *ent.Tx, ep episodemodel.Episode, item episodemodel.PlanItem) error {
+	c := tx.PlanItem.Create().
+		SetID(item.ID).
+		SetClinicID(ep.ClinicID).
+		SetPatientID(ep.PatientID).
+		SetEpisodeID(ep.ID).
+		SetKind(planitem.Kind(item.Kind)).
+		SetStatus(planitem.Status(item.Status)).
+		SetCodeSystem(item.Code.System).
+		SetCode(item.Code.Code).
+		SetDisplay(item.Code.Display)
+	if item.Description != "" {
+		c.SetDescription(item.Description)
+	}
+	if item.ScheduledAt != nil {
+		c.SetScheduledAt(*item.ScheduledAt)
+	}
+	if _, err := c.Save(ctx); err != nil {
+		return errors.Wrap(err, "episode repository: create plan item")
 	}
 	return nil
 }

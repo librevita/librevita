@@ -59,16 +59,61 @@ func (r *setupRepository) Onboard(ctx context.Context, admin *usermodel.User, sy
 		}
 	}()
 
-	row, err := tx.Clinic.Get(ctx, clinicID)
+	user, err := r.onboardTx(ctx, tx, clinicID, admin, systemIDs)
 	if err != nil {
 		_ = tx.Rollback()
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, errors.Wrap(err, "setup repository: commit onboard")
+	}
+	return user, nil
+}
+
+func (r *setupRepository) onboardTx(ctx context.Context, tx *ent.Tx, clinicID uuid.UUID, admin *usermodel.User, systemIDs []uuid.UUID) (*usermodel.User, error) {
+	row, err := tx.Clinic.Get(ctx, clinicID)
+	if err != nil {
 		return nil, errors.Wrap(err, "setup repository: load clinic")
 	}
 	if row.OnboardedAt != nil && !row.OnboardedAt.IsZero() {
-		_ = tx.Rollback()
 		return nil, usermodel.ErrAlreadyOnboarded
 	}
 
+	adminRoleID, err := seedRoles(ctx, tx, clinicID)
+	if err != nil {
+		return nil, err
+	}
+	if err := seedPolicies(ctx, tx, clinicID); err != nil {
+		return nil, err
+	}
+	if err := optInIdentifierSystems(ctx, tx, clinicID, systemIDs); err != nil {
+		return nil, err
+	}
+
+	createdUser, err := tx.User.Create().
+		SetID(admin.ID).
+		SetClinicID(clinicID).
+		SetEmail(admin.Email).
+		SetPasswordHash(admin.PasswordHash).
+		SetDisplayName(admin.DisplayName).
+		SetRoleID(adminRoleID).
+		SetActive(admin.Active).
+		Save(ctx)
+	if err != nil {
+		if ent.IsConstraintError(err) {
+			return nil, usermodel.ErrEmailTaken
+		}
+		return nil, errors.Wrap(err, "setup repository: create admin")
+	}
+
+	now := time.Now().UTC()
+	if err := tx.Clinic.UpdateOneID(clinicID).SetOnboardedAt(now).Exec(ctx); err != nil {
+		return nil, errors.Wrap(err, "setup repository: mark onboarded")
+	}
+	return toUserDomain(createdUser, "admin"), nil
+}
+
+func seedRoles(ctx context.Context, tx *ent.Tx, clinicID uuid.UUID) (uuid.UUID, error) {
 	roles := []struct {
 		name     string
 		clinical bool
@@ -82,8 +127,7 @@ func (r *setupRepository) Onboard(ctx context.Context, admin *usermodel.User, sy
 	for _, rl := range roles {
 		id, err := uuid.NewV7()
 		if err != nil {
-			_ = tx.Rollback()
-			return nil, err
+			return uuid.Nil, err
 		}
 		created, err := tx.Role.Create().
 			SetID(id).
@@ -93,19 +137,20 @@ func (r *setupRepository) Onboard(ctx context.Context, admin *usermodel.User, sy
 			SetIsClinical(rl.clinical).
 			Save(ctx)
 		if err != nil {
-			_ = tx.Rollback()
-			return nil, errors.Wrapf(err, "setup repository: seed role %q", rl.name)
+			return uuid.Nil, errors.Wrapf(err, "setup repository: seed role %q", rl.name)
 		}
 		if rl.name == "admin" {
 			adminRoleID = created.ID
 		}
 	}
+	return adminRoleID, nil
+}
 
+func seedPolicies(ctx context.Context, tx *ent.Tx, clinicID uuid.UUID) error {
 	for name, expr := range policy.DefaultPolicies {
 		pID, err := uuid.NewV7()
 		if err != nil {
-			_ = tx.Rollback()
-			return nil, err
+			return err
 		}
 		pol, err := tx.AccessPolicy.Create().
 			SetID(pID).
@@ -114,24 +159,24 @@ func (r *setupRepository) Onboard(ctx context.Context, admin *usermodel.User, sy
 			SetExpression(expr).
 			Save(ctx)
 		if err != nil {
-			_ = tx.Rollback()
-			return nil, errors.Wrapf(err, "setup repository: seed policy %q", name)
+			return errors.Wrapf(err, "setup repository: seed policy %q", name)
 		}
 		if _, err := tx.AccessPolicyVersion.Create().
 			SetPolicyID(pol.ID).
 			SetExpression(expr).
 			SetOrigin(accesspolicyversion.OriginSeed).
 			Save(ctx); err != nil {
-			_ = tx.Rollback()
-			return nil, errors.Wrapf(err, "setup repository: seed policy version %q", name)
+			return errors.Wrapf(err, "setup repository: seed policy version %q", name)
 		}
 	}
+	return nil
+}
 
+func optInIdentifierSystems(ctx context.Context, tx *ent.Tx, clinicID uuid.UUID, systemIDs []uuid.UUID) error {
 	if len(systemIDs) == 0 {
 		active, err := tx.IdentifierSystem.Query().Where(identifiersystem.ActiveEQ(true)).All(ctx)
 		if err != nil {
-			_ = tx.Rollback()
-			return nil, errors.Wrap(err, "setup repository: list identifier systems")
+			return errors.Wrap(err, "setup repository: list identifier systems")
 		}
 		for _, sys := range active {
 			systemIDs = append(systemIDs, sys.ID)
@@ -140,45 +185,15 @@ func (r *setupRepository) Onboard(ctx context.Context, admin *usermodel.User, sy
 	for _, sysID := range systemIDs {
 		optID, err := uuid.NewV7()
 		if err != nil {
-			_ = tx.Rollback()
-			return nil, err
+			return err
 		}
 		if err := tx.ClinicIdentifierSystem.Create().
 			SetID(optID).
 			SetClinicID(clinicID).
 			SetIdentifierSystemID(sysID).
 			Exec(ctx); err != nil && !ent.IsConstraintError(err) {
-			_ = tx.Rollback()
-			return nil, errors.Wrap(err, "setup repository: identifier opt-in")
+			return errors.Wrap(err, "setup repository: identifier opt-in")
 		}
 	}
-
-	createdUser, err := tx.User.Create().
-		SetID(admin.ID).
-		SetClinicID(clinicID).
-		SetEmail(admin.Email).
-		SetPasswordHash(admin.PasswordHash).
-		SetDisplayName(admin.DisplayName).
-		SetRoleID(adminRoleID).
-		SetActive(admin.Active).
-		Save(ctx)
-	if err != nil {
-		_ = tx.Rollback()
-		if ent.IsConstraintError(err) {
-			return nil, usermodel.ErrEmailTaken
-		}
-		return nil, errors.Wrap(err, "setup repository: create admin")
-	}
-
-	now := time.Now().UTC()
-	if err := tx.Clinic.UpdateOneID(clinicID).SetOnboardedAt(now).Exec(ctx); err != nil {
-		_ = tx.Rollback()
-		return nil, errors.Wrap(err, "setup repository: mark onboarded")
-	}
-
-	if err := tx.Commit(); err != nil {
-		return nil, errors.Wrap(err, "setup repository: commit onboard")
-	}
-
-	return toUserDomain(createdUser, "admin"), nil
+	return nil
 }

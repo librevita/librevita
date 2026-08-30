@@ -43,6 +43,28 @@ func (e Episode) CanAmend() bool {
 
 // Validate reports structural problems on the aggregate (enums, ranks).
 func (e Episode) Validate() error {
+	if err := e.validateHeader(); err != nil {
+		return err
+	}
+	for _, f := range e.Findings {
+		if err := validateFinding(f); err != nil {
+			return err
+		}
+	}
+	for _, p := range e.Problems {
+		if err := validateProblem(p); err != nil {
+			return err
+		}
+	}
+	for _, item := range e.PlanItems {
+		if err := validatePlanItem(item); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (e Episode) validateHeader() error {
 	if e.ClinicID == uuid.Nil || e.PatientID == uuid.Nil || e.AuthorID == uuid.Nil {
 		return ErrInvalidSOAP
 	}
@@ -52,23 +74,29 @@ func (e Episode) Validate() error {
 	if e.OccurredAt.IsZero() {
 		return ErrInvalidSOAP
 	}
-	for _, f := range e.Findings {
-		if !f.Status.Valid() || !f.Value.Kind.Valid() || f.Code.Empty() {
-			return ErrInvalidSOAP
-		}
+	return nil
+}
+
+func validateFinding(f Finding) error {
+	if !f.Status.Valid() || !f.Value.Kind.Valid() || f.Code.Empty() {
+		return ErrInvalidSOAP
 	}
-	for _, p := range e.Problems {
-		if !p.ClinicalStatus.Valid() || !p.VerificationStatus.Valid() || !p.Category.Valid() {
-			return ErrInvalidSOAP
-		}
-		if p.Rank < 1 {
-			return ErrInvalidSOAP
-		}
+	return nil
+}
+
+func validateProblem(p Problem) error {
+	if !p.ClinicalStatus.Valid() || !p.VerificationStatus.Valid() || !p.Category.Valid() {
+		return ErrInvalidSOAP
 	}
-	for _, item := range e.PlanItems {
-		if !item.Kind.Valid() || !item.Status.Valid() {
-			return ErrInvalidSOAP
-		}
+	if p.Rank < 1 {
+		return ErrInvalidSOAP
+	}
+	return nil
+}
+
+func validatePlanItem(item PlanItem) error {
+	if !item.Kind.Valid() || !item.Status.Valid() {
+		return ErrInvalidSOAP
 	}
 	return nil
 }
