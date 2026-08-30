@@ -19,6 +19,7 @@ linters:
     - forbidigo
     - cyclop
     - gocognit
+    - maintidx
   settings:
     cyclop:
       # Reports functions whose cyclomatic complexity is greater than
@@ -30,6 +31,10 @@ linters:
       # value. Complementary to cyclop (nesting and compound booleans).
       # Cap is 20 (20+ fails).
       min-complexity: 20
+    maintidx:
+      # Reports functions whose maintainability index is under this
+      # value. 20 is standard (under 20 fails).
+      under: 20
     gosec:
       # G104 duplicates errcheck (which already allows the idiomatic
       # close/rollback defers via exclude-functions).
@@ -75,6 +80,7 @@ linters:
         linters:
           - cyclop
           - gocognit
+          - maintidx
 issues:
   exclude-files:
     - "**/*_templ.go"
