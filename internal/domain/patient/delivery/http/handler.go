@@ -18,6 +18,7 @@ import (
 	"librevita.org/internal/core/storage"
 	clinicmodel "librevita.org/internal/domain/clinic/model"
 	clinicusecase "librevita.org/internal/domain/clinic/usecase"
+	identifiermodel "librevita.org/internal/domain/identifier/model"
 	identifierusecase "librevita.org/internal/domain/identifier/usecase"
 	"librevita.org/internal/domain/patient/delivery/views"
 	patientmodel "librevita.org/internal/domain/patient/model"
@@ -78,48 +79,60 @@ func (h *Handler) List(c echo.Context) error {
 	if field == "" && rawField != "" && h.isSystemField(ctx, rawField) {
 		return h.documentLookup(c, rawField, q)
 	}
-	status := c.QueryParam("status")
-	if c.QueryParams().Has("status") {
-		if status == "active" || status == "inactive" {
-			// #nosec G124 -- non-sensitive UI patient status filter cookie
-			c.SetCookie(&http.Cookie{
-				Name:     patientStatusCookieName,
-				Value:    status,
-				Path:     "/",
-				SameSite: http.SameSiteLaxMode,
-				MaxAge:   31536000,
-			})
-		} else {
-			// #nosec G124 -- non-sensitive UI patient status filter cookie
-			c.SetCookie(&http.Cookie{
-				Name:     patientStatusCookieName,
-				Value:    "",
-				Path:     "/",
-				SameSite: http.SameSiteLaxMode,
-				MaxAge:   -1,
-			})
-		}
-	} else {
-		if cookie, err := c.Cookie(patientStatusCookieName); err == nil && cookie != nil {
-			if cookie.Value == "active" || cookie.Value == "inactive" {
-				status = cookie.Value
-			}
-		}
-	}
-	page := 1
-	if p := c.QueryParam("page"); p != "" {
-		if n, err := strconv.Atoi(p); err == nil && n > 0 {
-			page = n
-		}
-	}
+	status := persistStatusCookie(c)
+	page := parsePage(c)
 
 	patients, total, err := h.svc.ListPage(ctx, clinicID, q, field, status, patientListLimit, (page-1)*patientListLimit)
 	if err != nil {
 		return err
 	}
-	rows := h.rows(c.Request().Context(), patients)
+	rows := h.rows(ctx, patients)
 	pager := views.PatientPager{Q: q, Field: field, Status: status, Page: page, Total: total, Shown: int64(len(rows))}
+	return h.renderPatientList(c, q, field, status, rows, pager)
+}
 
+func persistStatusCookie(c echo.Context) string {
+	status := c.QueryParam("status")
+	if c.QueryParams().Has("status") {
+		writeStatusCookie(c, status)
+		return status
+	}
+	cookie, err := c.Cookie(patientStatusCookieName)
+	if err == nil && cookie != nil && (cookie.Value == "active" || cookie.Value == "inactive") {
+		return cookie.Value
+	}
+	return status
+}
+
+func writeStatusCookie(c echo.Context, status string) {
+	// #nosec G124 -- non-sensitive UI patient status filter cookie
+	cookie := &http.Cookie{
+		Name:     patientStatusCookieName,
+		Path:     "/",
+		SameSite: http.SameSiteLaxMode,
+	}
+	if status == "active" || status == "inactive" {
+		cookie.Value = status
+		cookie.MaxAge = 31536000
+	} else {
+		cookie.MaxAge = -1
+	}
+	c.SetCookie(cookie)
+}
+
+func parsePage(c echo.Context) int {
+	p := c.QueryParam("page")
+	if p == "" {
+		return 1
+	}
+	n, err := strconv.Atoi(p)
+	if err != nil || n <= 0 {
+		return 1
+	}
+	return n
+}
+
+func (h *Handler) renderPatientList(c echo.Context, q, field, status string, rows []views.PatientRow, pager views.PatientPager) error {
 	// The search input and filters request fragments; boosted navigation
 	// (sidebar links) also arrives with HX-Request but must render the
 	// full page, so only non-boosted htmx requests get the fragment.
@@ -127,7 +140,7 @@ func (h *Handler) List(c echo.Context) error {
 		return server.Render(c, http.StatusOK, views.PatientListTable(rows, pager, ""))
 	}
 	return server.Render(c, http.StatusOK, views.PatientListPage(
-		server.CSRFToken(c, h.csrf), server.Principal(c), q, field, status, h.systemOptions(ctx), rows, pager, ""))
+		server.CSRFToken(c, h.csrf), server.Principal(c), q, field, status, h.systemOptions(c.Request().Context()), rows, pager, ""))
 }
 
 // isSystemField reports whether s is the URN of an active document
@@ -156,56 +169,64 @@ func (h *Handler) documentLookup(c echo.Context, system, q string) error {
 	if err != nil {
 		return err
 	}
-	var rows []views.PatientRow
-	var total int64
-	if len(q) >= minLookupLen {
-		hits, err := h.ids.FindByValue(ctx, clinicID, q)
-		if err != nil {
-			return err
-		}
-		patientIDs := make([]string, 0, len(hits))
-		seen := make(map[string]struct{}, len(hits))
-		for _, hit := range hits {
-			if hit.System != system {
-				continue
-			}
-			if _, ok := seen[hit.PatientID]; ok {
-				continue
-			}
-			seen[hit.PatientID] = struct{}{}
-			patientIDs = append(patientIDs, hit.PatientID)
-		}
-		patients, err := h.svc.GetMany(ctx, clinicID, patientIDs)
-		if err != nil {
-			return err
-		}
-		byID := make(map[string]*usecase.Patient, len(patients))
-		for i := range patients {
-			patient := patients[i]
-			byID[patient.ID.String()] = &patient
-		}
-		matched := 0
-		for _, hit := range hits {
-			if hit.System != system {
-				continue
-			}
-			pt, ok := byID[hit.PatientID]
-			if !ok {
-				continue
-			}
-			rows = append(rows, h.rows(ctx, []usecase.Patient{*pt})...)
-			matched++
-		}
-		total = int64(matched)
-		h.audit.Record(ctx, server.EventFromRequest(c, audit.AuditResultSuccess,
-			"identifier.search", "", "", "system: "+system+", hits: "+strconv.Itoa(matched)))
+	rows, total, err := h.documentLookupRows(c, clinicID, system, q)
+	if err != nil {
+		return err
 	}
 	pager := views.PatientPager{Q: q, Field: system, Status: "", Page: 1, Total: total, Shown: int64(len(rows))}
-	if server.IsHtmx(c) && c.Request().Header.Get("HX-Boosted") != "true" {
-		return server.Render(c, http.StatusOK, views.PatientListTable(rows, pager, ""))
+	return h.renderPatientList(c, q, system, "", rows, pager)
+}
+
+func (h *Handler) documentLookupRows(c echo.Context, clinicID, system, q string) ([]views.PatientRow, int64, error) {
+	if len(q) < minLookupLen {
+		return nil, 0, nil
 	}
-	return server.Render(c, http.StatusOK, views.PatientListPage(
-		server.CSRFToken(c, h.csrf), server.Principal(c), q, system, "", h.systemOptions(ctx), rows, pager, ""))
+	ctx := c.Request().Context()
+	hits, err := h.ids.FindByValue(ctx, clinicID, q)
+	if err != nil {
+		return nil, 0, err
+	}
+	patients, err := h.svc.GetMany(ctx, clinicID, documentHitPatientIDs(hits, system))
+	if err != nil {
+		return nil, 0, err
+	}
+	byID := make(map[string]*usecase.Patient, len(patients))
+	for i := range patients {
+		patient := patients[i]
+		byID[patient.ID.String()] = &patient
+	}
+	var rows []views.PatientRow
+	matched := 0
+	for _, hit := range hits {
+		if hit.System != system {
+			continue
+		}
+		pt, ok := byID[hit.PatientID]
+		if !ok {
+			continue
+		}
+		rows = append(rows, h.rows(ctx, []usecase.Patient{*pt})...)
+		matched++
+	}
+	h.audit.Record(ctx, server.EventFromRequest(c, audit.AuditResultSuccess,
+		"identifier.search", "", "", "system: "+system+", hits: "+strconv.Itoa(matched)))
+	return rows, int64(matched), nil
+}
+
+func documentHitPatientIDs(hits []*identifiermodel.Identifier, system string) []string {
+	patientIDs := make([]string, 0, len(hits))
+	seen := make(map[string]struct{}, len(hits))
+	for _, hit := range hits {
+		if hit.System != system {
+			continue
+		}
+		if _, ok := seen[hit.PatientID]; ok {
+			continue
+		}
+		seen[hit.PatientID] = struct{}{}
+		patientIDs = append(patientIDs, hit.PatientID)
+	}
+	return patientIDs
 }
 
 // NewPage renders the create form.
@@ -547,59 +568,12 @@ func (h *Handler) Shred(c echo.Context) error {
 // archived rows disappear at once.
 func (h *Handler) BulkArchive(c echo.Context) error {
 	ctx := c.Request().Context()
-	q := strings.TrimSpace(c.QueryParam("q"))
-	field := searchField(c.QueryParam("field"))
-	status := c.QueryParam("status")
-	page := 1
-	if p := c.QueryParam("page"); p != "" {
-		if n, err := strconv.Atoi(p); err == nil && n > 0 {
-			page = n
-		}
-	}
+	q, field, status, page := listPageParams(c)
 	clinicID, err := h.clinicID(ctx)
 	if err != nil {
 		return err
 	}
-	// Bound the number of writes a single request can trigger.
-	ids := c.Request().PostForm["ids"]
-	if len(ids) > maxBulkArchiveIDs {
-		ids = ids[:maxBulkArchiveIDs]
-	}
-	archived := 0
-	for _, raw := range ids {
-		// A malformed id is skipped, never a panic mid-loop.
-		id, err := uuid.Parse(raw)
-		if err != nil {
-			continue
-		}
-		pt, err := h.svc.Get(ctx, clinicID, id.String())
-		if err != nil {
-			if !bulkArchiveSkipExpected(err) {
-				h.log.WarnContext(ctx, "bulk archive: skip patient",
-					log.String("patient_id", id.String()),
-					log.Error(err),
-				)
-			}
-			continue
-		}
-		if err := h.authorizePatientEdit(c, uuidStrPtr(pt.CreatedBy), pt.ID.String(), patientmodel.PatientStatus(pt.Status)); err != nil {
-			if !bulkArchiveSkipExpected(err) {
-				h.log.WarnContext(ctx, "bulk archive: skip patient",
-					log.String("patient_id", id.String()),
-					log.Error(err),
-				)
-			}
-			continue
-		}
-		if err := h.svc.SetStatus(ctx, clinicID, id.String(), patientmodel.PatientStatusInactive); err == nil {
-			archived++
-			h.audit.Record(ctx, server.EventFromRequest(c, audit.AuditResultSuccess,
-				"patient.status", "patient:"+id.String(), "", patientmodel.PatientStatusInactive.String()))
-		} else {
-			h.audit.Record(ctx, server.EventFromRequest(c, audit.AuditResultFailure,
-				"patient.status", "patient:"+id.String(), "", "bulk archive failed: "+err.Error()))
-		}
-	}
+	archived := h.archiveSelected(c, clinicID, c.Request().PostForm["ids"])
 
 	patients, total, err := h.svc.ListPage(ctx, clinicID, q, field, status, patientListLimit, (page-1)*patientListLimit)
 	if err != nil {
@@ -612,6 +586,59 @@ func (h *Handler) BulkArchive(c echo.Context) error {
 		msg = strconv.Itoa(archived) + " patient(s) archived"
 	}
 	return server.Render(c, http.StatusOK, views.PatientListTableWithAlert(rows, pager, msg))
+}
+
+func listPageParams(c echo.Context) (q, field, status string, page int) {
+	return strings.TrimSpace(c.QueryParam("q")), searchField(c.QueryParam("field")), c.QueryParam("status"), parsePage(c)
+}
+
+func (h *Handler) archiveSelected(c echo.Context, clinicID string, ids []string) int {
+	// Bound the number of writes a single request can trigger.
+	if len(ids) > maxBulkArchiveIDs {
+		ids = ids[:maxBulkArchiveIDs]
+	}
+	archived := 0
+	for _, raw := range ids {
+		if h.archiveOne(c, clinicID, raw) {
+			archived++
+		}
+	}
+	return archived
+}
+
+func (h *Handler) archiveOne(c echo.Context, clinicID, raw string) bool {
+	id, err := uuid.Parse(raw)
+	if err != nil {
+		return false
+	}
+	ctx := c.Request().Context()
+	pt, err := h.svc.Get(ctx, clinicID, id.String())
+	if err != nil {
+		h.warnBulkArchiveSkip(ctx, id, err)
+		return false
+	}
+	if err := h.authorizePatientEdit(c, uuidStrPtr(pt.CreatedBy), pt.ID.String(), patientmodel.PatientStatus(pt.Status)); err != nil {
+		h.warnBulkArchiveSkip(ctx, id, err)
+		return false
+	}
+	if err := h.svc.SetStatus(ctx, clinicID, id.String(), patientmodel.PatientStatusInactive); err != nil {
+		h.audit.Record(ctx, server.EventFromRequest(c, audit.AuditResultFailure,
+			"patient.status", "patient:"+id.String(), "", "bulk archive failed: "+err.Error()))
+		return false
+	}
+	h.audit.Record(ctx, server.EventFromRequest(c, audit.AuditResultSuccess,
+		"patient.status", "patient:"+id.String(), "", patientmodel.PatientStatusInactive.String()))
+	return true
+}
+
+func (h *Handler) warnBulkArchiveSkip(ctx context.Context, id uuid.UUID, err error) {
+	if bulkArchiveSkipExpected(err) {
+		return
+	}
+	h.log.WarnContext(ctx, "bulk archive: skip patient",
+		log.String("patient_id", id.String()),
+		log.Error(err),
+	)
 }
 
 func (h *Handler) setStatus(c echo.Context, status patientmodel.PatientStatus, successMsg string) error {

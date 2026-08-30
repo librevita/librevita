@@ -60,34 +60,46 @@ func NewHandler(svc *usecase.Service, patients *patientusecase.Service,
 func (h *Handler) SetupGate() echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
-			ctx := c.Request().Context()
-			if clinicctx.IsApex(ctx) {
-				if h.platform == nil {
-					return next(c)
-				}
-				hasOps, err := h.platform.HasOperators(ctx)
-				if err != nil {
-					return err
-				}
-				if !hasOps {
-					return server.HtmxRedirect(c, "/setup")
-				}
-				return next(c)
-			}
-			path := c.Request().URL.Path
-			if path == "/setup" || strings.HasPrefix(path, "/static/") || path == "/healthz" {
-				return next(c)
-			}
-			clinic, ok := clinicctx.FromContext(ctx)
-			if !ok {
-				return next(c)
-			}
-			if clinic.OnboardedAt == nil {
-				return server.HtmxRedirect(c, "/setup")
-			}
-			return next(c)
+			return h.gateSetup(c, next)
 		}
 	}
+}
+
+func (h *Handler) gateSetup(c echo.Context, next echo.HandlerFunc) error {
+	ctx := c.Request().Context()
+	if clinicctx.IsApex(ctx) {
+		return h.gateApex(c, next)
+	}
+	return h.gateClinic(c, next)
+}
+
+func (h *Handler) gateApex(c echo.Context, next echo.HandlerFunc) error {
+	if h.platform == nil {
+		return next(c)
+	}
+	hasOps, err := h.platform.HasOperators(c.Request().Context())
+	if err != nil {
+		return err
+	}
+	if !hasOps {
+		return server.HtmxRedirect(c, "/setup")
+	}
+	return next(c)
+}
+
+func (h *Handler) gateClinic(c echo.Context, next echo.HandlerFunc) error {
+	path := c.Request().URL.Path
+	if path == "/setup" || strings.HasPrefix(path, "/static/") || path == "/healthz" {
+		return next(c)
+	}
+	clinic, ok := clinicctx.FromContext(c.Request().Context())
+	if !ok {
+		return next(c)
+	}
+	if clinic.OnboardedAt == nil {
+		return server.HtmxRedirect(c, "/setup")
+	}
+	return next(c)
 }
 
 // SetupPage renders platform bootstrap on the apex, or clinic onboard on a subdomain.

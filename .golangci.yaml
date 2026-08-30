@@ -30,8 +30,8 @@ linters:
     gocognit:
       # Reports functions whose cognitive complexity is at least this
       # value. Complementary to cyclop (nesting and compound booleans).
-      # Ratcheted one above the current maximum (InjectEnumChecks is 66).
-      min-complexity: 67
+      # Target is 10. Ratcheted to 20 after splitting functions that were ≥ 20.
+      min-complexity: 20
     gosec:
       # G104 duplicates errcheck (which already allows the idiomatic
       # close/rollback defers via exclude-functions).

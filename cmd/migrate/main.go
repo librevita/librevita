@@ -93,58 +93,66 @@ func (f *gooseFile) StmtDecls() ([]*atlasmigrate.Stmt, error) {
 func formatSQL(stmt string) string {
 	stmt = strings.TrimSpace(stmt)
 	stmt = strings.TrimSuffix(stmt, ";")
-
 	upper := strings.ToUpper(stmt)
-	if strings.HasPrefix(upper, "CREATE TABLE") {
-		openIdx := strings.Index(stmt, "(")
-		closeIdx := strings.LastIndex(stmt, ")")
-		if openIdx != -1 && closeIdx > openIdx {
-			prefix := strings.TrimSpace(stmt[:openIdx])
-			body := stmt[openIdx+1 : closeIdx]
-			suffix := strings.TrimSpace(stmt[closeIdx+1:])
-
-			elements := splitTopLevelCommas(body)
-			var formattedBody []string
-			for _, el := range elements {
-				trimmed := strings.TrimSpace(el)
-				if trimmed != "" {
-					formattedBody = append(formattedBody, "  "+trimmed)
-				}
-			}
-			res := prefix + " (\n" + strings.Join(formattedBody, ",\n") + "\n)"
-			if suffix != "" {
-				res += " " + suffix
-			}
-			return res
-		}
+	if formatted, ok := formatCreateTable(stmt, upper); ok {
+		return formatted
 	}
-
-	if strings.HasPrefix(upper, "ALTER TABLE") {
-		parts := strings.Fields(stmt)
-		if len(parts) >= 3 {
-			tableIdx := 2
-			if strings.ToUpper(parts[2]) == "ONLY" && len(parts) >= 4 {
-				tableIdx = 3
-			}
-			tableEndIdx := strings.Index(stmt, parts[tableIdx]) + len(parts[tableIdx])
-			prefix := strings.TrimSpace(stmt[:tableEndIdx])
-			body := strings.TrimSpace(stmt[tableEndIdx:])
-
-			elements := splitTopLevelCommas(body)
-			if len(elements) > 1 {
-				var formattedBody []string
-				for _, el := range elements {
-					trimmed := strings.TrimSpace(el)
-					if trimmed != "" {
-						formattedBody = append(formattedBody, "  "+trimmed)
-					}
-				}
-				return prefix + "\n" + strings.Join(formattedBody, ",\n")
-			}
-		}
+	if formatted, ok := formatAlterTable(stmt, upper); ok {
+		return formatted
 	}
-
 	return stmt
+}
+
+func formatCreateTable(stmt, upper string) (string, bool) {
+	if !strings.HasPrefix(upper, "CREATE TABLE") {
+		return "", false
+	}
+	openIdx := strings.Index(stmt, "(")
+	closeIdx := strings.LastIndex(stmt, ")")
+	if openIdx == -1 || closeIdx <= openIdx {
+		return "", false
+	}
+	prefix := strings.TrimSpace(stmt[:openIdx])
+	body := stmt[openIdx+1 : closeIdx]
+	suffix := strings.TrimSpace(stmt[closeIdx+1:])
+	res := prefix + " (\n" + joinSQLElements(body) + "\n)"
+	if suffix != "" {
+		res += " " + suffix
+	}
+	return res, true
+}
+
+func formatAlterTable(stmt, upper string) (string, bool) {
+	if !strings.HasPrefix(upper, "ALTER TABLE") {
+		return "", false
+	}
+	parts := strings.Fields(stmt)
+	if len(parts) < 3 {
+		return "", false
+	}
+	tableIdx := 2
+	if strings.ToUpper(parts[2]) == "ONLY" && len(parts) >= 4 {
+		tableIdx = 3
+	}
+	tableEndIdx := strings.Index(stmt, parts[tableIdx]) + len(parts[tableIdx])
+	prefix := strings.TrimSpace(stmt[:tableEndIdx])
+	body := strings.TrimSpace(stmt[tableEndIdx:])
+	if len(splitTopLevelCommas(body)) <= 1 {
+		return "", false
+	}
+	return prefix + "\n" + joinSQLElements(body), true
+}
+
+func joinSQLElements(body string) string {
+	elements := splitTopLevelCommas(body)
+	var formattedBody []string
+	for _, el := range elements {
+		trimmed := strings.TrimSpace(el)
+		if trimmed != "" {
+			formattedBody = append(formattedBody, "  "+trimmed)
+		}
+	}
+	return strings.Join(formattedBody, ",\n")
 }
 
 type commaSplitter struct {
@@ -235,20 +243,7 @@ func splitTopLevelCommas(s string) []string {
 }
 
 func main() {
-	var (
-		name   string
-		dir    string
-		devURL string
-		dial   string
-		rehash bool
-	)
-	flag.StringVar(&name, "name", "", "migration name (required unless --rehash is used)")
-	flag.StringVar(&dir, "dir", "internal/database/migrations/sqlite", "migrations output directory")
-	flag.StringVar(&devURL, "dev-url", "", "dev database URL (default: in-memory sqlite)")
-	flag.StringVar(&dial, "dialect", "sqlite", "SQL dialect: sqlite or postgres")
-	flag.BoolVar(&rehash, "rehash", false, "recalculate and write atlas.sum for the migrations directory")
-	flag.Parse()
-
+	name, dir, devURL, dial, rehash := parseMigrateFlags()
 	if err := os.MkdirAll(dir, 0o750); err != nil {
 		log.Fatalf("failed creating migrations directory %q: %v", dir, err)
 	}
@@ -259,54 +254,89 @@ func main() {
 	}
 
 	if rehash {
-		sum, err := gooseDir.Checksum()
-		if err != nil {
-			log.Fatalf("failed calculating checksum: %v", err)
-		}
-		if err := atlasmigrate.WriteSumFile(gooseDir, sum); err != nil {
-			log.Fatalf("failed writing atlas.sum: %v", err)
-		}
-		fmt.Printf("Successfully updated atlas.sum in %s\n", dir)
+		runRehash(gooseDir, dir)
 		return
 	}
 
-	if name == "" && flag.NArg() > 0 {
-		name = flag.Arg(0)
-	}
-	if name == "" {
-		fmt.Fprintf(os.Stderr, "Usage: go run ./cmd/migrate [flags] <migration_name>\n\nFlags:\n")
-		flag.PrintDefaults()
-		os.Exit(1)
-	}
-
+	name = requireMigrationName(name)
 	d := dialect.SQLite
 	if dial == "postgres" {
 		d = dialect.Postgres
 	}
+	devURL = resolveDevURL(devURL, d)
+	resetPostgresPublic(d, devURL)
+	generateMigration(devURL, name, dir, gooseDir, d)
+}
 
-	if devURL == "" {
-		if d == dialect.Postgres {
-			devURL = os.Getenv("ATLAS_DEV_URL")
-			if devURL == "" {
-				devURL = os.Getenv("POSTGRES_DEV_URL")
-			}
-			if devURL == "" {
-				// Default to standard local postgres ports
-				// #nosec G101 -- default local dev postgres connection string used by the migration CLI in local development, not a production secret.
-				devURL = "postgres://postgres:postgres@localhost:5433/dev?sslmode=disable"
-			}
-		} else {
-			devURL = "sqlite://file?mode=memory&cache=shared&_pragma=foreign_keys(1)"
-		}
+func parseMigrateFlags() (name, dir, devURL, dial string, rehash bool) {
+	flag.StringVar(&name, "name", "", "migration name (required unless --rehash is used)")
+	flag.StringVar(&dir, "dir", "internal/database/migrations/sqlite", "migrations output directory")
+	flag.StringVar(&devURL, "dev-url", "", "dev database URL (default: in-memory sqlite)")
+	flag.StringVar(&dial, "dialect", "sqlite", "SQL dialect: sqlite or postgres")
+	flag.BoolVar(&rehash, "rehash", false, "recalculate and write atlas.sum for the migrations directory")
+	flag.Parse()
+	return name, dir, devURL, dial, rehash
+}
+
+func runRehash(gooseDir atlasmigrate.Dir, dir string) {
+	sum, err := gooseDir.Checksum()
+	if err != nil {
+		log.Fatalf("failed calculating checksum: %v", err)
 	}
+	if err := atlasmigrate.WriteSumFile(gooseDir, sum); err != nil {
+		log.Fatalf("failed writing atlas.sum: %v", err)
+	}
+	fmt.Printf("Successfully updated atlas.sum in %s\n", dir)
+}
 
+func requireMigrationName(name string) string {
+	if name == "" && flag.NArg() > 0 {
+		name = flag.Arg(0)
+	}
+	if name != "" {
+		return name
+	}
+	fmt.Fprintf(os.Stderr, "Usage: go run ./cmd/migrate [flags] <migration_name>\n\nFlags:\n")
+	flag.PrintDefaults()
+	os.Exit(1)
+	return name
+}
+
+func resolveDevURL(devURL, d string) string {
+	if devURL != "" {
+		return devURL
+	}
 	if d == dialect.Postgres {
-		if devDB, err := sql.Open("postgres", devURL); err == nil {
-			_, _ = devDB.ExecContext(context.Background(), "DROP SCHEMA public CASCADE; CREATE SCHEMA public;")
-			_ = devDB.Close()
-		}
+		return postgresDevURL()
 	}
+	return "sqlite://file?mode=memory&cache=shared&_pragma=foreign_keys(1)"
+}
 
+func postgresDevURL() string {
+	if u := os.Getenv("ATLAS_DEV_URL"); u != "" {
+		return u
+	}
+	if u := os.Getenv("POSTGRES_DEV_URL"); u != "" {
+		return u
+	}
+	// Default to standard local postgres ports
+	// #nosec G101 -- default local dev postgres connection string used by the migration CLI in local development, not a production secret.
+	return "postgres://postgres:postgres@localhost:5433/dev?sslmode=disable"
+}
+
+func resetPostgresPublic(d, devURL string) {
+	if d != dialect.Postgres {
+		return
+	}
+	devDB, err := sql.Open("postgres", devURL)
+	if err != nil {
+		return
+	}
+	_, _ = devDB.ExecContext(context.Background(), "DROP SCHEMA public CASCADE; CREATE SCHEMA public;")
+	_ = devDB.Close()
+}
+
+func generateMigration(devURL, name, dir string, gooseDir atlasmigrate.Dir, d string) {
 	opts := []schema.MigrateOption{
 		schema.WithDir(gooseDir),
 		schema.WithFormatter(&prettyGooseFormatter{}),
@@ -315,9 +345,7 @@ func main() {
 		schema.WithDropColumn(true),
 		schema.WithDropIndex(true),
 	}
-
-	ctx := context.Background()
-	if err := migrate.NamedDiff(ctx, devURL, name, opts...); err != nil {
+	if err := migrate.NamedDiff(context.Background(), devURL, name, opts...); err != nil {
 		log.Fatalf("failed generating migration diff: %v", err)
 	}
 	fmt.Printf("Successfully generated migration %q in %s\n", name, dir)

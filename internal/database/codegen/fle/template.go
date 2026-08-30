@@ -100,23 +100,15 @@ func isEncryptedField(f *gen.Field) bool {
 	if f.HasValueScanner() {
 		return true
 	}
-	if ann, ok := f.Annotations[fle.AnnotationName]; ok {
-		if m, ok := ann.(map[string]any); ok {
-			if e, ok := m["encrypted"].(bool); ok && e {
-				return true
-			}
-			if e, ok := m["Encrypted"].(bool); ok && e {
-				return true
-			}
-			if s, ok := m["searchable"].(bool); ok && s {
-				return true
-			}
-			if s, ok := m["Searchable"].(bool); ok && s {
-				return true
-			}
-		}
+	ann, ok := f.Annotations[fle.AnnotationName]
+	if !ok {
+		return false
 	}
-	return false
+	m, ok := ann.(map[string]any)
+	if !ok {
+		return false
+	}
+	return annotationBool(m, "encrypted", "Encrypted", "searchable", "Searchable")
 }
 
 func hasEncryptedFields(n *gen.Type) bool {

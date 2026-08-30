@@ -98,6 +98,19 @@ func (e *Engine) GetPatientDEKsForClinic(ctx context.Context, clinicID uuid.UUID
 	}
 	defer ZeroBytes(clinicDEK)
 
+	urns, idsByURN := e.collectCachedPatientDEKs(ctx, clinicID, patientIDs, result)
+	wrapped, err := e.getWrappedDEKs(ctx, urns)
+	if err != nil {
+		return nil, err
+	}
+	if err := unwrapMissingPatientDEKs(ctx, clinicDEK, urns, idsByURN, wrapped, result); err != nil {
+		return nil, err
+	}
+	cleanup = false
+	return result, nil
+}
+
+func (e *Engine) collectCachedPatientDEKs(ctx context.Context, clinicID uuid.UUID, patientIDs []uuid.UUID, result map[uuid.UUID][]byte) ([]string, map[string]uuid.UUID) {
 	urns := make([]string, 0, len(patientIDs))
 	idsByURN := make(map[string]uuid.UUID, len(patientIDs))
 	for _, patientID := range patientIDs {
@@ -106,46 +119,50 @@ func (e *Engine) GetPatientDEKsForClinic(ctx context.Context, clinicID uuid.UUID
 			continue
 		}
 		idsByURN[urn] = patientID
-		if cache := requestCacheFromContext(ctx); cache != nil {
-			if dek, ok := cache.get(urn); ok {
-				if e.metrics != nil {
-					e.metrics.cacheHit.Add(1)
-				}
-				result[patientID] = dek
-				continue
-			}
-			if e.metrics != nil {
-				e.metrics.cacheMiss.Add(1)
-			}
+		if e.takeCachedPatientDEK(ctx, urn, patientID, result) {
+			continue
 		}
 		urns = append(urns, urn)
 	}
+	return urns, idsByURN
+}
 
-	wrapped, err := e.getWrappedDEKs(ctx, urns)
-	if err != nil {
-		return nil, err
+func (e *Engine) takeCachedPatientDEK(ctx context.Context, urn string, patientID uuid.UUID, result map[uuid.UUID][]byte) bool {
+	cache := requestCacheFromContext(ctx)
+	if cache == nil {
+		return false
 	}
+	dek, ok := cache.get(urn)
+	if ok {
+		e.recordCacheHit()
+		result[patientID] = dek
+		return true
+	}
+	e.recordCacheMiss()
+	return false
+}
+
+func unwrapMissingPatientDEKs(ctx context.Context, clinicDEK []byte, urns []string, idsByURN map[string]uuid.UUID, wrapped map[string]DEKResult, result map[uuid.UUID][]byte) error {
 	for _, urn := range urns {
 		item := wrapped[urn]
 		if errors.Is(item.Err, ErrKeyNotFound) {
 			continue
 		}
 		if item.Err != nil {
-			return nil, item.Err
+			return item.Err
 		}
 		dek, err := unwrapKey(clinicDEK, item.EncryptedDEK, keyScopePatient, []byte(urn))
 		if err != nil {
-			return nil, errors.Wrapf(err, "crypto: unwrap patient dek %q", urn)
+			return errors.Wrapf(err, "crypto: unwrap patient dek %q", urn)
 		}
 		if len(dek) != SizeDEK {
 			ZeroBytes(dek)
-			return nil, ErrInvalidDEK
+			return ErrInvalidDEK
 		}
 		cacheDEK(ctx, urn, dek)
 		result[idsByURN[urn]] = dek
 	}
-	cleanup = false
-	return result, nil
+	return nil
 }
 
 // EnsurePatientDEKForClinic returns the existing patient DEK or creates one.
