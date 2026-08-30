@@ -1,8 +1,6 @@
 package schema
 
 import (
-	"time"
-
 	"entgo.io/ent"
 	"entgo.io/ent/schema/edge"
 	"entgo.io/ent/schema/field"
@@ -10,6 +8,7 @@ import (
 	"github.com/google/uuid"
 
 	"librevita.org/internal/core/database/fle"
+	"librevita.org/internal/database/schema/mixin"
 )
 
 // Appointment holds the schema definition for the Appointment entity.
@@ -19,14 +18,18 @@ type Appointment struct {
 	ent.Schema
 }
 
+// Mixin of the Appointment.
+func (Appointment) Mixin() []ent.Mixin {
+	return []ent.Mixin{
+		mixin.UUID{},
+		mixin.Clinic{},
+		mixin.Time{},
+	}
+}
+
 // Fields of the Appointment.
 func (Appointment) Fields() []ent.Field {
 	return []ent.Field{
-		field.UUID("id", uuid.UUID{}).
-			Default(newUUIDv7).
-			Immutable(),
-		field.UUID("clinic_id", uuid.UUID{}).
-			Comment("Clinic tenant ID"),
 		field.UUID("patient_id", uuid.UUID{}).
 			Comment("Patient ID"),
 		field.UUID("user_id", uuid.UUID{}).
@@ -55,12 +58,6 @@ func (Appointment) Fields() []ent.Field {
 		field.UUID("created_by", uuid.UUID{}).
 			Optional().
 			Nillable(),
-		field.Time("created_at").
-			Default(time.Now).
-			Immutable(),
-		field.Time("updated_at").
-			Default(time.Now).
-			UpdateDefault(time.Now),
 	}
 }
 

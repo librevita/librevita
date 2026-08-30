@@ -1,8 +1,6 @@
 package schema
 
 import (
-	"time"
-
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/entsql"
 	"entgo.io/ent/schema"
@@ -10,6 +8,8 @@ import (
 	"entgo.io/ent/schema/field"
 	"entgo.io/ent/schema/index"
 	"github.com/google/uuid"
+
+	"librevita.org/internal/database/schema/mixin"
 )
 
 // AccessPolicyVersion holds the schema definition for historical policy expression snapshots.
@@ -21,6 +21,13 @@ type AccessPolicyVersion struct {
 func (AccessPolicyVersion) Annotations() []schema.Annotation {
 	return []schema.Annotation{
 		entsql.Annotation{Table: "policy_versions"},
+	}
+}
+
+// Mixin of the AccessPolicyVersion.
+func (AccessPolicyVersion) Mixin() []ent.Mixin {
+	return []ent.Mixin{
+		mixin.CreatedAt{},
 	}
 }
 
@@ -44,9 +51,6 @@ func (AccessPolicyVersion) Fields() []ent.Field {
 			Values("seed", "admin", "system").
 			Default("system").
 			Comment("Origin of the policy version"),
-		field.Time("created_at").
-			Default(time.Now).
-			Immutable(),
 	}
 }
 

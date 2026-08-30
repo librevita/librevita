@@ -6,10 +6,9 @@ import (
 	"entgo.io/ent"
 	"entgo.io/ent/schema/edge"
 	"entgo.io/ent/schema/field"
-	"entgo.io/ent/schema/index"
-	"github.com/google/uuid"
 
 	"librevita.org/internal/core/database/fle"
+	"librevita.org/internal/database/schema/mixin"
 )
 
 // Finding holds a structured objective finding belonging to an Episode.
@@ -17,18 +16,19 @@ type Finding struct {
 	ent.Schema
 }
 
+// Mixin of the Finding.
+func (Finding) Mixin() []ent.Mixin {
+	return []ent.Mixin{
+		mixin.UUID{},
+		mixin.Clinic{},
+		mixin.ClinicalChild{},
+		mixin.Time{},
+	}
+}
+
 // Fields of the Finding.
 func (Finding) Fields() []ent.Field {
 	return []ent.Field{
-		field.UUID("id", uuid.UUID{}).
-			Default(newUUIDv7).
-			Immutable(),
-		field.UUID("clinic_id", uuid.UUID{}).
-			Comment("Clinic tenant ID"),
-		field.UUID("patient_id", uuid.UUID{}).
-			Comment("Patient ID (denormalized for FLE / isolation)"),
-		field.UUID("episode_id", uuid.UUID{}).
-			Comment("Owning SOAP episode"),
 		field.Enum("status").
 			Values("recorded", "provisional", "cancelled").
 			Default("recorded").
@@ -96,13 +96,6 @@ func (Finding) Fields() []ent.Field {
 			ValueScanner(fle.EncryptedString()).
 			Optional().
 			Comment("Coded value display (PHI)"),
-
-		field.Time("created_at").
-			Default(time.Now).
-			Immutable(),
-		field.Time("updated_at").
-			Default(time.Now).
-			UpdateDefault(time.Now),
 	}
 }
 
@@ -124,14 +117,5 @@ func (Finding) Edges() []ent.Edge {
 			Field("episode_id").
 			Unique().
 			Required(),
-	}
-}
-
-// Indexes of the Finding.
-func (Finding) Indexes() []ent.Index {
-	return []ent.Index{
-		index.Fields("clinic_id", "episode_id"),
-		index.Fields("patient_id", "created_at"),
-		index.Fields("episode_id"),
 	}
 }

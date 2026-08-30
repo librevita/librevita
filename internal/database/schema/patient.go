@@ -1,8 +1,6 @@
 package schema
 
 import (
-	"time"
-
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/entsql"
 	"entgo.io/ent/schema/edge"
@@ -11,6 +9,7 @@ import (
 	"github.com/google/uuid"
 
 	"librevita.org/internal/core/database/fle"
+	"librevita.org/internal/database/schema/mixin"
 )
 
 // Patient holds the schema definition for the Patient entity.
@@ -18,15 +17,18 @@ type Patient struct {
 	ent.Schema
 }
 
+// Mixin of the Patient.
+func (Patient) Mixin() []ent.Mixin {
+	return []ent.Mixin{
+		mixin.UUID{},
+		mixin.Clinic{},
+		mixin.Time{},
+	}
+}
+
 // Fields of the Patient.
 func (Patient) Fields() []ent.Field {
 	return []ent.Field{
-		field.UUID("id", uuid.UUID{}).
-			Default(newUUIDv7).
-			Immutable().
-			Comment("Primary unique identifier (UUIDv7)"),
-		field.UUID("clinic_id", uuid.UUID{}).
-			Comment("Tenant isolation: clinic ID reference"),
 		field.UUID("user_id", uuid.UUID{}).
 			Optional().
 			Nillable().
@@ -104,14 +106,6 @@ func (Patient) Fields() []ent.Field {
 			Optional().
 			Nillable().
 			Comment("User ID who registered this patient"),
-		field.Time("created_at").
-			Default(time.Now).
-			Immutable().
-			Comment("Record creation timestamp"),
-		field.Time("updated_at").
-			Default(time.Now).
-			UpdateDefault(time.Now).
-			Comment("Record last update timestamp"),
 	}
 }
 

@@ -2,12 +2,12 @@ package schema
 
 import (
 	"regexp"
-	"time"
 
 	"entgo.io/ent"
 	"entgo.io/ent/schema/edge"
 	"entgo.io/ent/schema/field"
-	"github.com/google/uuid"
+
+	"librevita.org/internal/database/schema/mixin"
 )
 
 // clinicSlugRE is the DNS-safe hostname label used as the clinic subdomain.
@@ -18,12 +18,17 @@ type Clinic struct {
 	ent.Schema
 }
 
+// Mixin of the Clinic.
+func (Clinic) Mixin() []ent.Mixin {
+	return []ent.Mixin{
+		mixin.UUID{},
+		mixin.Time{},
+	}
+}
+
 // Fields of the Clinic.
 func (Clinic) Fields() []ent.Field {
 	return []ent.Field{
-		field.UUID("id", uuid.UUID{}).
-			Default(newUUIDv7).
-			Immutable(),
 		field.String("slug").
 			NotEmpty().
 			Unique().
@@ -57,12 +62,6 @@ func (Clinic) Fields() []ent.Field {
 			Optional().
 			Nillable().
 			Comment("Set when clinic /setup completes; nil means a provisioned shell"),
-		field.Time("created_at").
-			Default(time.Now).
-			Immutable(),
-		field.Time("updated_at").
-			Default(time.Now).
-			UpdateDefault(time.Now),
 	}
 }
 

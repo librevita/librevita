@@ -1,14 +1,13 @@
 package schema
 
 import (
-	"time"
-
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/entsql"
 	"entgo.io/ent/schema"
 	"entgo.io/ent/schema/edge"
 	"entgo.io/ent/schema/field"
-	"github.com/google/uuid"
+
+	"librevita.org/internal/database/schema/mixin"
 )
 
 // PlatformUser is an installation operator. They authenticate only on the
@@ -24,12 +23,17 @@ func (PlatformUser) Annotations() []schema.Annotation {
 	}
 }
 
+// Mixin of the PlatformUser.
+func (PlatformUser) Mixin() []ent.Mixin {
+	return []ent.Mixin{
+		mixin.UUID{},
+		mixin.Time{},
+	}
+}
+
 // Fields of the PlatformUser.
 func (PlatformUser) Fields() []ent.Field {
 	return []ent.Field{
-		field.UUID("id", uuid.UUID{}).
-			Default(newUUIDv7).
-			Immutable(),
 		field.String("email").
 			NotEmpty().
 			Unique().
@@ -42,12 +46,6 @@ func (PlatformUser) Fields() []ent.Field {
 			NotEmpty(),
 		field.Bool("active").
 			Default(true),
-		field.Time("created_at").
-			Default(time.Now).
-			Immutable(),
-		field.Time("updated_at").
-			Default(time.Now).
-			UpdateDefault(time.Now),
 	}
 }
 

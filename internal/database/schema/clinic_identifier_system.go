@@ -8,6 +8,8 @@ import (
 	"entgo.io/ent/schema/field"
 	"entgo.io/ent/schema/index"
 	"github.com/google/uuid"
+
+	"librevita.org/internal/database/schema/mixin"
 )
 
 // ClinicIdentifierSystem is a clinic's opt-in to a global identifier system.
@@ -22,13 +24,17 @@ func (ClinicIdentifierSystem) Annotations() []schema.Annotation {
 	}
 }
 
+// Mixin of the ClinicIdentifierSystem.
+func (ClinicIdentifierSystem) Mixin() []ent.Mixin {
+	return []ent.Mixin{
+		mixin.UUID{},
+		mixin.Clinic{},
+	}
+}
+
 // Fields of the ClinicIdentifierSystem.
 func (ClinicIdentifierSystem) Fields() []ent.Field {
 	return []ent.Field{
-		field.UUID("id", uuid.UUID{}).
-			Default(newUUIDv7).
-			Immutable(),
-		field.UUID("clinic_id", uuid.UUID{}),
 		field.UUID("identifier_system_id", uuid.UUID{}),
 	}
 }
