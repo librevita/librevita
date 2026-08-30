@@ -308,26 +308,38 @@ func (h *Handler) historyView(events []audit.EventRow, clock *clinicmodel.Clock)
 
 // historyText renders a human-readable description of a patient event.
 func historyText(ev audit.EventRow) string {
-	actor := "an unknown user"
-	if ev.ActorEmail != nil && *ev.ActorEmail != "" {
-		actor = *ev.ActorEmail
-	}
+	actor := historyActor(ev)
 	switch ev.Action {
 	case "patient.create":
 		return "Registered by " + actor
 	case "patient.update":
-		if ev.Detail != nil && *ev.Detail != "" {
-			return "Updated by " + actor + " (" + *ev.Detail + ")"
-		}
-		return "Updated by " + actor
+		return historyUpdateText(actor, ev.Detail)
 	case "patient.status":
-		if ev.Detail != nil && *ev.Detail == patientmodel.PatientStatusInactive.String() {
-			return "Archived by " + actor
-		}
-		return "Restored by " + actor
+		return historyStatusText(actor, ev.Detail)
 	default:
 		return ev.Action + " by " + actor
 	}
+}
+
+func historyActor(ev audit.EventRow) string {
+	if ev.ActorEmail != nil && *ev.ActorEmail != "" {
+		return *ev.ActorEmail
+	}
+	return "an unknown user"
+}
+
+func historyUpdateText(actor string, detail *string) string {
+	if detail != nil && *detail != "" {
+		return "Updated by " + actor + " (" + *detail + ")"
+	}
+	return "Updated by " + actor
+}
+
+func historyStatusText(actor string, detail *string) string {
+	if detail != nil && *detail == patientmodel.PatientStatusInactive.String() {
+		return "Archived by " + actor
+	}
+	return "Restored by " + actor
 }
 
 // EditPage renders the edit form with the stored values.

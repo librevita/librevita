@@ -140,10 +140,14 @@ func (s *Service) Amend(ctx context.Context, principal *auth.Principal, clinicID
 	if err == nil {
 		return saved, nil
 	}
+	return s.amendAfterCreateConflict(ctx, clinicID, existing.ID, err)
+}
+
+func (s *Service) amendAfterCreateConflict(ctx context.Context, clinicID, predecessorID uuid.UUID, err error) (*Episode, error) {
 	if !errors.Is(err, ErrAlreadyAmended) {
 		return nil, err
 	}
-	child, rerr := s.successorDraft(ctx, clinicID, existing.ID)
+	child, rerr := s.successorDraft(ctx, clinicID, predecessorID)
 	if rerr != nil {
 		return nil, rerr
 	}

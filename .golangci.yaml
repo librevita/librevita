@@ -22,9 +22,11 @@ linters:
   settings:
     cyclop:
       # Reports functions whose cyclomatic complexity is greater than
-      # this value. Ratcheted to the current maximum (mapEnvironmentKey).
+      # this value. Target is 10 (cyclop default). Ratcheted to the
+      # current maximum (FromDocumentBundle) after the first six splits;
+      # further functions remain above 10.
       # package-average stays at the default 0 (disabled).
-      max-complexity: 53
+      max-complexity: 32
     gocognit:
       # Reports functions whose cognitive complexity is at least this
       # value. Complementary to cyclop (nesting and compound booleans).

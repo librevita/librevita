@@ -131,11 +131,19 @@ func toSnakeCase(s string) string {
 }
 
 func pluralize(name string) string {
-	if strings.HasSuffix(name, "y") && !strings.HasSuffix(name, "ay") && !strings.HasSuffix(name, "ey") && !strings.HasSuffix(name, "oy") && !strings.HasSuffix(name, "uy") {
+	if consonantY(name) {
 		return strings.TrimSuffix(name, "y") + "ies"
 	}
-	if strings.HasSuffix(name, "s") || strings.HasSuffix(name, "x") || strings.HasSuffix(name, "z") || strings.HasSuffix(name, "ch") || strings.HasSuffix(name, "sh") {
+	if sibilant(name) {
 		return name + "es"
 	}
 	return name + "s"
+}
+
+func consonantY(name string) bool {
+	return strings.HasSuffix(name, "y") && !strings.HasSuffix(name, "ay") && !strings.HasSuffix(name, "ey") && !strings.HasSuffix(name, "oy") && !strings.HasSuffix(name, "uy")
+}
+
+func sibilant(name string) bool {
+	return strings.HasSuffix(name, "s") || strings.HasSuffix(name, "x") || strings.HasSuffix(name, "z") || strings.HasSuffix(name, "ch") || strings.HasSuffix(name, "sh")
 }

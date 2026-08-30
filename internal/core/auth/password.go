@@ -91,9 +91,9 @@ func VerifyPassword(hash, plain string) (bool, error) {
 }
 
 func decodeHash(hash string) (memory, time uint32, threads uint8, keyLen uint32, salt, key []byte, err error) {
-	parts := strings.Split(hash, "$")
-	if len(parts) != 6 || parts[1] != "argon2id" || parts[2] != fmt.Sprintf("v=%d", argon2.Version) {
-		return 0, 0, 0, 0, nil, nil, errInvalidHash
+	parts, err := splitArgon2idHash(hash)
+	if err != nil {
+		return 0, 0, 0, 0, nil, nil, err
 	}
 
 	var params [3]uint64
@@ -101,13 +101,9 @@ func decodeHash(hash string) (memory, time uint32, threads uint8, keyLen uint32,
 		return 0, 0, 0, 0, nil, nil, errInvalidHash
 	}
 
-	salt, err = base64.RawStdEncoding.DecodeString(parts[4])
+	salt, key, err = decodeArgonMaterial(parts[4], parts[5])
 	if err != nil {
-		return 0, 0, 0, 0, nil, nil, errInvalidHash
-	}
-	key, err = base64.RawStdEncoding.DecodeString(parts[5])
-	if err != nil || len(salt) == 0 || len(key) == 0 {
-		return 0, 0, 0, 0, nil, nil, errInvalidHash
+		return 0, 0, 0, 0, nil, nil, err
 	}
 
 	// Reject hashes derived with stronger parameters than this binary.
@@ -118,4 +114,24 @@ func decodeHash(hash string) (memory, time uint32, threads uint8, keyLen uint32,
 	// #nosec G115 -- the equality check above pins the params to the
 	// binary's constants, so the narrowing casts cannot overflow.
 	return uint32(params[0]), uint32(params[1]), uint8(params[2]), uint32(len(key)), salt, key, nil
+}
+
+func splitArgon2idHash(hash string) ([]string, error) {
+	parts := strings.Split(hash, "$")
+	if len(parts) != 6 || parts[1] != "argon2id" || parts[2] != fmt.Sprintf("v=%d", argon2.Version) {
+		return nil, errInvalidHash
+	}
+	return parts, nil
+}
+
+func decodeArgonMaterial(saltB64, keyB64 string) (salt, key []byte, err error) {
+	salt, err = base64.RawStdEncoding.DecodeString(saltB64)
+	if err != nil {
+		return nil, nil, errInvalidHash
+	}
+	key, err = base64.RawStdEncoding.DecodeString(keyB64)
+	if err != nil || len(salt) == 0 || len(key) == 0 {
+		return nil, nil, errInvalidHash
+	}
+	return salt, key, nil
 }
