@@ -17,8 +17,8 @@ Goose at startup.
 | `github.com/a-h/templ`                     | v0.3.1020 | MIT          | Type-safe server-rendered templates (SSR)                         |
 | `github.com/labstack/echo/v4`              | v4.15.4   | MIT          | HTTP router and middleware                                        |
 | `aidanwoods.dev/go-paseto`                 | v1.6.0    | MIT          | PASETO v4.local session tokens                                    |
-| `golang.org/x/crypto`                      | v0.54.0   | BSD-3-Clause | Argon2id password hashing (PHC format)                            |
-| `github.com/google/cel-go`                 | v0.28.0   | Apache-2.0   | Dynamic policy engine (RBAC rules at runtime)                     |
+| `golang.org/x/crypto`                      | v0.55.0   | BSD-3-Clause | Argon2id password hashing (PHC format)                            |
+| `github.com/google/cel-go`                 | v0.30.0   | Apache-2.0   | Dynamic policy engine (RBAC rules at runtime)                     |
 | `github.com/pressly/goose/v3`              | v3.27.3   | MIT          | SQL migrations (embedded)                                         |
 | `modernc.org/sqlite`                       | v1.56.0   | BSD-3-Clause | Pure-Go SQLite driver (no CGO)                                    |
 | `github.com/jackc/pgx/v5`                  | v5.10.0   | MIT          | PostgreSQL driver with connection pooling                         |
@@ -47,8 +47,9 @@ Goose at startup.
 
 ### Build-time Go tools
 
-Installed by the Taskfile `tools` task and never
-linked into the binary; used only to generate committed sources or to analyze the code.
+Installed by the Taskfile `tools`, `tools-osv`, `tools-gitleaks`, and
+`tools-actionlint` tasks and never linked into the binary; used only to
+generate committed sources or to analyze the code.
 
 | Package                                                  | Version   | License      | Purpose                                                       |
 | -------------------------------------------------------- | --------- | ------------ | ------------------------------------------------------------- |
@@ -56,6 +57,18 @@ linked into the binary; used only to generate committed sources or to analyze th
 | `ariga.io/atlas` (via `cmd/migrate`)                     | v1.3.0    | Apache-2.0   | Schema diff engine for versioned Goose migration generation   |
 | `github.com/golangci/golangci-lint/v2/cmd/golangci-lint` | v2.12.2   | GPL-3.0      | Static analysis (`golangci-lint run`, config `.golangci.yml`) |
 | `golang.org/x/vuln/cmd/govulncheck`                      | v1.1.4    | BSD-3-Clause | Known-vulnerability scan of modules and the binary            |
+| `github.com/google/osv-scanner/v2/cmd/osv-scanner`       | v2.5.1    | Apache-2.0   | Lockfile scan of `go.mod` and `package-lock.json` against OSV.dev (`task osv-scan`) |
+| `github.com/zricethezav/gitleaks/v8`                     | v8.29.1   | MIT          | Secret scan of git history (`task gitleaks`)                  |
+| `github.com/rhysd/actionlint/cmd/actionlint`             | v1.7.9    | MIT          | GitHub Actions workflow linter (`task actionlint`)            |
+
+### Pinned release CLIs
+
+Not Go-installable. The Taskfile downloads GitHub release binaries or archives into `.tools/bin` and checks SHA-256. They are never linked into the application binary.
+
+| Package                         | Version | License | Purpose                                                     |
+| ------------------------------- | ------- | ------- | ----------------------------------------------------------- |
+| `hadolint/hadolint`             | 2.14.0  | GPL-3.0 | Dockerfile linter (`task hadolint`)                         |
+| `zizmorcore/zizmor`             | 1.29.0  | MIT     | Workflow security and code smells (`task zizmor`, part of `task lint`) |
 
 ## Frontend
 

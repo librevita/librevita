@@ -10,6 +10,7 @@ fixes, features, documentation, and tests.
 - Go — the version pinned in the Taskfile (`GO_VERSION`) is downloaded
   automatically by `go` when the local one is older
 - Node 24 (LTS, see `.nvmrc`) for the frontend pipeline
+- curl, only for `task hadolint` / `task zizmor` (pinned GitHub release binaries)
 - Podman or Docker, only if you build the OCI image (`task image`)
 
 ## First-time setup
@@ -28,8 +29,8 @@ across jobs.
 task dev        # fast unoptimized binary (bin/librevita-dev)
 task test       # Go test suite + frontend unit tests
 task vet        # go vet
-task lint       # golangci-lint (config: .golangci.yaml)
-task audit      # govulncheck (source + binary) and npm audit
+task lint       # golangci-lint, hadolint, actionlint, and zizmor
+task audit      # govulncheck, npm audit, OSV-Scanner, and gitleaks
 task tidy       # sync go.mod/go.sum
 task db-diff -- name=describe_the_change  # Goose migrations from the Ent schema
 ```
@@ -38,14 +39,16 @@ Cache discipline: the Go build cache, the npm cache and the Taskfile
 `sources`/`generates` gates keep the loop incremental — a task only
 re-runs when its inputs changed. Generators and analyzers are pinned by
 version in the Taskfile `vars`; when bumping a toolchain, update the
-version there (and the same `GO_VERSION` in the CI workflow).
+version there (and the same `GO_VERSION` in the CI workflow). Bumping
+hadolint or zizmor also requires updating the matching SHA-256 pins for
+each release binary or archive.
 
 ## Style and conventions
 
 - Code, logs, comments, commit messages, and UI chrome are in English
 - Validator catalogs may include `pt-BR` for field errors; that is not a translated UI
 - Conventional commit messages (`fix:`, `feat:`, `refactor:`, `docs:`, ...)
-- `gofmt` and `golangci-lint` must pass (`task lint`)
+- `gofmt`, `golangci-lint`, `hadolint`, `actionlint`, and `zizmor` must pass (`task lint`)
 - Go code must build with `CGO_ENABLED=0` (the production image is scratch)
 - The compatibility floor is legacy browsers; frontend changes must keep
   `npm run check` and `npm test` green

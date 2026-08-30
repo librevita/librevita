@@ -13,7 +13,7 @@ import (
 	"librevita.org/internal/core/crypto"
 )
 
-const testHasherKey = "nAmIvOXVc0vb6M9G7P9q2j2yK1WxP3sJ8q5dR4tU6wA="
+const testHasherKey = "nAmIvOXVc0vb6M9G7P9q2j2yK1WxP3sJ8q5dR4tU6wA=" // gitleaks:allow
 
 func mustHasherKey(t *testing.T) []byte {
 	t.Helper()

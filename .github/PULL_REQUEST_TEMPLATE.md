@@ -12,9 +12,9 @@
 
 ## Verification
 
-- [ ] `earthly +all` passes locally (tests, vet, lint, build, image)
+- [ ] `task all` passes locally (tests, vet, lint, audits, binary, image)
 - [ ] New behavior has tests
-- [ ] Schema changes: migration added and `earthly +generate` run
+- [ ] Schema changes: migration added and `task gen` / `task db-diff` run
 
 ## Notes for reviewers
 

@@ -1,0 +1,11 @@
+# OSV-Scanner configuration for the repository root lockfiles.
+# Add [[IgnoredVulns]] entries only with an id, a reason, and (when the
+# exception is temporary) ignoreUntil.
+
+[[IgnoredVulns]]
+id = "GHSA-q7pp-wcgr-pffx"
+reason = "CVE-2023-36308 is a disputed panic on a crafted TIFF; disintegration/imaging v1.6.2 is unmaintained and has no patched release. The avatar pipeline accepts TIFF."
+
+[[IgnoredVulns]]
+id = "GO-2026-5932"
+reason = "Advisory is scoped to the unmaintained golang.org/x/crypto/openpgp subpackage, which has no patched release. Application code imports argon2, blake2b, blake2s, chacha20poly1305, and hkdf only; call analysis reports the finding as uncalled."

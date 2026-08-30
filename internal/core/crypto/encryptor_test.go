@@ -11,7 +11,7 @@ import (
 	"librevita.org/internal/core/crypto"
 )
 
-const testEncryptorKey = "nAmIvOXVc0vb6M9G7P9q2j2yK1WxP3sJ8q5dR4tU6wA="
+const testEncryptorKey = "nAmIvOXVc0vb6M9G7P9q2j2yK1WxP3sJ8q5dR4tU6wA=" // gitleaks:allow
 
 func mustEncryptorKey(t *testing.T) []byte {
 	t.Helper()

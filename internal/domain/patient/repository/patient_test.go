@@ -21,7 +21,7 @@ import (
 	"librevita.org/internal/domain/patient/repository"
 )
 
-const testKeyB64 = "nAmIvOXVc0vb6M9G7P9q2j2yK1WxP3sJ8q5dR4tU6wA="
+const testKeyB64 = "nAmIvOXVc0vb6M9G7P9q2j2yK1WxP3sJ8q5dR4tU6wA=" // gitleaks:allow
 
 func strPtr(s string) *string { return &s }
 

@@ -1,0 +1,30 @@
+title = "LibreVita"
+
+[extend]
+useDefault = true
+
+# The same 32-byte base64 fixture is used across crypto unit tests. It is
+# not a production master key. Call sites also have `gitleaks:allow`.
+[[allowlists]]
+description = "Documented test fixture key (crypto unit tests)"
+regexes = [
+    '''nAmIvOXVc0vb6M9G7P9q2j2yK1WxP3sJ8q5dR4tU6wA=''',
+]
+
+# Working-tree scan (`gitleaks detect --no-git`) does not honor
+# .gitignore; skip generated sources, caches, and install trees.
+# `task gitleaks` uses git mode, so a local .env is already skipped.
+[[allowlists]]
+description = "Generated sources, caches, and install trees"
+paths = [
+    '''(^|/)ent/''',
+    '''_templ\.go$''',
+    '''(^|/)tests/mocks/''',
+    '''(^|/)node_modules/''',
+    '''(^|/)internal/ui/static/''',
+    '''(^|/)\.git/''',
+    '''(^|/)\.tools/''',
+    '''(^|/)\.task/''',
+    '''(^|/)bin/''',
+    '''(^|/)data/''',
+]

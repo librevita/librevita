@@ -21,7 +21,7 @@ import (
 	"librevita.org/internal/domain/episode/repository"
 )
 
-const testKeyB64 = "nAmIvOXVc0vb6M9G7P9q2j2yK1WxP3sJ8q5dR4tU6wA="
+const testKeyB64 = "nAmIvOXVc0vb6M9G7P9q2j2yK1WxP3sJ8q5dR4tU6wA=" // gitleaks:allow
 
 func TestEpisodeRepository_SOAPAggregate(t *testing.T) {
 	db, err := sql.Open("sqlite", "file:episode?mode=memory&cache=shared&_pragma=foreign_keys(1)")
