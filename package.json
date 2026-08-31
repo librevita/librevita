@@ -11,24 +11,24 @@
     "test": "node --import ./internal/ui/test-loader.ts --test internal/ui/ts/ui_test.ts"
   },
   "devDependencies": {
-    "@alpinejs/collapse": "^3.16.1",
-    "@alpinejs/csp": "^3.16.1",
-    "@alpinejs/focus": "^3.16.1",
-    "@alpinejs/mask": "^3.16.1",
-    "@alpinejs/morph": "^3.16.1",
+    "@alpinejs/collapse": "^3.16.3",
+    "@alpinejs/csp": "^3.16.3",
+    "@alpinejs/focus": "^3.16.3",
+    "@alpinejs/mask": "^3.16.3",
+    "@alpinejs/morph": "^3.16.3",
     "@babel/core": "^8.0.1",
     "@babel/preset-env": "^8.0.2",
     "@fontsource/inter": "^5.3.0",
     "@types/node": "^26.2.0",
     "autoprefixer": "^10.5.4",
-    "cssnano": "^8.0.4",
-    "esbuild": "0.28.1",
+    "cssnano": "^8.0.8",
+    "esbuild": "0.28.2",
     "linkedom": "^0.18.10",
     "postcss": "^8.5.26",
     "postcss-combine-media-query": "^2.1.0",
     "postcss-sort-media-queries": "^6.7.1",
-    "tailwindcss": "3.4.17",
-    "typescript": "^5.7.3"
+    "tailwindcss": "3.4.19",
+    "typescript": "^7.0.2"
   },
   "dependencies": {
     "htmx-types": "1.0.1",
