@@ -25,6 +25,9 @@ updates:
     commit-message:
       prefix: "chore"
       prefix-development: "chore"
+    ignore:
+      - dependency-name: "tailwindcss"
+        update-types: ["version-update:semver-major"]
     groups:
       npm-dependencies:
         patterns:
