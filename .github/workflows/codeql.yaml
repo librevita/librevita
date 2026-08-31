@@ -73,9 +73,7 @@ jobs:
 
       - name: Build Go with generated sources
         if: matrix.language == 'go'
-        run: |
-          task gen
-          go build -o bin/librevita ./cmd/web
+        run: task build
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
