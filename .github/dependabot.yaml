@@ -1,0 +1,40 @@
+version: 2
+updates:
+  # 1. GitHub Actions (maintains and updates pinned commit hashes in workflows)
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 7
+    groups:
+      actions:
+        patterns:
+          - "*"
+    open-pull-requests-limit: 5
+
+  # 2. Go dependencies (go.mod / go.sum)
+  - package-ecosystem: "gomod"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 7
+    groups:
+      go-dependencies:
+        patterns:
+          - "*"
+    open-pull-requests-limit: 5
+
+  # 3. Frontend npm dependencies (package.json / package-lock.json)
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 7
+    groups:
+      npm-dependencies:
+        patterns:
+          - "*"
+    open-pull-requests-limit: 5
