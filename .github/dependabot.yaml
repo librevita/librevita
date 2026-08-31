@@ -46,6 +46,10 @@ updates:
     ignore:
       - dependency-name: "tailwindcss"
         update-types: ["version-update:semver-major"]
+      - dependency-name: "htmx.org"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "htmx-types"
+        update-types: ["version-update:semver-major"]
     groups:
       npm-dependencies:
         patterns:
