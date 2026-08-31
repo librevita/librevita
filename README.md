@@ -1,6 +1,11 @@
 # LibreVita
 
 [![CI](https://img.shields.io/github/actions/workflow/status/librevita/librevita/ci.yaml?style=flat-square&logo=github)](https://github.com/librevita/librevita/actions/workflows/ci.yaml)
+[![Quality Gate](https://img.shields.io/sonar/quality_gate/librevita_librevita?server=https%3A%2F%2Fsonarcloud.io&style=flat-square&logo=sonarcloud)](https://sonarcloud.io/summary/new_code?id=librevita_librevita)
+[![Tech Debt](https://img.shields.io/sonar/tech_debt/librevita_librevita?server=https%3A%2F%2Fsonarcloud.io&style=flat-square&logo=sonarcloud)](https://sonarcloud.io/summary/new_code?id=librevita_librevita)
+[![Vulnerabilities](https://img.shields.io/sonar/vulnerabilities/librevita_librevita?server=https%3A%2F%2Fsonarcloud.io&style=flat-square&logo=sonarcloud)](https://sonarcloud.io/summary/new_code?id=librevita_librevita)
+[![Bugs](https://img.shields.io/sonar/bugs/librevita_librevita?server=https%3A%2F%2Fsonarcloud.io&style=flat-square&logo=sonarcloud)](https://sonarcloud.io/summary/new_code?id=librevita_librevita)
+[![Coverage](https://img.shields.io/codecov/c/github/librevita/librevita?style=flat-square&logo=codecov)](https://app.codecov.io/github/librevita/librevita)
 [![Go version](https://img.shields.io/github/go-mod/go-version/librevita/librevita?style=flat-square)](https://go.dev/dl/)
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue?style=flat-square)](LICENSE)
 [![Repo size](https://img.shields.io/github/repo-size/librevita/librevita?style=flat-square)]()
