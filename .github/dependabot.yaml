@@ -5,10 +5,19 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+      day: "monday"
+      time: "04:00"
+      timezone: "America/Sao_Paulo"
     cooldown:
       default-days: 7
+    rebase-strategy: "auto"
     commit-message:
       prefix: "ci"
+    labels:
+      - "dependencies"
+      - "github-actions"
+    assignees:
+      - "gustavo-veiga"
     groups:
       actions:
         patterns:
@@ -20,11 +29,20 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+      day: "monday"
+      time: "04:00"
+      timezone: "America/Sao_Paulo"
     cooldown:
       default-days: 7
+    rebase-strategy: "auto"
     commit-message:
       prefix: "chore"
       prefix-development: "chore"
+    labels:
+      - "dependencies"
+      - "frontend"
+    assignees:
+      - "gustavo-veiga"
     ignore:
       - dependency-name: "tailwindcss"
         update-types: ["version-update:semver-major"]
