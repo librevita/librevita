@@ -325,7 +325,7 @@ tasks:
       - gen
       - frontend
     cmds:
-      - go test ./...
+      - go test -coverprofile=coverage.out -covermode=atomic ./...
   go-vet:
     desc: Run go vet
     deps:

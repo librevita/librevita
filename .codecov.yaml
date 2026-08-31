@@ -1,0 +1,55 @@
+# ==============================================================================
+# Codecov configuration for LibreVita
+# Docs: https://docs.codecov.com/docs/codecov-yaml
+# ==============================================================================
+codecov:
+  require_ci_to_pass: true
+
+coverage:
+  precision: 2
+  round: down
+  range: '70...100'
+  status:
+    project:
+      default:
+        # Target coverage automatically matches the base commit (prevents regression)
+        target: auto
+        # Allow a slight drop before failing the status check
+        threshold: 1%
+    patch:
+      default:
+        # Require 80% coverage on new/changed lines in pull requests
+        target: 80%
+        threshold: 1%
+
+comment:
+  layout: 'reach,diff,flags,files'
+  behavior: default
+  require_changes: false
+
+ignore:
+  # Generated ORM code (Ent)
+  - 'ent/**/*'
+  - '.entc/**/*'
+
+  # Generated Mocks (Mockery)
+  - 'tests/mocks/**/*'
+
+  # Generated Templ templates
+  - '**/*_templ.go'
+
+  # Unit and integration test files
+  - '**/*_test.go'
+
+  # Migrations
+  - 'internal/database/migrations/**/*'
+
+  # Application entrypoints
+  - 'cmd/**/*'
+
+  # Frontend build and dependencies
+  - 'node_modules/**/*'
+  - 'internal/ui/static/**/*'
+  - 'internal/ui/assets.go'
+  - '**/*.config.ts'
+  - '**/*.config.js'
