@@ -34,7 +34,7 @@ jobs:
           - language: actions
             build-mode: none
           - language: go
-            build-mode: manual
+            build-mode: autobuild
           - language: javascript-typescript
             build-mode: none
 
@@ -58,22 +58,22 @@ jobs:
           node-version: 24.19.0
           cache: npm
 
-      - name: Initialize CodeQL
-        uses: github/codeql-action/init@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
-        with:
-          languages: ${{ matrix.language }}
-          build-mode: ${{ matrix.build-mode }}
-          queries: security-extended
-
       - name: Setup Task
         if: matrix.language == 'go'
         uses: go-task/setup-task@a00fbb05ce67b35648be3c78cbc9fd85354c757e # v2.2.0
         with:
           version: 3.52.0
 
-      - name: Build Go with generated sources
+      - name: Generate Go sources and assets
         if: matrix.language == 'go'
-        run: task build
+        run: task gen node-assets
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+          queries: security-extended
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
