@@ -21,7 +21,7 @@ import (
 	"librevita.org/ent/enttest"
 	"librevita.org/internal/core/crypto"
 	"librevita.org/internal/core/database/fle"
-	"librevita.org/internal/core/vault"
+	"librevita.org/internal/core/keystore"
 )
 
 func generateTestKey(t *testing.T) []byte {
@@ -220,7 +220,7 @@ func TestFLE_UsesPatientDEKPerEntity(t *testing.T) {
 	t.Cleanup(func() { _ = client.Close() })
 
 	require.NoError(t, client.Schema.Create(context.Background()))
-	v, err := vault.NewBBoltVault(filepath.Join(t.TempDir(), "keys.db"))
+	v, err := keystore.OpenBBolt(filepath.Join(t.TempDir(), "keystore.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = v.Close() })
 

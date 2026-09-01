@@ -6,14 +6,29 @@ import (
 	"github.com/google/uuid"
 )
 
-// ClinicURN is the vault key and FLE AAD for a clinic DEK.
+// ClinicURN is the keystore key and FLE AAD for a clinic DEK.
 func ClinicURN(clinicID uuid.UUID) string {
 	return "urn:librevita:clinic:" + clinicID.String()
 }
 
-// PatientURN is the vault key for a patient DEK wrapped by the clinic DEK.
+// PatientURN is the keystore key for a patient DEK wrapped by the clinic DEK.
 func PatientURN(clinicID, patientID uuid.UUID) string {
 	return "urn:librevita:clinic:" + clinicID.String() + ":patient:" + patientID.String()
+}
+
+// MetaURN is the key for installation metadata in the meta store.
+func MetaURN(key string) string {
+	return "urn:librevita:meta:" + key
+}
+
+// ClinicSessionURN is the revocation-index key for a clinic PASETO session.
+func ClinicSessionURN(clinicID uuid.UUID, tokenHash string) string {
+	return "urn:librevita:clinic:" + clinicID.String() + ":session:" + tokenHash
+}
+
+// PlatformSessionURN is the revocation-index key for an apex PASETO session.
+func PlatformSessionURN(tokenHash string) string {
+	return "urn:librevita:platform:session:" + tokenHash
 }
 
 // ClinicAAD is the request-scoped FLE AAD for a clinic.

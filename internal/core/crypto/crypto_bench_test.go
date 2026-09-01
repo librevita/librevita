@@ -11,13 +11,13 @@ import (
 	"github.com/google/uuid"
 
 	"librevita.org/internal/core/crypto"
-	"librevita.org/internal/core/vault"
+	"librevita.org/internal/core/keystore"
 )
 
 func BenchmarkBatchPatientDEKResolution(b *testing.B) {
 	for _, size := range []int{1, 20, 50} {
 		b.Run(fmt.Sprintf("patients_%d", size), func(b *testing.B) {
-			v, err := vault.NewBBoltVault(filepath.Join(b.TempDir(), "keys.db"))
+			v, err := keystore.OpenBBolt(filepath.Join(b.TempDir(), "keystore.db"))
 			if err != nil {
 				b.Fatal(err)
 			}

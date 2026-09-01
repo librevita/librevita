@@ -13,7 +13,8 @@ func (c *Config) normalize() {
 	c.normalizeHTTP()
 	c.normalizeDatabase()
 	c.normalizeLogging()
-	c.normalizeVaultCrypto()
+	c.normalizeKV()
+	c.normalizeCrypto()
 }
 
 func (c *Config) normalizeHTTP() {
@@ -102,14 +103,35 @@ func (c *Config) normalizeLogging() {
 	}
 }
 
-func (c *Config) normalizeVaultCrypto() {
-	c.Vault.Backend = strings.ToLower(strings.TrimSpace(c.Vault.Backend))
-	if c.Vault.Backend == "" {
-		c.Vault.Backend = "bbolt"
+func (c *Config) normalizeKV() {
+	c.normalizeKVBlock(&c.Keystore, "keystore.db", "keystore", "/librevita/keystore/")
+	c.normalizeKVBlock(&c.Meta, "meta.db", "meta", "/librevita/meta/")
+	c.normalizeKVBlock(&c.Sessions, "sessions.db", "sessions", "/librevita/sessions/")
+	if strings.TrimSpace(c.Keystore.Vault.Mount) == "" {
+		c.Keystore.Vault.Mount = "secret"
 	}
-	if strings.TrimSpace(c.Vault.BBolt.Path) == "" {
-		c.Vault.BBolt.Path = filepath.Join(c.DataDir, "keys.db")
+	if strings.TrimSpace(c.Keystore.Vault.Prefix) == "" {
+		c.Keystore.Vault.Prefix = "librevita/keystore/"
 	}
+}
+
+func (c *Config) normalizeKVBlock(block *KVConfig, bboltFile, natsBucket, etcdPrefix string) {
+	block.Backend = strings.ToLower(strings.TrimSpace(block.Backend))
+	if block.Backend == "" {
+		block.Backend = BackendBBolt
+	}
+	if strings.TrimSpace(block.BBolt.Path) == "" {
+		block.BBolt.Path = filepath.Join(c.DataDir, bboltFile)
+	}
+	if strings.TrimSpace(block.NATS.Bucket) == "" {
+		block.NATS.Bucket = natsBucket
+	}
+	if strings.TrimSpace(block.Etcd.Prefix) == "" {
+		block.Etcd.Prefix = etcdPrefix
+	}
+}
+
+func (c *Config) normalizeCrypto() {
 	c.Crypto.HashAlgorithm = strings.ToLower(strings.TrimSpace(c.Crypto.HashAlgorithm))
 	if c.Crypto.HashAlgorithm == "" {
 		c.Crypto.HashAlgorithm = "blake2s"
@@ -150,7 +172,7 @@ func (c *Config) validate() error {
 	if err := c.validateCrypto(); err != nil {
 		return err
 	}
-	if err := c.validateVault(); err != nil {
+	if err := c.validateKV(); err != nil {
 		return err
 	}
 	if err := c.validateDatabase(); err != nil {
@@ -179,12 +201,32 @@ func (c *Config) validateCrypto() error {
 	return nil
 }
 
-func (c *Config) validateVault() error {
-	switch c.Vault.Backend {
-	case "", "bbolt", "nats", "etcd", "hashicorp", "hashicorp_vault", "openbao":
+func (c *Config) validateKV() error {
+	if err := validateKVBackend("keystore", c.Keystore.Backend, true); err != nil {
+		return err
+	}
+	if err := validateKVBackend("meta", c.Meta.Backend, false); err != nil {
+		return err
+	}
+	return validateKVBackend("sessions", c.Sessions.Backend, false)
+}
+
+func validateKVBackend(name, backend string, allowVault bool) error {
+	switch backend {
+	case "", BackendBBolt, BackendNATS, BackendEtcd:
 		return nil
+	case BackendVault:
+		if allowVault {
+			return nil
+		}
+		return errors.Newf("config: %s.backend %q is only supported for keystore", name, backend)
 	default:
-		return errors.Newf("config: invalid vault.backend %q (use \"bbolt\", \"nats\", \"etcd\", \"hashicorp\", \"hashicorp_vault\", or \"openbao\")", c.Vault.Backend)
+		if allowVault {
+			return errors.Newf("config: invalid %s.backend %q (use %q, %q, %q, or %q)",
+				name, backend, BackendBBolt, BackendNATS, BackendEtcd, BackendVault)
+		}
+		return errors.Newf("config: invalid %s.backend %q (use %q, %q, or %q)",
+			name, backend, BackendBBolt, BackendNATS, BackendEtcd)
 	}
 }
 

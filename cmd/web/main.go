@@ -15,11 +15,12 @@ import (
 	"librevita.org/internal/core/config"
 	"librevita.org/internal/core/crypto"
 	"librevita.org/internal/core/database"
+	"librevita.org/internal/core/keystore"
+	"librevita.org/internal/core/meta"
 	"librevita.org/internal/core/policy"
 	"librevita.org/internal/core/server"
 	"librevita.org/internal/core/storage"
 	"librevita.org/internal/core/telemetry"
-	"librevita.org/internal/core/vault"
 	"librevita.org/internal/domain/calendar"
 	"librevita.org/internal/domain/clinic"
 	"librevita.org/internal/domain/episode"
@@ -38,7 +39,8 @@ func main() {
 	fx.New(
 		config.Module,
 		telemetry.Module,
-		vault.Module,
+		keystore.Module,
+		meta.Module,
 		crypto.Module,
 		fx.WithLogger(telemetry.FxLogger),
 		database.Module, // Runs embedded migrations during OnStart.

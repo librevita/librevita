@@ -46,6 +46,12 @@ const (
 
 	defaultMaxConcurrentHashes = 4
 	defaultBaseDomain          = "lv.test"
+
+	// KV backends.
+	BackendBBolt = "bbolt"
+	BackendNATS  = "nats"
+	BackendEtcd  = "etcd"
+	BackendVault = "vault"
 )
 
 // Config is the application configuration root.
@@ -99,8 +105,14 @@ type Config struct {
 	// S3-compatible API).
 	Storage StorageConfig `koanf:"storage"`
 
-	// Vault selects the key vault storage backend (embedded bbolt or memory).
-	Vault VaultConfig `koanf:"vault"`
+	// Keystore holds wrapped Clinic and Patient DEKs (bbolt, nats, etcd, or vault).
+	Keystore KVConfig `koanf:"keystore"`
+
+	// Meta is installation key-value metadata (bbolt, nats, or etcd).
+	Meta KVConfig `koanf:"meta"`
+
+	// Sessions is the PASETO revocation index (bbolt, nats, or etcd).
+	Sessions KVConfig `koanf:"sessions"`
 
 	// PasetoKey is the base64-encoded 32-byte key for PASETO v4.local
 	// session tokens. Required outside development; generated at startup
@@ -127,49 +139,41 @@ type CryptoConfig struct {
 	EncryptionCipher string `koanf:"encryption_cipher"`
 }
 
-// VaultConfig defines the active key vault backend. The backend-specific
-// settings live in their own section (bbolt), mirroring DatabaseConfig
-// and StorageConfig.
-type VaultConfig struct {
-	// Backend is "bbolt" (default), "nats", "etcd", or "hashicorp" ("vault").
+// KVConfig is one independent key-value store (keystore, meta, or sessions).
+type KVConfig struct {
+	// Backend is BackendBBolt (default), BackendNATS, BackendEtcd, or
+	// BackendVault. Vault is valid only on the keystore block.
 	Backend string `koanf:"backend"`
 
-	// BBolt configures the embedded bbolt key vault.
-	BBolt BBoltConfig `koanf:"bbolt"`
-
-	// NATS configures the NATS JetStream key vault.
-	NATS NATSVaultConfig `koanf:"nats"`
-
-	// Etcd configures the etcd v3 key vault.
-	Etcd EtcdVaultConfig `koanf:"etcd"`
-
-	// HashiCorp configures the HashiCorp Vault / OpenBao key vault.
-	HashiCorp HashiCorpVaultConfig `koanf:"hashicorp"`
+	BBolt BBoltConfig        `koanf:"bbolt"`
+	NATS  NATSConfig         `koanf:"nats"`
+	Etcd  EtcdConfig         `koanf:"etcd"`
+	Vault VaultBackendConfig `koanf:"vault"`
 }
 
-// BBoltConfig configures the embedded bbolt key vault.
+// BBoltConfig configures an embedded bbolt file.
 type BBoltConfig struct {
-	// Path is the bbolt key vault database file path.
 	Path string `koanf:"path"`
 }
 
-// NATSVaultConfig configures the NATS JetStream KeyValue vault.
-type NATSVaultConfig struct {
+// NATSConfig configures a NATS JetStream KeyValue bucket.
+type NATSConfig struct {
 	URL    string `koanf:"url"`
 	Bucket string `koanf:"bucket"`
 }
 
-// EtcdVaultConfig configures the etcd v3 KeyValue vault.
-type EtcdVaultConfig struct {
+// EtcdConfig configures an etcd v3 key prefix.
+type EtcdConfig struct {
 	Endpoints string `koanf:"endpoints"`
 	Prefix    string `koanf:"prefix"`
 }
 
-// HashiCorpVaultConfig configures the HashiCorp Vault / OpenBao key vault.
-type HashiCorpVaultConfig struct {
+// VaultBackendConfig configures HashiCorp Vault / OpenBao KV v2.
+type VaultBackendConfig struct {
 	Address string `koanf:"address"`
 	Token   string `koanf:"token"`
 	Mount   string `koanf:"mount"`
+	Prefix  string `koanf:"prefix"`
 }
 
 // AuthConfig controls authentication behavior.

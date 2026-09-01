@@ -23,10 +23,11 @@ import (
 	"librevita.org/internal/core/config"
 	"librevita.org/internal/core/crypto"
 	"librevita.org/internal/core/database/fle"
+	"librevita.org/internal/core/keystore"
+	"librevita.org/internal/core/kv"
 	"librevita.org/internal/core/policy"
 	"librevita.org/internal/core/server"
 	"librevita.org/internal/core/storage"
-	"librevita.org/internal/core/vault"
 	clinicrepo "librevita.org/internal/domain/clinic/repository"
 	clinicusecase "librevita.org/internal/domain/clinic/usecase"
 	identifierusecase "librevita.org/internal/domain/identifier/usecase"
@@ -67,7 +68,12 @@ func newIdentEnv(t *testing.T) (*echo.Echo, *auth.SessionManager, *usecase.Servi
 	t.Helper()
 	client := openDocDB(t)
 	log := log.Nop()
-	sessions, err := auth.NewSessionManager(auth.NewSessionRepository(client), &config.Config{Mode: "development"}, log)
+	sessKV, err := kv.OpenBBolt(filepath.Join(t.TempDir(), "sessions.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = sessKV.Close() })
+	sessions, err := auth.NewSessionManager(auth.NewSessionRepository(sessKV, client), &config.Config{Mode: "development"}, log)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -83,7 +89,7 @@ func newIdentEnv(t *testing.T) (*echo.Echo, *auth.SessionManager, *usecase.Servi
 		t.Fatal(err)
 	}
 
-	v, err := vault.NewBBoltVault(filepath.Join(t.TempDir(), "keys.db"))
+	v, err := keystore.OpenBBolt(filepath.Join(t.TempDir(), "keystore.db"))
 	if err != nil {
 		t.Fatal(err)
 	}

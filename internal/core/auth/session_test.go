@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"net/http"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -21,6 +22,7 @@ import (
 	"librevita.org/internal/core/clinicctx"
 	"librevita.org/internal/core/config"
 	"librevita.org/internal/core/database"
+	"librevita.org/internal/core/kv"
 	"librevita.org/internal/testutil"
 	"librevita.org/pkg/log"
 )
@@ -53,10 +55,22 @@ func seedUser(t *testing.T, client *ent.Client, id string) {
 	require.NoError(t, err)
 }
 
+func testCtx() context.Context {
+	return clinicctx.WithTestClinic(context.Background())
+}
+
+func testSessionRepo(t *testing.T, client *ent.Client) SessionRepository {
+	t.Helper()
+	store, err := kv.OpenBBolt(filepath.Join(t.TempDir(), "sessions.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = store.Close() })
+	return NewSessionRepository(store, client)
+}
+
 func newManager(t *testing.T, client *ent.Client, ttl time.Duration) *SessionManager {
 	t.Helper()
 	return &SessionManager{
-		repo:   NewSessionRepository(client),
+		repo:   testSessionRepo(t, client),
 		ttl:    ttl,
 		secure: false,
 		log:    log.Nop(),
@@ -68,20 +82,20 @@ func TestSessionLifecycle(t *testing.T) {
 	seedUser(t, client, testUserID)
 	m := newManager(t, client, time.Hour)
 
-	token, err := m.Create(context.Background(), Principal{ID: testUserID, Email: "user@example.org", Name: "Test User", Role: RoleAdmin})
+	token, err := m.Create(testCtx(), Principal{ID: testUserID, Email: "user@example.org", Name: "Test User", Role: RoleAdmin})
 	require.NoError(t, err)
 	assert.NotEmpty(t, token)
 
-	p, err := m.Authenticate(context.Background(), token)
+	p, err := m.Authenticate(testCtx(), token)
 	require.NoError(t, err)
 	assert.Equal(t, testUserID, p.ID)
 	assert.Equal(t, RoleAdmin, p.Role)
 	assert.Equal(t, "user@example.org", p.Email)
 
-	err = m.Destroy(context.Background(), token)
+	err = m.Destroy(testCtx(), token)
 	require.NoError(t, err)
 
-	_, err = m.Authenticate(context.Background(), token)
+	_, err = m.Authenticate(testCtx(), token)
 	assert.Equal(t, ErrNoSession, err)
 }
 
@@ -123,10 +137,10 @@ func TestSessionExpiry(t *testing.T) {
 	seedUser(t, client, testUserID)
 	m := newManager(t, client, -time.Hour) // Already expired.
 
-	token, err := m.Create(context.Background(), Principal{ID: testUserID, Email: "user@example.org", Name: "Test User", Role: RoleAdmin})
+	token, err := m.Create(testCtx(), Principal{ID: testUserID, Email: "user@example.org", Name: "Test User", Role: RoleAdmin})
 	require.NoError(t, err)
 
-	_, err = m.Authenticate(context.Background(), token)
+	_, err = m.Authenticate(testCtx(), token)
 	assert.Equal(t, ErrNoSession, err)
 }
 
@@ -139,10 +153,10 @@ func TestSessionRejectsDeactivatedUser(t *testing.T) {
 	require.NoError(t, err)
 	m := newManager(t, client, time.Hour)
 
-	token, err := m.Create(context.Background(), Principal{ID: testUserID, Email: "user@example.org", Name: "Test User", Role: RoleAdmin})
+	token, err := m.Create(testCtx(), Principal{ID: testUserID, Email: "user@example.org", Name: "Test User", Role: RoleAdmin})
 	require.NoError(t, err)
 
-	_, err = m.Authenticate(context.Background(), token)
+	_, err = m.Authenticate(testCtx(), token)
 	assert.Equal(t, ErrNoSession, err)
 }
 
@@ -154,7 +168,7 @@ func TestSessionManagerRequiresClient(t *testing.T) {
 func TestSessionManagerRequiresKeyInProduction(t *testing.T) {
 	client := openSessionTest(t)
 	cfg := &config.Config{Mode: "production"}
-	_, err := NewSessionManager(NewSessionRepository(client), cfg, log.Nop())
+	_, err := NewSessionManager(testSessionRepo(t, client), cfg, log.Nop())
 	assert.Error(t, err)
 }
 
@@ -162,7 +176,7 @@ func TestSessionManagerRejectsMalformedKey(t *testing.T) {
 	client := openSessionTest(t)
 	for _, key := range []string{"not-base64!!", base64.StdEncoding.EncodeToString([]byte("short"))} {
 		cfg := &config.Config{Mode: "production", PasetoKey: key}
-		_, err := NewSessionManager(NewSessionRepository(client), cfg, log.Nop())
+		_, err := NewSessionManager(testSessionRepo(t, client), cfg, log.Nop())
 		assert.Error(t, err, "NewSessionManager with key %q should fail", key)
 	}
 }
@@ -170,14 +184,14 @@ func TestSessionManagerRejectsMalformedKey(t *testing.T) {
 func TestSessionManagerAcceptsConfiguredKey(t *testing.T) {
 	client := openSessionTest(t)
 	key := base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{0x42}, 32))
-	m, err := NewSessionManager(NewSessionRepository(client), &config.Config{Mode: "production", PasetoKey: key}, log.Nop())
+	m, err := NewSessionManager(testSessionRepo(t, client), &config.Config{Mode: "production", PasetoKey: key}, log.Nop())
 	require.NoError(t, err)
 
 	seedUser(t, client, testUserID)
-	token, err := m.Create(context.Background(), Principal{ID: testUserID, Email: "user@example.org", Name: "Test User", Role: RoleAdmin})
+	token, err := m.Create(testCtx(), Principal{ID: testUserID, Email: "user@example.org", Name: "Test User", Role: RoleAdmin})
 	require.NoError(t, err)
 
-	_, err = m.Authenticate(context.Background(), token)
+	_, err = m.Authenticate(testCtx(), token)
 	assert.NoError(t, err)
 }
 
@@ -186,7 +200,7 @@ func TestSessionRejectsTamperedToken(t *testing.T) {
 	seedUser(t, client, testUserID)
 	m := newManager(t, client, time.Hour)
 
-	token, err := m.Create(context.Background(), Principal{ID: testUserID, Email: "user@example.org", Name: "Test User", Role: RoleAdmin})
+	token, err := m.Create(testCtx(), Principal{ID: testUserID, Email: "user@example.org", Name: "Test User", Role: RoleAdmin})
 	require.NoError(t, err)
 
 	tampered := token[:len(token)-1] + string(flipByte(token[len(token)-1]))
@@ -199,7 +213,7 @@ func TestSessionTokenIsPaseto(t *testing.T) {
 	seedUser(t, client, testUserID)
 	m := newManager(t, client, time.Hour)
 
-	token, err := m.Create(context.Background(), Principal{ID: testUserID, Email: "user@example.org", Name: "Test User", Role: RoleAdmin})
+	token, err := m.Create(testCtx(), Principal{ID: testUserID, Email: "user@example.org", Name: "Test User", Role: RoleAdmin})
 	require.NoError(t, err)
 	assert.True(t, strings.HasPrefix(token, "v4.local."), "token %q does not use PASETO v4.local", token)
 }
@@ -216,15 +230,15 @@ func TestSessionManagerKeyBoundary(t *testing.T) {
 	logger := log.Nop()
 
 	for _, env := range []string{"production", "staging", "prod", "test"} {
-		_, err := NewSessionManager(NewSessionRepository(client), &config.Config{Mode: env}, logger)
+		_, err := NewSessionManager(testSessionRepo(t, client), &config.Config{Mode: env}, logger)
 		assert.Error(t, err, "env %q must require a paseto key", env)
 	}
 
-	m, err := NewSessionManager(NewSessionRepository(client), &config.Config{Mode: "development"}, logger)
+	m, err := NewSessionManager(testSessionRepo(t, client), &config.Config{Mode: "development"}, logger)
 	require.NoError(t, err)
 	assert.False(t, m.secure, "development cookies must not use Secure")
 
-	m, err = NewSessionManager(NewSessionRepository(client), &config.Config{Mode: "staging", PasetoKey: base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{0x42}, 32))}, logger)
+	m, err = NewSessionManager(testSessionRepo(t, client), &config.Config{Mode: "staging", PasetoKey: base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{0x42}, 32))}, logger)
 	require.NoError(t, err)
 	assert.True(t, m.secure, "non-development cookies must use Secure")
 }
@@ -233,9 +247,9 @@ func TestSessionCookieAttributes(t *testing.T) {
 	client := openSessionTest(t)
 	logger := log.Nop()
 
-	dev, err := NewSessionManager(NewSessionRepository(client), &config.Config{Mode: "development"}, logger)
+	dev, err := NewSessionManager(testSessionRepo(t, client), &config.Config{Mode: "development"}, logger)
 	require.NoError(t, err)
-	prod, err := NewSessionManager(NewSessionRepository(client), &config.Config{
+	prod, err := NewSessionManager(testSessionRepo(t, client), &config.Config{
 		Mode: "production", PasetoKey: base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{0x42}, 32)),
 	}, logger)
 	require.NoError(t, err)

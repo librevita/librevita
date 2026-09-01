@@ -24,13 +24,15 @@ import (
 	"librevita.org/ent/auditlog"
 	"librevita.org/internal/core/audit"
 	"librevita.org/internal/core/auth"
+	"librevita.org/internal/core/clinicctx"
 	"librevita.org/internal/core/config"
 	"librevita.org/internal/core/crypto"
 	"librevita.org/internal/core/database"
+	"librevita.org/internal/core/keystore"
+	"librevita.org/internal/core/kv"
 	"librevita.org/internal/core/policy"
 	"librevita.org/internal/core/server"
 	"librevita.org/internal/core/storage"
-	"librevita.org/internal/core/vault"
 	clinicrepo "librevita.org/internal/domain/clinic/repository"
 	clinicusecase "librevita.org/internal/domain/clinic/usecase"
 	identifiermodel "librevita.org/internal/domain/identifier/model"
@@ -74,7 +76,12 @@ func newDocEnvFull(t *testing.T, dir string) (*echo.Echo, *auth.SessionManager, 
 	t.Helper()
 	client := openDocDB(t)
 	log := log.Nop()
-	sessions, err := auth.NewSessionManager(auth.NewSessionRepository(client), &config.Config{Mode: "development"}, log)
+	sessKV, err := kv.OpenBBolt(filepath.Join(t.TempDir(), "sessions.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = sessKV.Close() })
+	sessions, err := auth.NewSessionManager(auth.NewSessionRepository(sessKV, client), &config.Config{Mode: "development"}, log)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -89,7 +96,7 @@ func newDocEnvFull(t *testing.T, dir string) (*echo.Echo, *auth.SessionManager, 
 	if err := policies.Load(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	v, err := vault.NewBBoltVault(filepath.Join(t.TempDir(), "keys.db"))
+	v, err := keystore.OpenBBolt(filepath.Join(t.TempDir(), "keystore.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -177,7 +184,14 @@ func mustLocalStore(t *testing.T) storage.Store {
 
 func adminSession(t *testing.T, sessions *auth.SessionManager) *http.Cookie {
 	t.Helper()
-	token, err := sessions.Create(context.Background(), auth.Principal{
+	id := uuid.MustParse(testClinic)
+	ctx := clinicctx.WithClinic(context.Background(), &clinicctx.Clinic{
+		ID:       id,
+		Slug:     "test-clinic",
+		Name:     "Test Clinic",
+		Timezone: "America/Sao_Paulo",
+	})
+	token, err := sessions.Create(ctx, auth.Principal{
 		ID: testAdminID.String(), Email: "admin@example.org", Name: "Admin", Role: auth.RoleAdmin,
 	})
 	if err != nil {

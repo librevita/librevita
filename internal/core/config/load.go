@@ -61,17 +61,30 @@ func RegisterFlags(fs *pflag.FlagSet) {
 	stringFlag(fs, "storage-s3-region", "", "S3 region (may be empty outside AWS)")
 	boolFlag(fs, "storage-s3-secure", true, "use HTTPS for the S3 endpoint")
 	boolFlag(fs, "storage-s3-path-style", true, "use path-style S3 addressing")
-	stringFlag(fs, "vault-backend", "bbolt", "key vault storage backend: bbolt, nats, etcd, or hashicorp")
-	stringFlag(fs, "vault-bbolt-path", "", "bbolt key vault path (default <data-dir>/keys.db)")
-	stringFlag(fs, "vault-nats-url", "", "NATS server URL (e.g. nats://localhost:4222)")
-	stringFlag(fs, "vault-nats-bucket", "patient_deks", "NATS JetStream KeyValue bucket name")
-	stringFlag(fs, "vault-etcd-endpoints", "", "comma-separated etcd v3 endpoints (e.g. localhost:2379)")
-	stringFlag(fs, "vault-etcd-prefix", "/librevita/keys/", "etcd key prefix")
-	stringFlag(fs, "vault-hashicorp-address", "", "HashiCorp Vault / OpenBao address (e.g. http://localhost:8200)")
-	stringFlag(fs, "vault-hashicorp-token", "", "HashiCorp Vault / OpenBao authentication token")
-	stringFlag(fs, "vault-hashicorp-mount", "secret", "HashiCorp Vault KV v2 mount path")
+	registerKVFlags(fs, "keystore", true)
+	registerKVFlags(fs, "meta", false)
+	registerKVFlags(fs, "sessions", false)
 	stringFlag(fs, "crypto-hash-algorithm", "blake2s", "Default cryptographic hash engine (blake2s, blake2b)")
 	stringFlag(fs, "crypto-encryption-cipher", "xchacha20-poly1305", "Default symmetric encryption cipher (xchacha20-poly1305)")
+}
+
+func registerKVFlags(fs *pflag.FlagSet, prefix string, includeVault bool) {
+	backends := "bbolt, nats, or etcd"
+	if includeVault {
+		backends = "bbolt, nats, etcd, or vault"
+	}
+	stringFlag(fs, prefix+"-backend", "bbolt", prefix+" storage backend: "+backends)
+	stringFlag(fs, prefix+"-bbolt-path", "", "bbolt "+prefix+" path (default <data-dir>/"+prefix+".db)")
+	stringFlag(fs, prefix+"-nats-url", "", "NATS server URL for "+prefix)
+	stringFlag(fs, prefix+"-nats-bucket", prefix, "NATS JetStream KeyValue bucket for "+prefix)
+	stringFlag(fs, prefix+"-etcd-endpoints", "", "comma-separated etcd v3 endpoints for "+prefix)
+	stringFlag(fs, prefix+"-etcd-prefix", "/librevita/"+prefix+"/", "etcd key prefix for "+prefix)
+	if includeVault {
+		stringFlag(fs, prefix+"-vault-address", "", "HashiCorp Vault / OpenBao address")
+		stringFlag(fs, prefix+"-vault-token", "", "HashiCorp Vault / OpenBao authentication token")
+		stringFlag(fs, prefix+"-vault-mount", "secret", "HashiCorp Vault KV v2 mount path")
+		stringFlag(fs, prefix+"-vault-prefix", "librevita/keystore/", "Vault KV v2 path prefix")
+	}
 }
 
 // New is the Fx configuration provider.

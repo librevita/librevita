@@ -1,5 +1,5 @@
 // Package crypto provides field-level encryption, envelope encryption (KEK/DEK),
-// key vault storage, and blind indexing for patient data under LibreVita.
+// keystore storage, and blind indexing for patient data under LibreVita.
 //
 // The master key is a base64-encoded 32-byte secret (LIBREVITA_MASTER_KEY).
 // KEK (Key Encryption Key) and BlindIndexKey are derived via HKDF-BLAKE2b-256 with
@@ -9,7 +9,7 @@
 //
 // Patient data is encrypted using XChaCha20-Poly1305 under a dedicated 32-byte
 // random Data Encryption Key (DEK) per patient. Patient DEKs are wrapped by the
-// clinic DEK and stored in a KeyVault. Deleting a patient's DEK from the vault
+// clinic DEK and stored in a KeyStore. Deleting a patient's DEK from the keystore
 // executes instant Crypto-Shredding (GDPR/LGPD Right to be Forgotten).
 package crypto
 
@@ -65,11 +65,11 @@ func WithEngineEncryptionCipher(cipher string) EngineOption {
 	}
 }
 
-// Engine orchestrates KEK, per-patient DEKs, Blind Indexing, and KeyVault storage.
+// Engine orchestrates KEK, per-patient DEKs, Blind Indexing, and KeyStore storage.
 type Engine struct {
 	kek      []byte
 	blindKey []byte
-	vault    KeyVault
+	keystore KeyStore
 	metrics  *keyMetrics
 	hasher   Hasher
 	cipher   string
@@ -78,13 +78,13 @@ type Engine struct {
 // MasterKey is an alias for Engine.
 type MasterKey = Engine
 
-// NewEngine initializes the crypto Engine from a base64 32-byte master key and KeyVault.
-func NewEngine(masterKeyB64 string, vault KeyVault, opts ...EngineOption) (*Engine, error) {
+// NewEngine initializes the crypto Engine from a base64 32-byte master key and KeyStore.
+func NewEngine(masterKeyB64 string, keystore KeyStore, opts ...EngineOption) (*Engine, error) {
 	if masterKeyB64 == "" {
 		return nil, errors.New("crypto: master key is empty")
 	}
-	if vault == nil {
-		return nil, errors.New("crypto: key vault is required")
+	if keystore == nil {
+		return nil, errors.New("crypto: keystore is required")
 	}
 	raw, err := base64.StdEncoding.DecodeString(masterKeyB64)
 	if err != nil {
@@ -94,15 +94,15 @@ func NewEngine(masterKeyB64 string, vault KeyVault, opts ...EngineOption) (*Engi
 		return nil, errors.Newf("crypto: master key must be 32 bytes, got %d", len(raw))
 	}
 	defer ZeroBytes(raw)
-	return deriveEngine(raw, vault, opts...)
+	return deriveEngine(raw, keystore, opts...)
 }
 
 // NewMasterKey is a convenience alias for NewEngine.
-func NewMasterKey(encoded string, vault KeyVault, opts ...EngineOption) (*Engine, error) {
-	return NewEngine(encoded, vault, opts...)
+func NewMasterKey(encoded string, keystore KeyStore, opts ...EngineOption) (*Engine, error) {
+	return NewEngine(encoded, keystore, opts...)
 }
 
-func deriveEngine(raw []byte, vault KeyVault, opts ...EngineOption) (*Engine, error) {
+func deriveEngine(raw []byte, keystore KeyStore, opts ...EngineOption) (*Engine, error) {
 	options := engineOptions{
 		hashAlgorithm:    DefaultHashAlgorithm,
 		encryptionCipher: DefaultEncryptionCipher,
@@ -121,7 +121,7 @@ func deriveEngine(raw []byte, vault KeyVault, opts ...EngineOption) (*Engine, er
 	return &Engine{
 		kek:      hkdfExpand(raw, InfoKEK),
 		blindKey: blindKey,
-		vault:    vault,
+		keystore: keystore,
 		metrics:  &keyMetrics{},
 		hasher:   hasher,
 		cipher:   options.encryptionCipher,
@@ -137,7 +137,7 @@ func ZeroBytes(b []byte) {
 
 // SetupPatientDEK creates the patient-scoped DEK identified by a canonical
 // PatientURN. The DEK is wrapped by the corresponding Clinic DEK and stored in
-// the KeyVault. Returns the plaintext DEK for the current operation.
+// the KeyStore. Returns the plaintext DEK for the current operation.
 func (e *Engine) SetupPatientDEK(ctx context.Context, patientURN string) ([]byte, error) {
 	clinicID, patientID, ok := ParsePatientURN(patientURN)
 	if !ok {
@@ -147,7 +147,7 @@ func (e *Engine) SetupPatientDEK(ctx context.Context, patientURN string) ([]byte
 }
 
 // GetPatientDEK retrieves and unwraps a patient DEK identified by a canonical
-// PatientURN from the KeyVault.
+// PatientURN from the KeyStore.
 func (e *Engine) GetPatientDEK(ctx context.Context, patientURN string) ([]byte, error) {
 	clinicID, patientID, ok := ParsePatientURN(patientURN)
 	if !ok {
@@ -162,7 +162,7 @@ func (e *Engine) DeletePatientDEK(ctx context.Context, patientURN string) error 
 	if _, _, ok := ParsePatientURN(patientURN); !ok {
 		return errors.Newf("crypto: invalid patient urn %q", patientURN)
 	}
-	err := e.vault.DeleteDEK(ctx, patientURN)
+	err := e.keystore.DeleteDEK(ctx, patientURN)
 	if err == nil {
 		forgetDEK(ctx, patientURN)
 	}
@@ -179,13 +179,13 @@ func (e *Engine) EnsurePatientDEK(ctx context.Context, patientURN string) ([]byt
 	return e.EnsurePatientDEKForClinic(ctx, clinicID, patientID)
 }
 
-// EncryptPatientData encrypts patient data using the patient's DEK from vault under XChaCha20-Poly1305.
+// EncryptPatientData encrypts patient data using the patient's DEK from the keystore under XChaCha20-Poly1305.
 func (e *Engine) EncryptPatientData(ctx context.Context, patientURN string, aad, plaintext []byte) (ciphertext, nonce []byte, err error) {
 	return e.EncryptPayload(ctx, patientURN, aad, plaintext)
 }
 
 // DecryptPatientData decrypts patient data using the patient's DEK from the
-// vault under XChaCha20-Poly1305. Returns ErrKeyDestroyed when the patient's
+// keystore under XChaCha20-Poly1305. Returns ErrKeyDestroyed when the patient's
 // DEK has been shredded.
 func (e *Engine) DecryptPatientData(ctx context.Context, patientURN string, aad, ciphertext, nonce []byte) ([]byte, error) {
 	return e.DecryptPayload(ctx, patientURN, aad, ciphertext, nonce)
@@ -198,7 +198,7 @@ func (e *Engine) DecryptPatientDataWithDEK(dek, aad, ciphertext, nonce []byte) (
 	return decryptWithDEK(dek, aad, ciphertext, nonce)
 }
 
-// EncryptPayload encrypts any domain payload using the entity/patient DEK from vault under XChaCha20-Poly1305.
+// EncryptPayload encrypts any domain payload using the entity/patient DEK from the keystore under XChaCha20-Poly1305.
 // Ensures that ephemeral keys in memory are wiped with ZeroBytes upon completion.
 func (e *Engine) EncryptPayload(ctx context.Context, urn string, aad, plaintext []byte) (ciphertext, nonce []byte, err error) {
 	dek, err := e.dekForURN(ctx, urn, true)
@@ -210,7 +210,7 @@ func (e *Engine) EncryptPayload(ctx context.Context, urn string, aad, plaintext 
 	return encryptWithDEK(dek, aad, plaintext)
 }
 
-// DecryptPayload decrypts any domain payload using the entity/patient DEK from vault under XChaCha20-Poly1305.
+// DecryptPayload decrypts any domain payload using the entity/patient DEK from the keystore under XChaCha20-Poly1305.
 // Ensures that ephemeral keys in memory are wiped with ZeroBytes upon completion.
 func (e *Engine) DecryptPayload(ctx context.Context, urn string, aad, ciphertext, nonce []byte) ([]byte, error) {
 	dek, err := e.dekForURN(ctx, urn, false)

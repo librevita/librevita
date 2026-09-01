@@ -96,7 +96,7 @@ func forgetDEK(ctx context.Context, key string) {
 func (e *Engine) cachedDEK(ctx context.Context, key string, load func() ([]byte, error)) ([]byte, error) {
 	cache := requestCacheFromContext(ctx)
 	if cache == nil {
-		e.recordVaultGet()
+		e.recordKeyStoreGet()
 		return load()
 	}
 	if dek, ok := cache.get(key); ok {
@@ -107,9 +107,9 @@ func (e *Engine) cachedDEK(ctx context.Context, key string, load func() ([]byte,
 	return e.loadThroughSingleflight(cache, key, load)
 }
 
-func (e *Engine) recordVaultGet() {
+func (e *Engine) recordKeyStoreGet() {
 	if e.metrics != nil {
-		e.metrics.vaultGet.Add(1)
+		e.metrics.keyStoreGet.Add(1)
 	}
 }
 
@@ -143,7 +143,7 @@ func (e *Engine) loadAndStoreDEK(cache *requestKeyCache, key string, load func()
 	if dek, ok := cache.get(key); ok {
 		return dek, nil
 	}
-	e.recordVaultGet()
+	e.recordKeyStoreGet()
 	dek, err := load()
 	if err != nil {
 		return nil, err

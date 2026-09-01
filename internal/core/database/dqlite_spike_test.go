@@ -17,7 +17,7 @@ import (
 	"librevita.org/ent"
 	"librevita.org/ent/clinic"
 	"librevita.org/internal/core/crypto"
-	"librevita.org/internal/core/vault"
+	"librevita.org/internal/core/keystore"
 	identifiermodel "librevita.org/internal/domain/identifier/model"
 	identifierrepo "librevita.org/internal/domain/identifier/repository"
 	identifierusecase "librevita.org/internal/domain/identifier/usecase"
@@ -102,7 +102,7 @@ func TestDqliteSpike(t *testing.T) {
 		Save(context.Background())
 	require.NoError(t, err)
 
-	v, err := vault.NewBBoltVault(filepath.Join(t.TempDir(), "keys.db"))
+	v, err := keystore.OpenBBolt(filepath.Join(t.TempDir(), "keystore.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = v.Close() })
 

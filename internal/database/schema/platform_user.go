@@ -4,7 +4,6 @@ import (
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/entsql"
 	"entgo.io/ent/schema"
-	"entgo.io/ent/schema/edge"
 	"entgo.io/ent/schema/field"
 
 	"librevita.org/internal/database/schema/mixin"
@@ -51,7 +50,5 @@ func (PlatformUser) Fields() []ent.Field {
 
 // Edges of the PlatformUser.
 func (PlatformUser) Edges() []ent.Edge {
-	return []ent.Edge{
-		edge.To("sessions", PlatformSession.Type),
-	}
+	return nil
 }

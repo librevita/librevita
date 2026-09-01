@@ -16,15 +16,15 @@ import (
 
 	"librevita.org/internal/core/config"
 	"librevita.org/internal/core/crypto"
-	"librevita.org/internal/core/vault"
+	"librevita.org/internal/core/keystore"
 	"librevita.org/pkg/log"
 )
 
 const testKey = "nAmIvOXVc0vb6M9G7P9q2j2yK1WxP3sJ8q5dR4tU6wA=" // gitleaks:allow
 
-func mustVault(t *testing.T) crypto.KeyVault {
+func mustKeyStore(t *testing.T) crypto.KeyStore {
 	t.Helper()
-	v, err := vault.NewBBoltVault(filepath.Join(t.TempDir(), "keys.db"))
+	v, err := keystore.OpenBBolt(filepath.Join(t.TempDir(), "keystore.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = v.Close() })
 	return v
@@ -32,14 +32,14 @@ func mustVault(t *testing.T) crypto.KeyVault {
 
 func mustEngine(t *testing.T) *crypto.Engine {
 	t.Helper()
-	v := mustVault(t)
+	v := mustKeyStore(t)
 	eng, err := crypto.NewEngine(testKey, v)
 	require.NoError(t, err)
 	return eng
 }
 
 func TestNewEngineRejectsInvalidInput(t *testing.T) {
-	v := mustVault(t)
+	v := mustKeyStore(t)
 	cases := []struct {
 		name    string
 		encoded string
@@ -56,7 +56,7 @@ func TestNewEngineRejectsInvalidInput(t *testing.T) {
 	}
 }
 
-func TestNewEngineRequiresVault(t *testing.T) {
+func TestNewEngineRequiresKeyStore(t *testing.T) {
 	_, err := crypto.NewEngine(testKey, nil)
 	assert.Error(t, err)
 }
@@ -64,7 +64,7 @@ func TestNewEngineRequiresVault(t *testing.T) {
 func TestKEKDEKPatientDataEncryptionAndCryptoShredding(t *testing.T) {
 	ctx := context.Background()
 	dir := t.TempDir()
-	v, err := vault.NewBBoltVault(filepath.Join(dir, "keys.db"))
+	v, err := keystore.OpenBBolt(filepath.Join(dir, "keystore.db"))
 	require.NoError(t, err)
 	defer func() { _ = v.Close() }()
 
@@ -82,7 +82,7 @@ func TestKEKDEKPatientDataEncryptionAndCryptoShredding(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, dek, 32)
 
-	// Verify DEK is stored encrypted in vault and can be retrieved
+	// Verify DEK is stored encrypted in the keystore and can be retrieved
 	retrievedDEK, err := eng.GetPatientDEK(ctx, patientURN)
 	require.NoError(t, err)
 	assert.True(t, bytes.Equal(dek, retrievedDEK))
@@ -140,7 +140,7 @@ func TestBlindIndexDeterministicAndSeparated(t *testing.T) {
 
 func TestNewFromConfigKeyPolicy(t *testing.T) {
 	logger := log.Nop()
-	v := mustVault(t)
+	v := mustKeyStore(t)
 
 	for _, env := range []string{"production", "staging"} {
 		cfg := &config.Config{Mode: env}
@@ -171,7 +171,7 @@ func TestFxModuleIntegration(t *testing.T) {
 		MasterKey: testKey,
 	}
 
-	var keyVault crypto.KeyVault
+	var ks crypto.KeyStore
 	var eng *crypto.Engine
 	var hasher crypto.Hasher
 	var encryptor crypto.Encryptor
@@ -181,14 +181,14 @@ func TestFxModuleIntegration(t *testing.T) {
 			func() *config.Config { return cfg },
 			func() log.Logger { return log.Nop() },
 		),
-		vault.Module,
+		keystore.Module,
 		crypto.Module,
-		fx.Populate(&keyVault, &eng, &hasher, &encryptor),
+		fx.Populate(&ks, &eng, &hasher, &encryptor),
 	)
 	app.RequireStart()
 	defer app.RequireStop()
 
-	require.NotNil(t, keyVault)
+	require.NotNil(t, ks)
 	require.NotNil(t, eng)
 	require.NotNil(t, hasher)
 	require.NotNil(t, encryptor)
@@ -257,7 +257,7 @@ func TestClinicDEKEnvelopeAndCryptoShred(t *testing.T) {
 	assert.Error(t, err)
 }
 
-func TestBatchPatientDEKResolutionUsesOneVaultBatch(t *testing.T) {
+func TestBatchPatientDEKResolutionUsesOneKeyStoreBatch(t *testing.T) {
 	ctx := crypto.WithRequestKeyCache(context.Background())
 	defer crypto.ClearRequestKeyCache(ctx)
 	eng := mustEngine(t)
@@ -278,8 +278,8 @@ func TestBatchPatientDEKResolutionUsesOneVaultBatch(t *testing.T) {
 	assert.Len(t, deks[patientA], crypto.SizeDEK)
 	assert.Len(t, deks[patientB], crypto.SizeDEK)
 	metrics := eng.KeyMetrics()
-	assert.Equal(t, uint64(1), metrics.VaultBatchGet-before.VaultBatchGet)
-	assert.Equal(t, uint64(1), metrics.VaultGet-before.VaultGet)
+	assert.Equal(t, uint64(1), metrics.KeyStoreBatchGet-before.KeyStoreBatchGet)
+	assert.Equal(t, uint64(1), metrics.KeyStoreGet-before.KeyStoreGet)
 }
 
 func TestConcurrentClinicDEKProvisioningIsCreateIfAbsent(t *testing.T) {
