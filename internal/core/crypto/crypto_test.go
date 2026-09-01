@@ -18,6 +18,7 @@ import (
 	"librevita.org/internal/core/crypto"
 	"librevita.org/internal/core/keystore"
 	"librevita.org/pkg/log"
+	"librevita.org/pkg/urn"
 )
 
 const testKey = "nAmIvOXVc0vb6M9G7P9q2j2yK1WxP3sJ8q5dR4tU6wA=" // gitleaks:allow
@@ -73,7 +74,7 @@ func TestKEKDEKPatientDataEncryptionAndCryptoShredding(t *testing.T) {
 
 	clinicID := uuid.MustParse("01990000-0000-7000-8000-0000000000a1")
 	patientID := uuid.MustParse("01990000-0000-7000-8000-000000000099")
-	patientURN := crypto.PatientURN(clinicID, patientID)
+	patientURN := urn.Patient(clinicID, patientID)
 	aad := []byte(patientURN)
 	plaintext := []byte("12345678900")
 
@@ -120,7 +121,7 @@ func TestSealOpenDirectKEKRoundtrip(t *testing.T) {
 
 func TestBlindIndexDeterministicAndSeparated(t *testing.T) {
 	eng := mustEngine(t)
-	index, err := eng.BlindIndex("urn:librevita:id:br:cpf", "12345678900")
+	index, err := eng.BlindIndex(urn.Identifier("br", "cpf"), "12345678900")
 	require.NoError(t, err)
 	assert.Contains(t, index, "$")
 	parts := strings.Split(index, "$")
@@ -129,11 +130,11 @@ func TestBlindIndexDeterministicAndSeparated(t *testing.T) {
 	assert.Len(t, parts[1], 64)
 	assert.True(t, isHex(parts[1]))
 
-	again, err := eng.BlindIndex("urn:librevita:id:br:cpf", "12345678900")
+	again, err := eng.BlindIndex(urn.Identifier("br", "cpf"), "12345678900")
 	require.NoError(t, err)
 	assert.Equal(t, index, again)
 
-	otherSystem, err := eng.BlindIndex("urn:librevita:id:br:sus", "12345678900")
+	otherSystem, err := eng.BlindIndex(urn.Identifier("br", "sus"), "12345678900")
 	require.NoError(t, err)
 	assert.NotEqual(t, index, otherSystem)
 }
@@ -207,7 +208,7 @@ func TestFxModuleIntegration(t *testing.T) {
 	assert.Equal(t, []byte("medical-data"), pt)
 
 	ctx := context.Background()
-	pURN := crypto.PatientURN(
+	pURN := urn.Patient(
 		uuid.MustParse("01990000-0000-7000-8000-0000000000a1"),
 		uuid.MustParse("01990000-0000-7000-8000-0000000000ff"),
 	)
@@ -233,13 +234,13 @@ func TestClinicDEKEnvelopeAndCryptoShred(t *testing.T) {
 	require.NoError(t, err)
 	hB, err := crypto.NewHasherFromDEK(dekB)
 	require.NoError(t, err)
-	idxA, err := hA.BlindIndex("urn:librevita:id:br:cpf", "12345678900")
+	idxA, err := hA.BlindIndex(urn.Identifier("br", "cpf"), "12345678900")
 	require.NoError(t, err)
-	idxB, err := hB.BlindIndex("urn:librevita:id:br:cpf", "12345678900")
+	idxB, err := hB.BlindIndex(urn.Identifier("br", "cpf"), "12345678900")
 	require.NoError(t, err)
 	assert.NotEqual(t, idxA, idxB, "same catalog URN must not share a blind index across clinics")
 
-	pURN := crypto.PatientURN(clinicA, patientID)
+	pURN := urn.Patient(clinicA, patientID)
 	aad := []byte(pURN)
 	plaintext := []byte("PHI-norte")
 
@@ -254,6 +255,37 @@ func TestClinicDEKEnvelopeAndCryptoShred(t *testing.T) {
 
 	require.NoError(t, eng.DeleteClinicDEK(ctx, clinicA))
 	_, err = eng.DecryptPatientData(ctx, pURN, aad, ct, nonce)
+	assert.Error(t, err)
+}
+
+func TestClinicDEKByURN(t *testing.T) {
+	ctx := context.Background()
+	eng := mustEngine(t)
+	clinicID := uuid.MustParse("01990000-0000-7000-8000-0000000000c1")
+	clinicURN := urn.Clinic(clinicID)
+	aad := []byte(clinicURN)
+
+	dek, err := eng.SetupClinicDEK(ctx, clinicURN)
+	require.NoError(t, err)
+	assert.Len(t, dek, crypto.SizeDEK)
+
+	got, err := eng.GetClinicDEKForURN(ctx, clinicURN)
+	require.NoError(t, err)
+	assert.Equal(t, dek, got)
+
+	ct, nonce, err := eng.EncryptPayload(ctx, clinicURN, aad, []byte("clinic-owned"))
+	require.NoError(t, err)
+	plain, err := eng.DecryptPayload(ctx, clinicURN, aad, ct, nonce)
+	require.NoError(t, err)
+	assert.Equal(t, []byte("clinic-owned"), plain)
+
+	_, err = eng.SetupClinicDEK(ctx, "not-a-clinic-urn")
+	assert.Error(t, err)
+	_, _, err = eng.EncryptPayload(ctx, urn.PlatformSession("blake2s$abc"), aad, []byte("x"))
+	assert.Error(t, err)
+
+	require.NoError(t, eng.DeleteClinicDEKForURN(ctx, clinicURN))
+	_, err = eng.DecryptPayload(ctx, clinicURN, aad, ct, nonce)
 	assert.Error(t, err)
 }
 

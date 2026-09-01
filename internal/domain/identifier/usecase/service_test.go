@@ -14,6 +14,7 @@ import (
 	"librevita.org/internal/core/crypto"
 	identifiermodel "librevita.org/internal/domain/identifier/model"
 	"librevita.org/internal/domain/identifier/usecase"
+	"librevita.org/pkg/urn"
 	cryptomocks "librevita.org/tests/mocks/core/crypto"
 	identifiermocks "librevita.org/tests/mocks/domain/identifier/model"
 )
@@ -28,7 +29,7 @@ func defaultTestSystems() []*identifiermodel.IdentifierSystem {
 	return []*identifiermodel.IdentifierSystem{
 		{
 			ID:               uuid.MustParse("01990000-0000-7000-8000-000000000001"),
-			System:           usecase.CPFSystem,
+			System:           urn.Identifier("br", "cpf"),
 			DisplayName:      "CPF (Brasil)",
 			Pattern:          `^[0-9]{11}$`,
 			Transform:        identifiermodel.TransformDigits,
@@ -40,7 +41,7 @@ func defaultTestSystems() []*identifiermodel.IdentifierSystem {
 		},
 		{
 			ID:               uuid.MustParse("01990000-0000-7000-8000-000000000002"),
-			System:           usecase.NIFSystem,
+			System:           urn.Identifier("pt", "nif"),
 			DisplayName:      "NIF (Portugal)",
 			Pattern:          `^[0-9]{9}$`,
 			Transform:        identifiermodel.TransformDigits,
@@ -100,7 +101,7 @@ func TestAddAndFindByValue(t *testing.T) {
 	var storedRecord identifiermodel.IdentifierRecord
 
 	idRepoMock.EXPECT().Add(mock.Anything, mock.MatchedBy(func(rec identifiermodel.IdentifierRecord) bool {
-		return rec.PatientID == patientID && rec.System == usecase.CPFSystem && rec.BlindIndex != ""
+		return rec.PatientID == patientID && rec.System == urn.Identifier("br", "cpf") && rec.BlindIndex != ""
 	})).RunAndReturn(func(ctx context.Context, rec identifiermodel.IdentifierRecord) (*identifiermodel.IdentifierRecord, error) {
 		rec.ID = uuid.MustParse("01990000-0000-7000-8000-000000000020")
 		rec.CreatedAt = time.Now()
@@ -113,7 +114,7 @@ func TestAddAndFindByValue(t *testing.T) {
 		Value:     "123.456.789-09",
 	})
 	require.NoError(t, err)
-	assert.Equal(t, usecase.CPFSystem, got.System)
+	assert.Equal(t, urn.Identifier("br", "cpf"), got.System)
 	assert.Equal(t, "12345678909", got.Value)
 
 	// Find by normalized value
@@ -151,7 +152,7 @@ func TestAddIdentifierExplicitSystem(t *testing.T) {
 	patientID := uuid.MustParse("01990000-0000-7000-8000-000000000010")
 
 	idRepoMock.EXPECT().Add(mock.Anything, mock.MatchedBy(func(rec identifiermodel.IdentifierRecord) bool {
-		return rec.PatientID == patientID && rec.System == usecase.NIFSystem
+		return rec.PatientID == patientID && rec.System == urn.Identifier("pt", "nif")
 	})).RunAndReturn(func(ctx context.Context, rec identifiermodel.IdentifierRecord) (*identifiermodel.IdentifierRecord, error) {
 		rec.ID = uuid.MustParse("01990000-0000-7000-8000-000000000021")
 		rec.CreatedAt = time.Now()
@@ -160,11 +161,11 @@ func TestAddIdentifierExplicitSystem(t *testing.T) {
 
 	got, err := svc.AddIdentifier(context.Background(), testClinicID.String(), testUserID.String(), usecase.Input{
 		PatientID: patientID.String(),
-		System:    usecase.NIFSystem,
+		System:    urn.Identifier("pt", "nif"),
 		Value:     "999 999 990",
 	})
 	require.NoError(t, err)
-	assert.Equal(t, usecase.NIFSystem, got.System)
+	assert.Equal(t, urn.Identifier("pt", "nif"), got.System)
 	assert.Equal(t, "999999990", got.Value)
 }
 
@@ -191,7 +192,7 @@ func TestAddIdentifierDuplicate(t *testing.T) {
 	idRepoMock.EXPECT().Add(mock.Anything, mock.Anything).Return(&identifiermodel.IdentifierRecord{
 		ID:        uuid.MustParse("01990000-0000-7000-8000-000000000030"),
 		PatientID: patientA,
-		System:    usecase.CPFSystem,
+		System:    urn.Identifier("br", "cpf"),
 	}, nil).Once()
 
 	_, err := svc.AddIdentifier(context.Background(), testClinicID.String(), testUserID.String(), in)
@@ -260,7 +261,7 @@ func TestFindByValueScopedToClinic(t *testing.T) {
 	idRepoMock.EXPECT().Add(mock.Anything, mock.Anything).Return(&identifiermodel.IdentifierRecord{
 		ID:        uuid.New(),
 		PatientID: patientID,
-		System:    usecase.CPFSystem,
+		System:    urn.Identifier("br", "cpf"),
 	}, nil).Once()
 
 	_, err := svc.AddIdentifier(context.Background(), testClinicID.String(), testUserID.String(), usecase.Input{
@@ -283,7 +284,7 @@ func TestAdministratorRegistersNewSystem(t *testing.T) {
 
 	createdSystem := &identifiermodel.IdentifierSystem{
 		ID:               createdID,
-		System:           "urn:librevita:id:py:cedula",
+		System:           urn.Identifier("py", "cedula"),
 		DisplayName:      "Cédula de Identidad (Paraguay)",
 		Pattern:          "[0-9]{8}",
 		Transform:        identifiermodel.TransformDigits,
@@ -295,11 +296,13 @@ func TestAdministratorRegistersNewSystem(t *testing.T) {
 	}
 
 	sysListWithNew := append(defaultTestSystems(), createdSystem)
-	sysRepoMock.EXPECT().Create(mock.Anything, mock.Anything).Return(createdSystem, nil).Once()
+	sysRepoMock.EXPECT().Create(mock.Anything, mock.MatchedBy(func(sys *identifiermodel.IdentifierSystem) bool {
+		return sys.System == urn.Identifier("py", "cedula")
+	})).Return(createdSystem, nil).Once()
 	sysRepoMock.EXPECT().ListActive(mock.Anything).Return(sysListWithNew, nil).Once()
 
 	created, err := systems.Create(context.Background(), testUserID.String(), usecase.SystemInput{
-		System:           "urn:librevita:id:py:cedula",
+		System:           urn.Identifier("py", "cedula"),
 		DisplayName:      "Cédula de Identidad (Paraguay)",
 		Pattern:          "[0-9]{8}",
 		Transform:        usecase.TransformDigits,
@@ -313,7 +316,7 @@ func TestAdministratorRegistersNewSystem(t *testing.T) {
 
 	var storedRecord identifiermodel.IdentifierRecord
 	idRepoMock.EXPECT().Add(mock.Anything, mock.MatchedBy(func(rec identifiermodel.IdentifierRecord) bool {
-		return rec.System == "urn:librevita:id:py:cedula"
+		return rec.System == urn.Identifier("py", "cedula")
 	})).RunAndReturn(func(ctx context.Context, rec identifiermodel.IdentifierRecord) (*identifiermodel.IdentifierRecord, error) {
 		rec.ID = uuid.New()
 		storedRecord = rec
@@ -325,7 +328,7 @@ func TestAdministratorRegistersNewSystem(t *testing.T) {
 		Value:     "12345679",
 	})
 	require.NoError(t, err)
-	assert.Equal(t, "urn:librevita:id:py:cedula", got.System)
+	assert.Equal(t, urn.Identifier("py", "cedula"), got.System)
 
 	// Lookup through blind index
 	idRepoMock.EXPECT().FindByBlindIndex(mock.Anything, testClinicID, mock.Anything).RunAndReturn(func(ctx context.Context, cID uuid.UUID, blind string) (*identifiermodel.IdentifierRecord, error) {
@@ -347,11 +350,11 @@ func TestAdministratorRegistersNewSystem(t *testing.T) {
 
 	// Adding after deactivation falls back to raw system
 	idRepoMock.EXPECT().Add(mock.Anything, mock.MatchedBy(func(rec identifiermodel.IdentifierRecord) bool {
-		return rec.System == usecase.RawSystem
+		return rec.System == urn.IdentifierRaw
 	})).Return(&identifiermodel.IdentifierRecord{
 		ID:        uuid.New(),
 		PatientID: patientID,
-		System:    usecase.RawSystem,
+		System:    urn.IdentifierRaw,
 	}, nil).Once()
 
 	got, err = svc.AddIdentifier(context.Background(), testClinicID.String(), testUserID.String(), usecase.Input{
@@ -359,7 +362,7 @@ func TestAdministratorRegistersNewSystem(t *testing.T) {
 		Value:     "12345678",
 	})
 	require.NoError(t, err)
-	assert.Equal(t, usecase.RawSystem, got.System)
+	assert.Equal(t, urn.IdentifierRaw, got.System)
 }
 
 func TestUpdateSystemPreservesActiveState(t *testing.T) {
@@ -369,7 +372,7 @@ func TestUpdateSystemPreservesActiveState(t *testing.T) {
 
 	createdSystem := &identifiermodel.IdentifierSystem{
 		ID:             systemID,
-		System:         "urn:librevita:id:py:cedula",
+		System:         urn.Identifier("py", "cedula"),
 		DisplayName:    "Cedula",
 		Pattern:        `^\d{6,8}-\d$`,
 		Transform:      identifiermodel.TransformNone,
@@ -381,7 +384,7 @@ func TestUpdateSystemPreservesActiveState(t *testing.T) {
 	sysRepoMock.EXPECT().ListActive(mock.Anything).Return(append(defaultTestSystems(), createdSystem), nil).Once()
 
 	created, err := systems.Create(ctx, testUserID.String(), usecase.SystemInput{
-		System:         "urn:librevita:id:py:cedula",
+		System:         urn.Identifier("py", "cedula"),
 		DisplayName:    "Cedula",
 		Pattern:        `^\d{6,8}-\d$`,
 		Transform:      usecase.TransformNone,
@@ -398,7 +401,7 @@ func TestUpdateSystemPreservesActiveState(t *testing.T) {
 	// Update inactive system
 	updatedSystem := &identifiermodel.IdentifierSystem{
 		ID:             systemID,
-		System:         "urn:librevita:id:py:cedula",
+		System:         urn.Identifier("py", "cedula"),
 		DisplayName:    "Cedula de Identidad",
 		Pattern:        `^\d{6,8}-\d$`,
 		Transform:      identifiermodel.TransformNone,
@@ -411,7 +414,7 @@ func TestUpdateSystemPreservesActiveState(t *testing.T) {
 	sysRepoMock.EXPECT().ListActive(mock.Anything).Return(defaultTestSystems(), nil).Once()
 
 	updated, err := systems.Update(ctx, created.ID.String(), usecase.SystemInput{
-		System:         "urn:librevita:id:py:cedula",
+		System:         urn.Identifier("py", "cedula"),
 		DisplayName:    "Cedula de Identidad",
 		Pattern:        `^\d{6,8}-\d$`,
 		Transform:      usecase.TransformNone,
@@ -429,7 +432,7 @@ func TestListSkipsUndecryptableIdentifiers(t *testing.T) {
 	badRecord := identifiermodel.IdentifierRecord{
 		ID:              uuid.New(),
 		PatientID:       patientID,
-		System:          usecase.CPFSystem,
+		System:          urn.Identifier("br", "cpf"),
 		ValueCiphertext: []byte("invalid-ciphertext"),
 		Nonce:           []byte("invalid-nonce-24-bytes--"),
 		BlindIndex:      "0000000000000000000000000000000000000000000000000000000000000000",
@@ -443,4 +446,52 @@ func TestListSkipsUndecryptableIdentifiers(t *testing.T) {
 	got, err := svc.List(context.Background(), testClinicID.String(), patientID.String())
 	require.NoError(t, err)
 	assert.Empty(t, got)
+}
+
+func TestCreateRejectsNonIdentifierURN(t *testing.T) {
+	_, _, _, _, systems, _ := setupTestServices(t)
+	_, err := systems.Create(context.Background(), testUserID.String(), usecase.SystemInput{
+		System:         "com.example:doc",
+		DisplayName:    "Outside",
+		Pattern:        "[0-9]{8}",
+		Transform:      usecase.TransformDigits,
+		CheckAlgorithm: usecase.CheckNone,
+	})
+	var v *usecase.ValidationError
+	require.ErrorAs(t, err, &v)
+	assert.Contains(t, v.Msg, urn.IdentifierPrefix)
+
+	_, err = systems.Create(context.Background(), testUserID.String(), usecase.SystemInput{
+		System:         urn.IdentifierPrefix,
+		DisplayName:    "Empty",
+		Pattern:        "[0-9]{8}",
+		Transform:      usecase.TransformDigits,
+		CheckAlgorithm: usecase.CheckNone,
+	})
+	require.ErrorAs(t, err, &v)
+	assert.Contains(t, v.Msg, urn.IdentifierPrefix)
+
+	_, err = systems.Create(context.Background(), testUserID.String(), usecase.SystemInput{
+		System:         urn.IdentifierPrefix + "br:",
+		DisplayName:    "Empty segment",
+		Pattern:        "[0-9]{8}",
+		Transform:      usecase.TransformDigits,
+		CheckAlgorithm: usecase.CheckNone,
+	})
+	require.ErrorAs(t, err, &v)
+	assert.Contains(t, v.Msg, urn.IdentifierPrefix)
+}
+
+func TestCreateRejectsReservedRawIdentifier(t *testing.T) {
+	_, _, _, _, systems, _ := setupTestServices(t)
+	_, err := systems.Create(context.Background(), testUserID.String(), usecase.SystemInput{
+		System:         urn.IdentifierRaw,
+		DisplayName:    "Raw",
+		Pattern:        "[0-9]{8}",
+		Transform:      usecase.TransformDigits,
+		CheckAlgorithm: usecase.CheckNone,
+	})
+	var v *usecase.ValidationError
+	require.ErrorAs(t, err, &v)
+	assert.Contains(t, v.Error(), urn.IdentifierRaw)
 }

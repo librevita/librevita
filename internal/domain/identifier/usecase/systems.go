@@ -8,11 +8,8 @@ import (
 	"github.com/google/uuid"
 
 	identifiermodel "librevita.org/internal/domain/identifier/model"
+	"librevita.org/pkg/urn"
 )
-
-// systemURNPrefix is the namespace administrators use when registering
-// a new document system.
-const systemURNPrefix = "urn:librevita:id:"
 
 type systemsService struct {
 	repo identifiermodel.SystemRepository
@@ -149,11 +146,13 @@ func validateInput(in SystemInput) (identifiermodel.SystemConfig, error) {
 		CheckDVCount:     in.CheckDVCount,
 		CheckStartWeight: in.CheckStartWeight,
 	}
+	if parts, ok := urn.ParseIdentifier(cfg.System); ok {
+		cfg.System = urn.Identifier(parts...)
+	} else {
+		return identifiermodel.SystemConfig{}, &identifiermodel.ValidationError{Msg: "system must start with " + urn.IdentifierPrefix}
+	}
 	if err := cfg.ValidateShape(); err != nil {
 		return identifiermodel.SystemConfig{}, &identifiermodel.ValidationError{Msg: err.Error()}
-	}
-	if !strings.HasPrefix(cfg.System, systemURNPrefix) {
-		return identifiermodel.SystemConfig{}, &identifiermodel.ValidationError{Msg: "system must start with " + systemURNPrefix}
 	}
 	if len(cfg.DisplayName) > 80 {
 		return identifiermodel.SystemConfig{}, &identifiermodel.ValidationError{Msg: "display name is too long"}

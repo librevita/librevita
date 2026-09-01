@@ -13,6 +13,7 @@ import (
 	identifiermodel "librevita.org/internal/domain/identifier/model"
 	"librevita.org/pkg/flow"
 	"librevita.org/pkg/log"
+	"librevita.org/pkg/urn"
 )
 
 type service struct {
@@ -35,13 +36,13 @@ func (s *service) blindIndex(ctx context.Context, system, value string) (string,
 }
 
 func (s *service) decryptValue(ctx context.Context, clinicID, patientID uuid.UUID, system string, ciphertext, nonce []byte) ([]byte, error) {
-	pURN := crypto.PatientURN(clinicID, patientID)
+	pURN := urn.Patient(clinicID, patientID)
 	_ = system
 	return s.key.DecryptPatientData(ctx, pURN, []byte(pURN), ciphertext, nonce)
 }
 
 func (s *service) decryptValueWithDEK(clinicID, patientID uuid.UUID, dek, ciphertext, nonce []byte) ([]byte, error) {
-	pURN := crypto.PatientURN(clinicID, patientID)
+	pURN := urn.Patient(clinicID, patientID)
 	return s.key.DecryptPatientDataWithDEK(dek, []byte(pURN), ciphertext, nonce)
 }
 
@@ -59,7 +60,7 @@ func (s *service) AddIdentifier(ctx context.Context, clinicID, createdBy string,
 	var nonce []byte
 	var id uuid.UUID
 	pUUID := uuid.MustParse(in.PatientID)
-	pURN := crypto.PatientURN(cUUID, pUUID)
+	pURN := urn.Patient(cUUID, pUUID)
 
 	err = flow.New().
 		Step("normalize input", func() error {

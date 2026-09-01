@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 
 	"librevita.org/internal/core/crypto"
+	"librevita.org/pkg/urn"
 )
 
 type contextKey int
@@ -110,9 +111,9 @@ func ResolveAAD(ctx context.Context) []byte {
 		return customAAD
 	}
 	if clinicID, ok := ClinicIDFromContext(ctx); ok && clinicID != "" {
-		return []byte("urn:librevita:clinic:" + clinicID)
+		return []byte(urn.ClinicPrefix + clinicID)
 	}
-	return []byte("urn:librevita")
+	return []byte(urn.Namespace)
 }
 
 // ResolveEntityAAD returns the authenticated data binding for a
@@ -123,7 +124,7 @@ func ResolveEntityAAD(ctx context.Context, clinicID, patientID uuid.UUID) []byte
 		return customAAD
 	}
 	if clinicID != uuid.Nil && patientID != uuid.Nil {
-		return []byte(crypto.PatientURN(clinicID, patientID))
+		return []byte(urn.Patient(clinicID, patientID))
 	}
 	return ResolveAAD(ctx)
 }

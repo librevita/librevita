@@ -9,8 +9,8 @@ import (
 
 	"librevita.org/ent"
 	"librevita.org/ent/platformuser"
-	"librevita.org/internal/core/crypto"
 	"librevita.org/internal/core/kv"
+	"librevita.org/pkg/urn"
 )
 
 // PlatformSessionRepository stores apex sessions bound to platform_users.
@@ -31,14 +31,14 @@ func NewPlatformSessionRepository(store kv.Store, client *ent.Client) PlatformSe
 }
 
 func (r *platformSessionRepository) Create(ctx context.Context, id string, userID uuid.UUID, expiresAt time.Time) error {
-	if err := r.put(ctx, crypto.PlatformSessionURN(id), userID, expiresAt); err != nil {
+	if err := r.put(ctx, urn.PlatformSession(id), userID, expiresAt); err != nil {
 		return errors.Wrap(err, "platform session repository: create")
 	}
 	return nil
 }
 
 func (r *platformSessionRepository) GetActive(ctx context.Context, id string, now time.Time) (*SessionRecord, error) {
-	p, err := r.getActive(ctx, crypto.PlatformSessionURN(id), now)
+	p, err := r.getActive(ctx, urn.PlatformSession(id), now)
 	if err != nil {
 		return nil, errors.Wrap(err, "platform session repository: get active")
 	}
@@ -68,14 +68,14 @@ func (r *platformSessionRepository) GetActive(ctx context.Context, id string, no
 }
 
 func (r *platformSessionRepository) Delete(ctx context.Context, id string) error {
-	if err := r.delete(ctx, crypto.PlatformSessionURN(id)); err != nil {
+	if err := r.delete(ctx, urn.PlatformSession(id)); err != nil {
 		return errors.Wrap(err, "platform session repository: delete")
 	}
 	return nil
 }
 
 func (r *platformSessionRepository) CleanupExpired(ctx context.Context, now time.Time) error {
-	if err := r.cleanupExpired(ctx, "urn:librevita:platform:session:", now); err != nil {
+	if err := r.cleanupExpired(ctx, urn.PlatformSessionPrefix, now); err != nil {
 		return errors.Wrap(err, "platform session repository: cleanup expired")
 	}
 	return nil

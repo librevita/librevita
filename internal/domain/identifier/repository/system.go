@@ -10,6 +10,7 @@ import (
 	"librevita.org/ent"
 	"librevita.org/ent/identifiersystem"
 	identifiermodel "librevita.org/internal/domain/identifier/model"
+	"librevita.org/pkg/urn"
 )
 
 type systemRepository struct {
@@ -146,7 +147,7 @@ func (r *systemRepository) SetActive(ctx context.Context, id uuid.UUID, active b
 func (r *systemRepository) SeedDefaults(ctx context.Context) error {
 	defaultSystems := []*identifiermodel.IdentifierSystem{
 		{
-			System:           "urn:librevita:id:br:cpf",
+			System:           urn.Identifier("br", "cpf"),
 			DisplayName:      "CPF (Brasil)",
 			Pattern:          `[0-9]{11}`,
 			Transform:        identifiermodel.TransformDigits,
@@ -158,7 +159,7 @@ func (r *systemRepository) SeedDefaults(ctx context.Context) error {
 			Mask:             "000.000.000-00",
 		},
 		{
-			System:           "urn:librevita:id:br:sus",
+			System:           urn.Identifier("br", "sus"),
 			DisplayName:      "Cartão SUS (Brasil)",
 			Pattern:          `[0-9]{15}`,
 			Transform:        identifiermodel.TransformDigits,
@@ -170,7 +171,7 @@ func (r *systemRepository) SeedDefaults(ctx context.Context) error {
 			Mask:             "000 0000 0000 0000",
 		},
 		{
-			System:           "urn:librevita:id:pt:nif",
+			System:           urn.Identifier("pt", "nif"),
 			DisplayName:      "NIF (Portugal)",
 			Pattern:          `[0-9]{9}`,
 			Transform:        identifiermodel.TransformDigits,
@@ -182,7 +183,7 @@ func (r *systemRepository) SeedDefaults(ctx context.Context) error {
 			Mask:             "000 000 000",
 		},
 		{
-			System:           "urn:librevita:id:passport",
+			System:           urn.Identifier("passport"),
 			DisplayName:      "Passaporte",
 			Pattern:          `[A-Z]{1,2}[0-9]{6,9}`,
 			Transform:        identifiermodel.TransformUpper,

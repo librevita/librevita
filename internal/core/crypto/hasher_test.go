@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"librevita.org/internal/core/crypto"
+	"librevita.org/pkg/urn"
 )
 
 const testHasherKey = "nAmIvOXVc0vb6M9G7P9q2j2yK1WxP3sJ8q5dR4tU6wA=" // gitleaks:allow
@@ -162,22 +163,22 @@ func TestHasherBlindIndexDomainSeparation(t *testing.T) {
 	hasher, err := crypto.NewHasher(k, crypto.WithHashAlgorithm(crypto.AlgorithmBlake2s))
 	require.NoError(t, err)
 
-	idx1, err := hasher.BlindIndex("urn:librevita:id:cpf", "12345678900")
+	idx1, err := hasher.BlindIndex(urn.Identifier("cpf"), "12345678900")
 	require.NoError(t, err)
 	assert.True(t, strings.HasPrefix(idx1, "blake2s$"))
 
 	// Determinism
-	idx2, err := hasher.BlindIndex("urn:librevita:id:cpf", "12345678900")
+	idx2, err := hasher.BlindIndex(urn.Identifier("cpf"), "12345678900")
 	require.NoError(t, err)
 	assert.Equal(t, idx1, idx2)
 
 	// Domain separation by system
-	idx3, err := hasher.BlindIndex("urn:librevita:id:rg", "12345678900")
+	idx3, err := hasher.BlindIndex(urn.Identifier("rg"), "12345678900")
 	require.NoError(t, err)
 	assert.NotEqual(t, idx1, idx3)
 
 	// Verification
-	payload := []byte("urn:librevita:id:cpf" + "\x00" + "12345678900")
+	payload := []byte(urn.Identifier("cpf") + "\x00" + "12345678900")
 	ok, err := hasher.Verify(payload, idx1)
 	require.NoError(t, err)
 	assert.True(t, ok)

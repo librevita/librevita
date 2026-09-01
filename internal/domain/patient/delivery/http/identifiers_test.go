@@ -30,10 +30,10 @@ import (
 	"librevita.org/internal/core/storage"
 	clinicrepo "librevita.org/internal/domain/clinic/repository"
 	clinicusecase "librevita.org/internal/domain/clinic/usecase"
-	identifierusecase "librevita.org/internal/domain/identifier/usecase"
 	patientrepo "librevita.org/internal/domain/patient/repository"
 	"librevita.org/internal/domain/patient/usecase"
 	"librevita.org/internal/testutil"
+	"librevita.org/pkg/urn"
 )
 
 var testClinic = "01990000-0000-7000-8000-0000000000d0"
@@ -608,7 +608,7 @@ func TestRegistryDocumentLookup(t *testing.T) {
 		"value": {"52998224725"},
 	})
 
-	hit := getWithCookie(t, e, "/patients?q=52998224725&field="+identifierusecase.CPFSystem, cookie, false)
+	hit := getWithCookie(t, e, "/patients?q=52998224725&field="+urn.Identifier("br", "cpf"), cookie, false)
 	if hit.Code != http.StatusOK || !strings.Contains(hit.Body.String(), "Ana Souza") {
 		t.Fatalf("document lookup missed the owner: %q", hit.Body.String())
 	}
@@ -629,20 +629,20 @@ func TestRegistryDocumentLookup(t *testing.T) {
 	}
 
 	// The same value under another system is not the chosen document.
-	miss := getWithCookie(t, e, "/patients?q=52998224725&field="+identifierusecase.NIFSystem, cookie, false)
+	miss := getWithCookie(t, e, "/patients?q=52998224725&field="+urn.Identifier("pt", "nif"), cookie, false)
 	if miss.Code != http.StatusOK || strings.Contains(miss.Body.String(), "Ana Souza") {
 		t.Fatalf("wrong-system lookup returned the owner: %q", miss.Body.String())
 	}
 
 	// An unknown scope degrades to the text search, never to the lookup.
-	unknown := getWithCookie(t, e, "/patients?q=52998224725&field=urn:librevita:id:x:unknown", cookie, true)
+	unknown := getWithCookie(t, e, "/patients?q=52998224725&field="+urn.Identifier("x", "unknown"), cookie, true)
 	if unknown.Code != http.StatusOK || !strings.Contains(unknown.Body.String(), "No patients found") {
 		t.Fatalf("unknown scope status = %d body = %q, want the empty list", unknown.Code, unknown.Body.String())
 	}
 
 	// Short and empty values render the empty list without a lookup.
 	for _, q := range []string{"", "ab"} {
-		short := getWithCookie(t, e, "/patients?q="+q+"&field="+identifierusecase.CPFSystem, cookie, true)
+		short := getWithCookie(t, e, "/patients?q="+q+"&field="+urn.Identifier("br", "cpf"), cookie, true)
 		if short.Code != http.StatusOK || !strings.Contains(short.Body.String(), "No patients found") {
 			t.Fatalf("q=%q status = %d body = %q, want the empty list", q, short.Code, short.Body.String())
 		}
