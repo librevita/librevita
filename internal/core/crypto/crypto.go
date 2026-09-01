@@ -75,6 +75,7 @@ type Engine struct {
 	metrics  *keyMetrics
 	hasher   Hasher
 	cipher   string
+	kid      byte
 }
 
 // MasterKey is an alias for Engine.
@@ -113,12 +114,11 @@ func deriveEngine(raw []byte, keystore KeyStore, opts ...EngineOption) (*Engine,
 		opt(&options)
 	}
 
-	blindKey := hkdfExpand(raw, InfoBlindIndex)
-	hasher, err := NewHasher(blindKey, WithHashAlgorithm(options.hashAlgorithm))
+	hasher, err := newIndexHasher(raw, KeyScopeMaster, DefaultKeyID, WithHashAlgorithm(options.hashAlgorithm))
 	if err != nil {
-		ZeroBytes(blindKey)
 		return nil, errors.Wrap(err, "crypto: engine hasher")
 	}
+	blindKey := hkdfExpand(raw, InfoBlindIndex)
 
 	return &Engine{
 		kek:      hkdfExpand(raw, InfoKEK),
@@ -127,6 +127,7 @@ func deriveEngine(raw []byte, keystore KeyStore, opts ...EngineOption) (*Engine,
 		metrics:  &keyMetrics{},
 		hasher:   hasher,
 		cipher:   options.encryptionCipher,
+		kid:      DefaultKeyID,
 	}, nil
 }
 
@@ -182,46 +183,79 @@ func (e *Engine) EnsurePatientDEK(ctx context.Context, patientURN string) ([]byt
 }
 
 // EncryptPatientData encrypts patient data using the patient's DEK from the keystore under XChaCha20-Poly1305.
-func (e *Engine) EncryptPatientData(ctx context.Context, patientURN string, aad, plaintext []byte) (ciphertext, nonce []byte, err error) {
+func (e *Engine) EncryptPatientData(ctx context.Context, patientURN string, aad, plaintext []byte) ([]byte, error) {
 	return e.EncryptPayload(ctx, patientURN, aad, plaintext)
 }
 
 // DecryptPatientData decrypts patient data using the patient's DEK from the
 // keystore under XChaCha20-Poly1305. Returns ErrKeyDestroyed when the patient's
 // DEK has been shredded.
-func (e *Engine) DecryptPatientData(ctx context.Context, patientURN string, aad, ciphertext, nonce []byte) ([]byte, error) {
-	return e.DecryptPayload(ctx, patientURN, aad, ciphertext, nonce)
+func (e *Engine) DecryptPatientData(ctx context.Context, patientURN string, aad, ciphertext []byte) ([]byte, error) {
+	return e.DecryptPayload(ctx, patientURN, aad, ciphertext)
 }
 
 // DecryptPatientDataWithDEK decrypts a payload with an already resolved
 // patient DEK. It is intended for batch reads that have loaded each unique
 // Patient DEK once.
-func (e *Engine) DecryptPatientDataWithDEK(dek, aad, ciphertext, nonce []byte) ([]byte, error) {
-	return decryptWithDEK(dek, aad, ciphertext, nonce)
+func (e *Engine) DecryptPatientDataWithDEK(dek, aad, ciphertext []byte) ([]byte, error) {
+	enc, err := newEncryptor(dek, KeyScopePatient, e.kid, WithEncryptionCipher(e.cipher))
+	if err != nil {
+		return nil, err
+	}
+	defer ZeroBytes(enc.key)
+	return enc.Decrypt(ciphertext, aad)
 }
 
-// EncryptPayload encrypts any domain payload using the entity/patient DEK from the keystore under XChaCha20-Poly1305.
+// EncryptPayload encrypts any domain payload using the entity DEK from the keystore.
 // Ensures that ephemeral keys in memory are wiped with ZeroBytes upon completion.
-func (e *Engine) EncryptPayload(ctx context.Context, urn string, aad, plaintext []byte) (ciphertext, nonce []byte, err error) {
-	dek, err := e.dekForURN(ctx, urn, true)
+func (e *Engine) EncryptPayload(ctx context.Context, key string, aad, plaintext []byte) ([]byte, error) {
+	dek, err := e.dekForURN(ctx, key, true)
 	if err != nil {
-		return nil, nil, errors.Wrap(err, "crypto: get dek for encrypt")
+		return nil, errors.Wrap(err, "crypto: get dek for encrypt")
 	}
 	defer ZeroBytes(dek)
 
-	return encryptWithDEK(dek, aad, plaintext)
+	enc, err := e.encryptorForURN(dek, key)
+	if err != nil {
+		return nil, err
+	}
+	defer ZeroBytes(enc.key)
+	return enc.Encrypt(plaintext, aad)
 }
 
-// DecryptPayload decrypts any domain payload using the entity/patient DEK from the keystore under XChaCha20-Poly1305.
+// DecryptPayload decrypts any domain payload using the entity DEK from the keystore.
 // Ensures that ephemeral keys in memory are wiped with ZeroBytes upon completion.
-func (e *Engine) DecryptPayload(ctx context.Context, urn string, aad, ciphertext, nonce []byte) ([]byte, error) {
-	dek, err := e.dekForURN(ctx, urn, false)
+func (e *Engine) DecryptPayload(ctx context.Context, key string, aad, ciphertext []byte) ([]byte, error) {
+	dek, err := e.dekForURN(ctx, key, false)
 	if err != nil {
 		return nil, errors.Wrap(err, "crypto: get dek for decrypt")
 	}
 	defer ZeroBytes(dek)
 
-	return decryptWithDEK(dek, aad, ciphertext, nonce)
+	enc, err := e.encryptorForURN(dek, key)
+	if err != nil {
+		return nil, err
+	}
+	defer ZeroBytes(enc.key)
+	return enc.Decrypt(ciphertext, aad)
+}
+
+func (e *Engine) encryptorForURN(dek []byte, key string) (*AEADEncryptor, error) {
+	scope, err := keyScopeForURN(key)
+	if err != nil {
+		return nil, err
+	}
+	return newEncryptor(dek, scope, e.kid, WithEncryptionCipher(e.cipher))
+}
+
+func keyScopeForURN(key string) (byte, error) {
+	if _, _, ok := urn.ParsePatient(key); ok {
+		return KeyScopePatient, nil
+	}
+	if _, ok := urn.ParseClinic(key); ok {
+		return KeyScopeClinic, nil
+	}
+	return 0, errors.Newf("crypto: payload urn must be clinic- or patient-scoped: %q", key)
 }
 
 func (e *Engine) dekForURN(ctx context.Context, key string, ensure bool) ([]byte, error) {
@@ -242,10 +276,10 @@ func (e *Engine) dekForURN(ctx context.Context, key string, ensure bool) ([]byte
 
 // EncryptStruct serializes a Go struct to JSON and encrypts it using the entity's DEK.
 // Transient plaintext JSON buffer is securely wiped with ZeroBytes.
-func (e *Engine) EncryptStruct(ctx context.Context, urn string, aad []byte, source any) (ciphertext, nonce []byte, err error) {
+func (e *Engine) EncryptStruct(ctx context.Context, urn string, aad []byte, source any) ([]byte, error) {
 	data, err := json.Marshal(source)
 	if err != nil {
-		return nil, nil, errors.Wrap(err, "crypto: marshal struct")
+		return nil, errors.Wrap(err, "crypto: marshal struct")
 	}
 	defer ZeroBytes(data)
 
@@ -254,8 +288,8 @@ func (e *Engine) EncryptStruct(ctx context.Context, urn string, aad []byte, sour
 
 // DecryptInto decrypts a ciphertext payload and unmarshals the JSON into the target struct.
 // Transient decrypted buffer is securely wiped with ZeroBytes.
-func (e *Engine) DecryptInto(ctx context.Context, urn string, aad, ciphertext, nonce []byte, target any) error {
-	plaintext, err := e.DecryptPayload(ctx, urn, aad, ciphertext, nonce)
+func (e *Engine) DecryptInto(ctx context.Context, urn string, aad, ciphertext []byte, target any) error {
+	plaintext, err := e.DecryptPayload(ctx, urn, aad, ciphertext)
 	if err != nil {
 		return err
 	}
@@ -267,32 +301,22 @@ func (e *Engine) DecryptInto(ctx context.Context, urn string, aad, ciphertext, n
 	return nil
 }
 
-// EncryptField encrypts a string field under the entity's DEK with embedded nonce (24 bytes).
+// EncryptField encrypts a string field under the entity's DEK as a self-describing envelope.
 func (e *Engine) EncryptField(ctx context.Context, urn string, aad []byte, plaintext string) ([]byte, error) {
 	if plaintext == "" {
 		return nil, nil
 	}
 	data := []byte(plaintext)
 	defer ZeroBytes(data)
-
-	ct, nonce, err := e.EncryptPayload(ctx, urn, aad, data)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]byte, len(nonce)+len(ct))
-	copy(out[:len(nonce)], nonce)
-	copy(out[len(nonce):], ct)
-	return out, nil
+	return e.EncryptPayload(ctx, urn, aad, data)
 }
 
-// DecryptField decrypts a field with embedded nonce (24 bytes) under the entity's DEK.
+// DecryptField decrypts a self-describing field envelope under the entity's DEK.
 func (e *Engine) DecryptField(ctx context.Context, urn string, aad []byte, encrypted []byte) (string, error) {
-	if len(encrypted) < SizeNonce {
+	if len(encrypted) == 0 {
 		return "", nil
 	}
-	nonce := encrypted[:SizeNonce]
-	ct := encrypted[SizeNonce:]
-	plaintext, err := e.DecryptPayload(ctx, urn, aad, ct, nonce)
+	plaintext, err := e.DecryptPayload(ctx, urn, aad, encrypted)
 	if err != nil {
 		return "", err
 	}
@@ -322,30 +346,23 @@ func (e *Engine) DecryptFieldPtr(ctx context.Context, urn string, aad []byte, en
 
 // Seal encrypts plaintext using the global KEK directly for non-patient
 // system secrets.
-func (e *Engine) Seal(aad, plaintext []byte) (ciphertext, nonce []byte, err error) {
-	aead, err := NewAEADCipher(e.kek)
+func (e *Engine) Seal(aad, plaintext []byte) ([]byte, error) {
+	enc, err := newEncryptor(e.kek, KeyScopeMaster, e.kid, WithEncryptionCipher(e.cipher))
 	if err != nil {
-		return nil, nil, errors.Wrap(err, "crypto: seal")
+		return nil, errors.Wrap(err, "crypto: seal")
 	}
-	nonce, err = RandomBytes(SizeNonce)
-	if err != nil {
-		return nil, nil, errors.Wrap(err, "crypto: nonce")
-	}
-	ciphertext = aead.Seal(nil, nonce, plaintext, aad)
-	return ciphertext, nonce, nil
+	defer ZeroBytes(enc.key)
+	return enc.Encrypt(plaintext, aad)
 }
 
 // Open authenticates and decrypts ciphertext encrypted with KEK directly.
-func (e *Engine) Open(aad, ciphertext, nonce []byte) ([]byte, error) {
-	aead, err := NewAEADCipher(e.kek)
+func (e *Engine) Open(aad, ciphertext []byte) ([]byte, error) {
+	enc, err := newEncryptor(e.kek, KeyScopeMaster, e.kid, WithEncryptionCipher(e.cipher))
 	if err != nil {
 		return nil, errors.Wrap(err, "crypto: open")
 	}
-	plaintext, err := aead.Open(nil, nonce, ciphertext, aad)
-	if err != nil {
-		return nil, errors.Wrap(err, "crypto: decrypt")
-	}
-	return plaintext, nil
+	defer ZeroBytes(enc.key)
+	return enc.Decrypt(ciphertext, aad)
 }
 
 // BlindIndex returns the deterministic keyed digest of
@@ -363,36 +380,6 @@ func (e *Engine) BlindIndex(system, value string) (string, error) {
 	h.Write([]byte{0})
 	h.Write([]byte(value))
 	return hex.EncodeToString(h.Sum(nil)), nil
-}
-
-func encryptWithDEK(dek, aad, plaintext []byte) ([]byte, []byte, error) {
-	if len(dek) != SizeDEK {
-		return nil, nil, ErrInvalidDEK
-	}
-	aead, err := NewAEADCipher(dek)
-	if err != nil {
-		return nil, nil, errors.Wrap(err, "crypto: aead")
-	}
-	nonce, err := RandomBytes(SizeNonce)
-	if err != nil {
-		return nil, nil, errors.Wrap(err, "crypto: nonce")
-	}
-	return aead.Seal(nil, nonce, plaintext, aad), nonce, nil
-}
-
-func decryptWithDEK(dek, aad, ciphertext, nonce []byte) ([]byte, error) {
-	if len(dek) != SizeDEK {
-		return nil, ErrInvalidDEK
-	}
-	aead, err := NewAEADCipher(dek)
-	if err != nil {
-		return nil, errors.Wrap(err, "crypto: aead")
-	}
-	plaintext, err := aead.Open(nil, nonce, ciphertext, aad)
-	if err != nil {
-		return nil, errors.Wrap(err, "crypto: decrypt")
-	}
-	return plaintext, nil
 }
 
 func hkdfExpand(ikm []byte, info string) []byte {

@@ -94,7 +94,7 @@ func attachClinicCrypto(ctx context.Context, clinicID uuid.UUID, engine *crypto.
 		)
 		return ctx, echo.NewHTTPError(http.StatusInternalServerError)
 	}
-	enc, encErr := crypto.NewEncryptor(dek)
+	enc, encErr := crypto.NewClinicEncryptor(dek)
 	if encErr != nil {
 		crypto.ZeroBytes(dek)
 		logger.ErrorContext(ctx, "clinic encryptor",

@@ -428,13 +428,12 @@ func TestListSkipsUndecryptableIdentifiers(t *testing.T) {
 	idRepoMock, _, _, svc, _, _ := setupTestServices(t)
 	patientID := uuid.MustParse("01990000-0000-7000-8000-000000000010")
 
-	// Corrupted ciphertext/nonce record
+	// Corrupted ciphertext record
 	badRecord := identifiermodel.IdentifierRecord{
 		ID:              uuid.New(),
 		PatientID:       patientID,
 		System:          urn.Identifier("br", "cpf"),
 		ValueCiphertext: []byte("invalid-ciphertext"),
-		Nonce:           []byte("invalid-nonce-24-bytes--"),
 		BlindIndex:      "0000000000000000000000000000000000000000000000000000000000000000",
 		CreatedBy:       &testUserID,
 		CreatedAt:       time.Now(),

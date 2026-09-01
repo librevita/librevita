@@ -30,7 +30,6 @@ func (r *identifierRepository) Add(ctx context.Context, rec identifiermodel.Iden
 		SetPatientID(rec.PatientID).
 		SetSystem(rec.System).
 		SetValueCiphertext(rec.ValueCiphertext).
-		SetNonce(rec.Nonce).
 		SetBlindIndex(rec.BlindIndex)
 	if rec.CreatedBy != nil {
 		create.SetCreatedBy(*rec.CreatedBy)
@@ -142,7 +141,6 @@ func toIdentifierRecordDomain(row *ent.PatientIdentifier) *identifiermodel.Ident
 		PatientID:       row.PatientID,
 		System:          row.System,
 		ValueCiphertext: row.ValueCiphertext,
-		Nonce:           row.Nonce,
 		BlindIndex:      row.BlindIndex,
 		CreatedBy:       row.CreatedBy,
 		CreatedAt:       row.CreatedAt,

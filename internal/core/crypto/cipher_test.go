@@ -40,7 +40,7 @@ func TestCipherConstructorsAndVersions(t *testing.T) {
 func TestCipherMinSizeAndInspection(t *testing.T) {
 	minSize, ok := crypto.MinCiphertextSizeForVersion(crypto.MagicByteXChaCha20Poly1305)
 	assert.True(t, ok)
-	assert.Equal(t, 1+crypto.SizeNonce+crypto.SizeAuthTag, minSize)
+	assert.Equal(t, crypto.CiphertextHeaderSize+crypto.SizeNonce+crypto.SizeAuthTag, minSize)
 
 	_, ok = crypto.MinCiphertextSizeForVersion(0xFF)
 	assert.False(t, ok)

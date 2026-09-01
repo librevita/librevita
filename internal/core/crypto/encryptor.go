@@ -9,16 +9,19 @@ import (
 
 // Encryptor provides symmetric AEAD encryption and decryption with cryptographic agility.
 type Encryptor interface {
-	// Encrypt encrypts plaintext with authenticated associated data (AAD),
-	// injecting a Magic Byte version into the first position ([0]) of the returned slice:
-	//   [0]: Magic Byte (e.g. 0x01 for XChaCha20-Poly1305, 0x02 for AES-256-GCM)
-	//   [1 : 1+NonceSize]: Random cryptographic nonce
-	//   [1+NonceSize : ]: Ciphertext and authentication tag
+	// Encrypt encrypts plaintext with authenticated associated data (AAD).
+	// The returned envelope is:
+	//   [0]: Magic Byte (e.g. 0x01 for XChaCha20-Poly1305)
+	//   [1]: Key scope (master / clinic / patient)
+	//   [2]: Key id (generation)
+	//   [3 : 3+NonceSize]: Random cryptographic nonce
+	//   [3+NonceSize : ]: Ciphertext and authentication tag
 	Encrypt(plaintext, aad []byte) ([]byte, error)
 
 	// Decrypt authenticates and decrypts ciphertext using the AAD.
-	// It inspects ciphertext[0] (Magic Byte) to dynamically route to the matching
-	// decryption engine and nonce size.
+	// It inspects ciphertext[0] (Magic Byte) to route to the matching engine
+	// and rejects ciphertext[1]/[2] when they do not match this Encryptor's
+	// key scope and key id.
 	Decrypt(ciphertext, aad []byte) ([]byte, error)
 
 	// EncryptStruct serializes value to JSON and encrypts it with AAD.
@@ -34,6 +37,12 @@ type Encryptor interface {
 
 	// Cipher returns the canonical cipher name configured for this Encryptor.
 	Cipher() string
+
+	// KeyScope returns the key hierarchy tier stamped into ciphertext.
+	KeyScope() byte
+
+	// KeyID returns the key generation stamped into ciphertext.
+	KeyID() byte
 
 	// IsCiphertext reports whether the provided data begins with a recognized ciphertext envelope.
 	IsCiphertext(data []byte) bool
@@ -66,15 +75,37 @@ type AEADEncryptor struct {
 	key     []byte
 	cipher  string
 	version byte
+	scope   byte
+	kid     byte
 }
 
 var _ Encryptor = (*AEADEncryptor)(nil)
 
-// NewEncryptor creates an AEADEncryptor from a raw 32-byte key.
-// Fails fast if key size is less than 32 bytes or if cipher/version is unsupported.
-func NewEncryptor(key []byte, opts ...EncryptorOption) (*AEADEncryptor, error) {
+// NewMasterEncryptor stamps master scope (`m`) and DefaultKeyID.
+// Public constructors do not take a free scope or kid.
+func NewMasterEncryptor(key []byte, opts ...EncryptorOption) (*AEADEncryptor, error) {
+	return newEncryptor(key, KeyScopeMaster, DefaultKeyID, opts...)
+}
+
+// NewClinicEncryptor stamps clinic scope and DefaultKeyID.
+func NewClinicEncryptor(key []byte, opts ...EncryptorOption) (*AEADEncryptor, error) {
+	return newEncryptor(key, KeyScopeClinic, DefaultKeyID, opts...)
+}
+
+// NewPatientEncryptor stamps patient scope and DefaultKeyID.
+func NewPatientEncryptor(key []byte, opts ...EncryptorOption) (*AEADEncryptor, error) {
+	return newEncryptor(key, KeyScopePatient, DefaultKeyID, opts...)
+}
+
+func newEncryptor(key []byte, scope, kid byte, opts ...EncryptorOption) (*AEADEncryptor, error) {
 	if len(key) < 32 {
 		return nil, ErrWeakKey
+	}
+	if !validDataKeyScope(scope) {
+		return nil, ErrInvalidKeyScope
+	}
+	if !validKeyID(kid) {
+		return nil, ErrInvalidKeyID
 	}
 
 	options := encryptorOptions{
@@ -101,11 +132,22 @@ func NewEncryptor(key []byte, opts ...EncryptorOption) (*AEADEncryptor, error) {
 		key:     keyCopy,
 		cipher:  cipher,
 		version: version,
+		scope:   scope,
+		kid:     kid,
 	}, nil
 }
 
-// NewEncryptorFromBase64 creates an AEADEncryptor from a base64-encoded key string.
-func NewEncryptorFromBase64(keyB64 string, opts ...EncryptorOption) (*AEADEncryptor, error) {
+// NewPatientEncryptorFromBase64 decodes a base64 key and calls NewPatientEncryptor.
+func NewPatientEncryptorFromBase64(keyB64 string, opts ...EncryptorOption) (*AEADEncryptor, error) {
+	raw, err := decodeKeyBase64(keyB64)
+	if err != nil {
+		return nil, err
+	}
+	defer ZeroBytes(raw)
+	return NewPatientEncryptor(raw, opts...)
+}
+
+func decodeKeyBase64(keyB64 string) ([]byte, error) {
 	if keyB64 == "" {
 		return nil, ErrWeakKey
 	}
@@ -113,8 +155,7 @@ func NewEncryptorFromBase64(keyB64 string, opts ...EncryptorOption) (*AEADEncryp
 	if err != nil {
 		return nil, errors.Wrap(err, "crypto: invalid base64 key")
 	}
-	defer ZeroBytes(raw)
-	return NewEncryptor(raw, opts...)
+	return raw, nil
 }
 
 // Version returns the default Magic Byte version.
@@ -122,7 +163,17 @@ func (e *AEADEncryptor) Version() byte {
 	return e.version
 }
 
-// Encrypt encrypts plaintext with AAD, injecting the Magic Byte version at index [0].
+// KeyScope returns the key hierarchy tier stamped into ciphertext.
+func (e *AEADEncryptor) KeyScope() byte {
+	return e.scope
+}
+
+// KeyID returns the key generation stamped into ciphertext.
+func (e *AEADEncryptor) KeyID() byte {
+	return e.kid
+}
+
+// Encrypt encrypts plaintext with AAD, injecting magic, key scope, and key id at the front.
 func (e *AEADEncryptor) Encrypt(plaintext, aad []byte) ([]byte, error) {
 	spec, ok := supportedCiphers[e.version]
 	if !ok {
@@ -139,16 +190,17 @@ func (e *AEADEncryptor) Encrypt(plaintext, aad []byte) ([]byte, error) {
 		return nil, errors.Wrap(err, "crypto: generate nonce")
 	}
 
-	out := make([]byte, 1+len(nonce), 1+len(nonce)+len(plaintext)+aead.Overhead())
-	out[0] = e.version
-	copy(out[1:], nonce)
-	out = aead.Seal(out, nonce, plaintext, aad)
+	header := []byte{e.version, e.scope, e.kid}
+	out := make([]byte, CiphertextHeaderSize+len(nonce), CiphertextHeaderSize+len(nonce)+len(plaintext)+aead.Overhead())
+	copy(out, header)
+	copy(out[CiphertextHeaderSize:], nonce)
+	out = aead.Seal(out, nonce, plaintext, appendEnvelopeAAD(header, aad))
 	return out, nil
 }
 
-// Decrypt inspects the Magic Byte at ciphertext[0] and decrypts the payload.
+// Decrypt inspects the Magic Byte, key scope, and key id, then decrypts the payload.
 func (e *AEADEncryptor) Decrypt(ciphertext, aad []byte) ([]byte, error) {
-	if len(ciphertext) < 1 {
+	if len(ciphertext) < CiphertextHeaderSize {
 		return nil, ErrCiphertextTooShort
 	}
 
@@ -158,20 +210,36 @@ func (e *AEADEncryptor) Decrypt(ciphertext, aad []byte) ([]byte, error) {
 		return nil, ErrUnsupportedVersion
 	}
 
-	minSize := 1 + spec.NonceSize + spec.TagSize
+	scope := ciphertext[1]
+	if !validDataKeyScope(scope) {
+		return nil, ErrInvalidKeyScope
+	}
+	if scope != e.scope {
+		return nil, ErrKeyScopeMismatch
+	}
+	kid := ciphertext[2]
+	if !validKeyID(kid) {
+		return nil, ErrInvalidKeyID
+	}
+	if kid != e.kid {
+		return nil, ErrKeyIDMismatch
+	}
+
+	minSize := CiphertextHeaderSize + spec.NonceSize + spec.TagSize
 	if len(ciphertext) < minSize {
 		return nil, ErrCiphertextTooShort
 	}
 
-	nonce := ciphertext[1 : 1+spec.NonceSize]
-	payload := ciphertext[1+spec.NonceSize:]
+	header := ciphertext[:CiphertextHeaderSize]
+	nonce := ciphertext[CiphertextHeaderSize : CiphertextHeaderSize+spec.NonceSize]
+	payload := ciphertext[CiphertextHeaderSize+spec.NonceSize:]
 
 	aead, err := NewAEADCipherByVersion(magicByte, e.key)
 	if err != nil {
 		return nil, err
 	}
 
-	plaintext, err := aead.Open(nil, nonce, payload, aad)
+	plaintext, err := aead.Open(nil, nonce, payload, appendEnvelopeAAD(header, aad))
 	if err != nil {
 		return nil, errors.Wrapf(ErrDecryptionFailed, "%v", err)
 	}

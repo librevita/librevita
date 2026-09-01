@@ -35,15 +35,15 @@ func (s *service) blindIndex(ctx context.Context, system, value string) (string,
 	return s.key.BlindIndex(system, value)
 }
 
-func (s *service) decryptValue(ctx context.Context, clinicID, patientID uuid.UUID, system string, ciphertext, nonce []byte) ([]byte, error) {
+func (s *service) decryptValue(ctx context.Context, clinicID, patientID uuid.UUID, system string, ciphertext []byte) ([]byte, error) {
 	pURN := urn.Patient(clinicID, patientID)
 	_ = system
-	return s.key.DecryptPatientData(ctx, pURN, []byte(pURN), ciphertext, nonce)
+	return s.key.DecryptPatientData(ctx, pURN, []byte(pURN), ciphertext)
 }
 
-func (s *service) decryptValueWithDEK(clinicID, patientID uuid.UUID, dek, ciphertext, nonce []byte) ([]byte, error) {
+func (s *service) decryptValueWithDEK(clinicID, patientID uuid.UUID, dek, ciphertext []byte) ([]byte, error) {
 	pURN := urn.Patient(clinicID, patientID)
-	return s.key.DecryptPatientDataWithDEK(dek, []byte(pURN), ciphertext, nonce)
+	return s.key.DecryptPatientDataWithDEK(dek, []byte(pURN), ciphertext)
 }
 
 // AddIdentifier normalizes, validates, encrypts, and stores in.
@@ -57,7 +57,6 @@ func (s *service) AddIdentifier(ctx context.Context, clinicID, createdBy string,
 	var normalized string
 	var blind string
 	var ciphertext []byte
-	var nonce []byte
 	var id uuid.UUID
 	pUUID := uuid.MustParse(in.PatientID)
 	pURN := urn.Patient(cUUID, pUUID)
@@ -85,7 +84,7 @@ func (s *service) AddIdentifier(ctx context.Context, clinicID, createdBy string,
 		}).
 		Step("encrypt data", func() error {
 			var eerr error
-			ciphertext, nonce, eerr = s.key.EncryptPatientData(ctx, pURN, []byte(pURN), []byte(normalized))
+			ciphertext, eerr = s.key.EncryptPatientData(ctx, pURN, []byte(pURN), []byte(normalized))
 			return eerr
 		}).
 		Step("generate id", func() error {
@@ -109,7 +108,6 @@ func (s *service) AddIdentifier(ctx context.Context, clinicID, createdBy string,
 				PatientID:       pUUID,
 				System:          strategy.System(),
 				ValueCiphertext: ciphertext,
-				Nonce:           nonce,
 				BlindIndex:      blind,
 				CreatedBy:       cb,
 			}
@@ -156,7 +154,7 @@ func (s *service) FindByValue(ctx context.Context, clinicID, raw string) ([]*ide
 		if err != nil {
 			return nil, errors.Wrap(err, "identifier: find by value")
 		}
-		value, err := s.decryptValue(ctx, cUUID, row.PatientID, row.System, row.ValueCiphertext, row.Nonce)
+		value, err := s.decryptValue(ctx, cUUID, row.PatientID, row.System, row.ValueCiphertext)
 		if err != nil {
 			s.log.ErrorContext(ctx, "identifier: blind index hit failed to decrypt",
 				log.String("system", row.System),
@@ -225,7 +223,7 @@ func (s *service) List(ctx context.Context, clinicID, patientID string) ([]*iden
 		if cid == uuid.Nil {
 			cid = cUUID
 		}
-		value, err := s.decryptValueWithDEK(cid, row.PatientID, dek, row.ValueCiphertext, row.Nonce)
+		value, err := s.decryptValueWithDEK(cid, row.PatientID, dek, row.ValueCiphertext)
 		if err != nil {
 			s.log.ErrorContext(ctx, "identifier: failed to decrypt",
 				log.Stringer("id", row.ID),
@@ -323,7 +321,7 @@ func (s *service) decryptIdentifierRows(ctx context.Context, rows []identifiermo
 			)
 			continue
 		}
-		value, err := s.decryptValueWithDEK(cid, row.PatientID, dek, row.ValueCiphertext, row.Nonce)
+		value, err := s.decryptValueWithDEK(cid, row.PatientID, dek, row.ValueCiphertext)
 		if err != nil {
 			s.log.ErrorContext(ctx, "identifier: failed to decrypt",
 				log.Stringer("patient_id", row.PatientID),

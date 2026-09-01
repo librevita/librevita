@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"aidanwoods.dev/go-paseto"
 	"entgo.io/ent/dialect"
 	entsql "entgo.io/ent/dialect/sql"
 	"github.com/google/uuid"
@@ -21,6 +22,7 @@ import (
 	"librevita.org/ent"
 	"librevita.org/internal/core/clinicctx"
 	"librevita.org/internal/core/config"
+	"librevita.org/internal/core/crypto"
 	"librevita.org/internal/core/database"
 	"librevita.org/internal/core/kv"
 	"librevita.org/internal/testutil"
@@ -69,8 +71,17 @@ func testSessionRepo(t *testing.T, client *ent.Client) SessionRepository {
 
 func newManager(t *testing.T, client *ent.Client, ttl time.Duration) *SessionManager {
 	t.Helper()
+	raw, err := crypto.RandomBytes(32)
+	require.NoError(t, err)
+	key, err := paseto.V4SymmetricKeyFromBytes(raw)
+	require.NoError(t, err)
+	hasher, err := crypto.NewSessionHasher(raw)
+	require.NoError(t, err)
+	crypto.ZeroBytes(raw)
 	return &SessionManager{
 		repo:   testSessionRepo(t, client),
+		key:    key,
+		hasher: hasher,
 		ttl:    ttl,
 		secure: false,
 		log:    log.Nop(),
@@ -97,6 +108,32 @@ func TestSessionLifecycle(t *testing.T) {
 
 	_, err = m.Authenticate(testCtx(), token)
 	assert.Equal(t, ErrNoSession, err)
+}
+
+func TestCreateFailsWithoutHasher(t *testing.T) {
+	client := openSessionTest(t)
+	raw, err := crypto.RandomBytes(32)
+	require.NoError(t, err)
+	key, err := paseto.V4SymmetricKeyFromBytes(raw)
+	require.NoError(t, err)
+	crypto.ZeroBytes(raw)
+	m := &SessionManager{
+		repo: testSessionRepo(t, client),
+		key:  key,
+		ttl:  time.Hour,
+		log:  log.Nop(),
+	}
+	_, err = m.Create(testCtx(), Principal{ID: testUserID, Email: "user@example.org", Name: "Test User", Role: RoleAdmin})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "session hasher is not configured")
+}
+
+func TestSessionFingerprintIsPrefixed(t *testing.T) {
+	client := openSessionTest(t)
+	m := newManager(t, client, time.Hour)
+	fp, err := m.hashToken("jti-example")
+	require.NoError(t, err)
+	assert.True(t, strings.HasPrefix(fp, "blake2s$ms$01$"))
 }
 
 func TestCreateDoesNotSweepExpiredSessions(t *testing.T) {

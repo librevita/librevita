@@ -89,12 +89,14 @@ func TestKEKDEKPatientDataEncryptionAndCryptoShredding(t *testing.T) {
 	assert.True(t, bytes.Equal(dek, retrievedDEK))
 
 	// 2. Encrypt Patient Data using DEK
-	ct, nonce, err := eng.EncryptPatientData(ctx, patientURN, aad, plaintext)
+	ct, err := eng.EncryptPatientData(ctx, patientURN, aad, plaintext)
 	require.NoError(t, err)
-	assert.Len(t, nonce, 24)
+	assert.Equal(t, crypto.MagicByteXChaCha20Poly1305, ct[0])
+	assert.Equal(t, crypto.KeyScopePatient, ct[1])
+	assert.Equal(t, crypto.DefaultKeyID, ct[2])
 
 	// 3. Decrypt Patient Data using DEK
-	got, err := eng.DecryptPatientData(ctx, patientURN, aad, ct, nonce)
+	got, err := eng.DecryptPatientData(ctx, patientURN, aad, ct)
 	require.NoError(t, err)
 	assert.Equal(t, plaintext, got)
 
@@ -103,7 +105,7 @@ func TestKEKDEKPatientDataEncryptionAndCryptoShredding(t *testing.T) {
 	require.NoError(t, err)
 
 	// 5. Decryption must fail after Crypto-Shredding with a terminal error.
-	_, err = eng.DecryptPatientData(ctx, patientURN, aad, ct, nonce)
+	_, err = eng.DecryptPatientData(ctx, patientURN, aad, ct)
 	assert.ErrorIs(t, err, crypto.ErrKeyDestroyed)
 }
 
@@ -111,10 +113,12 @@ func TestSealOpenDirectKEKRoundtrip(t *testing.T) {
 	eng := mustEngine(t)
 	aad := []byte("urn:librevita:system:config")
 
-	ct, nonce, err := eng.Seal(aad, []byte("secret-payload"))
+	ct, err := eng.Seal(aad, []byte("secret-payload"))
 	require.NoError(t, err)
+	assert.Equal(t, crypto.KeyScopeMaster, ct[1])
+	assert.Equal(t, crypto.DefaultKeyID, ct[2])
 
-	got, err := eng.Open(aad, ct, nonce)
+	got, err := eng.Open(aad, ct)
 	require.NoError(t, err)
 	assert.Equal(t, "secret-payload", string(got))
 }
@@ -125,10 +129,12 @@ func TestBlindIndexDeterministicAndSeparated(t *testing.T) {
 	require.NoError(t, err)
 	assert.Contains(t, index, "$")
 	parts := strings.Split(index, "$")
-	require.Len(t, parts, 2)
+	require.Len(t, parts, 4)
 	assert.Equal(t, "blake2s", parts[0])
-	assert.Len(t, parts[1], 64)
-	assert.True(t, isHex(parts[1]))
+	assert.Equal(t, "mi", parts[1])
+	assert.Equal(t, "01", parts[2])
+	assert.Len(t, parts[3], 64)
+	assert.True(t, isHex(parts[3]))
 
 	again, err := eng.BlindIndex(urn.Identifier("br", "cpf"), "12345678900")
 	require.NoError(t, err)
@@ -157,9 +163,9 @@ func TestNewFromConfigKeyPolicy(t *testing.T) {
 	eng, err := crypto.NewFromConfig(dev, v, logger)
 	require.NoError(t, err)
 
-	ct, nonce, err := eng.Seal(nil, []byte("value"))
+	ct, err := eng.Seal(nil, []byte("value"))
 	require.NoError(t, err)
-	got, err := eng.Open(nil, ct, nonce)
+	got, err := eng.Open(nil, ct)
 	require.NoError(t, err)
 	assert.Equal(t, []byte("value"), got)
 }
@@ -197,7 +203,7 @@ func TestFxModuleIntegration(t *testing.T) {
 	// Verify hasher
 	h, err := hasher.HashString("test-session")
 	require.NoError(t, err)
-	assert.True(t, strings.HasPrefix(h, "blake2s$"))
+	assert.True(t, strings.HasPrefix(h, "blake2s$mi$01$"))
 
 	// Verify encryptor
 	ct, err := encryptor.Encrypt([]byte("medical-data"), []byte("aad"))
@@ -232,10 +238,13 @@ func TestClinicDEKEnvelopeAndCryptoShred(t *testing.T) {
 
 	hA, err := crypto.NewHasherFromDEK(dekA)
 	require.NoError(t, err)
+	assert.Equal(t, crypto.KeyScopeClinic, hA.KeyScope())
+	assert.Equal(t, crypto.KeyPurposeIndex, hA.KeyPurpose())
 	hB, err := crypto.NewHasherFromDEK(dekB)
 	require.NoError(t, err)
 	idxA, err := hA.BlindIndex(urn.Identifier("br", "cpf"), "12345678900")
 	require.NoError(t, err)
+	assert.True(t, strings.HasPrefix(idxA, "blake2s$ci$01$"))
 	idxB, err := hB.BlindIndex(urn.Identifier("br", "cpf"), "12345678900")
 	require.NoError(t, err)
 	assert.NotEqual(t, idxA, idxB, "same catalog URN must not share a blind index across clinics")
@@ -244,9 +253,9 @@ func TestClinicDEKEnvelopeAndCryptoShred(t *testing.T) {
 	aad := []byte(pURN)
 	plaintext := []byte("PHI-norte")
 
-	ct, nonce, err := eng.EncryptPatientData(ctx, pURN, aad, plaintext)
+	ct, err := eng.EncryptPatientData(ctx, pURN, aad, plaintext)
 	require.NoError(t, err)
-	got, err := eng.DecryptPatientData(ctx, pURN, aad, ct, nonce)
+	got, err := eng.DecryptPatientData(ctx, pURN, aad, ct)
 	require.NoError(t, err)
 	assert.Equal(t, plaintext, got)
 
@@ -254,7 +263,7 @@ func TestClinicDEKEnvelopeAndCryptoShred(t *testing.T) {
 	assert.Error(t, err, "clinic B must not hold clinic A's patient DEK")
 
 	require.NoError(t, eng.DeleteClinicDEK(ctx, clinicA))
-	_, err = eng.DecryptPatientData(ctx, pURN, aad, ct, nonce)
+	_, err = eng.DecryptPatientData(ctx, pURN, aad, ct)
 	assert.Error(t, err)
 }
 
@@ -273,19 +282,21 @@ func TestClinicDEKByURN(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, dek, got)
 
-	ct, nonce, err := eng.EncryptPayload(ctx, clinicURN, aad, []byte("clinic-owned"))
+	ct, err := eng.EncryptPayload(ctx, clinicURN, aad, []byte("clinic-owned"))
 	require.NoError(t, err)
-	plain, err := eng.DecryptPayload(ctx, clinicURN, aad, ct, nonce)
+	assert.Equal(t, crypto.KeyScopeClinic, ct[1])
+	assert.Equal(t, crypto.DefaultKeyID, ct[2])
+	plain, err := eng.DecryptPayload(ctx, clinicURN, aad, ct)
 	require.NoError(t, err)
 	assert.Equal(t, []byte("clinic-owned"), plain)
 
 	_, err = eng.SetupClinicDEK(ctx, "not-a-clinic-urn")
 	assert.Error(t, err)
-	_, _, err = eng.EncryptPayload(ctx, urn.PlatformSession("blake2s$abc"), aad, []byte("x"))
+	_, err = eng.EncryptPayload(ctx, urn.PlatformSession("blake2s$abc"), aad, []byte("x"))
 	assert.Error(t, err)
 
 	require.NoError(t, eng.DeleteClinicDEKForURN(ctx, clinicURN))
-	_, err = eng.DecryptPayload(ctx, clinicURN, aad, ct, nonce)
+	_, err = eng.DecryptPayload(ctx, clinicURN, aad, ct)
 	assert.Error(t, err)
 }
 

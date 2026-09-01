@@ -23,30 +23,33 @@ func mustHasherKey(t *testing.T) []byte {
 	return k
 }
 
-func TestNewHasherFailFast(t *testing.T) {
+func TestNewIndexHasherFailFast(t *testing.T) {
 	t.Run("rejects empty or weak key", func(t *testing.T) {
-		_, err := crypto.NewHasher(nil)
+		_, err := crypto.NewMasterIndexHasher(nil)
 		assert.ErrorIs(t, err, crypto.ErrWeakKey)
 
-		_, err = crypto.NewHasher([]byte("short-key"))
+		_, err = crypto.NewMasterIndexHasher([]byte("short-key"))
 		assert.ErrorIs(t, err, crypto.ErrWeakKey)
 
-		_, err = crypto.NewHasherFromBase64("")
+		_, err = crypto.NewMasterIndexHasherFromBase64("")
 		assert.ErrorIs(t, err, crypto.ErrWeakKey)
 
-		_, err = crypto.NewHasherFromBase64("invalid-base64!!")
+		_, err = crypto.NewMasterIndexHasherFromBase64("invalid-base64!!")
 		assert.Error(t, err)
+
+		_, err = crypto.NewSessionHasher(nil)
+		assert.ErrorIs(t, err, crypto.ErrWeakKey)
 	})
 
 	t.Run("rejects unsupported algorithm", func(t *testing.T) {
 		k := mustHasherKey(t)
-		_, err := crypto.NewHasher(k, crypto.WithHashAlgorithm("md5"))
+		_, err := crypto.NewMasterIndexHasher(k, crypto.WithHashAlgorithm("md5"))
 		assert.ErrorIs(t, err, crypto.ErrUnsupportedAlgorithm)
 
-		_, err = crypto.NewHasher(k, crypto.WithHashAlgorithm("sha1"))
+		_, err = crypto.NewMasterIndexHasher(k, crypto.WithHashAlgorithm("sha1"))
 		assert.ErrorIs(t, err, crypto.ErrUnsupportedAlgorithm)
 
-		_, err = crypto.NewHasher(k, crypto.WithHashAlgorithm("bcrypt"))
+		_, err = crypto.NewMasterIndexHasher(k, crypto.WithHashAlgorithm("bcrypt"))
 		assert.ErrorIs(t, err, crypto.ErrUnsupportedAlgorithm)
 	})
 }
@@ -63,20 +66,24 @@ func TestHasherAllEnginesAllowlist(t *testing.T) {
 
 	for _, eng := range engines {
 		t.Run(eng.name, func(t *testing.T) {
-			hasher, err := crypto.NewHasher(k, crypto.WithHashAlgorithm(eng.name))
+			hasher, err := crypto.NewMasterIndexHasher(k, crypto.WithHashAlgorithm(eng.name))
 			require.NoError(t, err)
 			assert.Equal(t, eng.canonical, hasher.Algorithm())
+			assert.Equal(t, crypto.KeyScopeMaster, hasher.KeyScope())
+			assert.Equal(t, crypto.KeyPurposeIndex, hasher.KeyPurpose())
+			assert.Equal(t, crypto.DefaultKeyID, hasher.KeyID())
 
 			data := []byte("patient-session-token-jti-12345")
 			hashed, err := hasher.Hash(data)
 			require.NoError(t, err)
 
-			// Format must be <algoritmo>$<hash_hex>
 			parts := strings.Split(hashed, "$")
-			require.Len(t, parts, 2)
+			require.Len(t, parts, 4)
 			assert.Equal(t, eng.canonical, parts[0])
-			assert.NotEmpty(t, parts[1])
-			assert.True(t, isHex(parts[1]))
+			assert.Equal(t, "mi", parts[1])
+			assert.Equal(t, "01", parts[2])
+			assert.NotEmpty(t, parts[3])
+			assert.True(t, isHex(parts[3]))
 
 			// Verification must succeed
 			ok, err := hasher.Verify(data, hashed)
@@ -102,7 +109,7 @@ func TestHasherReservedEnginesFailFast(t *testing.T) {
 
 	for _, algo := range reserved {
 		t.Run(algo, func(t *testing.T) {
-			_, err := crypto.NewHasher(k, crypto.WithHashAlgorithm(algo))
+			_, err := crypto.NewMasterIndexHasher(k, crypto.WithHashAlgorithm(algo))
 			assert.ErrorIs(t, err, crypto.ErrUnsupportedAlgorithm)
 		})
 	}
@@ -111,10 +118,10 @@ func TestHasherReservedEnginesFailFast(t *testing.T) {
 func TestHasherCrossEngineVerificationAgility(t *testing.T) {
 	k := mustHasherKey(t)
 
-	hasherBlake2s, err := crypto.NewHasher(k, crypto.WithHashAlgorithm(crypto.AlgorithmBlake2s))
+	hasherBlake2s, err := crypto.NewMasterIndexHasher(k, crypto.WithHashAlgorithm(crypto.AlgorithmBlake2s))
 	require.NoError(t, err)
 
-	hasherBlake2b, err := crypto.NewHasher(k, crypto.WithHashAlgorithm(crypto.AlgorithmBlake2b))
+	hasherBlake2b, err := crypto.NewMasterIndexHasher(k, crypto.WithHashAlgorithm(crypto.AlgorithmBlake2b))
 	require.NoError(t, err)
 
 	data := []byte("confidential-document-identifier")
@@ -137,35 +144,37 @@ func TestHasherCrossEngineVerificationAgility(t *testing.T) {
 	assert.True(t, ok)
 }
 
-func TestHasherLegacyRawHexVerification(t *testing.T) {
+func TestHasherRejectsUnscopedHash(t *testing.T) {
 	k := mustHasherKey(t)
-	hasher, err := crypto.NewHasher(k, crypto.WithHashAlgorithm(crypto.AlgorithmBlake2s))
+	hasher, err := crypto.NewMasterIndexHasher(k, crypto.WithHashAlgorithm(crypto.AlgorithmBlake2s))
 	require.NoError(t, err)
 
 	data := []byte("legacy-token")
 	hashed, err := hasher.Hash(data)
 	require.NoError(t, err)
 
-	// Strip the prefix to simulate a legacy raw hex hash stored in DB
-	rawHex := strings.Split(hashed, "$")[1]
+	rawHex := strings.Split(hashed, "$")[3]
+	_, err = hasher.Verify(data, rawHex)
+	assert.ErrorIs(t, err, crypto.ErrInvalidHashFormat)
 
-	ok, err := hasher.Verify(data, rawHex)
-	require.NoError(t, err)
-	assert.True(t, ok)
+	_, err = hasher.Verify(data, "blake2s$"+rawHex)
+	assert.ErrorIs(t, err, crypto.ErrInvalidHashFormat)
 
-	ok, err = hasher.Verify([]byte("different-data"), rawHex)
-	require.NoError(t, err)
-	assert.False(t, ok)
+	_, err = hasher.Verify(data, "blake2s$mi$"+rawHex)
+	assert.ErrorIs(t, err, crypto.ErrInvalidHashFormat)
+
+	_, err = hasher.Verify(data, "blake2s$m$ix$01$"+rawHex)
+	assert.ErrorIs(t, err, crypto.ErrInvalidHashFormat)
 }
 
 func TestHasherBlindIndexDomainSeparation(t *testing.T) {
 	k := mustHasherKey(t)
-	hasher, err := crypto.NewHasher(k, crypto.WithHashAlgorithm(crypto.AlgorithmBlake2s))
+	hasher, err := crypto.NewMasterIndexHasher(k, crypto.WithHashAlgorithm(crypto.AlgorithmBlake2s))
 	require.NoError(t, err)
 
 	idx1, err := hasher.BlindIndex(urn.Identifier("cpf"), "12345678900")
 	require.NoError(t, err)
-	assert.True(t, strings.HasPrefix(idx1, "blake2s$"))
+	assert.True(t, strings.HasPrefix(idx1, "blake2s$mi$01$"))
 
 	// Determinism
 	idx2, err := hasher.BlindIndex(urn.Identifier("cpf"), "12345678900")
@@ -190,10 +199,10 @@ func TestHasherKeyIsolation(t *testing.T) {
 	_, _ = rand.Read(k1)
 	_, _ = rand.Read(k2)
 
-	h1, err := crypto.NewHasher(k1)
+	h1, err := crypto.NewMasterIndexHasher(k1)
 	require.NoError(t, err)
 
-	h2, err := crypto.NewHasher(k2)
+	h2, err := crypto.NewMasterIndexHasher(k2)
 	require.NoError(t, err)
 
 	data := []byte("session-secret")
@@ -213,7 +222,7 @@ func TestHasherKeyIsolation(t *testing.T) {
 
 func TestHasherInvalidInputs(t *testing.T) {
 	k := mustHasherKey(t)
-	h, err := crypto.NewHasher(k)
+	h, err := crypto.NewMasterIndexHasher(k)
 	require.NoError(t, err)
 
 	// Empty hash
@@ -221,16 +230,56 @@ func TestHasherInvalidInputs(t *testing.T) {
 	assert.ErrorIs(t, err, crypto.ErrInvalidHashFormat)
 
 	// Invalid prefix
-	_, err = h.Verify([]byte("test"), "unknownalgo$abcdef")
+	_, err = h.Verify([]byte("test"), "unknownalgo$mi$01$abcdef")
 	assert.ErrorIs(t, err, crypto.ErrUnsupportedAlgorithm)
 
 	// Invalid hex
-	_, err = h.Verify([]byte("test"), "blake2s$not-hex!!")
+	_, err = h.Verify([]byte("test"), "blake2s$mi$01$not-hex!!")
 	assert.ErrorIs(t, err, crypto.ErrInvalidHashFormat)
 
 	// Malformed prefix syntax
 	_, err = h.Verify([]byte("test"), "$$$")
 	assert.ErrorIs(t, err, crypto.ErrInvalidHashFormat)
+
+	// Unknown scope token
+	_, err = h.Verify([]byte("test"), "blake2s$zi$01$abcd")
+	assert.ErrorIs(t, err, crypto.ErrInvalidKeyScope)
+
+	// Unknown purpose token
+	_, err = h.Verify([]byte("test"), "blake2s$mx$01$abcd")
+	assert.ErrorIs(t, err, crypto.ErrInvalidKeyPurpose)
+
+	// Session purpose is master-scoped
+	_, err = h.Verify([]byte("test"), "blake2s$cs$01$abcd")
+	assert.ErrorIs(t, err, crypto.ErrInvalidKeyPurpose)
+
+	// Unknown key id token
+	_, err = h.Verify([]byte("test"), "blake2s$mi$00$abcd")
+	assert.ErrorIs(t, err, crypto.ErrInvalidKeyID)
+
+	// Scope mismatch
+	clinic, err := crypto.NewClinicIndexHasher(k)
+	require.NoError(t, err)
+	hashed, err := clinic.Hash([]byte("test"))
+	require.NoError(t, err)
+	_, err = h.Verify([]byte("test"), hashed)
+	assert.ErrorIs(t, err, crypto.ErrKeyScopeMismatch)
+
+	// Purpose mismatch
+	sess, err := crypto.NewSessionHasher(k)
+	require.NoError(t, err)
+	sessHash, err := sess.Hash([]byte("test"))
+	require.NoError(t, err)
+	assert.True(t, strings.HasPrefix(sessHash, "blake2s$ms$01$"))
+	_, err = h.Verify([]byte("test"), sessHash)
+	assert.ErrorIs(t, err, crypto.ErrKeyPurposeMismatch)
+
+	// Key id mismatch
+	hashed, err = h.Hash([]byte("test"))
+	require.NoError(t, err)
+	otherKid := strings.Replace(hashed, "$01$", "$02$", 1)
+	_, err = h.Verify([]byte("test"), otherKid)
+	assert.ErrorIs(t, err, crypto.ErrKeyIDMismatch)
 }
 
 func TestDigestAndCryptoHelpers(t *testing.T) {
@@ -296,7 +345,7 @@ func TestDigestAndCryptoHelpers(t *testing.T) {
 
 func BenchmarkHasher_BLAKE2s(b *testing.B) {
 	k := []byte("01234567890123456789012345678901")
-	h, err := crypto.NewHasher(k, crypto.WithHashAlgorithm(crypto.AlgorithmBlake2s))
+	h, err := crypto.NewMasterIndexHasher(k, crypto.WithHashAlgorithm(crypto.AlgorithmBlake2s))
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -310,7 +359,7 @@ func BenchmarkHasher_BLAKE2s(b *testing.B) {
 
 func BenchmarkHasher_BLAKE2b(b *testing.B) {
 	k := []byte("01234567890123456789012345678901")
-	h, err := crypto.NewHasher(k, crypto.WithHashAlgorithm(crypto.AlgorithmBlake2b))
+	h, err := crypto.NewMasterIndexHasher(k, crypto.WithHashAlgorithm(crypto.AlgorithmBlake2b))
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -324,7 +373,7 @@ func BenchmarkHasher_BLAKE2b(b *testing.B) {
 
 func BenchmarkHasher_Verify(b *testing.B) {
 	k := []byte("01234567890123456789012345678901")
-	h, err := crypto.NewHasher(k)
+	h, err := crypto.NewMasterIndexHasher(k)
 	if err != nil {
 		b.Fatal(err)
 	}

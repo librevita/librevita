@@ -34,15 +34,11 @@ func (PatientIdentifier) Fields() []ent.Field {
 			Comment("System URN reference"),
 		field.Bytes("value_ciphertext").
 			NotEmpty().
-			Comment("XChaCha20-Poly1305 ciphertext of the document value"),
-		field.Bytes("nonce").
-			MaxLen(24).
-			NotEmpty().
-			Comment("24-byte cryptographic nonce"),
+			Comment("Self-describing XChaCha20-Poly1305 envelope of the document value"),
 		field.String("blind_index").
-			MaxLen(72).
+			MaxLen(88).
 			NotEmpty().
-			Comment("Hex BLAKE2b-256 keyed blind index for exact search"),
+			Comment("Keyed blind index: algorithm$<scope><purpose>$kid$hex"),
 		field.UUID("created_by", uuid.UUID{}).
 			Optional().
 			Nillable(),

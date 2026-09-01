@@ -28,15 +28,12 @@ func NewHasherFromConfig(cfg *config.Config, logger log.Logger) (Hasher, error) 
 	}
 	defer ZeroBytes(rawMasterKey)
 
-	blindKey := hkdfExpand(rawMasterKey, InfoBlindIndex)
-	defer ZeroBytes(blindKey)
-
 	algo := cfg.Crypto.HashAlgorithm
 	if algo == "" {
 		algo = DefaultHashAlgorithm
 	}
 
-	return NewHasher(blindKey, WithHashAlgorithm(algo))
+	return NewMasterIndexHasher(rawMasterKey, WithHashAlgorithm(algo))
 }
 
 // NewEncryptorFromConfig provides an Encryptor instance configured from application settings.
@@ -55,7 +52,7 @@ func NewEncryptorFromConfig(cfg *config.Config, logger log.Logger) (Encryptor, e
 		cipher = DefaultEncryptionCipher
 	}
 
-	return NewEncryptor(kek, WithEncryptionCipher(cipher))
+	return NewMasterEncryptor(kek, WithEncryptionCipher(cipher))
 }
 
 // NewFromConfig is the Fx provider for Engine/MasterKey with KeyStore.

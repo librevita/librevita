@@ -48,6 +48,32 @@ func TestDecryptedReaderRejectsTamperedFrame(t *testing.T) {
 	require.NoError(t, decrypted.Close())
 }
 
+func TestDecryptedReaderRejectsWrongKeyScope(t *testing.T) {
+	key := bytes.Repeat([]byte{0x11}, crypto.SizeDEK)
+	encrypted, err := NewEncryptedReader(bytes.NewReader([]byte("secret")), key, []byte("aad"))
+	require.NoError(t, err)
+	encoded, err := io.ReadAll(encrypted)
+	require.NoError(t, err)
+	require.NoError(t, encrypted.Close())
+
+	encoded[5] = crypto.KeyScopeClinic
+	_, err = NewDecryptedReader(bytes.NewReader(encoded), key, []byte("aad"))
+	assert.ErrorIs(t, err, crypto.ErrKeyScopeMismatch)
+}
+
+func TestDecryptedReaderRejectsWrongKeyID(t *testing.T) {
+	key := bytes.Repeat([]byte{0x11}, crypto.SizeDEK)
+	encrypted, err := NewEncryptedReader(bytes.NewReader([]byte("secret")), key, []byte("aad"))
+	require.NoError(t, err)
+	encoded, err := io.ReadAll(encrypted)
+	require.NoError(t, err)
+	require.NoError(t, encrypted.Close())
+
+	encoded[6] = 2
+	_, err = NewDecryptedReader(bytes.NewReader(encoded), key, []byte("aad"))
+	assert.ErrorIs(t, err, crypto.ErrKeyIDMismatch)
+}
+
 func TestEncryptedReaderRejectsWeakKey(t *testing.T) {
 	_, err := NewEncryptedReader(bytes.NewReader([]byte("data")), []byte("short"), nil)
 	assert.ErrorIs(t, err, crypto.ErrInvalidDEK)
