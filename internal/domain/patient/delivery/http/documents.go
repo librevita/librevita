@@ -18,6 +18,7 @@ import (
 	"librevita.org/internal/core/storage"
 	"librevita.org/internal/domain/patient/delivery/views"
 	"librevita.org/internal/domain/patient/usecase"
+	"librevita.org/pkg/urn"
 )
 
 // patientDocumentDomain is the attachment namespace for patient files.
@@ -63,7 +64,7 @@ func (h *Handler) UploadDocument(c echo.Context) error {
 		return err
 	}
 	defer crypto.ZeroBytes(dek)
-	patientURN := crypto.PatientURN(pt.ClinicID, pt.ID)
+	patientURN := urn.Patient(pt.ClinicID, pt.ID)
 
 	name := sanitizeFileName(file.Filename)
 	_, err = h.files.UploadEncrypted(ctx, storage.UploadInput{
@@ -105,7 +106,7 @@ func (h *Handler) DownloadDocument(c echo.Context) error {
 		return err
 	}
 	defer crypto.ZeroBytes(dek)
-	patientURN := crypto.PatientURN(pt.ClinicID, pt.ID)
+	patientURN := urn.Patient(pt.ClinicID, pt.ID)
 	meta, obj, err := h.files.OpenEncryptedForResource(ctx, patientDocumentDomain, pt.ID, fileID, dek, []byte(patientURN))
 	if err != nil {
 		if storage.IsNotFound(err) {

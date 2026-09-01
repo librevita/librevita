@@ -5,28 +5,8 @@ import (
 	"strings"
 
 	"github.com/cockroachdb/errors"
-)
 
-// RawSystem is the reserved URN of the built-in fallback strategy. It
-// is never configurable: administrators register specific systems,
-// everything else falls back to raw.
-const RawSystem = "urn:librevita:id:raw"
-
-// SystemURNPrefix is the namespace administrators use when registering
-// a new document system.
-const SystemURNPrefix = "urn:librevita:id:"
-
-// Seed system URNs, the defaults shipped in the migration. They are
-// rows, not a closed set: deployments in other jurisdictions register
-// their own systems, and these can be edited or deactivated.
-const (
-	CPFSystem = "urn:librevita:id:br:cpf"
-	SUSSystem = "urn:librevita:id:br:sus"
-	NIFSystem = "urn:librevita:id:pt:nif"
-	// #nosec G101 -- PassportSystem is a system URN (the FHIR system
-	// of a document kind), not a credential; the name tripped the
-	// hardcoded-secret heuristic.
-	PassportSystem = "urn:librevita:id:passport"
+	"librevita.org/pkg/urn"
 )
 
 // maxValueLen bounds every normalized value; the blind index hashes
@@ -56,7 +36,7 @@ type Strategy interface {
 type rawStrategy struct{}
 
 // System implements Strategy.
-func (rawStrategy) System() string { return RawSystem }
+func (rawStrategy) System() string { return urn.IdentifierRaw }
 
 // Detect implements Strategy.
 func (rawStrategy) Detect(string) bool { return true }

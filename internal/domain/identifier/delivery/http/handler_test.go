@@ -24,6 +24,7 @@ import (
 	identifiermodel "librevita.org/internal/domain/identifier/model"
 	"librevita.org/internal/domain/identifier/usecase"
 	"librevita.org/pkg/log"
+	"librevita.org/pkg/urn"
 	auditmocks "librevita.org/tests/mocks/core/audit"
 	authmocks "librevita.org/tests/mocks/core/auth"
 	policymocks "librevita.org/tests/mocks/core/policy"
@@ -138,7 +139,7 @@ func TestIdentifierSystemsAdmin(t *testing.T) {
 	systemID := uuid.MustParse("01990000-0000-7000-8000-000000000055")
 	cedulaSystem := &identifiermodel.IdentifierSystem{
 		ID:               systemID,
-		System:           "urn:librevita:id:py:cedula",
+		System:           urn.Identifier("py", "cedula"),
 		DisplayName:      "Cédula de Identidad (Paraguay)",
 		Pattern:          "[0-9]{8}",
 		Transform:        identifiermodel.TransformDigits,
@@ -153,11 +154,11 @@ func TestIdentifierSystemsAdmin(t *testing.T) {
 
 	// Create Paraguayan cédula
 	env.systemsSvc.EXPECT().Create(mock.Anything, testAdminID.String(), mock.MatchedBy(func(in usecase.SystemInput) bool {
-		return in.System == "urn:librevita:id:py:cedula"
+		return in.System == urn.Identifier("py", "cedula")
 	})).Return(cedulaSystem, nil).Once()
 
 	rec := postForm(t, env.echo, "/identifier-systems", cookie, url.Values{
-		"system":             {"urn:librevita:id:py:cedula"},
+		"system":             {urn.Identifier("py", "cedula")},
 		"display_name":       {"Cédula de Identidad (Paraguay)"},
 		"pattern":            {"[0-9]{8}"},
 		"transform":          {"digits"},
@@ -180,7 +181,7 @@ func TestIdentifierSystemsAdmin(t *testing.T) {
 	})).Return(nil, &usecase.ValidationError{Msg: "not a valid regex: error parsing regexp"}).Once()
 
 	bad := postForm(t, env.echo, "/identifier-systems", cookie, url.Values{
-		"system":          {"urn:librevita:id:x:bad"},
+		"system":          {urn.Identifier("x", "bad")},
 		"display_name":    {"Bad"},
 		"pattern":         {"["},
 		"transform":       {"none"},
@@ -192,7 +193,7 @@ func TestIdentifierSystemsAdmin(t *testing.T) {
 	// URN outside namespace is rejected
 	env.systemsSvc.EXPECT().Create(mock.Anything, testAdminID.String(), mock.MatchedBy(func(in usecase.SystemInput) bool {
 		return in.System == "com.example:doc"
-	})).Return(nil, &usecase.ValidationError{Msg: "system URI must start with \"urn:librevita:id:\""}).Once()
+	})).Return(nil, &usecase.ValidationError{Msg: "system must start with " + urn.IdentifierPrefix}).Once()
 
 	outside := postForm(t, env.echo, "/identifier-systems", cookie, url.Values{
 		"system":          {"com.example:doc"},
@@ -202,7 +203,7 @@ func TestIdentifierSystemsAdmin(t *testing.T) {
 		"check_algorithm": {"none"},
 	})
 	assert.Equal(t, http.StatusOK, outside.Code)
-	assert.Contains(t, outside.Body.String(), "urn:librevita:id:")
+	assert.Contains(t, outside.Body.String(), urn.IdentifierPrefix)
 
 	// Toggle cédula inactive
 	inactiveCedula := *cedulaSystem

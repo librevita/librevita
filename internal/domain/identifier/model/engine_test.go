@@ -6,6 +6,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"librevita.org/pkg/urn"
 )
 
 // testSystem builds a domain entity for tests.
@@ -35,10 +37,10 @@ func mustConfigured(t *testing.T, row *IdentifierSystem) *Configured {
 // seedRows reproduces the migration seeds for registry tests.
 func seedRows() []*IdentifierSystem {
 	return []*IdentifierSystem{
-		testSystem(CPFSystem, "CPF (Brasil)", "[0-9]{11}", TransformDigits, CheckMod11Desc, 9, 2, 10),
-		testSystem(SUSSystem, "Cartão SUS (Brasil)", "[0-9]{15}", TransformDigits, CheckMod11Cyclic, 14, 1, 10),
-		testSystem(NIFSystem, "NIF (Portugal)", "[0-9]{9}", TransformDigits, CheckMod11Desc, 8, 1, 9),
-		testSystem(PassportSystem, "Passaporte", "[A-Z]{1,2}[0-9]{6,9}", TransformUpper, CheckNone, 0, 1, 10),
+		testSystem(urn.Identifier("br", "cpf"), "CPF (Brasil)", "[0-9]{11}", TransformDigits, CheckMod11Desc, 9, 2, 10),
+		testSystem(urn.Identifier("br", "sus"), "Cartão SUS (Brasil)", "[0-9]{15}", TransformDigits, CheckMod11Cyclic, 14, 1, 10),
+		testSystem(urn.Identifier("pt", "nif"), "NIF (Portugal)", "[0-9]{9}", TransformDigits, CheckMod11Desc, 8, 1, 9),
+		testSystem(urn.Identifier("passport"), "Passaporte", "[A-Z]{1,2}[0-9]{6,9}", TransformUpper, CheckNone, 0, 1, 10),
 	}
 }
 
@@ -151,11 +153,11 @@ func TestConfiguredRejectsConfigErrors(t *testing.T) {
 		name string
 		row  *IdentifierSystem
 	}{
-		{"empty pattern", testSystem("urn:librevita:id:x", "X", "", TransformNone, CheckNone, 0, 1, 10)},
-		{"bad regex", testSystem("urn:librevita:id:x", "X", "[", TransformNone, CheckNone, 0, 1, 10)},
-		{"bad transform", testSystem("urn:librevita:id:x", "X", "[0-9]{1}", "shout", CheckNone, 0, 1, 10)},
-		{"cyclic with two digits", testSystem("urn:librevita:id:x", "X", "[0-9]{2}", TransformDigits, CheckMod11Cyclic, 1, 2, 10)},
-		{"base without algorithm", testSystem("urn:librevita:id:x", "X", "[0-9]{2}", TransformDigits, CheckNone, 1, 1, 10)},
+		{"empty pattern", testSystem(urn.Identifier("x"), "X", "", TransformNone, CheckNone, 0, 1, 10)},
+		{"bad regex", testSystem(urn.Identifier("x"), "X", "[", TransformNone, CheckNone, 0, 1, 10)},
+		{"bad transform", testSystem(urn.Identifier("x"), "X", "[0-9]{1}", "shout", CheckNone, 0, 1, 10)},
+		{"cyclic with two digits", testSystem(urn.Identifier("x"), "X", "[0-9]{2}", TransformDigits, CheckMod11Cyclic, 1, 2, 10)},
+		{"base without algorithm", testSystem(urn.Identifier("x"), "X", "[0-9]{2}", TransformDigits, CheckNone, 1, 1, 10)},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

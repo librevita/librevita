@@ -1,6 +1,10 @@
 package model
 
-import "github.com/cockroachdb/errors"
+import (
+	"github.com/cockroachdb/errors"
+
+	"librevita.org/pkg/urn"
+)
 
 // SystemConfig is the validated view of one identifier_systems row.
 type SystemConfig struct {
@@ -43,8 +47,8 @@ func (c SystemConfig) ValidateShape() error {
 	if len(c.System) < 3 || len(c.System) > 64 {
 		return errors.New("system must be between 3 and 64 characters")
 	}
-	if c.System == RawSystem {
-		return errors.Newf("system %q is reserved", errors.Safe(RawSystem))
+	if c.System == urn.IdentifierRaw {
+		return errors.Newf("system %q is reserved", errors.Safe(urn.IdentifierRaw))
 	}
 	if c.DisplayName == "" {
 		return errors.New("display name is required")

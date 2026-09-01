@@ -24,6 +24,8 @@ import (
 
 	"github.com/cockroachdb/errors"
 	"golang.org/x/crypto/hkdf"
+
+	"librevita.org/pkg/urn"
 )
 
 const (
@@ -136,10 +138,10 @@ func ZeroBytes(b []byte) {
 }
 
 // SetupPatientDEK creates the patient-scoped DEK identified by a canonical
-// PatientURN. The DEK is wrapped by the corresponding Clinic DEK and stored in
+// patient URN. The DEK is wrapped by the corresponding Clinic DEK and stored in
 // the KeyStore. Returns the plaintext DEK for the current operation.
 func (e *Engine) SetupPatientDEK(ctx context.Context, patientURN string) ([]byte, error) {
-	clinicID, patientID, ok := ParsePatientURN(patientURN)
+	clinicID, patientID, ok := urn.ParsePatient(patientURN)
 	if !ok {
 		return nil, errors.Newf("crypto: invalid patient urn %q", patientURN)
 	}
@@ -147,9 +149,9 @@ func (e *Engine) SetupPatientDEK(ctx context.Context, patientURN string) ([]byte
 }
 
 // GetPatientDEK retrieves and unwraps a patient DEK identified by a canonical
-// PatientURN from the KeyStore.
+// patient URN from the KeyStore.
 func (e *Engine) GetPatientDEK(ctx context.Context, patientURN string) ([]byte, error) {
-	clinicID, patientID, ok := ParsePatientURN(patientURN)
+	clinicID, patientID, ok := urn.ParsePatient(patientURN)
 	if !ok {
 		return nil, errors.Newf("crypto: invalid patient urn %q", patientURN)
 	}
@@ -157,9 +159,9 @@ func (e *Engine) GetPatientDEK(ctx context.Context, patientURN string) ([]byte, 
 }
 
 // DeletePatientDEK deletes a patient-scoped DEK identified by a canonical
-// PatientURN, executing instant Crypto-Shredding.
+// patient URN, executing instant Crypto-Shredding.
 func (e *Engine) DeletePatientDEK(ctx context.Context, patientURN string) error {
-	if _, _, ok := ParsePatientURN(patientURN); !ok {
+	if _, _, ok := urn.ParsePatient(patientURN); !ok {
 		return errors.Newf("crypto: invalid patient urn %q", patientURN)
 	}
 	err := e.keystore.DeleteDEK(ctx, patientURN)
@@ -170,9 +172,9 @@ func (e *Engine) DeletePatientDEK(ctx context.Context, patientURN string) error 
 }
 
 // EnsurePatientDEK returns the existing patient DEK or creates one for a
-// canonical PatientURN if it does not exist yet.
+// canonical patient URN if it does not exist yet.
 func (e *Engine) EnsurePatientDEK(ctx context.Context, patientURN string) ([]byte, error) {
-	clinicID, patientID, ok := ParsePatientURN(patientURN)
+	clinicID, patientID, ok := urn.ParsePatient(patientURN)
 	if !ok {
 		return nil, errors.Newf("crypto: invalid patient urn %q", patientURN)
 	}
@@ -222,14 +224,20 @@ func (e *Engine) DecryptPayload(ctx context.Context, urn string, aad, ciphertext
 	return decryptWithDEK(dek, aad, ciphertext, nonce)
 }
 
-func (e *Engine) dekForURN(ctx context.Context, urn string, ensure bool) ([]byte, error) {
-	if clinicID, patientID, ok := ParsePatientURN(urn); ok {
+func (e *Engine) dekForURN(ctx context.Context, key string, ensure bool) ([]byte, error) {
+	if clinicID, patientID, ok := urn.ParsePatient(key); ok {
 		if ensure {
 			return e.EnsurePatientDEKForClinic(ctx, clinicID, patientID)
 		}
 		return e.GetPatientDEKForClinic(ctx, clinicID, patientID)
 	}
-	return nil, errors.Newf("crypto: payload urn must be patient-scoped: %q", urn)
+	if clinicID, ok := urn.ParseClinic(key); ok {
+		if ensure {
+			return e.EnsureClinicDEK(ctx, clinicID)
+		}
+		return e.GetClinicDEK(ctx, clinicID)
+	}
+	return nil, errors.Newf("crypto: payload urn must be clinic- or patient-scoped: %q", key)
 }
 
 // EncryptStruct serializes a Go struct to JSON and encrypts it using the entity's DEK.

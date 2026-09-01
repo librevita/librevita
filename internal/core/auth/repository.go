@@ -11,8 +11,8 @@ import (
 	"librevita.org/ent"
 	"librevita.org/ent/user"
 	"librevita.org/internal/core/clinicctx"
-	"librevita.org/internal/core/crypto"
 	"librevita.org/internal/core/kv"
+	"librevita.org/pkg/urn"
 )
 
 type sessionPayload struct {
@@ -96,7 +96,7 @@ func clinicSessionKey(ctx context.Context, tokenHash string) (string, error) {
 	if !ok {
 		return "", clinicctx.ErrMissingClinic
 	}
-	return crypto.ClinicSessionURN(id, tokenHash), nil
+	return urn.ClinicSession(id, tokenHash), nil
 }
 
 type sessionRepository struct {
@@ -187,7 +187,7 @@ func (r *sessionRepository) Delete(ctx context.Context, id string) error {
 }
 
 func (r *sessionRepository) CleanupExpired(ctx context.Context, now time.Time) error {
-	if err := r.cleanupExpired(ctx, "urn:librevita:clinic:", now); err != nil {
+	if err := r.cleanupExpired(ctx, urn.ClinicPrefix, now); err != nil {
 		return errors.Wrap(err, "session repository: cleanup expired")
 	}
 	return nil

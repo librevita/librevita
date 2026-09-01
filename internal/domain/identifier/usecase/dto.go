@@ -28,12 +28,6 @@ const (
 	CheckNone        = identifiermodel.CheckNone
 	CheckMod11Desc   = identifiermodel.CheckMod11Desc
 	CheckMod11Cyclic = identifiermodel.CheckMod11Cyclic
-
-	RawSystem      = identifiermodel.RawSystem
-	CPFSystem      = identifiermodel.CPFSystem
-	SUSSystem      = identifiermodel.SUSSystem
-	NIFSystem      = identifiermodel.NIFSystem
-	PassportSystem = identifiermodel.PassportSystem
 )
 
 var (
