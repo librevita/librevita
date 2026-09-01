@@ -40,10 +40,10 @@ Goose at startup.
 | `github.com/disintegration/imaging`        | v1.6.2    | MIT          | Image resize and re-encode (avatar pipeline)                      |
 | `golang.org/x/term`                        | v0.45.0   | BSD-3-Clause | Terminal width detection for the console logger                   |
 | `github.com/cockroachdb/errors`            | v1.11.3   | Apache-2.0   | Error handling with preserved stack traces, PII safety, and hints |
-| `go.etcd.io/bbolt`                         | v1.3.11   | MIT          | Embedded Key-Value database for patient DEKs (KeyVault)           |
-| `github.com/nats-io/nats.go`               | v1.53.1   | Apache-2.0   | NATS JetStream KeyValue client for distributed KeyVault           |
-| `go.etcd.io/etcd/client/v3`                | v3.7.1    | Apache-2.0   | etcd v3 client for cloud-native KeyVault                          |
-| `github.com/hashicorp/vault/api`           | v1.23.0   | MPL-2.0      | HashiCorp Vault / OpenBao secret manager KeyVault                 |
+| `go.etcd.io/bbolt`                         | v1.3.11   | MIT          | Embedded KV for keystore, meta, and sessions                      |
+| `github.com/nats-io/nats.go`               | v1.53.1   | Apache-2.0   | NATS JetStream KeyValue client for distributed KV stores          |
+| `go.etcd.io/etcd/client/v3`                | v3.7.1    | Apache-2.0   | etcd v3 client for cloud-native KV stores                         |
+| `github.com/hashicorp/vault/api`           | v1.23.0   | MPL-2.0      | HashiCorp Vault / OpenBao KV v2 adapter (keystore only)           |
 
 ### Build-time Go tools
 
@@ -51,24 +51,24 @@ Installed by the Taskfile `tools`, `tools-osv`, `tools-gitleaks`, and
 `tools-actionlint` tasks and never linked into the binary; used only to
 generate committed sources or to analyze the code.
 
-| Package                                                  | Version   | License      | Purpose                                                       |
-| -------------------------------------------------------- | --------- | ------------ | ------------------------------------------------------------- |
-| `github.com/a-h/templ/cmd/templ`                         | v0.3.1020 | MIT          | Code generation for SSR templates (`templ generate`)          |
-| `ariga.io/atlas` (via `cmd/migrate`)                     | v1.3.0    | Apache-2.0   | Schema diff engine for versioned Goose migration generation   |
-| `github.com/golangci/golangci-lint/v2/cmd/golangci-lint` | v2.12.2   | GPL-3.0      | Static analysis (`golangci-lint run`, config `.golangci.yml`) |
-| `golang.org/x/vuln/cmd/govulncheck`                      | v1.1.4    | BSD-3-Clause | Known-vulnerability scan of modules and the binary            |
+| Package                                                  | Version   | License      | Purpose                                                                             |
+| -------------------------------------------------------- | --------- | ------------ | ----------------------------------------------------------------------------------- |
+| `github.com/a-h/templ/cmd/templ`                         | v0.3.1020 | MIT          | Code generation for SSR templates (`templ generate`)                                |
+| `ariga.io/atlas` (via `cmd/migrate`)                     | v1.3.0    | Apache-2.0   | Schema diff engine for versioned Goose migration generation                         |
+| `github.com/golangci/golangci-lint/v2/cmd/golangci-lint` | v2.12.2   | GPL-3.0      | Static analysis (`golangci-lint run`, config `.golangci.yml`)                       |
+| `golang.org/x/vuln/cmd/govulncheck`                      | v1.1.4    | BSD-3-Clause | Known-vulnerability scan of modules and the binary                                  |
 | `github.com/google/osv-scanner/v2/cmd/osv-scanner`       | v2.5.1    | Apache-2.0   | Lockfile scan of `go.mod` and `package-lock.json` against OSV.dev (`task osv-scan`) |
-| `github.com/zricethezav/gitleaks/v8`                     | v8.29.1   | MIT          | Secret scan of git history (`task gitleaks`)                  |
-| `github.com/rhysd/actionlint/cmd/actionlint`             | v1.7.9    | MIT          | GitHub Actions workflow linter (`task actionlint`)            |
+| `github.com/zricethezav/gitleaks/v8`                     | v8.29.1   | MIT          | Secret scan of git history (`task gitleaks`)                                        |
+| `github.com/rhysd/actionlint/cmd/actionlint`             | v1.7.9    | MIT          | GitHub Actions workflow linter (`task actionlint`)                                  |
 
 ### Pinned release CLIs
 
 Not Go-installable. The Taskfile downloads GitHub release binaries or archives into `.tools/bin` and checks SHA-256. They are never linked into the application binary.
 
-| Package                         | Version | License | Purpose                                                     |
-| ------------------------------- | ------- | ------- | ----------------------------------------------------------- |
-| `hadolint/hadolint`             | 2.14.0  | GPL-3.0 | Dockerfile linter (`task hadolint`)                         |
-| `zizmorcore/zizmor`             | 1.29.0  | MIT     | Workflow security and code smells (`task zizmor`, part of `task lint`) |
+| Package             | Version | License | Purpose                                                                |
+| ------------------- | ------- | ------- | ---------------------------------------------------------------------- |
+| `hadolint/hadolint` | 2.14.0  | GPL-3.0 | Dockerfile linter (`task hadolint`)                                    |
+| `zizmorcore/zizmor` | 1.29.0  | MIT     | Workflow security and code smells (`task zizmor`, part of `task lint`) |
 
 ## Frontend
 

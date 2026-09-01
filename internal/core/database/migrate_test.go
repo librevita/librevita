@@ -37,7 +37,7 @@ func TestMigrateSQLite(t *testing.T) {
 		tables[name] = true
 	}
 	expected := []string{
-		"roles", "users", "sessions", "audit_log", "clinics", "meta",
+		"roles", "users", "audit_log", "clinics",
 		"policies", "policy_versions", "patients", "specialties",
 		"user_specialties", "staff_change_requests", "storage_objects",
 		"identifier_systems", "patient_identifiers", "appointments", "episodes",
@@ -45,6 +45,9 @@ func TestMigrateSQLite(t *testing.T) {
 	}
 	for _, name := range expected {
 		assert.True(t, tables[name], "sqlite table %q was not created by migrations", name)
+	}
+	for _, name := range []string{"sessions", "platform_sessions", "meta"} {
+		assert.False(t, tables[name], "sqlite table %q should have been dropped", name)
 	}
 }
 
@@ -77,7 +80,7 @@ func TestMigratePostgres(t *testing.T) {
 		tables[name] = true
 	}
 	expected := []string{
-		"roles", "users", "sessions", "audit_log", "clinics", "meta",
+		"roles", "users", "audit_log", "clinics",
 		"policies", "policy_versions", "patients", "specialties",
 		"user_specialties", "staff_change_requests", "storage_objects",
 		"identifier_systems", "patient_identifiers", "appointments", "episodes",
@@ -85,5 +88,8 @@ func TestMigratePostgres(t *testing.T) {
 	}
 	for _, name := range expected {
 		assert.True(t, tables[name], "postgres table %q was not created by migrations", name)
+	}
+	for _, name := range []string{"sessions", "platform_sessions", "meta"} {
+		assert.False(t, tables[name], "postgres table %q should have been dropped", name)
 	}
 }

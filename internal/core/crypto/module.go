@@ -11,7 +11,7 @@ import (
 )
 
 // Module provides cryptographic contracts (Hasher, Encryptor, Engine)
-// configured via application configuration and injected KeyVault.
+// configured via application configuration and injected KeyStore.
 var Module = fx.Module("crypto",
 	fx.Provide(
 		NewHasherFromConfig,
@@ -58,10 +58,10 @@ func NewEncryptorFromConfig(cfg *config.Config, logger log.Logger) (Encryptor, e
 	return NewEncryptor(kek, WithEncryptionCipher(cipher))
 }
 
-// NewFromConfig is the Fx provider for Engine/MasterKey with KeyVault.
-func NewFromConfig(cfg *config.Config, vault KeyVault, logger log.Logger) (*Engine, error) {
-	if vault == nil {
-		return nil, errors.New("crypto: key vault is required")
+// NewFromConfig is the Fx provider for Engine/MasterKey with KeyStore.
+func NewFromConfig(cfg *config.Config, keystore KeyStore, logger log.Logger) (*Engine, error) {
+	if keystore == nil {
+		return nil, errors.New("crypto: keystore is required")
 	}
 
 	rawMasterKey, err := resolveMasterKey(cfg, logger)
@@ -80,7 +80,7 @@ func NewFromConfig(cfg *config.Config, vault KeyVault, logger log.Logger) (*Engi
 		cipher = DefaultEncryptionCipher
 	}
 
-	return deriveEngine(rawMasterKey, vault, WithEngineHashAlgorithm(algo), WithEngineEncryptionCipher(cipher))
+	return deriveEngine(rawMasterKey, keystore, WithEngineHashAlgorithm(algo), WithEngineEncryptionCipher(cipher))
 }
 
 func resolveMasterKey(cfg *config.Config, logger log.Logger) ([]byte, error) {

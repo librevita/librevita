@@ -1,4 +1,4 @@
-package vault
+package kv
 
 import (
 	"context"
@@ -7,11 +7,8 @@ import (
 	"time"
 
 	"github.com/cockroachdb/errors"
-
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"librevita.org/internal/core/crypto"
 )
 
 func TestBatchGetWithWorkersDeduplicatesAndPreservesItemErrors(t *testing.T) {
@@ -19,18 +16,18 @@ func TestBatchGetWithWorkersDeduplicatesAndPreservesItemErrors(t *testing.T) {
 	results, err := batchGetWithWorkers(context.Background(),
 		[]string{"a", "b", "a"},
 		2,
-		func(_ context.Context, urn string) ([]byte, error) {
+		func(_ context.Context, key string) ([]byte, error) {
 			calls.Add(1)
-			if urn == "b" {
-				return nil, crypto.ErrKeyNotFound
+			if key == "b" {
+				return nil, ErrNotFound
 			}
-			return []byte("wrapped-" + urn), nil
+			return []byte("val-" + key), nil
 		},
 	)
 	require.NoError(t, err)
 	assert.Equal(t, int32(2), calls.Load())
-	assert.Equal(t, []byte("wrapped-a"), results["a"].EncryptedDEK)
-	assert.ErrorIs(t, results["b"].Err, crypto.ErrKeyNotFound)
+	assert.Equal(t, []byte("val-a"), results["a"].Value)
+	assert.ErrorIs(t, results["b"].Err, ErrNotFound)
 }
 
 func TestBatchGetWithWorkersHonorsCancellation(t *testing.T) {

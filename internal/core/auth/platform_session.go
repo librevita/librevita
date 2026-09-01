@@ -5,11 +5,12 @@ import (
 	"time"
 
 	"github.com/cockroachdb/errors"
-
 	"github.com/google/uuid"
 
 	"librevita.org/ent"
-	"librevita.org/ent/platformsession"
+	"librevita.org/ent/platformuser"
+	"librevita.org/internal/core/crypto"
+	"librevita.org/internal/core/kv"
 )
 
 // PlatformSessionRepository stores apex sessions bound to platform_users.
@@ -21,73 +22,60 @@ type PlatformSessionRepository interface {
 }
 
 type platformSessionRepository struct {
-	client *ent.Client
+	sessionKV
 }
 
-// NewPlatformSessionRepository creates a platform session repository adapter.
-func NewPlatformSessionRepository(client *ent.Client) PlatformSessionRepository {
-	return &platformSessionRepository{client: client}
+// NewPlatformSessionRepository stores apex sessions in the same kv store as clinic sessions.
+func NewPlatformSessionRepository(store kv.Store, client *ent.Client) PlatformSessionRepository {
+	return &platformSessionRepository{sessionKV: sessionKV{store: store, client: client}}
 }
 
 func (r *platformSessionRepository) Create(ctx context.Context, id string, userID uuid.UUID, expiresAt time.Time) error {
-	_, err := r.client.PlatformSession.Create().
-		SetID(id).
-		SetPlatformUserID(userID).
-		SetExpiresAt(expiresAt).
-		Save(ctx)
-	if err != nil {
+	if err := r.put(ctx, crypto.PlatformSessionURN(id), userID, expiresAt); err != nil {
 		return errors.Wrap(err, "platform session repository: create")
 	}
 	return nil
 }
 
 func (r *platformSessionRepository) GetActive(ctx context.Context, id string, now time.Time) (*SessionRecord, error) {
-	s, err := r.client.PlatformSession.Query().
-		Where(
-			platformsession.IDEQ(id),
-			platformsession.ExpiresAtGT(now),
-		).
-		WithUser().
+	p, err := r.getActive(ctx, crypto.PlatformSessionURN(id), now)
+	if err != nil {
+		return nil, errors.Wrap(err, "platform session repository: get active")
+	}
+	if p == nil {
+		return nil, nil
+	}
+	usr, err := r.client.PlatformUser.Query().
+		Where(platformuser.IDEQ(p.UserID)).
 		Only(ctx)
 	if err != nil {
 		if ent.IsNotFound(err) {
 			return nil, nil
 		}
-		return nil, errors.Wrap(err, "platform session repository: get active")
+		return nil, errors.Wrap(err, "platform session repository: load user")
 	}
-
-	var u *SessionUser
-	if s.Edges.User != nil {
-		usr := s.Edges.User
-		u = &SessionUser{
+	return &SessionRecord{
+		ID:        id,
+		UserID:    p.UserID,
+		ExpiresAt: p.ExpiresAt,
+		User: &SessionUser{
 			ID:     usr.ID,
 			Email:  usr.Email,
 			Name:   usr.DisplayName,
 			Active: usr.Active,
-		}
-	}
-
-	return &SessionRecord{
-		ID:        s.ID,
-		UserID:    s.PlatformUserID,
-		ExpiresAt: s.ExpiresAt,
-		User:      u,
+		},
 	}, nil
 }
 
 func (r *platformSessionRepository) Delete(ctx context.Context, id string) error {
-	err := r.client.PlatformSession.DeleteOneID(id).Exec(ctx)
-	if err != nil && !ent.IsNotFound(err) {
+	if err := r.delete(ctx, crypto.PlatformSessionURN(id)); err != nil {
 		return errors.Wrap(err, "platform session repository: delete")
 	}
 	return nil
 }
 
 func (r *platformSessionRepository) CleanupExpired(ctx context.Context, now time.Time) error {
-	_, err := r.client.PlatformSession.Delete().
-		Where(platformsession.ExpiresAtLTE(now)).
-		Exec(ctx)
-	if err != nil {
+	if err := r.cleanupExpired(ctx, "urn:librevita:platform:session:", now); err != nil {
 		return errors.Wrap(err, "platform session repository: cleanup expired")
 	}
 	return nil

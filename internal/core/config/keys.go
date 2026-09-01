@@ -55,16 +55,33 @@ var configKeys = []string{
 	"storage.s3.secure",
 	"storage.s3.path_style",
 
-	// Vault
-	"vault.backend",
-	"vault.bbolt.path",
-	"vault.nats.url",
-	"vault.nats.bucket",
-	"vault.etcd.endpoints",
-	"vault.etcd.prefix",
-	"vault.hashicorp.address",
-	"vault.hashicorp.token",
-	"vault.hashicorp.mount",
+	// Keystore
+	"keystore.backend",
+	"keystore.bbolt.path",
+	"keystore.nats.url",
+	"keystore.nats.bucket",
+	"keystore.etcd.endpoints",
+	"keystore.etcd.prefix",
+	"keystore.vault.address",
+	"keystore.vault.token",
+	"keystore.vault.mount",
+	"keystore.vault.prefix",
+
+	// Meta
+	"meta.backend",
+	"meta.bbolt.path",
+	"meta.nats.url",
+	"meta.nats.bucket",
+	"meta.etcd.endpoints",
+	"meta.etcd.prefix",
+
+	// Sessions
+	"sessions.backend",
+	"sessions.bbolt.path",
+	"sessions.nats.url",
+	"sessions.nats.bucket",
+	"sessions.etcd.endpoints",
+	"sessions.etcd.prefix",
 
 	// Crypto
 	"crypto.hash_algorithm",

@@ -46,7 +46,7 @@ Most clinical software treats privacy as a deployment checkbox: TLS in transit, 
 
 **Search that does not leak the corpus.** Exact lookup (phone, email, identification document) uses a **keyed blind index**: a domain-separated digest of the normalized value, scoped by `clinic_id`. Reception can still type a prefix of a name and find `Carlos` because **tokenized name search** stores hashed prefix n-grams, not plaintext. The ciphertext stays opaque; the index is a capability, not a second copy of the record.
 
-**Envelope keys and real erasure.** A process-memory **KEK** (HKDF from `master_key`) wraps a **Clinic DEK**, which wraps a **Patient DEK**. Patient fields and attachments are sealed under that patient key, authenticated with the patient URN. Deleting the Patient DEK (**crypto-shredding**) turns remaining ciphertext into unrecoverable noise — the GDPR/LGPD right to be forgotten as a cryptographic operation, not only a `DELETE`. An operator who holds **both** the master key and the vault can still unwrap a clinic; that is stated in the [threat model](#product-threat-model), not hidden.
+**Envelope keys and real erasure.** A process-memory **KEK** (HKDF from `master_key`) wraps a **Clinic DEK**, which wraps a **Patient DEK**. Patient fields and attachments are sealed under that patient key, authenticated with the patient URN. Deleting the Patient DEK (**crypto-shredding**) turns remaining ciphertext into unrecoverable noise — the GDPR/LGPD right to be forgotten as a cryptographic operation, not only a `DELETE`. An operator who holds **both** the master key and the keystore can still unwrap a clinic; that is stated in the [threat model](#product-threat-model), not hidden.
 
 **Clinic isolation that is cryptographic, not only a `WHERE` clause.** Many clinics share one schema and one process. The isolation boundary is the clinic, resolved from Host `{slug}.{base_domain}`, named only `clinic_id` (no `tenant_id` alias). Each clinic has its own DEK hierarchy, host-only cookies, and copied roles/policies. See [ADR 0002](docs/adr/0002-multi-clinic-shared-schema.md).
 
@@ -70,11 +70,11 @@ flowchart LR
   CEL --> Domain["Clean domain"]
   Domain --> FLE["Ent AL-FLE"]
   FLE --> DB["SQLite / Postgres / dqlite"]
-  Domain --> Vault["KeyVault DEKs"]
+  Domain --> KeyStore["KeyStore DEKs"]
   Domain --> Files["AEAD storage"]
 ```
 
-`cmd/web` is the Fx composition root: config, telemetry, vault, crypto, database (Goose migrations before listen), storage, audit, auth, clinic, policy, HTTP, UI, domains, and the FHIR adapter. Apex hosts (`base_domain` / `www.`) serve platform operators. Clinic hosts (`{slug}.{base_domain}`) attach `clinic_id`, load the Clinic DEK, and scope FLE. Session and CSRF cookies are host-only.
+`cmd/web` is the Fx composition root: config, telemetry, keystore, meta, crypto, database (Goose migrations before listen), storage, audit, auth, clinic, policy, HTTP, UI, domains, and the FHIR adapter. Apex hosts (`base_domain` / `www.`) serve platform operators. Clinic hosts (`{slug}.{base_domain}`) attach `clinic_id`, load the Clinic DEK, and scope FLE. Session and CSRF cookies are host-only.
 
 Each domain (`clinic`, `user`, `patient`, `identifier`, `calendar`, `episode`) uses the same layers:
 
@@ -123,7 +123,7 @@ LibreVita implements **Application-Layer Field-Level Encryption (AL-FLE) with Bl
   - **Tokenized names:** `<field>_token_index JSON`, hashed prefix n-grams from `normalize.NameTokens` (e.g. `"Car"` → `"Carlos"`). Query via `json_each()` (SQLite) or `@>` on `JSONB` (PostgreSQL), always pre-filtered by `clinic_id`.
 - **Normalization (`internal/core/normalize`)** — zero-allocation canonicalization before hashing (`normalize.Phone`, `normalize.Email`, `normalize.Text`) so `+55 11 98888-7777` and `5511988887777` share an index. `normalize.NameTokens` builds prefix n-grams (min 3) and drops Portuguese stop words with a compile-time `switch` (`isStopWord`).
 
-**Envelope hierarchy (`*crypto.Engine`).** Physical separation across three key tiers; wrapped DEKs are stored in the KeyVault, not in the clinical database.
+**Envelope hierarchy (`*crypto.Engine`).** Physical separation across three key tiers; wrapped DEKs are stored in the KeyStore, not in the clinical database.
 
 ```mermaid
 flowchart TD
@@ -139,19 +139,20 @@ flowchart TD
 - **Clinic DEK** — 32 bytes per clinic (`urn:librevita:clinic:<id>`), wrapped by the KEK. Wraps Patient DEKs and derives the clinic blind-index key; it does not encrypt patient PHI directly.
 - **Patient DEK** — 32 random bytes per patient (`urn:librevita:clinic:<id>:patient:<id>`), wrapped by the Clinic DEK. PHI and attachments use XChaCha20-Poly1305; AAD is the patient URN.
 - **Request cache (`crypto.WithRequestKeyCache`)** — unwraps once per request; keys are zeroized when the request ends.
-- **KeyVault (`internal/core/vault`)** — DEKs live **outside** the primary database. `vault.backend`:
-  - **`bbolt`** — embedded KV (default `<data-dir>/keys.db`).
-  - **`nats`** — NATS JetStream KeyValue (`--vault-nats-url`, `--vault-nats-bucket`).
-  - **`etcd`** — etcd v3 (`--vault-etcd-endpoints`, `--vault-etcd-prefix`).
-  - **`hashicorp`**, **`hashicorp_vault`**, or **`openbao`** — Vault/OpenBao KV v2 (`--vault-hashicorp-address`, `--vault-hashicorp-token`, `--vault-hashicorp-mount`). Hard-delete metadata purges support physical shredding.
-  - All backends implement `ConditionalKeyVault` (`PutIfAbsent`) and `BatchKeyVault` (`GetDEKs`).
+- **KeyStore (`internal/core/keystore`)** — DEKs live **outside** the primary database. `keystore.backend`:
+  - **`bbolt`** — embedded KV (default `<data-dir>/keystore.db`).
+  - **`nats`** — NATS JetStream KeyValue (`--keystore-nats-url`, `--keystore-nats-bucket`).
+  - **`etcd`** — etcd v3 (`--keystore-etcd-endpoints`, `--keystore-etcd-prefix`).
+  - **`vault`** — HashiCorp Vault / OpenBao KV v2 (`--keystore-vault-address`, `--keystore-vault-token`, `--keystore-vault-mount`, `--keystore-vault-prefix`). Hard-delete metadata purges support physical shredding. OpenBao uses the same adapter with `keystore.vault.address` pointed at it.
+  - All backends implement `ConditionalKeyStore` (`PutIfAbsent`) and `BatchKeyStore` (`GetDEKs`).
+  Meta (`internal/core/meta`) and sessions (clinic + apex revocation) are **separate** KV stores (`meta.*`, `sessions.*`): bbolt, NATS, or etcd only — not Vault. Logical keys are `urn:librevita:meta:<key>`, `urn:librevita:clinic:<id>:session:<token_hash>`, and `urn:librevita:platform:session:<token_hash>`. See [ADR 0004](docs/adr/0004-partitioned-kv.md).
 - **Crypto-shredding** — deleting a Patient DEK makes that patient's ciphertext unrecoverable. `POST /patients/:id/shred` also removes relational rows, blind indexes, encrypted attachments, and records a tombstone (`ErrKeyDestroyed`) so the key cannot be resurrected. `DeleteClinicDEK` shreds a clinic by invalidating child Patient DEKs wrapped by it.
 
 ### Transport, sessions, and abuse controls
 
 The application is same-origin; CORS is not configured. Responses use a strict **CSP** (`script-src 'self'`, no `unsafe-eval` / `unsafe-inline` except a hashed theme bootstrap), `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, `X-Frame-Options: DENY`, `Cross-Origin-Resource-Policy: same-origin`, `Permissions-Policy` (camera, microphone, geolocation denied), and `Cache-Control: no-store` on non-static responses. `Strict-Transport-Security` is opt-in via `--hsts-max-age` for HTTPS.
 
-Passwords are Argon2id. Sessions are **PASETO v4.local** (payload encrypted with XChaCha20-Poly1305). The `sessions` table stores only a SHA-256 token id for revocation. CSRF is double-submit (`_csrf` / `X-CSRF-Token`). Login is rate-limited (10/min/IP); setup is rate-limited (5/min/IP). Concurrent Argon2id work is bounded (`--auth-max-concurrent-hashes`, default 4). Login always runs a hash verification so timing does not reveal whether an email exists. Details: [Authentication and authorization](#authentication-and-authorization).
+Passwords are Argon2id. Sessions are **PASETO v4.local** (payload encrypted with XChaCha20-Poly1305). The sessions KV store holds only a keyed BLAKE2 fingerprint of the token id for revocation. CSRF is double-submit (`_csrf` / `X-CSRF-Token`). Login is rate-limited (10/min/IP); setup is rate-limited (5/min/IP). Concurrent Argon2id work is bounded (`--auth-max-concurrent-hashes`, default 4). Login always runs a hash verification so timing does not reveal whether an email exists. Details: [Authentication and authorization](#authentication-and-authorization).
 
 ### Product threat model
 
@@ -159,14 +160,14 @@ LibreVita assumes the **application process** may see plaintext for the duration
 
 | Who / what | What they can do |
 | --- | --- |
-| Database, SQL replica, or stolen `.db` / dump without vault and master key | Read ciphertext, blind indexes, and metadata. Cannot decrypt PHI. Blind indexes allow equality (and token) queries, not recovery of names or documents. |
+| Database, SQL replica, or stolen `.db` / dump without keystore and master key | Read ciphertext, blind indexes, and metadata. Cannot decrypt PHI. Blind indexes allow equality (and token) queries, not recovery of names or documents. |
 | Object storage without Patient DEK | Read encrypted blobs. Cannot authenticate or decrypt attachments. |
-| Operator with `master_key` **and** the KeyVault | Unwrap Clinic DEKs and thus Patient DEKs. This is the installation owner. Protect the master key and vault like a root of trust. |
-| Operator with the database **or** the vault, but not both | Incomplete: wrapped DEKs without KEK, or KEK without wrapped DEKs. |
+| Operator with `master_key` **and** the KeyStore | Unwrap Clinic DEKs and thus Patient DEKs. This is the installation owner. Protect the master key and keystore like a root of trust. |
+| Operator with the database **or** the keystore, but not both | Incomplete: wrapped DEKs without KEK, or KEK without wrapped DEKs. |
 | Clinic staff via the UI | Whatever CEL allows for that clinic host. Policies are data; keep `admin.view` and `patient.erase` tight. |
 | Attacker with Host + stolen host-only cookie | Acts as that user on that host until expiry or revocation — not on another clinic subdomain. |
 
-Backups must keep the **clinical database**, the **KeyVault**, **`master_key`**, and **encrypted attachments** together. Restoring a dump without the matching vault (or the reverse) leaves ciphertext that cannot be unwrapped, or wrapped DEKs with no rows. The master key is not stored in the vault; treat it as the same root of trust.
+Backups must keep the **clinical database**, the **KeyStore**, **meta** and **sessions** KV files, **`master_key`**, and **encrypted attachments** together. Restoring a dump without the matching keystore (or the reverse) leaves ciphertext that cannot be unwrapped, or wrapped DEKs with no rows. The master key is not stored in the keystore; treat it as the same root of trust.
 
 How to generate those keys, terminate TLS, and put a reverse proxy in front: [Production: keys, TLS, DNS, and proxy](#production-keys-tls-dns-and-proxy).
 
@@ -391,20 +392,41 @@ storage:
     region: "" # may be empty outside AWS
     secure: false # HTTPS for the S3 endpoint
     path_style: true # path-style addressing for S3-compatible APIs
-vault:
-  backend: bbolt # bbolt, nats, etcd, or hashicorp (aliases: hashicorp_vault, openbao)
+keystore:
+  backend: bbolt # bbolt, nats, etcd, or vault (HashiCorp Vault / OpenBao)
   bbolt:
-    path: ./data/keys.db # default: <data_dir>/keys.db
+    path: ./data/keystore.db # default: <data_dir>/keystore.db
   nats:
     url: nats://127.0.0.1:4222
-    bucket: patient_deks
+    bucket: keystore
   etcd:
     endpoints: 127.0.0.1:2379
-    prefix: /librevita/keys/
-  hashicorp:
+    prefix: /librevita/keystore/
+  vault:
     address: http://127.0.0.1:8200
     token: ...
     mount: secret
+    prefix: librevita/keystore/
+meta:
+  backend: bbolt # bbolt, nats, or etcd (not vault)
+  bbolt:
+    path: ./data/meta.db
+  nats:
+    url: nats://127.0.0.1:4222
+    bucket: meta
+  etcd:
+    endpoints: 127.0.0.1:2379
+    prefix: /librevita/meta/
+sessions:
+  backend: bbolt # bbolt, nats, or etcd (not vault)
+  bbolt:
+    path: ./data/sessions.db
+  nats:
+    url: nats://127.0.0.1:4222
+    bucket: sessions
+  etcd:
+    endpoints: 127.0.0.1:2379
+    prefix: /librevita/sessions/
 ```
 
 All configuration flags:
@@ -455,17 +477,30 @@ All configuration flags:
 | `--storage-s3-region`          | `LIBREVITA_STORAGE_S3_REGION`                | S3 region (may be empty outside AWS)                                                                                                                         |
 | `--storage-s3-secure`          | `LIBREVITA_STORAGE_S3_SECURE`                | Use HTTPS for the S3 endpoint                                                                                                                                |
 | `--storage-s3-path-style`      | `LIBREVITA_STORAGE_S3_PATH_STYLE`            | Use path-style S3 addressing                                                                                                                                 |
-| `--vault-backend`              | `LIBREVITA_VAULT_BACKEND`                    | Key vault storage backend: `bbolt`, `nats`, `etcd`, or `hashicorp`                                                                                           |
-| `--vault-bbolt-path`           | `LIBREVITA_VAULT_BBOLT_PATH`                 | Embedded bbolt key vault database path (default `<data-dir>/keys.db`)                                                                                        |
-| `--vault-nats-url`             | `LIBREVITA_VAULT_NATS_URL`                   | NATS server URL for the JetStream KeyValue vault                                                                                                             |
-| `--vault-nats-bucket`          | `LIBREVITA_VAULT_NATS_BUCKET`                | NATS JetStream KeyValue bucket                                                                                                                               |
-| `--vault-etcd-endpoints`       | `LIBREVITA_VAULT_ETCD_ENDPOINTS`             | Comma-separated etcd v3 endpoints                                                                                                                            |
-| `--vault-etcd-prefix`          | `LIBREVITA_VAULT_ETCD_PREFIX`                | etcd key prefix                                                                                                                                              |
-| `--vault-hashicorp-address`    | `LIBREVITA_VAULT_HASHICORP_ADDRESS`          | HashiCorp Vault / OpenBao address                                                                                                                            |
-| `--vault-hashicorp-token`      | `LIBREVITA_VAULT_HASHICORP_TOKEN`            | HashiCorp Vault / OpenBao token                                                                                                                              |
-| `--vault-hashicorp-mount`      | `LIBREVITA_VAULT_HASHICORP_MOUNT`            | HashiCorp Vault / OpenBao KV v2 mount                                                                                                                        |
+| `--keystore-backend`           | `LIBREVITA_KEYSTORE_BACKEND`                 | Keystore backend: `bbolt`, `nats`, `etcd`, or `vault`                                                                                                        |
+| `--keystore-bbolt-path`        | `LIBREVITA_KEYSTORE_BBOLT_PATH`              | Embedded bbolt keystore path (default `<data-dir>/keystore.db`)                                                                                              |
+| `--keystore-nats-url`          | `LIBREVITA_KEYSTORE_NATS_URL`                | NATS server URL for the keystore                                                                                                                             |
+| `--keystore-nats-bucket`       | `LIBREVITA_KEYSTORE_NATS_BUCKET`             | NATS JetStream KeyValue bucket (default `keystore`)                                                                                                          |
+| `--keystore-etcd-endpoints`    | `LIBREVITA_KEYSTORE_ETCD_ENDPOINTS`          | Comma-separated etcd v3 endpoints                                                                                                                            |
+| `--keystore-etcd-prefix`       | `LIBREVITA_KEYSTORE_ETCD_PREFIX`             | etcd key prefix (default `/librevita/keystore/`)                                                                                                             |
+| `--keystore-vault-address`     | `LIBREVITA_KEYSTORE_VAULT_ADDRESS`           | HashiCorp Vault / OpenBao address                                                                                                                            |
+| `--keystore-vault-token`       | `LIBREVITA_KEYSTORE_VAULT_TOKEN`             | HashiCorp Vault / OpenBao token                                                                                                                              |
+| `--keystore-vault-mount`       | `LIBREVITA_KEYSTORE_VAULT_MOUNT`             | HashiCorp Vault / OpenBao KV v2 mount (default `secret`)                                                                                                     |
+| `--keystore-vault-prefix`      | `LIBREVITA_KEYSTORE_VAULT_PREFIX`            | Vault KV v2 path prefix (default `librevita/keystore/`)                                                                                                      |
+| `--meta-backend`               | `LIBREVITA_META_BACKEND`                     | Meta KV backend: `bbolt`, `nats`, or `etcd`                                                                                                                  |
+| `--meta-bbolt-path`            | `LIBREVITA_META_BBOLT_PATH`                  | Embedded bbolt meta path (default `<data-dir>/meta.db`)                                                                                                      |
+| `--meta-nats-url`              | `LIBREVITA_META_NATS_URL`                    | NATS server URL for meta                                                                                                                                     |
+| `--meta-nats-bucket`           | `LIBREVITA_META_NATS_BUCKET`                 | NATS JetStream KeyValue bucket (default `meta`)                                                                                                              |
+| `--meta-etcd-endpoints`        | `LIBREVITA_META_ETCD_ENDPOINTS`              | Comma-separated etcd v3 endpoints                                                                                                                            |
+| `--meta-etcd-prefix`           | `LIBREVITA_META_ETCD_PREFIX`                 | etcd key prefix (default `/librevita/meta/`)                                                                                                                 |
+| `--sessions-backend`           | `LIBREVITA_SESSIONS_BACKEND`                 | Sessions KV backend: `bbolt`, `nats`, or `etcd`                                                                                                              |
+| `--sessions-bbolt-path`        | `LIBREVITA_SESSIONS_BBOLT_PATH`              | Embedded bbolt sessions path (default `<data-dir>/sessions.db`)                                                                                              |
+| `--sessions-nats-url`          | `LIBREVITA_SESSIONS_NATS_URL`                | NATS server URL for sessions                                                                                                                                 |
+| `--sessions-nats-bucket`       | `LIBREVITA_SESSIONS_NATS_BUCKET`             | NATS JetStream KeyValue bucket (default `sessions`)                                                                                                          |
+| `--sessions-etcd-endpoints`    | `LIBREVITA_SESSIONS_ETCD_ENDPOINTS`          | Comma-separated etcd v3 endpoints                                                                                                                            |
+| `--sessions-etcd-prefix`       | `LIBREVITA_SESSIONS_ETCD_PREFIX`             | etcd key prefix (default `/librevita/sessions/`)                                                                                                             |
 
-Environment variables are the config keys with `_` separators, always in the full section form (`LIBREVITA_CRYPTO_*`, `LIBREVITA_DATABASE_*`, `LIBREVITA_LOGGING_*`, `LIBREVITA_STORAGE_*`, `LIBREVITA_VAULT_*`); no short aliases are accepted.
+Environment variables are the config keys with `_` separators, always in the full section form (`LIBREVITA_CRYPTO_*`, `LIBREVITA_DATABASE_*`, `LIBREVITA_LOGGING_*`, `LIBREVITA_STORAGE_*`, `LIBREVITA_KEYSTORE_*`, `LIBREVITA_META_*`, `LIBREVITA_SESSIONS_*`); no short aliases are accepted.
 
 ## File storage
 
@@ -492,7 +527,7 @@ Node candidates come from `database.dqlite.addrs` and/or `database.dqlite.discov
 
 Closed value sets are enforced twice: a SQL `CHECK` and a typed enum (`AuditResult`, `PatientStatus`, `Sex`, `StaffRequestStatus`, `PolicyOrigin`, `UITheme`). Timestamps map to `time.Time`; UUID columns are `uuid.UUID`.
 
-Sessions need a `database/sql` backend; the dqlite driver qualifies, so revocation works on both.
+Session revocation lives in the sessions KV store (bbolt, NATS, or etcd), independent of the SQL driver. The principal is still loaded from SQL on each request.
 
 ### Migrations
 
@@ -611,7 +646,7 @@ This is not a general-purpose FHIR server: no `$everything`, history, PATCH, SMA
 LibreVita uses a two-phase onboarding workflow for multi-clinic shared-schema deployments:
 
 1. **Apex platform bootstrap (`GET /setup` on `base_domain` / `www.`)**  
-   When the installation is uninitialized, the apex redirects to `/setup`. That creates the first platform operator in `platform_users`. Operators then use `/clinics/new` to provision a clinic shell (slug, `clinic_id`, wrapped Clinic DEK `urn:librevita:clinic:<id>` in the KeyVault).
+   When the installation is uninitialized, the apex redirects to `/setup`. That creates the first platform operator in `platform_users`. Operators then use `/clinics/new` to provision a clinic shell (slug, `clinic_id`, wrapped Clinic DEK `urn:librevita:clinic:<id>` in the KeyStore).
 
 2. **Clinic subdomain onboarding (`GET /setup` on `{slug}.{base_domain}`)**  
    Until `clinic.onboarded_at` is set, clinic routes redirect to `/setup`. That creates the clinic administrator, seeds system roles, registers default CEL policies, activates opted-in identifier systems, and sets `onboarded_at`. Afterwards, `/setup` redirects to login. Setup is rate-limited to 5 attempts per minute per IP.
@@ -623,7 +658,7 @@ After onboarding, account creation is never public: `RequireAuth` plus `users.re
 Authentication lives in `internal/core/auth` (transport-agnostic) with HTTP adapters in `internal/core/server`:
 
 - Passwords are hashed with Argon2id (`golang.org/x/crypto/argon2`)
-- Sessions are PASETO v4.local (`aidanwoods.dev/go-paseto`): the payload is encrypted with XChaCha20-Poly1305 under a single server key and validated on every request. The `sessions` table holds only the token id (SHA-256) for revocation, logout, and account deactivation. The principal is loaded fresh each request and carries timezone and UI-theme preferences. Cookies are host-only (`HttpOnly`, `SameSite=Lax`, `Secure` in production; no `Domain=.{base_domain}`)
+- Sessions are PASETO v4.local (`aidanwoods.dev/go-paseto`): the payload is encrypted with XChaCha20-Poly1305 under a single server key and validated on every request. The sessions KV store holds only a keyed BLAKE2 fingerprint of the token id for revocation, logout, and account deactivation. The principal is loaded fresh each request and carries timezone and UI-theme preferences. Cookies are host-only (`HttpOnly`, `SameSite=Lax`, `Secure` in production; no `Domain=.{base_domain}`)
 - A clinic host requires `users.clinic_id` to match the Host slug. The apex authenticates only `platform_users`
 - `LIBREVITA_PASETO_KEY` (base64, 32 bytes) is required outside `development`. Only `development` may use an ephemeral key (sessions reset on restart). Labels such as `staging` or `prod` are treated as persistent
 - Concurrent Argon2id operations are bounded by `--auth-max-concurrent-hashes` (default 4, ~64 MiB each)
@@ -687,7 +722,7 @@ Input validation is a standalone, zero-dependency package, decoupled from infras
 ### Flow control and sagas (`pkg/flow`)
 
 - **`Step` / `StepIf`** — linear pipelines that stop on the first error
-- **`StepWithRollback`** — LIFO compensation (e.g. delete an orphaned blob or vault key if the SQL insert fails); compensation errors join via `errors.Join`
+- **`StepWithRollback`** — LIFO compensation (e.g. delete an orphaned blob or keystore DEK if the SQL insert fails); compensation errors join via `errors.Join`
 - **`flow.Exec` / `flow.All`** — fail-fast vs full teardown
 - **`database.WithTx`** — begin/commit/rollback and panic recovery in one closure
 
@@ -744,4 +779,5 @@ LibreVita was founded with an ethical mission: to defend clinical privacy, ensur
 - [VENDOR.md](VENDOR.md) — third-party licenses and frontend pin rationale
 - [ADR 0002 — Multi-clinic isolation on a shared schema](docs/adr/0002-multi-clinic-shared-schema.md)
 - [ADR 0003 — Hybrid FHIR R4 SOAP chart](docs/adr/0003-hybrid-fhir-soap.md)
+- [ADR 0004 — Partitioned KV: keystore, meta, sessions](docs/adr/0004-partitioned-kv.md)
 - [Issues](https://github.com/librevita/librevita/issues)

@@ -219,7 +219,7 @@ func TestValidateHTTPPort(t *testing.T) {
 	assert.NoError(t, cfg.validate())
 }
 
-func TestVaultConfigDefaultsAndValidation(t *testing.T) {
+func TestKeystoreConfigDefaultsAndValidation(t *testing.T) {
 	cfg := &Config{
 		Mode:     "development",
 		DataDir:  "/tmp/librevita",
@@ -228,12 +228,18 @@ func TestVaultConfigDefaultsAndValidation(t *testing.T) {
 	}
 	cfg.normalize()
 
-	assert.Equal(t, "bbolt", cfg.Vault.Backend)
-	wantPath := filepath.Join("/tmp/librevita", "keys.db")
-	assert.Equal(t, wantPath, cfg.Vault.BBolt.Path)
+	assert.Equal(t, BackendBBolt, cfg.Keystore.Backend)
+	assert.Equal(t, filepath.Join("/tmp/librevita", "keystore.db"), cfg.Keystore.BBolt.Path)
+	assert.Equal(t, filepath.Join("/tmp/librevita", "meta.db"), cfg.Meta.BBolt.Path)
+	assert.Equal(t, filepath.Join("/tmp/librevita", "sessions.db"), cfg.Sessions.BBolt.Path)
+	assert.Equal(t, "librevita/keystore/", cfg.Keystore.Vault.Prefix)
 	assert.NoError(t, cfg.validate())
 
-	cfg.Vault.Backend = "invalid"
+	cfg.Keystore.Backend = "invalid"
+	assert.Error(t, cfg.validate())
+
+	cfg.Keystore.Backend = BackendBBolt
+	cfg.Meta.Backend = BackendVault
 	assert.Error(t, cfg.validate())
 }
 
@@ -361,7 +367,7 @@ func TestMapFlagKeyHyphenAndUnderscoreInterchangeable(t *testing.T) {
 		{"db-postgres-url", "db_postgres_url"},
 		{"db-sqlite-path", "db_sqlite_path"},
 		{"storage-s3-endpoint", "storage_s3_endpoint"},
-		{"vault-hashicorp-token", "vault_hashicorp_token"},
+		{"keystore-vault-token", "keystore_vault_token"},
 		{"crypto-hash-algorithm", "crypto_hash_algorithm"},
 		{"log-rotating-max-size", "log_rotating_max_size"},
 		{"log-rotating-max-age", "log_rotating_max_age"},

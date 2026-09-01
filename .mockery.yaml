@@ -23,7 +23,7 @@ packages:
       all: false
       dir: "tests/mocks/core/crypto"
     interfaces:
-      KeyVault:
+      KeyStore:
   librevita.org/internal/core/policy:
     config:
       all: false

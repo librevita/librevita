@@ -56,27 +56,27 @@ func defaultTestSystems() []*identifiermodel.IdentifierSystem {
 func setupTestServices(t *testing.T) (
 	*identifiermocks.MockIdentifierRepository,
 	*identifiermocks.MockSystemRepository,
-	*cryptomocks.MockKeyVault,
+	*cryptomocks.MockKeyStore,
 	usecase.Service,
 	usecase.SystemsService,
 	*identifiermodel.Registry,
 ) {
 	t.Helper()
-	vaultMock := cryptomocks.NewMockKeyVault(t)
-	// In-memory vault storage for patient DEKs during encryption tests
+	ksMock := cryptomocks.NewMockKeyStore(t)
+	// In-memory keystore for patient DEKs during encryption tests
 	deks := make(map[string][]byte)
-	vaultMock.EXPECT().GetDEK(mock.Anything, mock.Anything).RunAndReturn(func(ctx context.Context, urn string) ([]byte, error) {
+	ksMock.EXPECT().GetDEK(mock.Anything, mock.Anything).RunAndReturn(func(ctx context.Context, urn string) ([]byte, error) {
 		if dek, ok := deks[urn]; ok {
 			return dek, nil
 		}
 		return nil, crypto.ErrKeyNotFound
 	}).Maybe()
-	vaultMock.EXPECT().PutDEK(mock.Anything, mock.Anything, mock.Anything).RunAndReturn(func(ctx context.Context, urn string, dek []byte) error {
+	ksMock.EXPECT().PutDEK(mock.Anything, mock.Anything, mock.Anything).RunAndReturn(func(ctx context.Context, urn string, dek []byte) error {
 		deks[urn] = dek
 		return nil
 	}).Maybe()
 
-	key, err := crypto.NewMasterKey(testKeyB64, vaultMock)
+	key, err := crypto.NewMasterKey(testKeyB64, ksMock)
 	require.NoError(t, err)
 
 	reg := identifiermodel.NewRegistry()
@@ -90,7 +90,7 @@ func setupTestServices(t *testing.T) (
 	idRepoMock.EXPECT().AllowsSystem(mock.Anything, mock.Anything, mock.Anything).Return(true, nil).Maybe()
 	systemsSvc := usecase.NewSystemsService(sysRepoMock, reg)
 
-	return idRepoMock, sysRepoMock, vaultMock, svc, systemsSvc, reg
+	return idRepoMock, sysRepoMock, ksMock, svc, systemsSvc, reg
 }
 
 func TestAddAndFindByValue(t *testing.T) {

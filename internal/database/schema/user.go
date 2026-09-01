@@ -65,7 +65,6 @@ func (User) Edges() []ent.Edge {
 			Field("role_id").
 			Unique().
 			Required(),
-		edge.To("sessions", Session.Type),
 		edge.To("specialties", Specialty.Type),
 		edge.To("staff_requests", StaffChangeRequest.Type),
 		edge.To("appointments", Appointment.Type),

@@ -34,7 +34,7 @@ func (e *Engine) EnsureClinicDEK(ctx context.Context, clinicID uuid.UUID) ([]byt
 func (e *Engine) GetClinicDEK(ctx context.Context, clinicID uuid.UUID) ([]byte, error) {
 	urn := ClinicURN(clinicID)
 	return e.cachedDEK(ctx, urn, func() ([]byte, error) {
-		encDEK, err := e.vault.GetDEK(ctx, urn)
+		encDEK, err := e.keystore.GetDEK(ctx, urn)
 		if err != nil {
 			return nil, err
 		}
@@ -42,10 +42,10 @@ func (e *Engine) GetClinicDEK(ctx context.Context, clinicID uuid.UUID) ([]byte, 
 	})
 }
 
-// DeleteClinicDEK removes the clinic DEK from the vault (crypto-shred of the
+// DeleteClinicDEK removes the clinic DEK from the keystore (crypto-shred of the
 // clinic). Patient DEKs wrapped by it become unreadable.
 func (e *Engine) DeleteClinicDEK(ctx context.Context, clinicID uuid.UUID) error {
-	err := e.vault.DeleteDEK(ctx, ClinicURN(clinicID))
+	err := e.keystore.DeleteDEK(ctx, ClinicURN(clinicID))
 	if err == nil {
 		ClearRequestKeyCache(ctx)
 	}
@@ -69,7 +69,7 @@ func (e *Engine) GetPatientDEKForClinic(ctx context.Context, clinicID, patientID
 
 	urn := PatientURN(clinicID, patientID)
 	return e.cachedDEK(ctx, urn, func() ([]byte, error) {
-		encDEK, err := e.vault.GetDEK(ctx, urn)
+		encDEK, err := e.keystore.GetDEK(ctx, urn)
 		if err != nil {
 			return nil, err
 		}
@@ -166,7 +166,7 @@ func unwrapMissingPatientDEKs(ctx context.Context, clinicDEK []byte, urns []stri
 }
 
 // EnsurePatientDEKForClinic returns the existing patient DEK or creates one.
-// It never recreates a key that the vault has marked as destroyed.
+// It never recreates a key that the keystore has marked as destroyed.
 func (e *Engine) EnsurePatientDEKForClinic(ctx context.Context, clinicID, patientID uuid.UUID) ([]byte, error) {
 	clinicDEK, err := e.EnsureClinicDEK(ctx, clinicID)
 	if err != nil {
@@ -176,7 +176,7 @@ func (e *Engine) EnsurePatientDEKForClinic(ctx context.Context, clinicID, patien
 
 	urn := PatientURN(clinicID, patientID)
 	dek, err := e.cachedDEK(ctx, urn, func() ([]byte, error) {
-		encDEK, err := e.vault.GetDEK(ctx, urn)
+		encDEK, err := e.keystore.GetDEK(ctx, urn)
 		if err != nil {
 			return nil, err
 		}
@@ -200,10 +200,10 @@ func (e *Engine) EnsurePatientDEKForClinic(ctx context.Context, clinicID, patien
 }
 
 // DeletePatientDEKForClinic removes the patient DEK and leaves a terminal
-// tombstone in the vault so future reads cannot recreate it.
+// tombstone in the keystore so future reads cannot recreate it.
 func (e *Engine) DeletePatientDEKForClinic(ctx context.Context, clinicID, patientID uuid.UUID) error {
 	urn := PatientURN(clinicID, patientID)
-	err := e.vault.DeleteDEK(ctx, urn)
+	err := e.keystore.DeleteDEK(ctx, urn)
 	if err == nil {
 		forgetDEK(ctx, urn)
 	}
@@ -226,18 +226,18 @@ func (e *Engine) getWrappedDEKs(ctx context.Context, urns []string) (map[string]
 	if len(urns) == 0 {
 		return map[string]DEKResult{}, nil
 	}
-	if batch, ok := e.vault.(BatchKeyVault); ok {
+	if batch, ok := e.keystore.(BatchKeyStore); ok {
 		if e.metrics != nil {
-			e.metrics.vaultBatchGet.Add(1)
+			e.metrics.keyStoreBatchGet.Add(1)
 		}
 		return batch.GetDEKs(ctx, urns)
 	}
 	if e.metrics != nil {
-		e.metrics.vaultGet.Add(uint64(len(urns)))
+		e.metrics.keyStoreGet.Add(uint64(len(urns)))
 	}
 	results := make(map[string]DEKResult, len(urns))
 	for _, urn := range urns {
-		value, err := e.vault.GetDEK(ctx, urn)
+		value, err := e.keystore.GetDEK(ctx, urn)
 		results[urn] = DEKResult{
 			EncryptedDEK: value,
 			Err:          err,
@@ -278,7 +278,7 @@ func (e *Engine) createWrappedDEK(ctx context.Context, urn string, scope byte, w
 	created, err := e.putIfAbsent(ctx, urn, encDEK)
 	if err != nil {
 		ZeroBytes(dek)
-		return nil, false, errors.Wrap(err, "crypto: save dek to vault")
+		return nil, false, errors.Wrap(err, "crypto: save dek to keystore")
 	}
 	if !created {
 		ZeroBytes(dek)
@@ -289,10 +289,10 @@ func (e *Engine) createWrappedDEK(ctx context.Context, urn string, scope byte, w
 }
 
 func (e *Engine) putIfAbsent(ctx context.Context, urn string, encryptedDEK []byte) (bool, error) {
-	if conditional, ok := e.vault.(ConditionalKeyVault); ok {
+	if conditional, ok := e.keystore.(ConditionalKeyStore); ok {
 		return conditional.PutIfAbsent(ctx, urn, encryptedDEK)
 	}
-	if err := e.vault.PutDEK(ctx, urn, encryptedDEK); err != nil {
+	if err := e.keystore.PutDEK(ctx, urn, encryptedDEK); err != nil {
 		return false, err
 	}
 	return true, nil

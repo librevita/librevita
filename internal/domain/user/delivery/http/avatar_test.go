@@ -25,6 +25,7 @@ import (
 	"librevita.org/internal/core/config"
 	"librevita.org/internal/core/database"
 	"librevita.org/internal/core/database/fle"
+	"librevita.org/internal/core/kv"
 	"librevita.org/internal/core/policy"
 	"librevita.org/internal/core/server"
 	"librevita.org/internal/core/storage"
@@ -57,7 +58,12 @@ func newAvatarEnv(t *testing.T) (*echo.Echo, *auth.SessionManager, *storage.File
 	t.Helper()
 	client := openAvatarDB(t)
 	logger := log.Nop()
-	sessions, err := auth.NewSessionManager(auth.NewSessionRepository(client), &config.Config{Mode: "development"}, logger)
+	sessKV, err := kv.OpenBBolt(filepath.Join(t.TempDir(), "sessions.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = sessKV.Close() })
+	sessions, err := auth.NewSessionManager(auth.NewSessionRepository(sessKV, client), &config.Config{Mode: "development"}, logger)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -155,7 +161,7 @@ func avatarMultipart(t *testing.T, field, name string, content []byte, contentTy
 // remove clears it back to the placeholder.
 func TestAvatarUploadServeRemove(t *testing.T) {
 	e, sessions, files, db := newAvatarEnv(t)
-	token, err := sessions.Create(context.Background(), auth.Principal{
+	token, err := sessions.Create(clinicctx.WithTestClinic(context.Background()), auth.Principal{
 		ID: testAdminID.String(), Email: "admin@example.org", Name: "Admin", Role: auth.RoleAdmin,
 	})
 	if err != nil {
@@ -239,7 +245,7 @@ func TestAvatarUploadServeRemove(t *testing.T) {
 // instead of the body — so an upload reflects on the next page load.
 func TestAvatarCacheContract(t *testing.T) {
 	e, sessions, _, _ := newAvatarEnv(t)
-	token, err := sessions.Create(context.Background(), auth.Principal{
+	token, err := sessions.Create(clinicctx.WithTestClinic(context.Background()), auth.Principal{
 		ID: testAdminID.String(), Email: "admin@example.org", Name: "Admin", Role: auth.RoleAdmin,
 	})
 	if err != nil {
@@ -355,7 +361,7 @@ func TestAvatarAcceptsSupplementaryFormats(t *testing.T) {
 	// registration is the same mechanism as bmp, so the bitmap fixture
 	// pins the whole pipeline (sniff, decode, thumbnail, re-encode).
 	e, sessions, _, _ := newAvatarEnv(t)
-	token, err := sessions.Create(context.Background(), auth.Principal{
+	token, err := sessions.Create(clinicctx.WithTestClinic(context.Background()), auth.Principal{
 		ID: testAdminID.String(), Email: "admin@example.org", Name: "Admin", Role: auth.RoleAdmin,
 	})
 	if err != nil {
@@ -395,7 +401,7 @@ func TestAvatarAcceptsSupplementaryFormats(t *testing.T) {
 // TestAvatarRejectsNonImage asserts the sniffed content type gate.
 func TestAvatarRejectsNonImage(t *testing.T) {
 	e, sessions, _, _ := newAvatarEnv(t)
-	token, err := sessions.Create(context.Background(), auth.Principal{
+	token, err := sessions.Create(clinicctx.WithTestClinic(context.Background()), auth.Principal{
 		ID: testAdminID.String(), Email: "admin@example.org", Name: "Admin", Role: auth.RoleAdmin,
 	})
 	if err != nil {
@@ -467,7 +473,7 @@ func crc32IEEE(tag string, data []byte) uint32 {
 // is served back as a 256x256 JPEG, not the original bytes.
 func TestAvatarProcessing(t *testing.T) {
 	e, sessions, _, _ := newAvatarEnv(t)
-	token, err := sessions.Create(context.Background(), auth.Principal{
+	token, err := sessions.Create(clinicctx.WithTestClinic(context.Background()), auth.Principal{
 		ID: testAdminID.String(), Email: "admin@example.org", Name: "Admin", Role: auth.RoleAdmin,
 	})
 	if err != nil {
@@ -508,7 +514,7 @@ func TestAvatarProcessing(t *testing.T) {
 // a tiny PNG declaring a huge canvas is refused before any decode.
 func TestAvatarRejectsHugeDimensions(t *testing.T) {
 	e, sessions, _, _ := newAvatarEnv(t)
-	token, err := sessions.Create(context.Background(), auth.Principal{
+	token, err := sessions.Create(clinicctx.WithTestClinic(context.Background()), auth.Principal{
 		ID: testAdminID.String(), Email: "admin@example.org", Name: "Admin", Role: auth.RoleAdmin,
 	})
 	if err != nil {

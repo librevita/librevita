@@ -1,5 +1,5 @@
 // Package auth implements session-based authentication using PASETO v4.local
-// tokens with server-side revocation in the database.
+// tokens with server-side revocation in a key-value store.
 package auth
 
 import (
@@ -13,6 +13,7 @@ import (
 	"aidanwoods.dev/go-paseto"
 	"github.com/cockroachdb/errors"
 	"github.com/google/uuid"
+
 	"librevita.org/internal/core/clinicctx"
 	"librevita.org/internal/core/config"
 	"librevita.org/internal/core/crypto"
@@ -68,7 +69,7 @@ type SessionRepository interface {
 }
 
 // SessionManager issues PASETO v4.local session tokens and keeps a
-// revocation index in the database.
+// revocation index in a key-value store.
 type SessionManager struct {
 	repo     SessionRepository
 	platform PlatformSessionRepository
@@ -325,7 +326,7 @@ func ContextWithPrincipal(ctx context.Context, p *Principal) context.Context {
 type principalContextKey struct{}
 
 // hashToken computes the keyed fingerprint of the session token id (jti)
-// stored in the sessions table for revocation, using the configured hash algorithm.
+// stored in the sessions store for revocation, using the configured hash algorithm.
 func (m *SessionManager) hashToken(token string) string {
 	if m.hasher != nil {
 		digest, err := m.hasher.HashString(token)
