@@ -106,14 +106,14 @@ Clinical and administrative features live under `internal/domain`.
 LibreVita implements **Application-Layer Field-Level Encryption (AL-FLE) with Blind Indexing** in `internal/core/crypto` and `internal/core/database/fle`: host-proof persistence, column-level AEAD, exact-match blind indexes, tokenized name search, and per-patient envelope encryption with DEKs stored outside the clinical database.
 
 - **Keyed hasher (`crypto.Hasher`) and digest primitives (`internal/core/crypto/digest.go`)** — keyed and unkeyed hashing for blind indexes, audit, stream verification, and session token ids, with cryptographic agility:
-  - Prefixed output: `<algorithm>$<hex_hash>` (e.g. `blake2s$3f4a...`).
+  - Prefixed output: `<algorithm>$<scope><purpose>$<kid>$<hex_hash>` (e.g. `blake2s$ci$01$3f4a...`). Scope and purpose are one character each in a single field: `m`/`c`/`p` then `i` (HKDF `InfoBlindIndex`) or `s` (`NewSessionHasher`). `kid` is two hex digits (`01` = `DefaultKeyID`). Ciphertext stamps hierarchy + kid, not purpose.
   - Engines: `blake2s` (default, friendly to 32-bit hardware) and `blake2b` (`crypto.hash_algorithm`).
   - `crypto.NewDigest`, `crypto.NewDigestWithKey`, `crypto.Digest256`, `crypto.DigestReader`, `crypto.RandomBytes`, `crypto.RandomHex`, `crypto.ConstantTimeCompare`.
   - Blind index: `system || '\x00' || value` so `patient.phone` and `patient.email` do not collide across domains.
 - **Symmetric AEAD (`crypto.Encryptor`, `internal/core/crypto/cipher.go`)**:
-  - Envelope: magic byte `0x01` (`MagicByteXChaCha20Poly1305`) then `[ Version (1B) | Nonce (24B) | Ciphertext + Poly1305 Tag ]`.
-  - `crypto.NewAEADCipher(key)`, `crypto.NewAEADCipherByVersion(version, key)`, `crypto.SizeNonce` (24), `crypto.SizeAuthTag` (16).
-  - Version byte leaves room for other ciphers (e.g. AES-256-GCM or post-quantum) without a schema migration.
+  - Envelope: `[ magic 0x01 | key_scope | kid | nonce 24B | ciphertext + Poly1305 tag ]`. `key_scope` is the ASCII byte `m` (master/KEK), `c` (clinic DEK), or `p` (patient DEK), matching the hash token. `kid` is the key generation (`DefaultKeyID` = `1`). The three-byte header is bound as AEAD AAD.
+  - `crypto.NewAEADCipher(key)`, `crypto.NewAEADCipherByVersion(version, key)`, `crypto.SizeNonce` (24), `crypto.SizeAuthTag` (16), `crypto.CiphertextHeaderSize` (3).
+  - Magic byte leaves room for other ciphers (e.g. `0x02` AES-256-GCM) without a schema migration; those formats also carry `key_scope` and `kid`.
   - Transient plaintext and keys are zeroized with `ZeroBytes`.
 - **AL-FLE Ent extension (`internal/core/database/fle`)** — compile-time, zero-reflection, canonical `entc.Extension`:
   - Annotations: `fle.SearchablePhone()`, `fle.SearchableEmail()`, `fle.SearchableDocument()`, `fle.SearchableName()`, or `fle.Searchable()`, stored via `fle.EncryptedString()`.
@@ -138,6 +138,7 @@ flowchart TD
 - **KEK** — HKDF from `master_key`, info `librevita:kek:v1`. Memory only; never written to disk.
 - **Clinic DEK** — 32 bytes per clinic (`urn:librevita:clinic:<id>`), wrapped by the KEK. Wraps Patient DEKs and derives the clinic blind-index key; it does not encrypt patient PHI directly.
 - **Patient DEK** — 32 random bytes per patient (`urn:librevita:clinic:<id>:patient:<id>`), wrapped by the Clinic DEK. PHI and attachments use XChaCha20-Poly1305; AAD is the patient URN.
+- **Wrapped DEK envelope** — `[ 0xD1 | version 1 | scope | kid | nonce | wrapped DEK ]`. `version` is the wrap format (`KeyEnvelopeVersion`); `kid` is the wrapping-key generation (`DefaultKeyID` = `1`). They are not the same axis.
 - **Request cache (`crypto.WithRequestKeyCache`)** — unwraps once per request; keys are zeroized when the request ends.
 - **KeyStore (`internal/core/keystore`)** — DEKs live **outside** the primary database. `keystore.backend`:
   - **`bbolt`** — embedded KV (default `<data-dir>/keystore.db`).
@@ -509,7 +510,7 @@ File storage lives in `internal/core/storage` behind the `Store` port (`Put`/`Ge
 - **`local`** — a directory on the server (default `<data-dir>/files`). Writes are atomic (temp file + rename), each object has a sidecar metadata file (content type, ETag) under `.meta/`, and keys are validated so path traversal is impossible.
 - **`s3`** — any S3-compatible API (MinIO, Garage, Ceph, …), not necessarily AWS: endpoint, credentials, region, and path-style addressing are configurable. The bucket is verified at startup so a misconfigured backend fails fast.
 
-Clinical attachments are managed via `storage.Manager`, which streams authenticated encryption with the Patient DEK (`crypto.NewAEADCipher`), Patient URN as AAD, and an unkeyed stream digest (`crypto.NewDigest`) before persistence. Domains talk to storage through hexagonal ports.
+Clinical attachments are managed via `storage.Manager`, which streams authenticated chunked encryption (`LVFE` + version + patient `key_scope` + `kid` + nonce) with the Patient DEK, Patient URN as AAD, and an unkeyed stream digest (`crypto.NewDigest`) before persistence. Domains talk to storage through hexagonal ports.
 
 ## Database and migrations
 
@@ -780,4 +781,5 @@ LibreVita was founded with an ethical mission: to defend clinical privacy, ensur
 - [ADR 0002 — Multi-clinic isolation on a shared schema](docs/adr/0002-multi-clinic-shared-schema.md)
 - [ADR 0003 — Hybrid FHIR R4 SOAP chart](docs/adr/0003-hybrid-fhir-soap.md)
 - [ADR 0004 — Partitioned KV: keystore, meta, sessions](docs/adr/0004-partitioned-kv.md)
+- [ADR 0005 — Key scope in ciphertext and hashes](docs/adr/0005-ciphertext-key-scope.md)
 - [Issues](https://github.com/librevita/librevita/issues)

@@ -5,8 +5,6 @@ package auth
 import (
 	"context"
 	"encoding/base64"
-	"encoding/hex"
-	"fmt"
 	"net/http"
 	"time"
 
@@ -116,7 +114,7 @@ func NewSessionManager(repo SessionRepository, cfg *config.Config, logger log.Lo
 	if algo == "" {
 		algo = crypto.DefaultHashAlgorithm
 	}
-	hasher, err := crypto.NewHasher(raw, crypto.WithHashAlgorithm(algo))
+	hasher, err := crypto.NewSessionHasher(raw, crypto.WithHashAlgorithm(algo))
 	crypto.ZeroBytes(raw)
 	if err != nil {
 		return nil, errors.Wrap(err, "auth: session hasher init")
@@ -165,7 +163,10 @@ func (m *SessionManager) Create(ctx context.Context, p Principal) (string, error
 		return "", errors.Wrap(err, "auth: invalid user id")
 	}
 
-	hashed := m.hashToken(jtiHex)
+	hashed, err := m.hashToken(jtiHex)
+	if err != nil {
+		return "", err
+	}
 	if p.Platform || clinicctx.IsApex(ctx) {
 		if m.platform == nil {
 			return "", errors.New("auth: platform session repository is not configured")
@@ -193,7 +194,10 @@ func (m *SessionManager) Authenticate(ctx context.Context, token string) (*Princ
 	if err != nil || jti == "" {
 		return nil, ErrNoSession
 	}
-	hashed := m.hashToken(jti)
+	hashed, err := m.hashToken(jti)
+	if err != nil {
+		return nil, err
+	}
 	now := time.Now().UTC()
 
 	if clinicctx.IsApex(ctx) {
@@ -262,7 +266,10 @@ func (m *SessionManager) Destroy(ctx context.Context, token string) error {
 	if err != nil {
 		return nil
 	}
-	hashed := m.hashToken(jti)
+	hashed, err := m.hashToken(jti)
+	if err != nil {
+		return err
+	}
 	if clinicctx.IsApex(ctx) && m.platform != nil {
 		return m.platform.Delete(ctx, hashed)
 	}
@@ -326,22 +333,16 @@ func ContextWithPrincipal(ctx context.Context, p *Principal) context.Context {
 type principalContextKey struct{}
 
 // hashToken computes the keyed fingerprint of the session token id (jti)
-// stored in the sessions store for revocation, using the configured hash algorithm.
-func (m *SessionManager) hashToken(token string) string {
-	if m.hasher != nil {
-		digest, err := m.hasher.HashString(token)
-		if err == nil {
-			return digest
-		}
+// stored in the sessions store for revocation. There is no unprefixed fallback.
+func (m *SessionManager) hashToken(token string) (string, error) {
+	if m.hasher == nil {
+		return "", errors.New("auth: session hasher is not configured")
 	}
-	rawKey := m.key.ExportBytes()
-	defer crypto.ZeroBytes(rawKey)
-	digest, err := crypto.NewDigestWithKey(rawKey)
+	digest, err := m.hasher.HashString(token)
 	if err != nil {
-		panic(fmt.Sprintf("auth: session digest init: %v", err))
+		return "", errors.Wrap(err, "auth: session fingerprint")
 	}
-	digest.Write([]byte(token))
-	return hex.EncodeToString(digest.Sum(nil))
+	return digest, nil
 }
 
 func decodeKey(encoded string) ([]byte, error) {

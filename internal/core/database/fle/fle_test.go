@@ -57,15 +57,15 @@ func TestEncryptedValueScanner_Stateless(t *testing.T) {
 
 func TestResolveEncryptor_ContextHierarchy(t *testing.T) {
 	keyDef := generateTestKey(t)
-	defEnc, err := crypto.NewEncryptor(keyDef)
+	defEnc, err := crypto.NewPatientEncryptor(keyDef)
 	require.NoError(t, err)
 
 	keyCtx := generateTestKey(t)
-	ctxEnc, err := crypto.NewEncryptor(keyCtx)
+	ctxEnc, err := crypto.NewPatientEncryptor(keyCtx)
 	require.NoError(t, err)
 
 	keyRes := generateTestKey(t)
-	resEnc, err := crypto.NewEncryptor(keyRes)
+	resEnc, err := crypto.NewPatientEncryptor(keyRes)
 	require.NoError(t, err)
 
 	// 1. Fallback to default when context is empty
@@ -115,7 +115,7 @@ func setupTestEntClient(t *testing.T, hasher crypto.Hasher, defaultEnc crypto.En
 func TestFLE_MultiTenant_DynamicKey_Concurrency(t *testing.T) {
 	// Setup master hasher and client without default encryptor (force context resolution)
 	masterKey := generateTestKey(t)
-	hasher, err := crypto.NewHasher(masterKey)
+	hasher, err := crypto.NewMasterIndexHasher(masterKey)
 	require.NoError(t, err)
 
 	client := setupTestEntClient(t, hasher, nil)
@@ -131,11 +131,11 @@ func TestFLE_MultiTenant_DynamicKey_Concurrency(t *testing.T) {
 
 	// Distinct keys for each tenant
 	keyTenant1 := generateTestKey(t)
-	encTenant1, err := crypto.NewEncryptor(keyTenant1)
+	encTenant1, err := crypto.NewPatientEncryptor(keyTenant1)
 	require.NoError(t, err)
 
 	keyTenant2 := generateTestKey(t)
-	encTenant2, err := crypto.NewEncryptor(keyTenant2)
+	encTenant2, err := crypto.NewPatientEncryptor(keyTenant2)
 	require.NoError(t, err)
 
 	const iterations = 20
@@ -240,7 +240,7 @@ func TestFLE_UsesPatientDEKPerEntity(t *testing.T) {
 	require.NoError(t, err)
 	clinicDEK, err := engine.EnsureClinicDEK(context.Background(), clinicID)
 	require.NoError(t, err)
-	clinicEnc, err := crypto.NewEncryptor(clinicDEK)
+	clinicEnc, err := crypto.NewClinicEncryptor(clinicDEK)
 	require.NoError(t, err)
 	clinicHasher, err := crypto.NewHasherFromDEK(clinicDEK)
 	require.NoError(t, err)

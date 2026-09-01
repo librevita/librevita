@@ -115,7 +115,7 @@ func newIdentEnv(t *testing.T) (*echo.Echo, *auth.SessionManager, *usecase.Servi
 	if err != nil {
 		t.Fatal(err)
 	}
-	enc, err := crypto.NewEncryptor(clinicDEK)
+	enc, err := crypto.NewClinicEncryptor(clinicDEK)
 	if err != nil {
 		t.Fatal(err)
 	}

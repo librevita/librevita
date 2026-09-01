@@ -85,7 +85,6 @@ type IdentifierRecord struct {
 	PatientID       uuid.UUID
 	System          string
 	ValueCiphertext []byte
-	Nonce           []byte
 	BlindIndex      string
 	CreatedBy       *uuid.UUID
 	CreatedAt       time.Time

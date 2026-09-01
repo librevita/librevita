@@ -35,9 +35,9 @@ func TestEpisodeRepository_SOAPAggregate(t *testing.T) {
 
 	key, err := base64.StdEncoding.DecodeString(testKeyB64)
 	require.NoError(t, err)
-	hasher, err := crypto.NewHasher(key)
+	hasher, err := crypto.NewClinicIndexHasher(key)
 	require.NoError(t, err)
-	encryptor, err := crypto.NewEncryptor(key)
+	encryptor, err := crypto.NewPatientEncryptor(key)
 	require.NoError(t, err)
 	client.Use(ent.FLEMutationHook(hasher, encryptor))
 	client.Intercept(ent.FLEDecryptionInterceptor(encryptor))

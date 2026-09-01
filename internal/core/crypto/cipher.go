@@ -21,6 +21,9 @@ const (
 
 	// DefaultEncryptionVersion is the default encryption Magic Byte (XChaCha20-Poly1305).
 	DefaultEncryptionVersion = MagicByteXChaCha20Poly1305
+
+	// CiphertextHeaderSize is the ciphertext prefix: magic, key scope, and key id.
+	CiphertextHeaderSize = 3
 )
 
 // CipherSpec holds metadata and size parameters for a supported AEAD cipher.
@@ -66,13 +69,19 @@ func MinCiphertextSizeForVersion(version byte) (int, bool) {
 	if !ok {
 		return 0, false
 	}
-	return 1 + spec.NonceSize + spec.TagSize, true
+	return CiphertextHeaderSize + spec.NonceSize + spec.TagSize, true
 }
 
-// IsCiphertext reports whether data begins with a recognized ciphertext Magic Byte
-// and satisfies the minimum payload length specific to that cipher version.
+// IsCiphertext reports whether data begins with a recognized ciphertext Magic Byte,
+// a valid key scope, and satisfies the minimum payload length for that cipher.
 func IsCiphertext(data []byte) bool {
-	if len(data) < 1 {
+	if len(data) < CiphertextHeaderSize {
+		return false
+	}
+	if !validDataKeyScope(data[1]) {
+		return false
+	}
+	if !validKeyID(data[2]) {
 		return false
 	}
 	minSize, ok := MinCiphertextSizeForVersion(data[0])
@@ -84,7 +93,13 @@ func IsCiphertext(data []byte) bool {
 
 // IsCiphertextString reports whether a string represents a recognized ciphertext payload.
 func IsCiphertextString(s string) bool {
-	if len(s) < 1 {
+	if len(s) < CiphertextHeaderSize {
+		return false
+	}
+	if !validDataKeyScope(s[1]) {
+		return false
+	}
+	if !validKeyID(s[2]) {
 		return false
 	}
 	minSize, ok := MinCiphertextSizeForVersion(s[0])

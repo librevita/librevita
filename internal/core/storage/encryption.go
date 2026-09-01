@@ -10,8 +10,10 @@ import (
 
 const (
 	encryptedFileVersion     byte = crypto.DefaultEncryptionVersion
+	encryptedFileKeyScope    byte = crypto.KeyScopePatient
+	encryptedFileKeyID       byte = crypto.DefaultKeyID
 	encryptedFileChunkSize        = 64 << 10
-	encryptedFileHeaderSize       = 4 + 1 + crypto.SizeNonce
+	encryptedFileHeaderSize       = 4 + 1 + 1 + 1 + crypto.SizeNonce
 	encryptedFrameHeaderSize      = 4
 )
 
@@ -65,7 +67,9 @@ func NewEncryptedReader(source io.Reader, key, aad []byte) (*EncryptedReader, er
 	header := make([]byte, encryptedFileHeaderSize)
 	copy(header, encryptedFileMagic[:])
 	header[4] = encryptedFileVersion
-	copy(header[5:], baseNonce)
+	header[5] = encryptedFileKeyScope
+	header[6] = encryptedFileKeyID
+	copy(header[7:], baseNonce)
 	return &EncryptedReader{
 		source:    source,
 		key:       append([]byte(nil), key...),
@@ -147,7 +151,7 @@ func (r *EncryptedReader) fillFrame() error {
 	if err != nil {
 		return errors.Wrap(err, "storage: encrypted chunk init")
 	}
-	ciphertext := aead.Seal(nil, nonce, plain, frameAAD(r.aad, r.counter, length))
+	ciphertext := aead.Seal(nil, nonce, plain, frameAAD(r.aad, encryptedFileVersion, encryptedFileKeyScope, encryptedFileKeyID, r.counter, length))
 	r.frame = make([]byte, encryptedFrameHeaderSize+len(ciphertext))
 	copy(r.frame, length)
 	copy(r.frame[encryptedFrameHeaderSize:], ciphertext)
@@ -198,11 +202,17 @@ func NewDecryptedReader(source io.Reader, key, aad []byte) (*DecryptedReader, er
 	if string(header[:4]) != string(encryptedFileMagic[:]) || header[4] != encryptedFileVersion {
 		return nil, ErrInvalidEncryptedObject
 	}
+	if header[5] != encryptedFileKeyScope {
+		return nil, crypto.ErrKeyScopeMismatch
+	}
+	if header[6] != encryptedFileKeyID {
+		return nil, crypto.ErrKeyIDMismatch
+	}
 	return &DecryptedReader{
 		source:    source,
 		key:       append([]byte(nil), key...),
 		aad:       append([]byte(nil), aad...),
-		baseNonce: append([]byte(nil), header[5:]...),
+		baseNonce: append([]byte(nil), header[7:]...),
 	}, nil
 }
 
@@ -266,7 +276,7 @@ func (r *DecryptedReader) fillFrame() error {
 	if err != nil {
 		return errors.Wrap(err, "storage: decrypted chunk init")
 	}
-	plain, err := aead.Open(nil, nonce, ciphertext, frameAAD(r.aad, r.counter, lengthBytes[:]))
+	plain, err := aead.Open(nil, nonce, ciphertext, frameAAD(r.aad, encryptedFileVersion, encryptedFileKeyScope, encryptedFileKeyID, r.counter, lengthBytes[:]))
 	if err != nil || len(plain) != int(length) {
 		if plain != nil {
 			crypto.ZeroBytes(plain)
@@ -299,10 +309,13 @@ func chunkNonce(base []byte, counter uint64) []byte {
 	return nonce
 }
 
-func frameAAD(aad []byte, counter uint64, length []byte) []byte {
-	out := make([]byte, len(aad)+8+len(length))
-	copy(out, aad)
-	binary.BigEndian.PutUint64(out[len(aad):], counter)
-	copy(out[len(aad)+8:], length)
+func frameAAD(aad []byte, version, scope, kid byte, counter uint64, length []byte) []byte {
+	out := make([]byte, 3+len(aad)+8+len(length))
+	out[0] = version
+	out[1] = scope
+	out[2] = kid
+	copy(out[3:], aad)
+	binary.BigEndian.PutUint64(out[3+len(aad):], counter)
+	copy(out[3+len(aad)+8:], length)
 	return out
 }

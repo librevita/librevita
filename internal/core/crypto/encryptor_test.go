@@ -22,39 +22,39 @@ func mustEncryptorKey(t *testing.T) []byte {
 
 func TestNewEncryptorFailFast(t *testing.T) {
 	t.Run("rejects empty or weak key", func(t *testing.T) {
-		_, err := crypto.NewEncryptor(nil)
+		_, err := crypto.NewPatientEncryptor(nil)
 		assert.ErrorIs(t, err, crypto.ErrWeakKey)
 
-		_, err = crypto.NewEncryptor([]byte("short-key"))
+		_, err = crypto.NewPatientEncryptor([]byte("short-key"))
 		assert.ErrorIs(t, err, crypto.ErrWeakKey)
 
-		_, err = crypto.NewEncryptorFromBase64("")
+		_, err = crypto.NewPatientEncryptorFromBase64("")
 		assert.ErrorIs(t, err, crypto.ErrWeakKey)
 
-		_, err = crypto.NewEncryptorFromBase64("invalid-base64!!")
+		_, err = crypto.NewPatientEncryptorFromBase64("invalid-base64!!")
 		assert.Error(t, err)
 	})
 
 	t.Run("rejects unsupported or reserved cipher and version", func(t *testing.T) {
 		k := mustEncryptorKey(t)
-		_, err := crypto.NewEncryptor(k, crypto.WithEncryptionVersion(0xFF))
+		_, err := crypto.NewPatientEncryptor(k, crypto.WithEncryptionVersion(0xFF))
 		assert.ErrorIs(t, err, crypto.ErrUnsupportedVersion)
 
 		// Version 0x02 is not supported
-		_, err = crypto.NewEncryptor(k, crypto.WithEncryptionVersion(0x02))
+		_, err = crypto.NewPatientEncryptor(k, crypto.WithEncryptionVersion(0x02))
 		assert.ErrorIs(t, err, crypto.ErrUnsupportedVersion)
 
 		// Cipher name tests
-		_, err = crypto.NewEncryptor(k, crypto.WithEncryptionCipher("aes-256-gcm"))
+		_, err = crypto.NewPatientEncryptor(k, crypto.WithEncryptionCipher("aes-256-gcm"))
 		assert.ErrorIs(t, err, crypto.ErrUnsupportedVersion)
 
-		_, err = crypto.NewEncryptor(k, crypto.WithEncryptionCipher("chacha20poly1305"))
+		_, err = crypto.NewPatientEncryptor(k, crypto.WithEncryptionCipher("chacha20poly1305"))
 		assert.ErrorIs(t, err, crypto.ErrUnsupportedVersion)
 
-		_, err = crypto.NewEncryptor(k, crypto.WithEncryptionCipher("chacha20-poly1305"))
+		_, err = crypto.NewPatientEncryptor(k, crypto.WithEncryptionCipher("chacha20-poly1305"))
 		assert.ErrorIs(t, err, crypto.ErrUnsupportedVersion)
 
-		_, err = crypto.NewEncryptor(k, crypto.WithEncryptionCipher("des-ede3-cbc"))
+		_, err = crypto.NewPatientEncryptor(k, crypto.WithEncryptionCipher("des-ede3-cbc"))
 		assert.ErrorIs(t, err, crypto.ErrUnsupportedVersion)
 	})
 }
@@ -62,10 +62,12 @@ func TestNewEncryptorFailFast(t *testing.T) {
 func TestEncryptorMagicByteXChaCha20Poly1305(t *testing.T) {
 	k := mustEncryptorKey(t)
 
-	enc, err := crypto.NewEncryptor(k, crypto.WithEncryptionCipher(crypto.CipherXChaCha20Poly1305))
+	enc, err := crypto.NewPatientEncryptor(k, crypto.WithEncryptionCipher(crypto.CipherXChaCha20Poly1305))
 	require.NoError(t, err)
 	assert.Equal(t, crypto.MagicByteXChaCha20Poly1305, enc.Version())
 	assert.Equal(t, crypto.CipherXChaCha20Poly1305, enc.Cipher())
+	assert.Equal(t, crypto.KeyScopePatient, enc.KeyScope())
+	assert.Equal(t, crypto.DefaultKeyID, enc.KeyID())
 
 	plaintext := []byte("confidential-medical-prescription-data")
 	aad := []byte("urn:librevita:patient:018f-1234")
@@ -73,10 +75,11 @@ func TestEncryptorMagicByteXChaCha20Poly1305(t *testing.T) {
 	ct, err := enc.Encrypt(plaintext, aad)
 	require.NoError(t, err)
 
-	// Must have Magic Byte 0x01 at [0]
 	assert.Equal(t, crypto.MagicByteXChaCha20Poly1305, ct[0])
-	// Length: 1 (header) + 24 (nonce) + len(plaintext) + 16 (tag)
-	assert.Equal(t, 1+24+len(plaintext)+16, len(ct))
+	assert.Equal(t, crypto.KeyScopePatient, ct[1])
+	assert.Equal(t, byte('p'), ct[1])
+	assert.Equal(t, crypto.DefaultKeyID, ct[2])
+	assert.Equal(t, crypto.CiphertextHeaderSize+24+len(plaintext)+16, len(ct))
 
 	// Decrypt
 	decrypted, err := enc.Decrypt(ct, aad)
@@ -86,7 +89,7 @@ func TestEncryptorMagicByteXChaCha20Poly1305(t *testing.T) {
 
 func TestEncryptorReservedVersionDecryptFailFast(t *testing.T) {
 	k := mustEncryptorKey(t)
-	enc, err := crypto.NewEncryptor(k)
+	enc, err := crypto.NewPatientEncryptor(k)
 	require.NoError(t, err)
 
 	// Fake ciphertext with unsupported magic byte 0x02
@@ -99,7 +102,7 @@ func TestEncryptorReservedVersionDecryptFailFast(t *testing.T) {
 
 func TestEncryptorTamperResistance(t *testing.T) {
 	k := mustEncryptorKey(t)
-	enc, err := crypto.NewEncryptor(k)
+	enc, err := crypto.NewPatientEncryptor(k)
 	require.NoError(t, err)
 
 	plaintext := []byte("sensitive-health-record")
@@ -120,10 +123,28 @@ func TestEncryptorTamperResistance(t *testing.T) {
 	t.Run("tampered nonce fails", func(t *testing.T) {
 		tampered := make([]byte, len(ct))
 		copy(tampered, ct)
-		tampered[1] ^= 0xFF
+		tampered[crypto.CiphertextHeaderSize] ^= 0xFF
 
 		_, err := enc.Decrypt(tampered, aad)
 		assert.ErrorIs(t, err, crypto.ErrDecryptionFailed)
+	})
+
+	t.Run("mismatched key scope fails closed", func(t *testing.T) {
+		tampered := make([]byte, len(ct))
+		copy(tampered, ct)
+		tampered[1] = crypto.KeyScopeClinic
+
+		_, err := enc.Decrypt(tampered, aad)
+		assert.ErrorIs(t, err, crypto.ErrKeyScopeMismatch)
+	})
+
+	t.Run("mismatched key id fails closed", func(t *testing.T) {
+		tampered := make([]byte, len(ct))
+		copy(tampered, ct)
+		tampered[2] = 2
+
+		_, err := enc.Decrypt(tampered, aad)
+		assert.ErrorIs(t, err, crypto.ErrKeyIDMismatch)
 	})
 
 	t.Run("tampered magic byte fails", func(t *testing.T) {
@@ -155,7 +176,7 @@ type medicalPayloadTest struct {
 
 func TestEncryptorStructRoundtrip(t *testing.T) {
 	k := mustEncryptorKey(t)
-	enc, err := crypto.NewEncryptor(k)
+	enc, err := crypto.NewPatientEncryptor(k)
 	require.NoError(t, err)
 
 	payload := medicalPayloadTest{
@@ -186,10 +207,10 @@ func TestEncryptorKeyIsolation(t *testing.T) {
 	_, _ = rand.Read(k1)
 	_, _ = rand.Read(k2)
 
-	enc1, err := crypto.NewEncryptor(k1)
+	enc1, err := crypto.NewPatientEncryptor(k1)
 	require.NoError(t, err)
 
-	enc2, err := crypto.NewEncryptor(k2)
+	enc2, err := crypto.NewPatientEncryptor(k2)
 	require.NoError(t, err)
 
 	plaintext := []byte("secret-diagnosis")
@@ -201,9 +222,34 @@ func TestEncryptorKeyIsolation(t *testing.T) {
 	assert.ErrorIs(t, err, crypto.ErrDecryptionFailed)
 }
 
+func TestEncryptorKeyScopeMismatch(t *testing.T) {
+	k := mustEncryptorKey(t)
+	patientEnc, err := crypto.NewPatientEncryptor(k)
+	require.NoError(t, err)
+	clinicEnc, err := crypto.NewClinicEncryptor(k)
+	require.NoError(t, err)
+
+	ct, err := patientEnc.Encrypt([]byte("phi"), nil)
+	require.NoError(t, err)
+	_, err = clinicEnc.Decrypt(ct, nil)
+	assert.ErrorIs(t, err, crypto.ErrKeyScopeMismatch)
+}
+
+func TestEncryptorKeyIDMismatch(t *testing.T) {
+	k := mustEncryptorKey(t)
+	current, err := crypto.NewPatientEncryptor(k)
+	require.NoError(t, err)
+
+	ct, err := current.Encrypt([]byte("phi"), nil)
+	require.NoError(t, err)
+	ct[2] = 2
+	_, err = current.Decrypt(ct, nil)
+	assert.ErrorIs(t, err, crypto.ErrKeyIDMismatch)
+}
+
 func TestIsCiphertext(t *testing.T) {
 	k := mustEncryptorKey(t)
-	enc, err := crypto.NewEncryptor(k)
+	enc, err := crypto.NewPatientEncryptor(k)
 	require.NoError(t, err)
 
 	plaintext := "John Doe"
@@ -226,6 +272,18 @@ func TestIsCiphertext(t *testing.T) {
 	assert.False(t, crypto.IsCiphertextString(""))
 	assert.False(t, crypto.IsCiphertext([]byte{0x01, 0x02, 0x03}))
 
+	invalidScope := make([]byte, 50)
+	invalidScope[0] = crypto.MagicByteXChaCha20Poly1305
+	invalidScope[1] = 0x99
+	invalidScope[2] = crypto.DefaultKeyID
+	assert.False(t, crypto.IsCiphertext(invalidScope))
+
+	invalidKid := make([]byte, 50)
+	invalidKid[0] = crypto.MagicByteXChaCha20Poly1305
+	invalidKid[1] = crypto.KeyScopePatient
+	invalidKid[2] = 0
+	assert.False(t, crypto.IsCiphertext(invalidKid))
+
 	// Corrupt / Unsupported version
 	fake := make([]byte, 50)
 	fake[0] = 0xFF
@@ -235,7 +293,7 @@ func TestIsCiphertext(t *testing.T) {
 
 func BenchmarkEncryptor_XChaCha20Poly1305_Encrypt(b *testing.B) {
 	k := []byte("01234567890123456789012345678901")
-	enc, err := crypto.NewEncryptor(k, crypto.WithEncryptionVersion(crypto.MagicByteXChaCha20Poly1305))
+	enc, err := crypto.NewPatientEncryptor(k, crypto.WithEncryptionVersion(crypto.MagicByteXChaCha20Poly1305))
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -250,7 +308,7 @@ func BenchmarkEncryptor_XChaCha20Poly1305_Encrypt(b *testing.B) {
 
 func BenchmarkEncryptor_XChaCha20Poly1305_Decrypt(b *testing.B) {
 	k := []byte("01234567890123456789012345678901")
-	enc, err := crypto.NewEncryptor(k, crypto.WithEncryptionVersion(crypto.MagicByteXChaCha20Poly1305))
+	enc, err := crypto.NewPatientEncryptor(k, crypto.WithEncryptionVersion(crypto.MagicByteXChaCha20Poly1305))
 	if err != nil {
 		b.Fatal(err)
 	}

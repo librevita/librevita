@@ -125,7 +125,7 @@ func newDocEnvFull(t *testing.T, dir string) (*echo.Echo, *auth.SessionManager, 
 	if err != nil {
 		t.Fatal(err)
 	}
-	enc, err := crypto.NewEncryptor(clinicDEK)
+	enc, err := crypto.NewClinicEncryptor(clinicDEK)
 	if err != nil {
 		t.Fatal(err)
 	}

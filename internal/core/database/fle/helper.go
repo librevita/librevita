@@ -88,10 +88,10 @@ func (s EncryptedPtrValueScanner) FromValue(v driver.Value) (*string, error) {
 	return &str, nil
 }
 
-// EncryptPayload serializes a domain struct to JSON, encrypts it via Encryptor,
-// and extracts the 24-byte nonce from the resulting ciphertext.
-func EncryptPayload(encryptor crypto.Encryptor, payload any, aad []byte) (ciphertext, nonce []byte, err error) {
+// EncryptPayload serializes a domain struct to JSON and encrypts it via Encryptor.
+func EncryptPayload(encryptor crypto.Encryptor, payload any, aad []byte) ([]byte, error) {
 	var data []byte
+	var err error
 
 	switch p := payload.(type) {
 	case []byte:
@@ -101,22 +101,16 @@ func EncryptPayload(encryptor crypto.Encryptor, payload any, aad []byte) (cipher
 	default:
 		data, err = json.Marshal(p)
 		if err != nil {
-			return nil, nil, errors.Wrap(err, "entfle: marshal payload")
+			return nil, errors.Wrap(err, "entfle: marshal payload")
 		}
 	}
 	defer crypto.ZeroBytes(data)
 
-	ciphertext, err = encryptor.Encrypt(data, aad)
+	ciphertext, err := encryptor.Encrypt(data, aad)
 	if err != nil {
-		return nil, nil, errors.Wrap(err, "entfle: encrypt payload")
+		return nil, errors.Wrap(err, "entfle: encrypt payload")
 	}
-
-	if len(ciphertext) >= 25 {
-		nonce = make([]byte, 24)
-		copy(nonce, ciphertext[1:25])
-	}
-
-	return ciphertext, nonce, nil
+	return ciphertext, nil
 }
 
 // DecryptPayload decrypts ciphertext via Encryptor and unmarshals JSON into target.
