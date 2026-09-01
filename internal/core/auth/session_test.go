@@ -99,6 +99,18 @@ func TestSessionLifecycle(t *testing.T) {
 	assert.Equal(t, ErrNoSession, err)
 }
 
+func TestCreateDoesNotSweepExpiredSessions(t *testing.T) {
+	repo := &recordingSessionRepo{}
+	m, err := NewSessionManager(repo, &config.Config{Mode: "development"}, log.Nop())
+	require.NoError(t, err)
+
+	token, err := m.Create(testCtx(), Principal{ID: testUserID, Email: "user@example.org", Name: "Test User", Role: RoleAdmin})
+	require.NoError(t, err)
+	assert.NotEmpty(t, token)
+	assert.Equal(t, 1, repo.creates)
+	assert.Equal(t, 0, repo.cleanups)
+}
+
 func TestAuthenticateRejectsOtherClinic(t *testing.T) {
 	client := openSessionTest(t)
 	seedUser(t, client, testUserID)
@@ -263,4 +275,27 @@ func TestSessionCookieAttributes(t *testing.T) {
 			assert.Equal(t, wantSecure, c.Secure, "%s: Secure mismatch", name)
 		}
 	}
+}
+
+type recordingSessionRepo struct {
+	creates  int
+	cleanups int
+}
+
+func (r *recordingSessionRepo) CleanupExpired(context.Context, time.Time) error {
+	r.cleanups++
+	return nil
+}
+
+func (r *recordingSessionRepo) Create(context.Context, string, uuid.UUID, time.Time) error {
+	r.creates++
+	return nil
+}
+
+func (r *recordingSessionRepo) GetActive(context.Context, string, time.Time) (*SessionRecord, error) {
+	return nil, nil
+}
+
+func (r *recordingSessionRepo) Delete(context.Context, string) error {
+	return nil
 }

@@ -147,7 +147,6 @@ func (m *SessionManager) SetPlatformRepository(repo PlatformSessionRepository) {
 func (m *SessionManager) Create(ctx context.Context, p Principal) (string, error) {
 	now := time.Now().UTC()
 	expires := now.Add(m.ttl)
-	_ = m.CleanupExpired(ctx)
 
 	jtiHex, err := crypto.RandomHex(32)
 	if err != nil {
@@ -270,7 +269,8 @@ func (m *SessionManager) Destroy(ctx context.Context, token string) error {
 	return m.repo.Delete(ctx, hashed)
 }
 
-// CleanupExpired removes expired sessions from the database.
+// CleanupExpired removes expired sessions from the session store.
+// Login and Authenticate do not call this; a background ticker does.
 func (m *SessionManager) CleanupExpired(ctx context.Context) error {
 	now := time.Now().UTC()
 	if err := m.repo.CleanupExpired(ctx, now); err != nil {

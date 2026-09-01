@@ -70,13 +70,14 @@ func provideSessionManager(repo SessionRepository, platform PlatformSessionRepos
 }
 
 func registerSessionCleaner(lc fx.Lifecycle, sessions *SessionManager, logger log.Logger) {
+	ctx, cancel := context.WithCancel(context.Background())
 	lc.Append(fx.Hook{
-		OnStart: func(ctx context.Context) error {
+		OnStart: func(context.Context) error {
 			go func() {
 				ticker := time.NewTicker(time.Hour)
 				defer ticker.Stop()
 				for {
-					if err := sessions.CleanupExpired(ctx); err != nil {
+					if err := sessions.CleanupExpired(ctx); err != nil && ctx.Err() == nil {
 						logger.Warn("auth: cleanup expired sessions", log.Error(err))
 					}
 					select {
@@ -86,6 +87,10 @@ func registerSessionCleaner(lc fx.Lifecycle, sessions *SessionManager, logger lo
 					}
 				}
 			}()
+			return nil
+		},
+		OnStop: func(context.Context) error {
+			cancel()
 			return nil
 		},
 	})
