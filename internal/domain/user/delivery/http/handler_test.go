@@ -120,3 +120,58 @@ func TestLogoutSurfacesRevocationFailure(t *testing.T) {
 	err = env.handler.Logout(c)
 	assert.Error(t, err, "Logout must return an error when revocation fails")
 }
+
+func TestAuthPagesAndSetupGate(t *testing.T) {
+	env := newUserHandlerEnv(t)
+	e := echo.New()
+
+	// 1. LoginPage
+	req := httptest.NewRequest(http.MethodGet, "/auth/login?next=/dashboard", nil)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+	require.NoError(t, env.handler.LoginPage(c))
+	assert.Equal(t, http.StatusOK, rec.Code)
+
+	// 2. RegisterPage
+	req = httptest.NewRequest(http.MethodGet, "/auth/register", nil)
+	rec = httptest.NewRecorder()
+	c = e.NewContext(req, rec)
+	require.NoError(t, env.handler.RegisterPage(c))
+	assert.Equal(t, http.StatusOK, rec.Code)
+
+	// 3. Logout without cookie
+	req = httptest.NewRequest(http.MethodPost, "/auth/logout", nil)
+	rec = httptest.NewRecorder()
+	c = e.NewContext(req, rec)
+	require.NoError(t, env.handler.Logout(c))
+	assert.Equal(t, http.StatusFound, rec.Code)
+
+	// 4. Logout with valid cookie
+	token, err := env.sessions.Create(context.Background(), auth.Principal{
+		ID: "01990000-0000-7000-8000-000000000001", Email: "ana@example.org", Name: "Ana", Role: auth.RoleAdmin,
+	})
+	require.NoError(t, err)
+
+	env.sessionRepo.EXPECT().Delete(mock.Anything, mock.Anything).Return(nil).Once()
+	req = httptest.NewRequest(http.MethodPost, "/auth/logout", nil)
+	req.AddCookie(env.sessions.Cookie(token))
+	rec = httptest.NewRecorder()
+	c = e.NewContext(req, rec)
+	require.NoError(t, env.handler.Logout(c))
+	assert.Equal(t, http.StatusFound, rec.Code)
+
+	// 5. SetupGate middleware on un-onboarded clinic
+	gate := env.handler.SetupGate()
+	handlerCalled := false
+	dummyHandler := func(c echo.Context) error {
+		handlerCalled = true
+		return c.NoContent(http.StatusOK)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/dashboard", nil)
+	rec = httptest.NewRecorder()
+	c = e.NewContext(req, rec)
+	require.NoError(t, gate(dummyHandler)(c))
+	assert.True(t, handlerCalled)
+}
+

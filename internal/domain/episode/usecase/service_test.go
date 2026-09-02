@@ -253,3 +253,210 @@ func TestReceptionistCannotWrite(t *testing.T) {
 	})
 	assert.ErrorIs(t, err, episodemodel.ErrForbidden)
 }
+
+func TestListByPatientAndPatientGone(t *testing.T) {
+	clinicID := ident.MustParseClinic("00000000-0000-0000-0000-000000000001")
+	userID := ident.MustParseUser("00000000-0000-0000-0000-000000000002")
+	patientID := ident.MustParsePatient("00000000-0000-0000-0000-000000000003")
+	repo := newMemRepo()
+	repo.patients[patientID] = true
+	svc := setupEpisodeSvc(t, repo)
+	phys := &auth.Principal{ID: userID.String(), Role: auth.RolePhysician, ClinicID: clinicID.String()}
+	pat := &auth.Principal{ID: userID.String(), Role: auth.RolePatient, PatientID: patientID.String(), ClinicID: clinicID.String()}
+
+	// 1. Create episode
+	saved, err := svc.Create(context.Background(), phys, episodemodel.Episode{
+		ClinicID: clinicID, PatientID: patientID, AuthorID: userID,
+		Type: episodemodel.EpisodeTypeConsultation, Class: episodemodel.CareSettingAmbulatory,
+		OccurredAt: time.Now().UTC(),
+		SOAP:       episodemodel.SOAP{Subjective: "Paciente relata tosse"},
+		Findings: []episodemodel.Finding{
+			{
+				Code:   episodemodel.Coding{Code: "tosse"},
+				Value:  episodemodel.FindingValue{Kind: episodemodel.FindingValueString, String: "tosse seca"},
+				Status: episodemodel.FindingStatusRecorded,
+			},
+		},
+		Problems: []episodemodel.Problem{
+			{
+				Code:               episodemodel.Coding{Code: "R05"},
+				Text:               "Tosse",
+				ClinicalStatus:     episodemodel.ProblemClinicalActive,
+				VerificationStatus: episodemodel.ProblemVerificationConfirmed,
+				Category:           episodemodel.ProblemCategoryEncounter,
+				Rank:               1,
+			},
+		},
+		PlanItems: []episodemodel.PlanItem{
+			{
+				Kind:        episodemodel.PlanItemKindInstruction,
+				Status:      episodemodel.PlanItemStatusDraft,
+				Description: "Repouso e hidratação",
+			},
+		},
+	})
+	require.NoError(t, err)
+
+	// 2. Physician lists episodes (can see drafts)
+	listPhys, err := svc.ListByPatient(context.Background(), phys, clinicID, patientID)
+	require.NoError(t, err)
+	assert.Len(t, listPhys, 1)
+
+	// 3. Patient lists episodes (drafts excluded)
+	listPat, err := svc.ListByPatient(context.Background(), pat, clinicID, patientID)
+	require.NoError(t, err)
+	assert.Empty(t, listPat)
+
+	// 4. Finalize and check patient list
+	_, err = svc.Finalize(context.Background(), phys, clinicID, saved.ID)
+	require.NoError(t, err)
+	listPatFinal, err := svc.ListByPatient(context.Background(), pat, clinicID, patientID)
+	require.NoError(t, err)
+	assert.Len(t, listPatFinal, 1)
+
+	// 5. Patient does not exist -> ErrPatientGone
+	missingPatID := ident.MustParsePatient("00000000-0000-0000-0000-000000000099")
+	_, err = svc.Create(context.Background(), phys, episodemodel.Episode{
+		ClinicID: clinicID, PatientID: missingPatID, AuthorID: userID,
+		Type: episodemodel.EpisodeTypeConsultation, Class: episodemodel.CareSettingAmbulatory,
+		OccurredAt: time.Now().UTC(),
+	})
+	assert.ErrorIs(t, err, episodemodel.ErrPatientGone)
+}
+
+func TestAmendAndSuccessorDraft(t *testing.T) {
+	clinicID := ident.MustParseClinic("00000000-0000-0000-0000-000000000001")
+	userID := ident.MustParseUser("00000000-0000-0000-0000-000000000002")
+	patientID := ident.MustParsePatient("00000000-0000-0000-0000-000000000003")
+	repo := newMemRepo()
+	repo.patients[patientID] = true
+	svc := setupEpisodeSvc(t, repo)
+	phys := &auth.Principal{ID: userID.String(), Role: auth.RolePhysician, ClinicID: clinicID.String()}
+
+	// 1. Create initial draft
+	ep, err := svc.Create(context.Background(), phys, episodemodel.Episode{
+		ClinicID: clinicID, PatientID: patientID, AuthorID: userID,
+		Type: episodemodel.EpisodeTypeConsultation, Class: episodemodel.CareSettingAmbulatory,
+		OccurredAt: time.Now().UTC(),
+		SOAP:       episodemodel.SOAP{Subjective: "Draft inicial"},
+	})
+	require.NoError(t, err)
+
+	// 2. Amend on draft fails with ErrNotFinalized
+	_, err = svc.Amend(context.Background(), phys, clinicID, ep.ID)
+	assert.ErrorIs(t, err, episodemodel.ErrNotFinalized)
+
+	// 3. Finalize
+	finalized, err := svc.Finalize(context.Background(), phys, clinicID, ep.ID)
+	require.NoError(t, err)
+	assert.Equal(t, episodemodel.EpisodeStatusFinalized, finalized.Status)
+
+	// Finalize again returns ErrNotDraft
+	_, err = svc.Finalize(context.Background(), phys, clinicID, ep.ID)
+	assert.ErrorIs(t, err, episodemodel.ErrNotDraft)
+
+	// UpdateDraft on finalized note fails
+	_, err = svc.UpdateDraft(context.Background(), phys, *finalized)
+	assert.ErrorIs(t, err, episodemodel.ErrNotDraft)
+
+	// 4. Amend finalized creates successor draft
+	amendment1, err := svc.Amend(context.Background(), phys, clinicID, finalized.ID)
+	require.NoError(t, err)
+	assert.Equal(t, episodemodel.EpisodeStatusDraft, amendment1.Status)
+	require.NotNil(t, amendment1.PredecessorID)
+	assert.Equal(t, finalized.ID, *amendment1.PredecessorID)
+
+	// 5. Amend again while amendment1 is still draft returns same draft
+	amendmentRepeat, err := svc.Amend(context.Background(), phys, clinicID, finalized.ID)
+	require.NoError(t, err)
+	assert.Equal(t, amendment1.ID, amendmentRepeat.ID)
+
+	// 6. Finalize amendment1
+	amendmentFinalized, err := svc.Finalize(context.Background(), phys, clinicID, amendment1.ID)
+	require.NoError(t, err)
+	assert.Equal(t, episodemodel.EpisodeStatusFinalized, amendmentFinalized.Status)
+
+	// 7. Amend original finalized note now returns ErrAlreadyAmended
+	_, err = svc.Amend(context.Background(), phys, clinicID, finalized.ID)
+	assert.ErrorIs(t, err, episodemodel.ErrAlreadyAmended)
+
+	// 8. Amend of amendmentFinalized starts next link
+	amendment2, err := svc.Amend(context.Background(), phys, clinicID, amendmentFinalized.ID)
+	require.NoError(t, err)
+	assert.Equal(t, amendmentFinalized.ID, *amendment2.PredecessorID)
+}
+
+func TestEpisodeChildItemsAndAuthCornerCases(t *testing.T) {
+	clinicID := ident.MustParseClinic("00000000-0000-0000-0000-000000000001")
+	userID := ident.MustParseUser("00000000-0000-0000-0000-000000000002")
+	patientID := ident.MustParsePatient("00000000-0000-0000-0000-000000000003")
+	otherPatientID := ident.MustParsePatient("00000000-0000-0000-0000-000000000004")
+
+	repo := newMemRepo()
+	repo.patients[patientID] = true
+	repo.patients[otherPatientID] = true
+	svc := setupEpisodeSvc(t, repo)
+	ctx := context.Background()
+
+	// 1. Create with nil principal returns ErrForbidden
+	_, err := svc.Create(ctx, nil, episodemodel.Episode{ClinicID: clinicID, PatientID: patientID})
+	assert.ErrorIs(t, err, episodemodel.ErrForbidden)
+
+	// 2. Create episode with findings, problems, and plan items
+	phys := &auth.Principal{ID: userID.String(), Role: auth.RolePhysician, ClinicID: clinicID.String()}
+	ep, err := svc.Create(ctx, phys, episodemodel.Episode{
+		ClinicID:   clinicID,
+		PatientID:  patientID,
+		AuthorID:   userID,
+		OccurredAt: time.Now().UTC(),
+		SOAP:       episodemodel.SOAP{Subjective: "Dor", Objective: "Normal", Assessment: "Cefaleia", Plan: "Repouso"},
+		Findings: []episodemodel.Finding{
+			{
+				Code:  episodemodel.Coding{System: "snomed", Code: "123", Display: "Fever"},
+				Value: episodemodel.FindingValue{Kind: episodemodel.FindingValueString, String: "38.5"},
+			},
+		},
+		Problems: []episodemodel.Problem{
+			{Code: episodemodel.Coding{System: "icd10", Code: "R50", Display: "Fever"}, Text: "Febre alta"},
+		},
+		PlanItems: []episodemodel.PlanItem{
+			{Kind: episodemodel.PlanItemKindInstruction, Description: "Beber agua"},
+		},
+	})
+	require.NoError(t, err)
+	assert.Len(t, ep.Findings, 1)
+	assert.Len(t, ep.Problems, 1)
+	assert.Len(t, ep.PlanItems, 1)
+
+	// Get with nil principal returns ErrForbidden on existing ep
+	_, err = svc.Get(ctx, nil, clinicID, ep.ID)
+	assert.ErrorIs(t, err, episodemodel.ErrForbidden)
+
+	// Finalize ep
+	finalized, err := svc.Finalize(ctx, phys, clinicID, ep.ID)
+	require.NoError(t, err)
+
+	// 3. Patient role accessing another patient's note returns ErrForbidden
+	otherPat := &auth.Principal{ID: userID.String(), Role: auth.RolePatient, PatientID: otherPatientID.String(), ClinicID: clinicID.String()}
+	_, err = svc.Get(ctx, otherPat, clinicID, finalized.ID)
+	assert.ErrorIs(t, err, episodemodel.ErrForbidden)
+
+	// 4. Amend copies child items correctly
+	amended, err := svc.Amend(ctx, phys, clinicID, finalized.ID)
+	require.NoError(t, err)
+	assert.Len(t, amended.Findings, 1)
+	assert.Len(t, amended.Problems, 1)
+	assert.Len(t, amended.PlanItems, 1)
+
+	// 5. UpdateDraft on finalized episode returns ErrNotDraft
+	_, err = svc.UpdateDraft(ctx, phys, *finalized)
+	assert.ErrorIs(t, err, episodemodel.ErrNotDraft)
+
+	// 6. Finalize on finalized episode returns ErrNotDraft
+	_, err = svc.Finalize(ctx, phys, clinicID, finalized.ID)
+	assert.ErrorIs(t, err, episodemodel.ErrNotDraft)
+
+	// 7. Amend on draft episode returns ErrNotFinalized
+	_, err = svc.Amend(ctx, phys, clinicID, amended.ID)
+	assert.ErrorIs(t, err, episodemodel.ErrNotFinalized)
+}

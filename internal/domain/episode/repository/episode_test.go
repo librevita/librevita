@@ -136,4 +136,71 @@ func TestEpisodeRepository_SOAPAggregate(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, parent.SuccessorID)
 	assert.Equal(t, child.ID, *parent.SuccessorID)
+
+	// Test PatientExists
+	pExists, err := repo.PatientExists(ctx, clinicID, patientID)
+	require.NoError(t, err)
+	assert.True(t, pExists)
+
+	pExists, err = repo.PatientExists(ctx, clinicID, ident.PatientID(uuid.New()))
+	require.NoError(t, err)
+	assert.False(t, pExists)
+
+	// Test Finding value types: String, Boolean, Coded
+	boolVal := true
+	schedTime := now.Add(24 * time.Hour)
+	ep2 := episodemodel.Episode{
+		ID: ident.EpisodeID(uuid.New()), ClinicID: clinicID, PatientID: patientID, AuthorID: userID,
+		Type: episodemodel.EpisodeTypeEvolution, Status: episodemodel.EpisodeStatusDraft,
+		Class: episodemodel.CareSettingAmbulatory, OccurredAt: now,
+		SOAP: episodemodel.SOAP{Subjective: "relato", Objective: "sinais", Assessment: "aval", Plan: "plano"},
+		Findings: []episodemodel.Finding{
+			{
+				ID: ident.FindingID(uuid.New()), Status: episodemodel.FindingStatusRecorded,
+				Code:        episodemodel.Coding{System: "http://loinc.org", Code: "1", Display: "String Finding"},
+				Value:       episodemodel.FindingValue{Kind: episodemodel.FindingValueString, String: "Texto do achado"},
+				EffectiveAt: now,
+			},
+			{
+				ID: ident.FindingID(uuid.New()), Status: episodemodel.FindingStatusRecorded,
+				Code:        episodemodel.Coding{System: "http://loinc.org", Code: "2", Display: "Bool Finding"},
+				Value:       episodemodel.FindingValue{Kind: episodemodel.FindingValueBoolean, Boolean: &boolVal},
+				EffectiveAt: now,
+			},
+			{
+				ID: ident.FindingID(uuid.New()), Status: episodemodel.FindingStatusRecorded,
+				Code:        episodemodel.Coding{System: "http://loinc.org", Code: "3", Display: "Coded Finding"},
+				Value:       episodemodel.FindingValue{Kind: episodemodel.FindingValueCoded, Coded: &episodemodel.Coding{System: "sys", Code: "code", Display: "disp"}},
+				EffectiveAt: now,
+			},
+		},
+		PlanItems: []episodemodel.PlanItem{
+			{
+				ID: ident.PlanItemID(uuid.New()), Kind: episodemodel.PlanItemKindMedication,
+				Status: episodemodel.PlanItemStatusActive, Description: "Tomar remedio",
+				ScheduledAt: &schedTime,
+			},
+		},
+	}
+
+	saved2, err := repo.Create(ctx, ep2)
+	require.NoError(t, err)
+	require.Len(t, saved2.Findings, 3)
+	assert.Equal(t, "Texto do achado", saved2.Findings[0].Value.String)
+	assert.True(t, *saved2.Findings[1].Value.Boolean)
+	assert.Equal(t, "disp", saved2.Findings[2].Value.Coded.Display)
+
+	// List with status filter
+	statusDraft := episodemodel.EpisodeStatusDraft
+	drafts, err := repo.ListByPatient(ctx, clinicID, patientID, &statusDraft)
+	require.NoError(t, err)
+	assert.GreaterOrEqual(t, len(drafts), 1)
+
+	// Get Not Found
+	_, err = repo.Get(ctx, clinicID, ident.EpisodeID(uuid.New()))
+	assert.ErrorIs(t, err, episodemodel.ErrNotFound)
+
+	// SetStatus Not Found
+	err = repo.SetStatus(ctx, clinicID, ident.EpisodeID(uuid.New()), episodemodel.EpisodeStatusFinalized)
+	assert.ErrorIs(t, err, episodemodel.ErrNotFound)
 }

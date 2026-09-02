@@ -371,3 +371,40 @@ func isHex(s string) bool {
 	}
 	return true
 }
+
+func TestCryptoModuleEdgeCases(t *testing.T) {
+	logger := log.Nop()
+
+	// 1. Nil keystore in NewFromConfig
+	_, err := crypto.NewFromConfig(&config.Config{Mode: "development"}, nil, logger)
+	assert.Error(t, err)
+
+	// 2. Production mode without master key
+	prodCfg := &config.Config{Mode: "production"}
+	_, err = crypto.NewHasherFromConfig(prodCfg, logger)
+	assert.Error(t, err)
+
+	_, err = crypto.NewEncryptorFromConfig(prodCfg, logger)
+	assert.Error(t, err)
+
+	// 3. Invalid base64 master key
+	badB64Cfg := &config.Config{MasterKey: "invalid!base64"}
+	_, err = crypto.NewHasherFromConfig(badB64Cfg, logger)
+	assert.Error(t, err)
+
+	// 4. Invalid length master key (not 32 bytes)
+	shortKeyCfg := &config.Config{MasterKey: base64.StdEncoding.EncodeToString([]byte("too short"))}
+	_, err = crypto.NewHasherFromConfig(shortKeyCfg, logger)
+	assert.Error(t, err)
+
+	// 5. Development mode ephemeral key
+	devCfg := &config.Config{Mode: "development"}
+	hDev, err := crypto.NewHasherFromConfig(devCfg, logger)
+	require.NoError(t, err)
+	assert.NotNil(t, hDev)
+
+	eDev, err := crypto.NewEncryptorFromConfig(devCfg, logger)
+	require.NoError(t, err)
+	assert.NotNil(t, eDev)
+}
+

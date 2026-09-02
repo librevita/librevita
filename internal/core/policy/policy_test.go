@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/fx/fxtest"
 	"librevita.org/pkg/ident"
 	_ "modernc.org/sqlite"
 
@@ -433,3 +434,60 @@ func TestContextClinicID(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, allowed, "explicit clinic_id must not be overwritten by the resolver")
 }
+
+func TestPolicyResetAndHistory(t *testing.T) {
+	pe := testPolicyEngine(t)
+	ctx := pctx()
+	admin := &auth.Principal{ID: "u1", Email: "a@example.org", Name: "A", Role: auth.RoleAdmin}
+	req := RequestInfo{Method: "GET", Path: "/"}
+
+	// 1. Count
+	count, err := pe.Count(ctx)
+	require.NoError(t, err)
+	assert.True(t, count > 0)
+
+	// 2. Set custom policy
+	err = pe.Set(ctx, "dashboard.view", "false", Actor{ID: "u1", Email: "a@example.org"})
+	require.NoError(t, err)
+	allowed, err := pe.Allowed(ctx, "dashboard.view", admin, req)
+	require.NoError(t, err)
+	assert.False(t, allowed)
+
+	// 3. History
+	hist, err := pe.History(ctx, "dashboard.view", 10)
+	require.NoError(t, err)
+	assert.NotEmpty(t, hist)
+
+	// 4. ValidateSyntax
+	assert.NoError(t, pe.ValidateSyntax("principal.role == 'admin'"))
+	assert.Error(t, pe.ValidateSyntax("invalid CEL syntax [[("))
+
+	// 5. Reset to default
+	require.NoError(t, pe.Set(ctx, "dashboard.view", DefaultPolicies["dashboard.view"], Actor{ID: "u1", Email: "a@example.org"}))
+	allowedAfterReset, err := pe.Allowed(ctx, "dashboard.view", admin, req)
+	require.NoError(t, err)
+	assert.True(t, allowedAfterReset)
+}
+
+func TestPolicyLoadWithoutClinic(t *testing.T) {
+	repo := openPolicyDB(t)
+	pe, err := NewPolicyEngine(repo, log.Nop())
+	require.NoError(t, err)
+
+	// Load without clinic in context should succeed gracefully
+	assert.NoError(t, pe.Load(context.Background()))
+}
+
+func TestPolicyModuleLifecycle(t *testing.T) {
+	pe := testPolicyEngine(t)
+	lc := fxtest.NewLifecycle(t)
+
+	registerLifecycle(lc, pe)
+	wireClinicContext(pe, nil)
+
+	require.NoError(t, lc.Start(pctx()))
+	require.NoError(t, lc.Stop(pctx()))
+	assert.NotNil(t, Module)
+}
+
+

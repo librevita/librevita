@@ -133,3 +133,46 @@ func TestCrossClinicUsersAndFLE(t *testing.T) {
 	require.Error(t, err)
 	assert.Nil(t, wrongFetched)
 }
+
+func TestIsolationEdgeCases(t *testing.T) {
+	db, err := sql.Open("sqlite", "file:isolation_edges?mode=memory&cache=shared&_pragma=foreign_keys(1)")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = db.Close() })
+
+	drv := entsql.OpenDB(dialect.SQLite, db)
+	client := enttest.NewClient(t, enttest.WithOptions(ent.Driver(drv)))
+	t.Cleanup(func() { _ = client.Close() })
+
+	client.Use(isolation.MutationHook())
+	client.Intercept(isolation.QueryInterceptor())
+
+	cID1 := ident.MustParseClinic("01990000-0000-7000-8000-000000000001")
+	cID2 := ident.MustParseClinic("01990000-0000-7000-8000-000000000002")
+
+	// 1. Non-clinic scoped query without clinic in context passes through
+	_, err = client.Clinic.Query().All(context.Background())
+	require.NoError(t, err)
+
+	// 2. Non-clinic scoped mutation without clinic in context passes through
+	_, err = client.Clinic.Create().SetID(cID1).SetSlug("c1").SetName("C1").Save(context.Background())
+	require.NoError(t, err)
+
+	// 3. Mutation on clinic-scoped entity without clinic in context fails with ErrMissingClinic
+	_, err = client.Role.Create().SetName("custom").Save(context.Background())
+	assert.ErrorIs(t, err, clinicctx.ErrMissingClinic)
+
+	// 4. Create with explicit mismatched clinic_id fails
+	ctx1 := clinicctx.WithClinic(context.Background(), &clinicctx.Clinic{ID: cID1, Slug: "c1", Name: "C1"})
+	_, err = client.Role.Create().SetClinicID(cID2).SetName("custom").Save(ctx1)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "isolation: clinic_id mismatch")
+
+	// 5. Update with clinic context restricts to clinic
+	r1, err := client.Role.Create().SetName("admin").SetSystem(true).Save(ctx1)
+	require.NoError(t, err)
+
+	ctx2 := clinicctx.WithClinic(context.Background(), &clinicctx.Clinic{ID: cID2, Slug: "c2", Name: "C2"})
+	err = client.Role.UpdateOneID(r1.ID).SetName("renamed").Exec(ctx2)
+	assert.Error(t, err) // Not found in clinic 2
+}
+

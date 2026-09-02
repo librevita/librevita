@@ -28,3 +28,18 @@ func TestClockFallsBackToUTCOnUnknownZone(t *testing.T) {
 
 	assert.Equal(t, "2026-08-06T18:04:05Z", clock.Format(utc, time.RFC3339))
 }
+
+func TestClockNowAndFormatStored(t *testing.T) {
+	clock := NewClock("America/Sao_Paulo")
+	assert.False(t, clock.Now().IsZero())
+
+	// FormatStored
+	assert.Equal(t, "", clock.FormatStored(time.Time{}))
+	storedTime := time.Date(2026, 8, 6, 18, 4, 0, 0, time.UTC)
+	assert.Equal(t, "2026-08-06 15:04", clock.FormatStored(storedTime))
+
+	// Nil Clock Zone
+	var nilClock *Clock
+	assert.Equal(t, time.UTC, nilClock.Zone())
+}
+

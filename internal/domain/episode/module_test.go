@@ -1,8 +1,6 @@
-package user
+package episode
 
 import (
-	"net/http"
-	"net/http/httptest"
 	"testing"
 
 	"github.com/labstack/echo/v4"
@@ -13,32 +11,17 @@ import (
 	"librevita.org/internal/core/auth"
 	"librevita.org/internal/core/config"
 	"librevita.org/internal/core/policy"
-	httphandler "librevita.org/internal/domain/user/delivery/http"
+	"librevita.org/internal/domain/episode/delivery/http"
 	"librevita.org/pkg/log"
-	authmocks "librevita.org/tests/mocks/core/auth"
 	auditmocks "librevita.org/tests/mocks/core/audit"
+	authmocks "librevita.org/tests/mocks/core/auth"
 	policymocks "librevita.org/tests/mocks/core/policy"
 )
 
-func TestBodyLimitSkipperMatchesAvatarRoute(t *testing.T) {
-	e := echo.New()
-	e.POST("/profile/avatar", func(c echo.Context) error {
-		if !bodyLimitSkipper()(c) {
-			t.Fatal("expected body-limit skipper to match avatar upload route")
-		}
-		return c.NoContent(http.StatusOK)
-	})
-	req := httptest.NewRequest(http.MethodPost, "/profile/avatar", nil)
-	rec := httptest.NewRecorder()
-	e.ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200", rec.Code)
-	}
-}
-
-func TestRegisterRoutes(t *testing.T) {
+func TestRegisterEpisodeRoutes(t *testing.T) {
 	e := echo.New()
 	logger := log.Nop()
+
 	repoMock := policymocks.NewMockRepository(t)
 	policies, err := policy.NewPolicyEngine(repoMock, logger)
 	require.NoError(t, err)
@@ -51,9 +34,17 @@ func TestRegisterRoutes(t *testing.T) {
 	sessions, err := auth.NewSessionManager(sessRepo, &config.Config{Mode: "development"}, logger)
 	require.NoError(t, err)
 
-	h := &httphandler.Handler{}
+	gate := func() echo.MiddlewareFunc {
+		return func(next echo.HandlerFunc) echo.HandlerFunc {
+			return func(c echo.Context) error {
+				return next(c)
+			}
+		}
+	}
 
-	registerRoutes(e, h, sessions, policies, auditLogger, logger)
+	h := &http.Handler{}
+	registerHTTPRoutes(e, h, sessions, policies, auditLogger, gate, logger)
+
 	assert.NotEmpty(t, e.Routes())
+	assert.NotNil(t, Module)
 }
-

@@ -11,6 +11,8 @@ import (
 	"librevita.org/internal/core/auth"
 	"librevita.org/internal/core/config"
 	"librevita.org/internal/core/server"
+	"librevita.org/pkg/log"
+	authmocks "librevita.org/tests/mocks/core/auth"
 )
 
 func TestCSRFSkipperExemptsFHIRPrefix(t *testing.T) {
@@ -51,3 +53,30 @@ func TestBodyLimitSkipperMatchesBundleRoute(t *testing.T) {
 		t.Fatalf("status = %d, want 200", rec.Code)
 	}
 }
+
+func TestRegisterHTTPRoutes(t *testing.T) {
+	e := echo.New()
+	sessRepo := authmocks.NewMockSessionRepository(t)
+	logger := log.Nop()
+	sessions, err := auth.NewSessionManager(sessRepo, &config.Config{Mode: "development"}, logger)
+	if err != nil {
+		t.Fatal(err)
+	}
+	gate := func() echo.MiddlewareFunc {
+		return func(next echo.HandlerFunc) echo.HandlerFunc {
+			return func(c echo.Context) error {
+				return next(c)
+			}
+		}
+	}
+	h := &Handler{}
+	registerHTTPRoutes(e, h, sessions, gate, logger)
+
+	if len(e.Routes()) == 0 {
+		t.Fatal("expected routes to be registered")
+	}
+	if Module == nil {
+		t.Fatal("expected module to be defined")
+	}
+}
+

@@ -80,3 +80,45 @@ func TestEncryptedReaderRejectsWeakKey(t *testing.T) {
 	_, err = NewDecryptedReader(bytes.NewReader(nil), []byte("short"), nil)
 	assert.ErrorIs(t, err, crypto.ErrInvalidDEK)
 }
+
+func TestEncryptedSizeAndReaderEdgeCases(t *testing.T) {
+	assert.Equal(t, int64(-1), EncryptedSize(-1))
+	assert.Equal(t, int64(encryptedFileHeaderSize), EncryptedSize(0))
+	assert.True(t, EncryptedSize(100) > 100)
+
+	key := bytes.Repeat([]byte{0x77}, crypto.SizeDEK)
+	aad := []byte("test-aad")
+
+	// Nil source checks
+	_, err := NewEncryptedReader(nil, key, aad)
+	assert.Error(t, err)
+	_, err = NewDecryptedReader(nil, key, aad)
+	assert.Error(t, err)
+
+	// Empty stream roundtrip
+	enc, err := NewEncryptedReader(bytes.NewReader(nil), key, aad)
+	require.NoError(t, err)
+	encoded, err := io.ReadAll(enc)
+	require.NoError(t, err)
+	require.NoError(t, enc.Close())
+
+	dec, err := NewDecryptedReader(bytes.NewReader(encoded), key, aad)
+	require.NoError(t, err)
+	plain, err := io.ReadAll(dec)
+	require.NoError(t, err)
+	assert.Empty(t, plain)
+	require.NoError(t, dec.Close())
+
+	// Magic byte tampering
+	tamperedMagic := append([]byte(nil), encoded...)
+	tamperedMagic[0] = 'X'
+	_, err = NewDecryptedReader(bytes.NewReader(tamperedMagic), key, aad)
+	assert.ErrorIs(t, err, ErrInvalidEncryptedObject)
+
+	// Version tampering
+	tamperedVer := append([]byte(nil), encoded...)
+	tamperedVer[4] = 99
+	_, err = NewDecryptedReader(bytes.NewReader(tamperedVer), key, aad)
+	assert.ErrorIs(t, err, ErrInvalidEncryptedObject)
+}
+

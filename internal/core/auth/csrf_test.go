@@ -27,3 +27,18 @@ func TestCSRFCookieAttributes(t *testing.T) {
 		assert.Equal(t, wantSecure, cookie.Secure, "%s: Secure mismatch", name)
 	}
 }
+
+func TestNewTokenAndValidCSRF(t *testing.T) {
+	csrf := NewCSRF(&config.Config{Mode: "development"})
+	tok1 := csrf.NewToken()
+	tok2 := csrf.NewToken()
+	assert.NotEmpty(t, tok1)
+	assert.NotEmpty(t, tok2)
+	assert.NotEqual(t, tok1, tok2)
+
+	assert.True(t, ValidCSRF(tok1, tok1))
+	assert.False(t, ValidCSRF(tok1, tok2))
+	assert.False(t, ValidCSRF("", tok1))
+	assert.False(t, ValidCSRF(tok1, ""))
+}
+

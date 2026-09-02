@@ -4,6 +4,7 @@ import (
 	"context"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -65,3 +66,42 @@ func TestLoggerMethodsTakeFields(t *testing.T) {
 		assert.Equal(t, fieldSlice, last, name)
 	}
 }
+
+func TestFieldConstructorsAndNopMethods(t *testing.T) {
+	now := time.Now()
+	dur := 5 * time.Second
+
+	_ = Strings("strs", []string{"a", "b"})
+	_ = Int("i", 42)
+	_ = Int64("i64", int64(100))
+	_ = Bool("b", true)
+	_ = Duration("d", dur)
+	_ = Time("t", now)
+	_ = Any("a", map[string]int{"x": 1})
+	_ = Stringer("s", now)
+	_ = NamedError("custom_err", assert.AnError)
+	_ = Error(assert.AnError)
+
+	// Recorder methods
+	rec := NewRecorder()
+	ctx := context.Background()
+	rec.Debug("debug msg")
+	rec.Warn("warn msg")
+	rec.DebugContext(ctx, "debug ctx")
+	rec.InfoContext(ctx, "info ctx")
+	rec.WarnContext(ctx, "warn ctx")
+	assert.True(t, rec.Enabled(Debug))
+	assert.Contains(t, rec.Messages(), "debug msg")
+	assert.Contains(t, rec.Messages(), "warn msg")
+
+	// Nop methods
+	nop := Nop()
+	nop.Debug("dbg")
+	nop.Warn("wrn")
+	nop.DebugContext(ctx, "dbg ctx")
+	nop.InfoContext(ctx, "inf ctx")
+	nop.WarnContext(ctx, "wrn ctx")
+	childNop := nop.With(String("k", "v"))
+	childNop.Info("child")
+}
+

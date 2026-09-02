@@ -17,6 +17,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/fx/fxtest"
 	"librevita.org/pkg/ident"
 	_ "modernc.org/sqlite"
 
@@ -337,3 +338,88 @@ func (r *recordingSessionRepo) GetActive(context.Context, string, time.Time) (*S
 func (r *recordingSessionRepo) Delete(context.Context, string) error {
 	return nil
 }
+
+func TestSessionManagerRevocationAndPlatform(t *testing.T) {
+	client := openSessionTest(t)
+	seedUser(t, client, testUserID)
+	m := newManager(t, client, time.Hour)
+
+	// Platform setup
+	sessKV, err := kv.OpenBBolt(filepath.Join(t.TempDir(), "platform_sessions.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sessKV.Close() })
+	platformRepo := NewPlatformSessionRepository(sessKV, client)
+	m.SetPlatformRepository(platformRepo)
+
+	// 1. Clinic Revocation
+	token, err := m.Create(testCtx(), Principal{ID: testUserID, Email: "user@example.org", Name: "Test User", Role: RoleAdmin})
+	require.NoError(t, err)
+
+	require.NoError(t, m.Destroy(testCtx(), token))
+	_, err = m.Authenticate(testCtx(), token)
+	assert.Equal(t, ErrNoSession, err)
+
+	// 2. Platform session
+	pUserID := ident.New[ident.PlatformUserID]()
+	_, err = client.PlatformUser.Create().
+		SetID(pUserID).
+		SetEmail("apex_admin@librevita.org").
+		SetDisplayName("Apex Admin").
+		SetPasswordHash("hash").
+		Save(context.Background())
+	require.NoError(t, err)
+
+	apexCtx := clinicctx.WithApex(context.Background())
+	platformToken, err := m.Create(apexCtx, Principal{
+		ID:       pUserID.String(),
+		Email:    "apex_admin@librevita.org",
+		Name:     "Apex Admin",
+		Platform: true,
+	})
+	require.NoError(t, err)
+
+	pAuth, err := m.Authenticate(apexCtx, platformToken)
+	require.NoError(t, err)
+	assert.True(t, pAuth.Platform)
+	assert.Equal(t, "apex_admin@librevita.org", pAuth.Email)
+
+	// Cleanup expired
+	require.NoError(t, m.CleanupExpired(apexCtx))
+
+	// Destroy platform token
+	require.NoError(t, m.Destroy(apexCtx, platformToken))
+	_, err = m.Authenticate(apexCtx, platformToken)
+	assert.Equal(t, ErrNoSession, err)
+}
+
+func TestAuthModuleLifecycle(t *testing.T) {
+	client := openSessionTest(t)
+	lc := fxtest.NewLifecycle(t)
+	logger := log.Nop()
+	cfg := &config.Config{
+		Mode:    "development",
+		DataDir: t.TempDir(),
+		Sessions: config.KVConfig{
+			Backend: "bbolt",
+			BBolt: config.BBoltConfig{
+				Path: filepath.Join(t.TempDir(), "sessions.db"),
+			},
+		},
+	}
+
+	store, err := provideSessionStore(cfg, lc, logger)
+	require.NoError(t, err)
+
+	sessRepo := provideSessionRepository(store, client)
+	platRepo := providePlatformSessionRepository(store, client)
+	sessMgr, err := provideSessionManager(sessRepo, platRepo, cfg, logger)
+	require.NoError(t, err)
+
+	registerSessionCleaner(lc, sessMgr, logger)
+
+	require.NoError(t, lc.Start(context.Background()))
+	require.NoError(t, lc.Stop(context.Background()))
+	assert.NotNil(t, Module)
+}
+
+

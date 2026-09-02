@@ -119,3 +119,31 @@ func TestAuditLogAppendOnly(t *testing.T) {
 	_, err = db.Exec(`DELETE FROM audit_log`)
 	assert.Error(t, err, "DELETE on audit_log must be refused")
 }
+
+func TestForResourceAndPagination(t *testing.T) {
+	_, repo := openAuditTest(t)
+	l, err := audit.NewLogger(repo, log.Nop())
+	require.NoError(t, err)
+	ctx := context.Background()
+
+	l.Record(ctx, audit.Event{Action: "patient.view", Resource: "patient:10", Result: audit.AuditResultSuccess})
+	l.Record(ctx, audit.Event{Action: "patient.update", Resource: "patient:10", Result: audit.AuditResultSuccess})
+	l.Record(ctx, audit.Event{Action: "patient.view", Resource: "patient:20", Result: audit.AuditResultSuccess})
+
+	// 1. ForResource
+	res10, err := l.ForResource(ctx, "patient:10", 10)
+	require.NoError(t, err)
+	assert.Len(t, res10, 2)
+
+	// 2. Recent with limit <= 0 default
+	recentDefault, err := l.Recent(ctx, 0, 0)
+	require.NoError(t, err)
+	assert.Len(t, recentDefault, 3)
+
+	// 3. Recent with before cursor
+	beforeID := recentDefault[0].ID
+	recentPaged, err := l.Recent(ctx, 10, beforeID)
+	require.NoError(t, err)
+	assert.Len(t, recentPaged, 2)
+}
+

@@ -57,3 +57,21 @@ func TestBtnClass(t *testing.T) {
 		}
 	}
 }
+
+func TestInputAndCheckboxClass(t *testing.T) {
+	if got := InputClass(""); got != "input" {
+		t.Errorf("InputClass(\"\") = %q, want \"input\"", got)
+	}
+	if got := InputClass("border-red-500"); got != "input border-red-500" {
+		t.Errorf("InputClass(\"border-red-500\") = %q, want \"input border-red-500\"", got)
+	}
+
+	base := "h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 dark:border-gray-600 dark:bg-gray-700 dark:ring-offset-gray-800"
+	if got := CheckboxClass(""); got != base {
+		t.Errorf("CheckboxClass(\"\") = %q, want base", got)
+	}
+	if got := CheckboxClass("extra"); got != base+" extra" {
+		t.Errorf("CheckboxClass(\"extra\") = %q, want base extra", got)
+	}
+}
+

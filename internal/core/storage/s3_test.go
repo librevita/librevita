@@ -39,11 +39,27 @@ func fakeS3(t *testing.T, body string) (*httptest.Server, *S3) {
 			w.Header().Set("ETag", `"faketag"`)
 			w.WriteHeader(http.StatusOK)
 		case http.MethodGet:
+			if r.URL.Query().Has("list-type") || r.URL.Path == "/bucket/" || r.URL.Path == "/bucket" {
+				w.Header().Set("Content-Type", "application/xml")
+				_, _ = w.Write([]byte(`<?xml version="1.0" encoding="UTF-8"?><ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Name>bucket</Name><Prefix></Prefix><KeyCount>0</KeyCount><MaxKeys>1000</MaxKeys><IsTruncated>false</IsTruncated></ListBucketResult>`))
+				return
+			}
+			if strings.Contains(r.URL.Path, "missing.txt") {
+				w.Header().Set("Content-Type", "application/xml")
+				w.WriteHeader(http.StatusNotFound)
+				_, _ = w.Write([]byte(`<?xml version="1.0" encoding="UTF-8"?><Error><Code>NoSuchKey</Code><Message>The specified key does not exist.</Message></Error>`))
+				return
+			}
 			w.Header().Set("Content-Type", "text/plain")
 			w.Header().Set("ETag", `"faketag"`)
 			w.Header().Set("Last-Modified", "Mon, 10 Aug 2026 17:00:00 GMT")
 			_, _ = w.Write([]byte(body))
 		case http.MethodHead:
+			if strings.Contains(r.URL.Path, "missing.txt") {
+				w.Header().Set("Content-Type", "application/xml")
+				w.WriteHeader(http.StatusNotFound)
+				return
+			}
 			w.Header().Set("Content-Length", "5")
 			w.Header().Set("Content-Type", "text/plain")
 			w.Header().Set("ETag", `"faketag"`)
@@ -87,6 +103,10 @@ func TestS3PutGetStatDelete(t *testing.T) {
 
 	err = s.Delete(ctx, "patients/p1/doc.txt")
 	require.NoError(t, err)
+
+	// Missing object
+	_, err = s.Get(ctx, "patients/p1/missing.txt")
+	assert.Error(t, err)
 }
 
 // TestS3RejectsTraversal ensures key validation happens before any
@@ -103,4 +123,18 @@ func TestS3RejectsTraversal(t *testing.T) {
 	}
 }
 
+func TestS3VerifyAndList(t *testing.T) {
+	_, s := fakeS3(t, "")
+	ctx := context.Background()
+
+	// Verify bucket
+	require.NoError(t, s.Verify(ctx))
+
+	// Valid List
+	objs, err := s.List(ctx, "patients/p1")
+	require.NoError(t, err)
+	assert.Empty(t, objs)
+}
+
 var _ Store = (*S3)(nil)
+

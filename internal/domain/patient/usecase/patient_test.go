@@ -366,3 +366,185 @@ func TestAuthorizePatientEdit(t *testing.T) {
 	err = svc.AuthorizePatientEdit(ctx, other, pt.ID.String(), uuidStrPtrTest(pt.CreatedBy), pt.Status)
 	require.ErrorIs(t, err, usecase.ErrForbidden)
 }
+
+func TestPatientUsecaseAdditionalOperations(t *testing.T) {
+	repoMock, svc := setupPatientTest(t)
+	ctx := context.Background()
+	pID1 := ident.New[ident.PatientID]()
+	pID2 := ident.New[ident.PatientID]()
+
+	// 1. GetMany
+	repoMock.EXPECT().Get(ctx, testClinicID, pID1).Return(&patientmodel.Patient{ID: pID1, DisplayName: "P1"}, nil).Once()
+	repoMock.EXPECT().Get(ctx, testClinicID, pID2).Return(&patientmodel.Patient{ID: pID2, DisplayName: "P2"}, nil).Once()
+	many, err := svc.GetMany(ctx, testClinicID.String(), []string{pID1.String(), pID2.String()})
+	require.NoError(t, err)
+	assert.Len(t, many, 2)
+
+	// 2. Count
+	repoMock.EXPECT().Count(ctx, testClinicID).Return(42, nil).Once()
+	totalCount, err := svc.Count(ctx, testClinicID.String())
+	require.NoError(t, err)
+	assert.Equal(t, int64(42), totalCount)
+
+	// 3. SetStatus
+	repoMock.EXPECT().BulkSetStatus(ctx, testClinicID, []ident.PatientID{pID1}, patientmodel.PatientStatusInactive).Return(1, nil).Once()
+	require.NoError(t, svc.SetStatus(ctx, testClinicID.String(), pID1.String(), patientmodel.PatientStatusInactive))
+
+	// SetStatus not found
+	repoMock.EXPECT().BulkSetStatus(ctx, testClinicID, []ident.PatientID{pID1}, patientmodel.PatientStatusInactive).Return(0, nil).Once()
+	assert.ErrorIs(t, svc.SetStatus(ctx, testClinicID.String(), pID1.String(), patientmodel.PatientStatusInactive), usecase.ErrNotFound)
+
+	// 4. BulkSetStatus
+	assert.Equal(t, 0, func() int { c, _ := svc.BulkSetStatus(ctx, testClinicID.String(), nil, patientmodel.PatientStatusActive); return c }())
+	repoMock.EXPECT().BulkSetStatus(ctx, testClinicID, []ident.PatientID{pID1, pID2}, patientmodel.PatientStatusActive).Return(2, nil).Once()
+	bulkCount, err := svc.BulkSetStatus(ctx, testClinicID.String(), []string{pID1.String(), pID2.String()}, patientmodel.PatientStatusActive)
+	require.NoError(t, err)
+	assert.Equal(t, 2, bulkCount)
+
+	// 5. Delete unavailable
+	assert.Error(t, svc.Delete(ctx, testClinicID.String(), pID1.String()))
+
+	// 6. List and ListPage with filter
+	emailStr := "maria@example.org"
+	allPatients := []patientmodel.Patient{
+		{ID: pID1, DisplayName: "Maria Silva", Email: &emailStr, Status: patientmodel.PatientStatusActive},
+		{ID: pID2, DisplayName: "Joao Souza", Status: patientmodel.PatientStatusActive},
+	}
+	repoMock.EXPECT().ListByClinicAndStatus(ctx, testClinicID, (*patientmodel.PatientStatus)(nil)).Return(allPatients, nil).Times(3)
+
+	listAll, total, err := svc.List(ctx, testClinicID.String(), "", "", "", 10, 0)
+	require.NoError(t, err)
+	assert.Equal(t, int64(2), total)
+	assert.Len(t, listAll, 2)
+
+	// Filter by name
+	listFiltered, totalFiltered, err := svc.ListPage(ctx, testClinicID.String(), "maria", "name", "", 10, 0)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), totalFiltered)
+	assert.Len(t, listFiltered, 1)
+
+	// Filter by email
+	listEmail, totalEmail, err := svc.List(ctx, testClinicID.String(), "maria@", "", "email", 10, 0)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), totalEmail)
+	assert.Len(t, listEmail, 1)
+
+	_, err = svc.Create(ctx, "invalid-clinic-uuid", "", validInput())
+	assert.Error(t, err)
+}
+
+func TestUpdateAndAuthorizePatientEdit(t *testing.T) {
+	repoMock, svc := setupPatientTest(t)
+	ctx := context.Background()
+	pID := ident.New[ident.PatientID]()
+
+	// 1. GetWithCreator
+	creatorStr := "Dr. Creator"
+	creatorEmail := "creator@example.org"
+	repoMock.EXPECT().GetWithCreator(ctx, testClinicID, pID).Return(&patientmodel.GetPatientWithCreatorRow{
+		ID:           pID,
+		DisplayName:  "Maria Silva",
+		CreatorName:  &creatorStr,
+		CreatorEmail: &creatorEmail,
+	}, nil).Once()
+
+	row, err := svc.GetWithCreator(ctx, testClinicID.String(), pID.String())
+	require.NoError(t, err)
+	assert.Equal(t, "Maria Silva", row.DisplayName)
+
+	// 2. Update
+	existing := patientmodel.Patient{
+		ID:          pID,
+		ClinicID:    testClinicID,
+		DisplayName: "Maria Silva",
+		Status:      patientmodel.PatientStatusActive,
+	}
+	repoMock.EXPECT().Get(ctx, testClinicID, pID).Return(&existing, nil).Once()
+	repoMock.EXPECT().Update(ctx, mock.MatchedBy(func(p patientmodel.Patient) bool {
+		return p.ID == pID && p.DisplayName == "Maria Souza"
+	})).Return(&patientmodel.Patient{
+		ID:          pID,
+		ClinicID:    testClinicID,
+		DisplayName: "Maria Souza",
+		Status:      patientmodel.PatientStatusActive,
+	}, nil).Once()
+
+	updateInput := validInput()
+	updateInput.DisplayName = "Maria Souza"
+	updated, err := svc.Update(ctx, testClinicID.String(), pID.String(), updateInput)
+	require.NoError(t, err)
+	assert.Equal(t, "Maria Souza", updated.DisplayName)
+
+	// Update validation error
+	_, err = svc.Update(ctx, testClinicID.String(), pID.String(), usecase.PatientInput{})
+	assert.Error(t, err)
+
+	// Update invalid patient id
+	_, err = svc.Update(ctx, testClinicID.String(), "invalid-patient", updateInput)
+	assert.Error(t, err)
+
+	// 3. AuthorizePatientEdit
+		phys := &auth.Principal{ID: testUserID.String(), Role: auth.RolePhysician, ClinicID: testClinicID.String()}
+	createdByStr := testUserID.String()
+	require.NoError(t, svc.AuthorizePatientEdit(ctx, phys, pID.String(), &createdByStr, patientmodel.PatientStatusActive))
+}
+
+func TestPatientSetStatusAndCount(t *testing.T) {
+	repoMock, svc := setupPatientTest(t)
+	ctx := context.Background()
+	pID := ident.New[ident.PatientID]()
+
+	// 1. SetStatus success
+	repoMock.EXPECT().BulkSetStatus(ctx, testClinicID, []ident.PatientID{pID}, patientmodel.PatientStatusArchived).Return(1, nil).Once()
+	err := svc.SetStatus(ctx, testClinicID.String(), pID.String(), patientmodel.PatientStatusArchived)
+	require.NoError(t, err)
+
+	// 2. SetStatus not found
+	repoMock.EXPECT().BulkSetStatus(ctx, testClinicID, []ident.PatientID{pID}, patientmodel.PatientStatusArchived).Return(0, nil).Once()
+	err = svc.SetStatus(ctx, testClinicID.String(), pID.String(), patientmodel.PatientStatusArchived)
+	assert.ErrorIs(t, err, usecase.ErrNotFound)
+
+	// 3. SetStatus invalid IDs
+	assert.Error(t, svc.SetStatus(ctx, "invalid-clinic", pID.String(), patientmodel.PatientStatusArchived))
+	assert.Error(t, svc.SetStatus(ctx, testClinicID.String(), "invalid-patient", patientmodel.PatientStatusArchived))
+
+	// 4. BulkSetStatus empty ids
+	count, err := svc.BulkSetStatus(ctx, testClinicID.String(), nil, patientmodel.PatientStatusArchived)
+	require.NoError(t, err)
+	assert.Equal(t, 0, count)
+
+	// 5. BulkSetStatus with IDs
+	pID2 := ident.New[ident.PatientID]()
+	repoMock.EXPECT().BulkSetStatus(ctx, testClinicID, []ident.PatientID{pID, pID2}, patientmodel.PatientStatusActive).Return(2, nil).Once()
+	count, err = svc.BulkSetStatus(ctx, testClinicID.String(), []string{pID.String(), pID2.String()}, patientmodel.PatientStatusActive)
+	require.NoError(t, err)
+	assert.Equal(t, 2, count)
+
+	// 6. BulkSetStatus invalid ID
+	_, err = svc.BulkSetStatus(ctx, testClinicID.String(), []string{"bad-id"}, patientmodel.PatientStatusActive)
+	assert.Error(t, err)
+
+	// 7. Count
+	repoMock.EXPECT().Count(ctx, testClinicID).Return(42, nil).Once()
+	cnt, err := svc.Count(ctx, testClinicID.String())
+	require.NoError(t, err)
+	assert.Equal(t, int64(42), cnt)
+
+	// Count invalid clinic
+	_, err = svc.Count(ctx, "bad-clinic")
+	assert.Error(t, err)
+
+	// 8. ListPage
+	st := patientmodel.PatientStatusActive
+	repoMock.EXPECT().ListByClinicAndStatus(ctx, testClinicID, &st).Return([]patientmodel.Patient{
+		{ID: pID, DisplayName: "Ana Clara", Email: strPtr("ana@example.com")},
+	}, nil).Once()
+	list, total, err := svc.ListPage(ctx, testClinicID.String(), "Ana", "name", string(st), 10, 0)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), total)
+	assert.Len(t, list, 1)
+}
+
+func strPtr(s string) *string {
+	return &s
+}
