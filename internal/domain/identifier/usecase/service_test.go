@@ -708,8 +708,3 @@ func TestIdentifierDEKDecryptionAndSystemsAdmin(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, []string{"12345678909"}, byPatients[pID.String()])
 }
-
-
-
-
-

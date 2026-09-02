@@ -285,5 +285,3 @@ func TestStaffHTMXAndErrorBranches(t *testing.T) {
 	require.NoError(t, env.handler.StaffRequestChange(c))
 	assert.Equal(t, http.StatusBadRequest, rec.Code)
 }
-
-

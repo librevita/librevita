@@ -174,4 +174,3 @@ func TestAuthPagesAndSetupGate(t *testing.T) {
 	require.NoError(t, gate(dummyHandler)(c))
 	assert.True(t, handlerCalled)
 }
-

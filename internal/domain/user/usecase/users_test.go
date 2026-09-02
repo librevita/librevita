@@ -805,4 +805,3 @@ func TestUsersEdgeCasesAndValidation(t *testing.T) {
 	env.userRepo.EXPECT().SetSpecialties(ctx, uID, []ident.SpecialtyID{spID}).Return(nil).Once()
 	require.NoError(t, env.svc.SetUserSpecialties(ctx, cID.String(), uID.String(), []string{spID.String()}))
 }
-

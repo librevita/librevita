@@ -298,5 +298,3 @@ func TestIdentifierSystemErrors(t *testing.T) {
 	cyclic := getWithCookie(t, env.echo, "/identifier-systems/check-fields?check_algorithm=mod11_cyclic", cookie)
 	assert.Equal(t, http.StatusOK, cyclic.Code)
 }
-
-

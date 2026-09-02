@@ -762,5 +762,3 @@ func TestUserRepositoryQueriesAndStaffChanges(t *testing.T) {
 	_, err = roleRepo.Update(ctx, dupRole)
 	assert.ErrorIs(t, err, usermodel.ErrDuplicateRole)
 }
-
-

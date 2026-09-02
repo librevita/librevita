@@ -237,4 +237,3 @@ func TestGenericField(t *testing.T) {
 	assert.True(t, validator.NotIn("x", "a", "b", "c"))
 	assert.False(t, validator.NotIn("a", "a", "b", "c"))
 }
-

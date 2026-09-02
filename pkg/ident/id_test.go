@@ -181,5 +181,3 @@ func TestAllEntityIDTypes(t *testing.T) {
 		assert.Equal(t, raw, tc.val.String())
 	}
 }
-
-

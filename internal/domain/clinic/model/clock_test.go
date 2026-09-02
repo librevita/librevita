@@ -42,4 +42,3 @@ func TestClockNowAndFormatStored(t *testing.T) {
 	var nilClock *Clock
 	assert.Equal(t, time.UTC, nilClock.Zone())
 }
-

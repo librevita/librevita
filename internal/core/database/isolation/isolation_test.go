@@ -175,4 +175,3 @@ func TestIsolationEdgeCases(t *testing.T) {
 	err = client.Role.UpdateOneID(r1.ID).SetName("renamed").Exec(ctx2)
 	assert.Error(t, err) // Not found in clinic 2
 }
-

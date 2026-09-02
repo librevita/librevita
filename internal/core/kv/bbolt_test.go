@@ -113,7 +113,7 @@ func TestOpenBBoltBackend(t *testing.T) {
 	}
 	s, err := Open(cfg)
 	require.NoError(t, err)
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	ctx := context.Background()
 	require.NoError(t, s.Put(ctx, "k1", []byte("v1")))
@@ -134,7 +134,7 @@ func TestVaultStoreHelpers(t *testing.T) {
 func TestBBoltDelete(t *testing.T) {
 	s, err := OpenBBolt(filepath.Join(t.TempDir(), "delete.db"))
 	require.NoError(t, err)
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	ctx := context.Background()
 	require.NoError(t, s.Put(ctx, "key-to-delete", []byte("sensitive-payload")))
@@ -185,7 +185,7 @@ func TestBytesClone(t *testing.T) {
 func TestBBoltStoreCanceledContextAndEdgeCases(t *testing.T) {
 	s, err := OpenBBolt(filepath.Join(t.TempDir(), "cancel.db"))
 	require.NoError(t, err)
-	defer s.Close()
+	defer func() { _ = s.Close() }()
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()

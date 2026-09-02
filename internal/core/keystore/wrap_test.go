@@ -81,5 +81,3 @@ func TestNewKeyStoreFromConfigLifecycle(t *testing.T) {
 	_, err = OpenBBolt("")
 	assert.Error(t, err)
 }
-
-

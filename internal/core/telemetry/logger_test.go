@@ -121,4 +121,3 @@ func TestFxLoggerAndModule(t *testing.T) {
 	assert.NotNil(t, fxLog)
 	assert.NotNil(t, telemetry.Module)
 }
-

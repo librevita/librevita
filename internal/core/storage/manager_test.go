@@ -346,4 +346,3 @@ func TestStorageModuleConstructorsAndLifecycle(t *testing.T) {
 
 	require.NoError(t, m.Delete(ctx, meta.ID))
 }
-

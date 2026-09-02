@@ -104,4 +104,3 @@ func TestFieldConstructorsAndNopMethods(t *testing.T) {
 	childNop := nop.With(String("k", "v"))
 	childNop.Info("child")
 }
-

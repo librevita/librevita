@@ -95,7 +95,7 @@ func TestHostMiddlewareWithCrypto(t *testing.T) {
 
 	v, err := keystore.OpenBBolt(filepath.Join(t.TempDir(), "keystore.db"))
 	require.NoError(t, err)
-	defer v.Close()
+	defer func() { _ = v.Close() }()
 
 	engine, err := crypto.NewMasterKey("nAmIvOXVc0vb6M9G7P9q2j2yK1WxP3sJ8q5dR4tU6wA=", v) // gitleaks:allow
 	require.NoError(t, err)
@@ -124,4 +124,3 @@ func TestHostMiddlewareWithCrypto(t *testing.T) {
 	e.ServeHTTP(rec, req)
 	assert.Equal(t, http.StatusOK, rec.Code)
 }
-

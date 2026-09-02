@@ -277,7 +277,7 @@ func TestEpisodeNewPageAndEditPage(t *testing.T) {
 		ID: epID, ClinicID: clinicID, PatientID: patientID,
 		Type: episodemodel.EpisodeTypeConsultation, Status: episodemodel.EpisodeStatusDraft,
 		Class: episodemodel.CareSettingAmbulatory, OccurredAt: time.Now().UTC(),
-		SOAP:  episodemodel.SOAP{Subjective: "Queixa principal"},
+		SOAP: episodemodel.SOAP{Subjective: "Queixa principal"},
 	}
 	repo := &memRepo{byID: map[ident.EpisodeID]episodemodel.Episode{epID: ep}, patients: map[ident.PatientID]bool{patientID: true}}
 	auditRepo := auditmocks.NewMockRepository(t)
@@ -328,7 +328,7 @@ func TestEpisodeUpdateFinalizeAmend(t *testing.T) {
 		ID: epID, ClinicID: clinicID, PatientID: patientID,
 		Type: episodemodel.EpisodeTypeConsultation, Status: episodemodel.EpisodeStatusDraft,
 		Class: episodemodel.CareSettingAmbulatory, OccurredAt: time.Now().UTC(),
-		SOAP:  episodemodel.SOAP{Subjective: "Queixa inicial"},
+		SOAP: episodemodel.SOAP{Subjective: "Queixa inicial"},
 	}
 	repo := &memRepo{byID: map[ident.EpisodeID]episodemodel.Episode{epID: ep}, patients: map[ident.PatientID]bool{patientID: true}}
 	auditRepo := auditmocks.NewMockRepository(t)
@@ -406,7 +406,7 @@ func TestEpisodeHTTPValidationAndErrors(t *testing.T) {
 		ID: epID, ClinicID: clinicID, PatientID: patientID, AuthorID: authorID,
 		Status: episodemodel.EpisodeStatusFinalized, Type: episodemodel.EpisodeTypeConsultation,
 		Class: episodemodel.CareSettingAmbulatory, OccurredAt: time.Now().UTC(),
-		SOAP:  episodemodel.SOAP{Subjective: "Pronto"},
+		SOAP: episodemodel.SOAP{Subjective: "Pronto"},
 	}
 	repo := &memRepo{byID: map[ident.EpisodeID]episodemodel.Episode{epID: epFinalized}, patients: map[ident.PatientID]bool{patientID: true}}
 	auditRepo := auditmocks.NewMockRepository(t)
@@ -499,7 +499,7 @@ func TestEpisodeUpdateAddItemsAndAmendEdgeCases(t *testing.T) {
 		ID: epID, ClinicID: clinicID, PatientID: patientID, AuthorID: authorID,
 		Status: episodemodel.EpisodeStatusDraft, Type: episodemodel.EpisodeTypeConsultation,
 		Class: episodemodel.CareSettingAmbulatory, OccurredAt: time.Now().UTC(),
-		SOAP:  episodemodel.SOAP{Subjective: "Draft inicial"},
+		SOAP: episodemodel.SOAP{Subjective: "Draft inicial"},
 	}
 	repo := &memRepo{byID: map[ident.EpisodeID]episodemodel.Episode{epID: epDraft}, patients: map[ident.PatientID]bool{patientID: true}}
 	auditRepo := auditmocks.NewMockRepository(t)
@@ -575,7 +575,7 @@ func TestEpisodeFinalizeAndAmendFlow(t *testing.T) {
 		ID: finalID, ClinicID: clinicID, PatientID: patientID, AuthorID: authorID,
 		Status: episodemodel.EpisodeStatusFinalized, Type: episodemodel.EpisodeTypeConsultation,
 		Class: episodemodel.CareSettingAmbulatory, OccurredAt: time.Now().UTC(),
-		SOAP:  episodemodel.SOAP{Subjective: "Finalizado", Objective: "O", Assessment: "A", Plan: "P"},
+		SOAP: episodemodel.SOAP{Subjective: "Finalizado", Objective: "O", Assessment: "A", Plan: "P"},
 	}
 
 	draftID := ident.MustParseEpisode("01990000-0000-7000-8000-000000000031")
@@ -583,7 +583,7 @@ func TestEpisodeFinalizeAndAmendFlow(t *testing.T) {
 		ID: draftID, ClinicID: clinicID, PatientID: patientID, AuthorID: authorID,
 		Status: episodemodel.EpisodeStatusDraft, Type: episodemodel.EpisodeTypeConsultation,
 		Class: episodemodel.CareSettingAmbulatory, OccurredAt: time.Now().UTC(),
-		SOAP:  episodemodel.SOAP{Subjective: "Rascunho", Objective: "O", Assessment: "A", Plan: "P"},
+		SOAP: episodemodel.SOAP{Subjective: "Rascunho", Objective: "O", Assessment: "A", Plan: "P"},
 	}
 
 	repo := &memRepo{
@@ -640,4 +640,3 @@ func TestEpisodeFinalizeAndAmendFlow(t *testing.T) {
 	require.NoError(t, h.Update(c))
 	assert.Equal(t, http.StatusFound, rec.Code)
 }
-

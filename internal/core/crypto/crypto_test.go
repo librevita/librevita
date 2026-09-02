@@ -407,4 +407,3 @@ func TestCryptoModuleEdgeCases(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotNil(t, eDev)
 }
-

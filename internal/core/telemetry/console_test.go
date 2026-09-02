@@ -235,4 +235,3 @@ func TestZapLevelMapping(t *testing.T) {
 	assert.Equal(t, zapcore.ErrorLevel, zapLevel(log.ErrorLevel))
 	assert.Equal(t, zapcore.InfoLevel, zapLevel(log.Level(99)))
 }
-

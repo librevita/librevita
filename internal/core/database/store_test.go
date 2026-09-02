@@ -263,7 +263,7 @@ func TestWithTxRollbackOnErrorAndPanic(t *testing.T) {
 	}
 	store, err := NewStore(cfg, log.Nop())
 	require.NoError(t, err)
-	defer store.Close()
+	defer func() { _ = store.Close() }()
 
 	ctx := context.Background()
 	require.NoError(t, Migrate(ctx, store.SQL(), log.Nop()))
@@ -303,4 +303,3 @@ func TestGooseLoggerAndEnsureAuditTriggers(t *testing.T) {
 	nestedPath := filepath.Join(tmpDir, "nested", "sub", "db.sqlite")
 	assert.NoError(t, ensureParentDir(nestedPath))
 }
-
