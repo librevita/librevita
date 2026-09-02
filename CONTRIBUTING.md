@@ -16,7 +16,7 @@ fixes, features, documentation, and tests.
 ## First-time setup
 
 ```sh
-task gen        # Ent models, mocks, and templ views (needed for the editor)
+task gen        # Ent models, ident codecs, mocks, and templ views (needed for the editor)
 task all        # tests, vet, lint, audits, production binary, and OCI image
 ```
 
@@ -78,7 +78,7 @@ and applied at process start). To add a change:
 
 1. Edit the Ent schema
 2. Generate migrations: `task db-diff -- name=add_patient_model`
-3. Run `task gen` so the Ent client and templ views match
+3. Run `task gen` so the Ent client, ident codecs, and templ views match
 
 Do not hand-edit generated `ent/` output. There is no sqlc path.
 
