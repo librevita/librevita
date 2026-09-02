@@ -153,3 +153,35 @@ func TestApptGeometry(t *testing.T) {
 		assert.Equal(t, tc.height, apptHeight(tc.appt), "apptHeight(%s-%s)", tc.appt.Start, tc.appt.End)
 	}
 }
+
+func TestCalendarStyleAndHelpers(t *testing.T) {
+	appt := Appointment{
+		Physician: "Dr. Rafael Almeida",
+		Start:     "09:00",
+		End:       "09:45",
+		Patient:   "Ana Souza",
+		Status:    StatusConfirmed,
+	}
+
+	assert.Contains(t, apptStyle(appt, 8), "top:64px;height:48px")
+	assert.Equal(t, "'top:100px'", nowLineStyle(100))
+	assert.Contains(t, patientLineClass(appt), "truncate text-[10px]")
+
+	shortAppt := Appointment{
+		Physician: "Dr. Rafael Almeida",
+		Start:     "09:00",
+		End:       "09:15",
+	}
+	assert.Contains(t, patientLineClass(shortAppt), "hidden")
+
+	assert.Equal(t, "showChip('Dr. Rafael Almeida')", chipShowCall("Dr. Rafael Almeida"))
+
+	// Invalid times
+	_, ok := parseMinutes("invalid")
+	assert.False(t, ok)
+	_, _, ok = appointmentSlot("invalid")
+	assert.False(t, ok)
+	_, _, ok = appointmentSlot("25:99")
+	assert.False(t, ok)
+}
+

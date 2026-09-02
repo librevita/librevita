@@ -296,3 +296,180 @@ func TestFLE_UsesPatientDEKPerEntity(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "Paciente B", gotB.DisplayName)
 }
+
+func TestFLEHelperFunctions(t *testing.T) {
+	key := generateTestKey(t)
+	enc, err := crypto.NewClinicEncryptor(key)
+	require.NoError(t, err)
+
+	// 1. EncryptedPtrValueScanner
+	ptrScanner := fle.EncryptedStringPtr("test")
+	vNil, err := ptrScanner.Value(nil)
+	require.NoError(t, err)
+	assert.Nil(t, vNil)
+
+	strVal := "hello"
+	vStr, err := ptrScanner.Value(&strVal)
+	require.NoError(t, err)
+	assert.Equal(t, "hello", vStr)
+
+	fromNil, err := ptrScanner.FromValue(nil)
+	require.NoError(t, err)
+	assert.Nil(t, fromNil)
+
+	fromValid, err := ptrScanner.FromValue(&sql.NullString{String: "parsed", Valid: true})
+	require.NoError(t, err)
+	require.NotNil(t, fromValid)
+	assert.Equal(t, "parsed", *fromValid)
+
+	// 2. EncryptPayload / DecryptPayload
+	type testStruct struct {
+		Name string `json:"name"`
+		Age  int    `json:"age"`
+	}
+	src := testStruct{Name: "Alice", Age: 30}
+	aad := []byte("test-aad")
+
+	payloadBytes, err := fle.EncryptPayload(enc, src, aad)
+	require.NoError(t, err)
+
+	var dst testStruct
+	require.NoError(t, fle.DecryptPayload(enc, payloadBytes, aad, &dst))
+	assert.Equal(t, src, dst)
+
+	// Encrypt byte slice and string payload
+	bBytes, err := fle.EncryptPayload(enc, []byte("raw-bytes"), aad)
+	require.NoError(t, err)
+	assert.NotEmpty(t, bBytes)
+
+	sBytes, err := fle.EncryptPayload(enc, "raw-string", aad)
+	require.NoError(t, err)
+	assert.NotEmpty(t, sBytes)
+
+	// 3. EncryptString / DecryptString
+	emptyEnc, err := fle.EncryptString(enc, "", aad)
+	require.NoError(t, err)
+	assert.Nil(t, emptyEnc)
+
+	emptyDec, err := fle.DecryptString(enc, nil, aad)
+	require.NoError(t, err)
+	assert.Equal(t, "", emptyDec)
+
+	strEnc, err := fle.EncryptString(enc, "secret-text", aad)
+	require.NoError(t, err)
+	strDec, err := fle.DecryptString(enc, strEnc, aad)
+	require.NoError(t, err)
+	assert.Equal(t, "secret-text", strDec)
+
+	// Idempotent EncryptString when already ciphertext
+	strEncAgain, err := fle.EncryptString(enc, string(strEnc), aad)
+	require.NoError(t, err)
+	assert.Equal(t, strEnc, strEncAgain)
+
+	// DecryptString when not ciphertext (cleartext pass-through)
+	passThrough, err := fle.DecryptString(enc, []byte("not-ciphertext"), aad)
+	require.NoError(t, err)
+	assert.Equal(t, "not-ciphertext", passThrough)
+
+	// 4. EncryptStringPtr / DecryptStringPtr
+	ptrEnc, err := fle.EncryptStringPtr(enc, &strVal, aad)
+	require.NoError(t, err)
+	ptrDec, err := fle.DecryptStringPtr(enc, ptrEnc, aad)
+	require.NoError(t, err)
+	require.NotNil(t, ptrDec)
+	assert.Equal(t, strVal, *ptrDec)
+
+	nilPtrEnc, err := fle.EncryptStringPtr(enc, nil, aad)
+	require.NoError(t, err)
+	assert.Nil(t, nilPtrEnc)
+
+	nilPtrDec, err := fle.DecryptStringPtr(enc, nil, aad)
+	require.NoError(t, err)
+	assert.Nil(t, nilPtrDec)
+}
+
+func TestFLEAnnotations(t *testing.T) {
+	annEnc := fle.Encrypted("clinic")
+	assert.Equal(t, fle.AnnotationName, annEnc.Name())
+	assert.True(t, annEnc.Encrypted)
+	assert.False(t, annEnc.Searchable)
+	assert.Equal(t, "clinic", annEnc.Domain)
+
+	annSearch := fle.Searchable()
+	assert.True(t, annSearch.Searchable)
+	assert.Equal(t, "text", annSearch.Normalizer)
+
+	annPhone := fle.SearchablePhone("patient")
+	assert.Equal(t, "phone", annPhone.Normalizer)
+	assert.Equal(t, "patient", annPhone.Domain)
+
+	annEmail := fle.SearchableEmail()
+	assert.Equal(t, "email", annEmail.Normalizer)
+
+	annDoc := fle.SearchableDocument()
+	assert.Equal(t, "document", annDoc.Normalizer)
+
+	annName := fle.SearchableName()
+	assert.Equal(t, "name", annName.Normalizer)
+}
+
+func TestFLEContextFunctions(t *testing.T) {
+	ctx := context.Background()
+	clinicID := ident.New[ident.ClinicID]()
+	patientID := ident.New[ident.PatientID]()
+
+	// ClinicID
+	ctx = fle.WithClinicID(ctx, clinicID)
+	gotClinic, ok := fle.ClinicIDFromContext(ctx)
+	assert.True(t, ok)
+	assert.Equal(t, clinicID, gotClinic)
+
+	gotClinicUUID, ok := fle.ClinicUUIDFromContext(ctx)
+	assert.True(t, ok)
+	assert.Equal(t, clinicID, gotClinicUUID)
+
+	// PatientID
+	ctx = fle.WithPatientID(ctx, patientID)
+	gotPat, ok := fle.PatientIDFromContext(ctx)
+	assert.True(t, ok)
+	assert.Equal(t, patientID, gotPat)
+
+	// AAD
+	ctx = fle.WithAAD(ctx, []byte("custom-aad"))
+	assert.Equal(t, []byte("custom-aad"), fle.AADFromContext(ctx))
+	assert.Equal(t, []byte("custom-aad"), fle.ResolveAAD(ctx))
+
+	assert.NotEmpty(t, fle.ResolveEntityAAD(ctx, clinicID, patientID))
+	assert.NotEmpty(t, fle.ResolveMutationAAD(ctx, clinicID, patientID))
+
+	// SearchableField
+	ctx = fle.WithSearchableField(ctx, "phone", "5511999990000")
+	d, val, ok := fle.SearchableFieldFromContext(ctx)
+	assert.True(t, ok)
+	assert.Equal(t, "phone", d)
+	assert.Equal(t, "5511999990000", val)
+
+	// CleartextPayload
+	ctx = fle.WithCleartextPayload(ctx, "payload-data")
+	cp, ok := fle.CleartextPayloadFromContext(ctx)
+	assert.True(t, ok)
+	assert.Equal(t, "payload-data", cp)
+
+	// DecryptedRegistry
+	ctx = fle.WithDecryptedRegistry(ctx)
+	fle.StoreDecrypted(ctx, "key-1", []byte("decrypted-content"))
+	decBytes, ok := fle.GetDecrypted(ctx, "key-1")
+	assert.True(t, ok)
+	assert.Equal(t, []byte("decrypted-content"), decBytes)
+
+	type miniStruct struct {
+		Val string `json:"val"`
+	}
+	fle.StoreDecrypted(ctx, "key-2", []byte(`{"val":"hello"}`))
+	var target miniStruct
+	ok, err := fle.GetDecryptedInto(ctx, "key-2", &target)
+	require.NoError(t, err)
+	assert.True(t, ok)
+	assert.Equal(t, "hello", target.Val)
+}
+

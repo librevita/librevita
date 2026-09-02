@@ -2,6 +2,8 @@ package usecase_test
 
 import (
 	"context"
+	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -486,3 +488,321 @@ func TestSetUserSpecialtiesRejectsCrossClinic(t *testing.T) {
 	err := env.svc.SetUserSpecialties(ctx, testClinic.String(), staffID.String(), []string{otherSpecialtyID.String()})
 	require.ErrorIs(t, err, usecase.ErrSpecialtyScope)
 }
+
+func TestSpecialtiesAndStaffQueries(t *testing.T) {
+	env := newTestEnv(t)
+	ctx := context.Background()
+
+	// 1. Specialties
+	specID := ident.New[ident.SpecialtyID]()
+	env.specialtyRepo.EXPECT().ListByClinic(ctx, testClinic).Return([]usermodel.Specialty{
+		{ID: specID, Name: "Cardiologia"},
+	}, nil).Once()
+	specs, err := env.svc.ListSpecialties(ctx, testClinic.String())
+	require.NoError(t, err)
+	assert.Len(t, specs, 1)
+
+	env.specialtyRepo.EXPECT().Create(ctx, mock.Anything).Return(&usermodel.Specialty{
+		ID: specID, Name: "Dermatologia",
+	}, nil).Once()
+	createdSpec, err := env.svc.CreateSpecialty(ctx, testClinic.String(), "Dermatologia")
+	require.NoError(t, err)
+	assert.Equal(t, "Dermatologia", createdSpec.Name)
+
+	// Specialty name required / too long
+	_, err = env.svc.CreateSpecialty(ctx, testClinic.String(), "")
+	assert.Error(t, err)
+	_, err = env.svc.CreateSpecialty(ctx, testClinic.String(), strings.Repeat("a", 100))
+	assert.Error(t, err)
+
+	env.specialtyRepo.EXPECT().Delete(ctx, testClinic, specID).Return(nil).Once()
+	require.NoError(t, env.svc.DeleteSpecialty(ctx, testClinic.String(), specID.String()))
+
+	// 2. CountStaff
+	env.userRepo.EXPECT().CountStaff(ctx, mock.Anything).Return(int64(5), nil).Once()
+	count, err := env.svc.CountStaff(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, int64(5), count)
+
+	// 3. ListUsersPage
+	env.userRepo.EXPECT().ListPage(ctx, "Dr", 10, 0).Return([]usermodel.ListUsersRow{
+		{DisplayName: "Dr. Lima", Email: "lima@example.org"},
+	}, int64(1), nil).Once()
+	users, total, err := env.svc.ListUsersPage(ctx, "Dr", 10, 0)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), total)
+	assert.Len(t, users, 1)
+
+	// 4. SetRoleClinical
+	roleID := ident.New[ident.RoleID]()
+	env.roleRepo.EXPECT().GetByID(ctx, roleID).Return(&usermodel.Role{ID: roleID, Name: "Nurse", System: false}, nil).Once()
+	env.roleRepo.EXPECT().Update(ctx, mock.MatchedBy(func(r *usermodel.Role) bool {
+		return r.ID == roleID && r.IsClinical == true
+	})).Return(&usermodel.Role{ID: roleID, Name: "Nurse", IsClinical: true}, nil).Once()
+	require.NoError(t, env.svc.SetRoleClinical(ctx, roleID.String(), true))
+}
+
+func TestStaffChangeRequestsUsecase(t *testing.T) {
+	env := newTestEnv(t)
+	ctx := context.Background()
+
+	physicianID := ident.New[ident.UserID]()
+	requesterID := ident.New[ident.UserID]()
+	reqID := ident.New[ident.StaffChangeRequestID]()
+	specID := ident.New[ident.SpecialtyID]()
+
+	// 1. ListPhysiciansPage
+	env.userRepo.EXPECT().ListPhysiciansPage(ctx, 10, 0).Return([]usermodel.ListPhysiciansPageRow{
+		{ID: physicianID, DisplayName: "Dr. House", Email: "house@example.org"},
+	}, int64(1), nil).Once()
+	physicians, total, err := env.svc.ListPhysiciansPage(ctx, 10, 0)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), total)
+	assert.Len(t, physicians, 1)
+
+	// 2. CreateStaffChangeRequest
+	env.userRepo.EXPECT().GetByID(ctx, physicianID).Return(&usermodel.GetUserByIDRow{
+		ID: physicianID, DisplayName: "Dr. House", Email: "house@example.org",
+	}, nil).Once()
+	env.specialtyRepo.EXPECT().ListByUser(ctx, physicianID).Return([]usermodel.Specialty{
+		{ID: specID, Name: "Infectologia"},
+	}, nil).Once()
+	env.userRepo.EXPECT().GetByEmail(ctx, "gregory.house@example.org").Return(nil, usecase.ErrUserNotFound).Once()
+	env.staffReqRepo.EXPECT().Create(ctx, mock.Anything).Return(&usermodel.StaffChangeRequest{
+		ID: reqID, UserID: physicianID, RequestedBy: requesterID, Status: string(usecase.StaffRequestPending),
+	}, nil).Once()
+
+	change := usecase.StaffChange{
+		Name:        "Dr. Gregory House",
+		Email:       "gregory.house@example.org",
+		Specialties: []string{specID.String()},
+	}
+	createdReq, err := env.svc.CreateStaffChangeRequest(ctx, physicianID.String(), requesterID.String(), change)
+	require.NoError(t, err)
+	assert.Equal(t, reqID, createdReq.ID)
+
+	// Validation errors on CreateStaffChangeRequest
+	_, err = env.svc.CreateStaffChangeRequest(ctx, physicianID.String(), requesterID.String(), usecase.StaffChange{Name: ""})
+	assert.Error(t, err)
+	_, err = env.svc.CreateStaffChangeRequest(ctx, physicianID.String(), requesterID.String(), usecase.StaffChange{Name: "House", Email: "bad-email"})
+	assert.Error(t, err)
+
+	// 3. ListMyStaffChangeRequests & ListStaffChangeRequestsFiltered
+	env.staffReqRepo.EXPECT().ListByRequester(ctx, requesterID, 50).Return([]usermodel.ListStaffChangeRequestsByRequesterRow{
+		{ID: reqID, StaffName: "Dr. Gregory House"},
+	}, nil).Once()
+	myReqs, err := env.svc.ListMyStaffChangeRequests(ctx, requesterID.String())
+	require.NoError(t, err)
+	assert.Len(t, myReqs, 1)
+
+	env.staffReqRepo.EXPECT().ListFiltered(ctx, "pending", "", 10, 0).Return([]usermodel.ListStaffChangeRequestsFilteredRow{
+		{ID: reqID, StaffName: "Dr. Gregory House"},
+	}, int64(1), nil).Once()
+	filteredReqs, count, err := env.svc.ListStaffChangeRequestsFiltered(ctx, "pending", "", 10, 0)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), count)
+	assert.Len(t, filteredReqs, 1)
+
+	// 4. ApproveStaffChangeRequest
+	adminID := ident.New[ident.UserID]()
+	payload := `{"name":"Dr. Gregory House","email":"gregory.house@example.org","specialties":["` + specID.String() + `"]}`
+	env.staffReqRepo.EXPECT().GetByID(ctx, reqID).Return(&usermodel.StaffChangeRequest{
+		ID: reqID, UserID: physicianID, Changes: payload, Status: string(usecase.StaffRequestPending),
+	}, nil).Once()
+	env.userRepo.EXPECT().ApplyApprovedStaffChange(ctx, reqID, physicianID, adminID, "Dr. Gregory House", "gregory.house@example.org", []ident.SpecialtyID{specID}).Return(nil).Once()
+
+	err = env.svc.ApproveStaffChangeRequest(ctx, reqID.String(), adminID.String())
+	require.NoError(t, err)
+
+	// Approve non-pending fails
+	env.staffReqRepo.EXPECT().GetByID(ctx, reqID).Return(&usermodel.StaffChangeRequest{
+		ID: reqID, Status: string(usecase.StaffRequestApproved),
+	}, nil).Once()
+	err = env.svc.ApproveStaffChangeRequest(ctx, reqID.String(), adminID.String())
+	assert.ErrorIs(t, err, usecase.ErrRequestNotPending)
+
+	// 5. RejectStaffChangeRequest
+	env.staffReqRepo.EXPECT().GetByID(ctx, reqID).Return(&usermodel.StaffChangeRequest{
+		ID: reqID, Status: string(usecase.StaffRequestPending),
+	}, nil).Once()
+	env.staffReqRepo.EXPECT().Reject(ctx, reqID, adminID, "rejeitado").Return(nil).Once()
+	err = env.svc.RejectStaffChangeRequest(ctx, reqID.String(), adminID.String(), "rejeitado")
+	require.NoError(t, err)
+
+	// 6. RenameRole
+	roleID := ident.New[ident.RoleID]()
+	env.roleRepo.EXPECT().GetByID(ctx, roleID).Return(&usermodel.Role{
+		ID: roleID, Name: "Custom Role", System: false,
+	}, nil).Once()
+	env.roleRepo.EXPECT().Update(ctx, mock.Anything).Return(&usermodel.Role{
+		ID: roleID, Name: "Renamed Role", System: false,
+	}, nil).Once()
+	renamed, err := env.svc.RenameRole(ctx, roleID.String(), "Renamed Role")
+	require.NoError(t, err)
+	assert.Equal(t, "Renamed Role", renamed.Name)
+
+	// Rename system role fails
+	env.roleRepo.EXPECT().GetByID(ctx, roleID).Return(&usermodel.Role{
+		ID: roleID, Name: "Admin", System: true,
+	}, nil).Once()
+	_, err = env.svc.RenameRole(ctx, roleID.String(), "Super Admin")
+	assert.ErrorIs(t, err, usecase.ErrSystemRole)
+}
+
+func TestPreferencesAndCountStaff(t *testing.T) {
+	env := newTestEnv(t)
+	ctx := context.Background()
+	uID := ident.New[ident.UserID]()
+
+	// 1. CountStaff
+	env.userRepo.EXPECT().CountStaff(ctx, []string{"admin", "physician", "receptionist"}).Return(int64(5), nil).Once()
+	count, err := env.svc.CountStaff(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, int64(5), count)
+
+	// 2. UpdatePreferences success
+	env.userRepo.EXPECT().UpdatePreferences(ctx, uID, "America/Sao_Paulo", "dark").Return(nil).Once()
+	require.NoError(t, env.svc.UpdatePreferences(ctx, uID.String(), "America/Sao_Paulo", "dark"))
+
+	// 3. UpdatePreferences invalid timezone
+	err = env.svc.UpdatePreferences(ctx, uID.String(), "Invalid/Timezone", "dark")
+	assert.Error(t, err)
+
+	// 4. UpdatePreferences invalid user ID
+	err = env.svc.UpdatePreferences(ctx, "invalid-user-uuid", "UTC", "system")
+	assert.Error(t, err)
+}
+
+func TestUsersEdgeCasesAndValidation(t *testing.T) {
+	env := newTestEnv(t)
+	ctx := context.Background()
+
+	// 1. CreateUser invalid input
+	_, err := env.svc.CreateUser(ctx, usecase.CreateUserInput{
+		Name: "", Email: "invalid", Password: "short", Role: "physician",
+	})
+	assert.Error(t, err)
+
+	// 2. CreateUser unsupported role
+	env.roleRepo.EXPECT().GetByName(ctx, "non-existent-role").Return(nil, errors.New("not found")).Once()
+	_, err = env.svc.CreateUser(ctx, usecase.CreateUserInput{
+		Name: "Valid Name", Email: "valid@example.org", Password: "SecurePassword123!", Role: "non-existent-role",
+	})
+	assert.Error(t, err)
+
+	// 3. UpdateUser invalid input
+	_, err = env.svc.UpdateUser(ctx, "some-id", "actor-id", usecase.UpdateUserInput{
+		Name: "", Email: "invalid-email", Role: "physician", Active: true,
+	})
+	assert.Error(t, err)
+
+	// 4. UpdateUser unsupported role
+	env.roleRepo.EXPECT().GetByName(ctx, "fake-role").Return(nil, errors.New("not found")).Once()
+	_, err = env.svc.UpdateUser(ctx, "some-id", "actor-id", usecase.UpdateUserInput{
+		Name: "Valid Name", Email: "valid@example.org", Role: "fake-role", Active: true,
+	})
+	assert.Error(t, err)
+
+	// 5. UpdateUser invalid user ID
+	env.roleRepo.EXPECT().GetByName(ctx, "physician").Return(&usermodel.Role{Name: "physician"}, nil).Once()
+	_, err = env.svc.UpdateUser(ctx, "invalid-user-id", "actor-id", usecase.UpdateUserInput{
+		Name: "Valid Name", Email: "valid@example.org", Role: "physician", Active: true,
+	})
+	assert.Error(t, err)
+
+	// 6. GetUser
+	uID := ident.New[ident.UserID]()
+	env.userRepo.EXPECT().GetByID(ctx, uID).Return(&usermodel.GetUserByIDRow{
+		ID: uID, DisplayName: "Found User", Email: "found@example.org",
+	}, nil).Once()
+	u, err := env.svc.GetUser(ctx, uID.String())
+	require.NoError(t, err)
+	assert.Equal(t, "Found User", u.DisplayName)
+
+	// 7. Specialties usecase methods
+	cID := ident.New[ident.ClinicID]()
+	spID := ident.New[ident.SpecialtyID]()
+
+	// ListSpecialties invalid clinic
+	_, err = env.svc.ListSpecialties(ctx, "invalid-clinic-id")
+	assert.Error(t, err)
+
+	// ListSpecialties success
+	env.specialtyRepo.EXPECT().ListByClinic(ctx, cID).Return([]usermodel.Specialty{
+		{ID: spID, ClinicID: cID, Name: "Cardiology"},
+	}, nil).Once()
+	specs, err := env.svc.ListSpecialties(ctx, cID.String())
+	require.NoError(t, err)
+	assert.Len(t, specs, 1)
+
+	// ListSpecialtiesPage invalid clinic
+	_, _, err = env.svc.ListSpecialtiesPage(ctx, "invalid-clinic-id", 10, 0)
+	assert.Error(t, err)
+
+	// ListSpecialtiesPage success
+	env.specialtyRepo.EXPECT().ListPageByClinic(ctx, cID, 10, 0).Return([]usermodel.Specialty{
+		{ID: spID, ClinicID: cID, Name: "Cardiology"},
+	}, int64(1), nil).Once()
+	pagedSpecs, total, err := env.svc.ListSpecialtiesPage(ctx, cID.String(), 10, 0)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), total)
+	assert.Len(t, pagedSpecs, 1)
+
+	// CreateSpecialty validation errors
+	_, err = env.svc.CreateSpecialty(ctx, cID.String(), "")
+	assert.Error(t, err)
+	_, err = env.svc.CreateSpecialty(ctx, cID.String(), strings.Repeat("A", 65))
+	assert.Error(t, err)
+	_, err = env.svc.CreateSpecialty(ctx, "invalid-clinic", "Neurology")
+	assert.Error(t, err)
+
+	// CreateSpecialty success
+	env.specialtyRepo.EXPECT().Create(ctx, mock.MatchedBy(func(s *usermodel.Specialty) bool {
+		return s.Name == "Neurology" && s.ClinicID == cID
+	})).Return(&usermodel.Specialty{ID: spID, ClinicID: cID, Name: "Neurology"}, nil).Once()
+	createdSpec, err := env.svc.CreateSpecialty(ctx, cID.String(), "Neurology")
+	require.NoError(t, err)
+	assert.Equal(t, "Neurology", createdSpec.Name)
+
+	// DeleteSpecialty invalid IDs
+	err = env.svc.DeleteSpecialty(ctx, "invalid-clinic", spID.String())
+	assert.Error(t, err)
+	err = env.svc.DeleteSpecialty(ctx, cID.String(), "invalid-specialty")
+	assert.Error(t, err)
+
+	// DeleteSpecialty success
+	env.specialtyRepo.EXPECT().Delete(ctx, cID, spID).Return(nil).Once()
+	require.NoError(t, env.svc.DeleteSpecialty(ctx, cID.String(), spID.String()))
+
+	// UserSpecialties
+	_, err = env.svc.UserSpecialties(ctx, "invalid-user-id")
+	assert.Error(t, err)
+
+	env.specialtyRepo.EXPECT().ListByUser(ctx, uID).Return([]usermodel.Specialty{
+		{ID: spID, ClinicID: cID, Name: "Cardiology"},
+	}, nil).Once()
+	userSpecs, err := env.svc.UserSpecialties(ctx, uID.String())
+	require.NoError(t, err)
+	assert.Len(t, userSpecs, 1)
+
+	// SetUserSpecialties validation errors and success
+	err = env.svc.SetUserSpecialties(ctx, cID.String(), uID.String(), []string{"invalid-uuid"})
+	assert.Error(t, err)
+
+	err = env.svc.SetUserSpecialties(ctx, "invalid-clinic", uID.String(), []string{spID.String()})
+	assert.Error(t, err)
+
+	err = env.svc.SetUserSpecialties(ctx, cID.String(), "invalid-user", []string{spID.String()})
+	assert.Error(t, err)
+
+	// SetUserSpecialties scope check failure
+	env.specialtyRepo.EXPECT().CheckClinicScope(ctx, cID, []ident.SpecialtyID{spID}).Return(false, nil).Once()
+	err = env.svc.SetUserSpecialties(ctx, cID.String(), uID.String(), []string{spID.String()})
+	assert.ErrorIs(t, err, usecase.ErrSpecialtyScope)
+
+	// SetUserSpecialties success
+	env.specialtyRepo.EXPECT().CheckClinicScope(ctx, cID, []ident.SpecialtyID{spID}).Return(true, nil).Once()
+	env.userRepo.EXPECT().SetSpecialties(ctx, uID, []ident.SpecialtyID{spID}).Return(nil).Once()
+	require.NoError(t, env.svc.SetUserSpecialties(ctx, cID.String(), uID.String(), []string{spID.String()}))
+}
+

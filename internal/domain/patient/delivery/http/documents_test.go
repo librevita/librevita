@@ -143,6 +143,15 @@ func newDocEnvFull(t *testing.T, dir string) (*echo.Echo, *auth.SessionManager, 
 
 	e := echo.New()
 	e.Use(attachSeededClinic(masterKey, enc, hasher))
+	e.GET("/patients", h.List, server.RequireAuth(sessions, log))
+	e.GET("/patients/new", h.NewPage, server.RequireAuth(sessions, log))
+	e.POST("/patients", h.Create, server.RequireAuth(sessions, log))
+	e.GET("/patients/:id", h.Detail, server.RequireAuth(sessions, log))
+	e.GET("/patients/:id/edit", h.EditPage, server.RequireAuth(sessions, log))
+	e.POST("/patients/:id", h.Update, server.RequireAuth(sessions, log))
+	e.POST("/patients/:id/archive", h.Archive, server.RequireAuth(sessions, log))
+	e.POST("/patients/:id/restore", h.Restore, server.RequireAuth(sessions, log))
+	e.POST("/patients/bulk-archive", h.BulkArchive, server.RequireAuth(sessions, log))
 	e.POST("/patients/:id/documents", h.UploadDocument,
 		server.RequireAuth(sessions, log),
 		server.RequirePolicy(policies, auditLogger, log, "patient.document.write"))

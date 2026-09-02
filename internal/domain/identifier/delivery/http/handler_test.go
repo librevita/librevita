@@ -225,3 +225,78 @@ func TestIdentifierSystemsAdmin(t *testing.T) {
 	assert.Equal(t, http.StatusOK, none.Code)
 	assert.NotContains(t, none.Body.String(), "Start weight")
 }
+
+func TestIdentifierSystemUpdateAndHtmx(t *testing.T) {
+	env := newHTTPEnv(t)
+	cookie := adminSession(t, env.sessions)
+
+	systemID := ident.MustParseIdentifierSystem("01990000-0000-7000-8000-000000000055")
+	cedulaSystem := &identifiermodel.IdentifierSystem{
+		ID:          systemID,
+		System:      urn.Identifier("py", "cedula"),
+		DisplayName: "Cédula (Paraguay)",
+		Pattern:     "[0-9]{8}",
+		Active:      true,
+	}
+
+	// 1. Update success
+	env.systemsSvc.EXPECT().SystemByID(mock.Anything, systemID.String()).Return(cedulaSystem, nil).Once()
+	env.systemsSvc.EXPECT().Update(mock.Anything, systemID.String(), mock.Anything).Return(cedulaSystem, nil).Once()
+
+	rec := postForm(t, env.echo, "/identifier-systems/"+systemID.String(), cookie, url.Values{
+		"display_name":    {"Cédula Atualizada"},
+		"pattern":         {"[0-9]{8}"},
+		"transform":       {"digits"},
+		"check_algorithm": {"none"},
+	})
+	assert.Equal(t, http.StatusFound, rec.Code)
+
+	// 2. Update with validation error
+	env.systemsSvc.EXPECT().SystemByID(mock.Anything, systemID.String()).Return(cedulaSystem, nil).Once()
+	env.systemsSvc.EXPECT().Update(mock.Anything, systemID.String(), mock.Anything).Return(nil, &identifiermodel.ValidationError{Msg: "invalid pattern"}).Once()
+
+	badRec := postForm(t, env.echo, "/identifier-systems/"+systemID.String(), cookie, url.Values{
+		"display_name":    {"Cédula"},
+		"pattern":         {"["},
+		"transform":       {"digits"},
+		"check_algorithm": {"none"},
+	})
+	assert.Equal(t, http.StatusOK, badRec.Code)
+	assert.Contains(t, badRec.Body.String(), "invalid pattern")
+
+	// 3. HTMX Table list
+	env.systemsSvc.EXPECT().List(mock.Anything).Return([]*identifiermodel.IdentifierSystem{cedulaSystem}, nil).Once()
+	req := httptest.NewRequest(http.MethodGet, "/identifier-systems", nil)
+	req.Header.Set("HX-Request", "true")
+	req.AddCookie(cookie)
+	recHtmx := httptest.NewRecorder()
+	env.echo.ServeHTTP(recHtmx, req)
+	assert.Equal(t, http.StatusOK, recHtmx.Code)
+}
+
+func TestIdentifierSystemErrors(t *testing.T) {
+	env := newHTTPEnv(t)
+	cookie := adminSession(t, env.sessions)
+	missingID := ident.MustParseIdentifierSystem("01990000-0000-7000-8000-000000000099")
+
+	// 1. Invalid UUID
+	rec := postForm(t, env.echo, "/identifier-systems/invalid-uuid", cookie, url.Values{})
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+
+	rec = postForm(t, env.echo, "/identifier-systems/invalid-uuid/active", cookie, url.Values{})
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+
+	// 2. Missing system
+	env.systemsSvc.EXPECT().SystemByID(mock.Anything, missingID.String()).Return(nil, identifiermodel.ErrSystemNotFound).Twice()
+	rec = postForm(t, env.echo, "/identifier-systems/"+missingID.String(), cookie, url.Values{})
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+
+	rec = postForm(t, env.echo, "/identifier-systems/"+missingID.String()+"/active", cookie, url.Values{})
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+
+	// 3. Mod11 Cyclic check fields
+	cyclic := getWithCookie(t, env.echo, "/identifier-systems/check-fields?check_algorithm=mod11_cyclic", cookie)
+	assert.Equal(t, http.StatusOK, cyclic.Code)
+}
+
+

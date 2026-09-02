@@ -7,8 +7,11 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/fx/fxtest"
 
+	"librevita.org/internal/core/config"
 	"librevita.org/internal/core/kv"
+	"librevita.org/pkg/log"
 )
 
 func TestRepositoryRoundTrip(t *testing.T) {
@@ -31,3 +34,26 @@ func TestRepositoryRoundTrip(t *testing.T) {
 	_, err = repo.Get(ctx, "flag")
 	assert.ErrorIs(t, err, kv.ErrNotFound)
 }
+
+func TestNewRepositoryFromConfigLifecycle(t *testing.T) {
+	lc := fxtest.NewLifecycle(t)
+	logger := log.Nop()
+	cfg := &config.Config{
+		DataDir: t.TempDir(),
+		Meta: config.KVConfig{
+			Backend: "bbolt",
+			BBolt: config.BBoltConfig{
+				Path: "",
+			},
+		},
+	}
+
+	repo, err := NewRepositoryFromConfig(cfg, lc, logger)
+	require.NoError(t, err)
+	assert.NotNil(t, repo)
+
+	require.NoError(t, lc.Start(context.Background()))
+	require.NoError(t, lc.Stop(context.Background()))
+	assert.NotNil(t, Module)
+}
+

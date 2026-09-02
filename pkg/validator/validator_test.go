@@ -198,3 +198,43 @@ func TestValidatable(t *testing.T) {
 	assert.False(t, v3.Valid())
 	assert.Equal(t, "invalid field", v3.FieldError("nil_field"))
 }
+
+func TestBuilderBetweenMatchesInCustom(t *testing.T) {
+	v := validator.New()
+	v.Field("abc", "code").Between(2, 5)
+	v.Field("123", "pin").Matches(regexp.MustCompile(`^\d{3}$`))
+	v.Field("admin", "role").In([]string{"admin", "user"})
+	v.Field("valid", "custom").Custom(func(s string) bool { return len(s) == 5 }, validator.CodeCustom)
+	assert.True(t, v.Valid())
+
+	vFail := validator.New()
+	vFail.Field("a", "code").Between(3, 5)
+	vFail.Field("abc", "pin").Matches(regexp.MustCompile(`^\d{3}$`))
+	vFail.Field("super", "role").In([]string{"admin", "user"})
+	vFail.Field("invalid", "custom").Custom(func(s string) bool { return len(s) == 3 }, validator.CodeCustom)
+	assert.False(t, vFail.Valid())
+	assert.NotEmpty(t, vFail.FieldError("code"))
+	assert.NotEmpty(t, vFail.FieldError("pin"))
+	assert.NotEmpty(t, vFail.FieldError("role"))
+	assert.NotEmpty(t, vFail.FieldError("custom"))
+}
+
+func TestGenericField(t *testing.T) {
+	v := validator.New()
+	validator.FieldValue(v, 42, "number").In([]int{10, 20, 42})
+	validator.FieldValue(v, 100, "score").Custom(func(n int) bool { return n >= 50 }, validator.CodeCustom)
+	assert.True(t, v.Valid())
+
+	vFail := validator.New()
+	validator.FieldValue(vFail, 99, "number").In([]int{10, 20, 42})
+	validator.FieldValue(vFail, 30, "score").Custom(func(n int) bool { return n >= 50 }, validator.CodeCustom)
+	assert.False(t, vFail.Valid())
+	assert.NotEmpty(t, vFail.FieldError("number"))
+	assert.NotEmpty(t, vFail.FieldError("score"))
+
+	assert.True(t, validator.In("a", "a", "b", "c"))
+	assert.False(t, validator.In("x", "a", "b", "c"))
+	assert.True(t, validator.NotIn("x", "a", "b", "c"))
+	assert.False(t, validator.NotIn("a", "a", "b", "c"))
+}
+

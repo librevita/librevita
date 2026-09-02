@@ -7,8 +7,11 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/fx/fxtest"
 
+	"librevita.org/internal/core/config"
 	"librevita.org/internal/core/crypto"
+	"librevita.org/pkg/log"
 )
 
 func TestBBoltKeyStoreShreddingAndCreateIfAbsent(t *testing.T) {
@@ -44,7 +47,39 @@ func TestBBoltKeyStoreShreddingAndCreateIfAbsent(t *testing.T) {
 	require.NoError(t, ks.DeleteDEK(ctx, urn))
 	_, err = ks.GetDEK(ctx, urn)
 	assert.ErrorIs(t, err, crypto.ErrKeyDestroyed)
+
+	results, err = batch.GetDEKs(ctx, []string{urn})
+	require.NoError(t, err)
+	assert.ErrorIs(t, results[urn].Err, crypto.ErrKeyDestroyed)
+
 	created, err = conditional.PutIfAbsent(ctx, urn, payload)
 	assert.False(t, created)
 	assert.ErrorIs(t, err, crypto.ErrKeyDestroyed)
 }
+
+func TestNewKeyStoreFromConfigLifecycle(t *testing.T) {
+	lc := fxtest.NewLifecycle(t)
+	logger := log.Nop()
+	cfg := &config.Config{
+		DataDir: t.TempDir(),
+		Keystore: config.KVConfig{
+			Backend: "bbolt",
+			BBolt: config.BBoltConfig{
+				Path: "",
+			},
+		},
+	}
+
+	ks, err := NewKeyStoreFromConfig(cfg, lc, logger)
+	require.NoError(t, err)
+	assert.NotNil(t, ks)
+
+	require.NoError(t, lc.Start(context.Background()))
+	require.NoError(t, lc.Stop(context.Background()))
+	assert.NotNil(t, Module)
+
+	_, err = OpenBBolt("")
+	assert.Error(t, err)
+}
+
+

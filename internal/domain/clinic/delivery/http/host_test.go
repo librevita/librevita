@@ -3,6 +3,7 @@ package http_test
 import (
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"testing"
 
 	"github.com/labstack/echo/v4"
@@ -13,6 +14,9 @@ import (
 
 	"librevita.org/internal/core/clinicctx"
 	"librevita.org/internal/core/config"
+	"librevita.org/internal/core/crypto"
+	"librevita.org/internal/core/database/fle"
+	"librevita.org/internal/core/keystore"
 	clinichttp "librevita.org/internal/domain/clinic/delivery/http"
 	"librevita.org/internal/domain/clinic/model"
 	"librevita.org/pkg/log"
@@ -83,3 +87,41 @@ func TestHostMiddleware(t *testing.T) {
 		})
 	}
 }
+
+func TestHostMiddlewareWithCrypto(t *testing.T) {
+	logger := log.Nop()
+	cfg := &config.Config{BaseDomain: "lv.test"}
+	clinicID := ident.MustParseClinic("01990000-0000-7000-8000-0000000000a1")
+
+	v, err := keystore.OpenBBolt(filepath.Join(t.TempDir(), "keystore.db"))
+	require.NoError(t, err)
+	defer v.Close()
+
+	engine, err := crypto.NewMasterKey("nAmIvOXVc0vb6M9G7P9q2j2yK1WxP3sJ8q5dR4tU6wA=", v) // gitleaks:allow
+	require.NoError(t, err)
+
+	clinics := modelmocks.NewMockRepository(t)
+	clinics.EXPECT().GetBySlug(mock.Anything, "norte").Return(&model.Clinic{
+		ID: clinicID, Slug: "norte", Name: "Norte", Timezone: "America/Sao_Paulo",
+	}, nil).Once()
+
+	e := echo.New()
+	e.Pre(clinichttp.HostMiddleware(cfg, clinics, engine, logger))
+	e.GET("/", func(c echo.Context) error {
+		ctx := c.Request().Context()
+		enc, ok := fle.EncryptorFromContext(ctx)
+		require.True(t, ok)
+		require.NotNil(t, enc)
+		h, ok := fle.HasherFromContext(ctx)
+		require.True(t, ok)
+		require.NotNil(t, h)
+		return c.NoContent(http.StatusOK)
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	req.Host = "norte.lv.test"
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+	assert.Equal(t, http.StatusOK, rec.Code)
+}
+

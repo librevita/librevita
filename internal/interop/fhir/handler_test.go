@@ -334,3 +334,83 @@ func TestDocumentDoesNotAuditMissingEpisode(t *testing.T) {
 	require.NoError(t, h.Document(c))
 	assert.Equal(t, http.StatusNotFound, rec.Code)
 }
+
+func TestFHIREndpointsUnauthenticatedAndErrors(t *testing.T) {
+	ep := sampleEpisode()
+	auditRepo := auditmocks.NewMockRepository(t)
+	h, clinicID := viewTestHandler(t, auditRepo, ep)
+	e := echo.New()
+
+	// 1. Unauthenticated CreateBundle
+	req := httptest.NewRequest(http.MethodPost, "/fhir/r4/Bundle", strings.NewReader("{}"))
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+	require.NoError(t, h.CreateBundle(c))
+	assert.Equal(t, http.StatusUnauthorized, rec.Code)
+
+	// 2. Unauthenticated Document
+	req = httptest.NewRequest(http.MethodGet, "/fhir/r4/Composition/"+ep.ID.String()+"/$document", nil)
+	rec = httptest.NewRecorder()
+	c = e.NewContext(req, rec)
+	require.NoError(t, h.Document(c))
+	assert.Equal(t, http.StatusUnauthorized, rec.Code)
+
+	// 3. Unauthenticated GetEncounter
+	req = httptest.NewRequest(http.MethodGet, "/fhir/r4/Encounter/"+ep.ID.String(), nil)
+	rec = httptest.NewRecorder()
+	c = e.NewContext(req, rec)
+	require.NoError(t, h.GetEncounter(c))
+	assert.Equal(t, http.StatusUnauthorized, rec.Code)
+
+	// 4. Unauthenticated SearchEncounter
+	req = httptest.NewRequest(http.MethodGet, "/fhir/r4/Encounter?patient="+ep.PatientID.String(), nil)
+	rec = httptest.NewRecorder()
+	c = e.NewContext(req, rec)
+	require.NoError(t, h.SearchEncounter(c))
+	assert.Equal(t, http.StatusUnauthorized, rec.Code)
+
+	// 5. SearchEncounter missing patient query
+	cAuth, recAuth := physicianContext(e, http.MethodGet, "/fhir/r4/Encounter", clinicID)
+	require.NoError(t, h.SearchEncounter(cAuth))
+	assert.Equal(t, http.StatusBadRequest, recAuth.Code)
+
+	// 6. Invalid episode ID in Document
+	cAuth2, recAuth2 := physicianContext(e, http.MethodGet, "/fhir/r4/Composition/invalid-uuid/$document", clinicID)
+	cAuth2.SetParamNames("id")
+	cAuth2.SetParamValues("invalid-uuid")
+	require.NoError(t, h.Document(cAuth2))
+	assert.Equal(t, http.StatusBadRequest, recAuth2.Code)
+
+	// 7. Invalid encounter ID in GetEncounter
+	cAuth3, recAuth3 := physicianContext(e, http.MethodGet, "/fhir/r4/Encounter/invalid-uuid", clinicID)
+	cAuth3.SetParamNames("id")
+	cAuth3.SetParamValues("invalid-uuid")
+	require.NoError(t, h.GetEncounter(cAuth3))
+	assert.Equal(t, http.StatusBadRequest, recAuth3.Code)
+
+	// 8. SearchEncounter invalid patient UUID
+	cAuth4, recAuth4 := physicianContext(e, http.MethodGet, "/fhir/r4/Encounter?patient=invalid-uuid", clinicID)
+	require.NoError(t, h.SearchEncounter(cAuth4))
+	assert.Equal(t, http.StatusBadRequest, recAuth4.Code)
+
+	// 9. Check all fhirError error mappings
+	for _, tc := range []struct {
+		err  error
+		code int
+	}{
+		{episodemodel.ErrForbidden, http.StatusForbidden},
+		{episodemodel.ErrNotDraft, http.StatusConflict},
+		{episodemodel.ErrNotFinalized, http.StatusConflict},
+		{episodemodel.ErrAlreadyAmended, http.StatusConflict},
+		{episodemodel.ErrInvalidSOAP, http.StatusBadRequest},
+		{episodemodel.ErrPatientGone, http.StatusNotFound},
+	} {
+		w := httptest.NewRecorder()
+		c := e.NewContext(req, w)
+		require.NoError(t, h.fhirError(c, tc.err))
+		assert.Equal(t, tc.code, w.Code)
+	}
+}
+
+
+

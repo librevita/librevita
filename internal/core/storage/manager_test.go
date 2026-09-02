@@ -2,6 +2,7 @@ package storage
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"os"
 	"path/filepath"
@@ -12,7 +13,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/fx/fxtest"
 
+	"librevita.org/internal/core/config"
 	"librevita.org/internal/core/crypto"
 	"librevita.org/pkg/log"
 )
@@ -299,3 +302,48 @@ func TestFileManagerGetForResource(t *testing.T) {
 	_, _, err = m.OpenForResource(ctx, "patient_document", other, meta.ID)
 	assert.True(t, IsNotFound(err))
 }
+
+func TestStorageModuleConstructorsAndLifecycle(t *testing.T) {
+	logger := log.Nop()
+	tmpDir := t.TempDir()
+
+	// 1. NewStore Local
+	localCfg := &config.Config{
+		DataDir: tmpDir,
+		Storage: config.StorageConfig{Backend: BackendLocal},
+	}
+	st, err := NewStore(localCfg, logger)
+	require.NoError(t, err)
+	assert.NotNil(t, st)
+
+	// 2. NewStore Invalid Backend
+	badCfg := &config.Config{
+		Storage: config.StorageConfig{Backend: "unsupported_storage"},
+	}
+	_, err = NewStore(badCfg, logger)
+	assert.Error(t, err)
+
+	// 3. Lifecycle and Reconciler registration
+	lc := fxtest.NewLifecycle(t)
+	registerLifecycle(lc, st, logger)
+
+	m, _ := testManager(t)
+	registerReconciler(lc, m, logger)
+
+	require.NoError(t, lc.Start(context.Background()))
+	require.NoError(t, lc.Stop(context.Background()))
+	assert.NotNil(t, Module)
+
+	// 4. OpenForResource and DeleteForResource happy path
+	ctx := storageCtx()
+	meta, err := m.Upload(ctx, uploadInput(), strings.NewReader("content"), 7)
+	require.NoError(t, err)
+
+	resMeta, obj, err := m.OpenForResource(ctx, "patient_document", testResource, meta.ID)
+	require.NoError(t, err)
+	assert.Equal(t, meta.ID, resMeta.ID)
+	obj.Data.Close()
+
+	require.NoError(t, m.Delete(ctx, meta.ID))
+}
+
