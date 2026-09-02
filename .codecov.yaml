@@ -38,6 +38,9 @@ ignore:
   # Generated Templ templates
   - '**/*_templ.go'
 
+  # Generated ident UUID codecs
+  - 'pkg/ident/codec_gen.go'
+
   # Unit and integration test files
   - '**/*_test.go'
 

@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"librevita.org/pkg/ident"
 
 	"librevita.org/internal/core/audit"
 	"librevita.org/internal/core/auth"
@@ -82,7 +83,7 @@ func validInput() usecase.RegisterInput {
 
 func TestRegisterCreatesPatient(t *testing.T) {
 	env := newTestEnv(t)
-	patientRoleID := uuid.MustParse("01990000-0000-7000-8000-000000000001")
+	patientRoleID := ident.MustParseRole("01990000-0000-7000-8000-000000000001")
 
 	env.roleRepo.EXPECT().GetByName(mock.Anything, "patient").Return(&usermodel.Role{
 		ID:   patientRoleID,
@@ -94,7 +95,7 @@ func TestRegisterCreatesPatient(t *testing.T) {
 		createdUser = u
 		return u, nil
 	}).Once()
-	env.userRepo.EXPECT().BindPortalPatient(mock.Anything, mock.Anything, uuid.MustParse("01990000-0000-7000-8000-0000000000aa")).Return(nil).Once()
+	env.userRepo.EXPECT().BindPortalPatient(mock.Anything, mock.Anything, ident.MustParsePatient("01990000-0000-7000-8000-0000000000aa")).Return(nil).Once()
 
 	env.sessionRepo.EXPECT().Create(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
 
@@ -109,7 +110,7 @@ func TestRegisterCreatesPatient(t *testing.T) {
 
 func TestRegisterSecondUserBecomesPatient(t *testing.T) {
 	env := newTestEnv(t)
-	patientRoleID := uuid.MustParse("01990000-0000-7000-8000-000000000001")
+	patientRoleID := ident.MustParseRole("01990000-0000-7000-8000-000000000001")
 
 	env.roleRepo.EXPECT().GetByName(mock.Anything, "patient").Return(&usermodel.Role{
 		ID:   patientRoleID,
@@ -158,7 +159,7 @@ func TestRegisterValidation(t *testing.T) {
 
 func TestLoginSuccess(t *testing.T) {
 	env := newTestEnv(t)
-	userID := uuid.MustParse("01990000-0000-7000-8000-000000000010")
+	userID := ident.MustParseUser("01990000-0000-7000-8000-000000000010")
 	hash, err := auth.HashPassword("password-123")
 	require.NoError(t, err)
 
@@ -171,7 +172,7 @@ func TestLoginSuccess(t *testing.T) {
 		Active:       true,
 	}, nil).Once()
 
-	env.sessionRepo.EXPECT().Create(mock.Anything, mock.Anything, userID, mock.Anything).Return(nil).Once()
+	env.sessionRepo.EXPECT().Create(mock.Anything, mock.Anything, userID.UUID(), mock.Anything).Return(nil).Once()
 
 	p, token, err := env.svc.Login(context.Background(), usecase.Credentials{
 		Email:    "ANA@example.org", // Case insensitive
@@ -184,7 +185,7 @@ func TestLoginSuccess(t *testing.T) {
 
 func TestLoginWrongPassword(t *testing.T) {
 	env := newTestEnv(t)
-	userID := uuid.MustParse("01990000-0000-7000-8000-000000000010")
+	userID := ident.MustParseUser("01990000-0000-7000-8000-000000000010")
 	hash, err := auth.HashPassword("password-123")
 	require.NoError(t, err)
 
@@ -235,7 +236,7 @@ func TestLogout(t *testing.T) {
 
 func TestConcurrentRegistrationsProduceOnlyPatients(t *testing.T) {
 	env := newTestEnv(t)
-	patientRoleID := uuid.MustParse("01990000-0000-7000-8000-000000000001")
+	patientRoleID := ident.MustParseRole("01990000-0000-7000-8000-000000000001")
 
 	env.roleRepo.EXPECT().GetByName(mock.Anything, "patient").Return(&usermodel.Role{
 		ID:   patientRoleID,
@@ -271,7 +272,7 @@ func TestConcurrentRegistrationsProduceOnlyPatients(t *testing.T) {
 
 func TestDuplicateEmailMapsToDomainError(t *testing.T) {
 	env := newTestEnv(t)
-	patientRoleID := uuid.MustParse("01990000-0000-7000-8000-000000000001")
+	patientRoleID := ident.MustParseRole("01990000-0000-7000-8000-000000000001")
 
 	env.roleRepo.EXPECT().GetByName(mock.Anything, "patient").Return(&usermodel.Role{
 		ID:   patientRoleID,
@@ -288,14 +289,14 @@ func TestDuplicateEmailMapsToDomainError(t *testing.T) {
 
 func TestRegisterUsesUUIDv7ID(t *testing.T) {
 	env := newTestEnv(t)
-	patientRoleID := uuid.MustParse("01990000-0000-7000-8000-000000000001")
+	patientRoleID := ident.MustParseRole("01990000-0000-7000-8000-000000000001")
 
 	env.roleRepo.EXPECT().GetByName(mock.Anything, "patient").Return(&usermodel.Role{
 		ID:   patientRoleID,
 		Name: "patient",
 	}, nil).Once()
 
-	var createdID uuid.UUID
+	var createdID ident.UserID
 	env.userRepo.EXPECT().Create(mock.Anything, mock.Anything).RunAndReturn(func(ctx context.Context, u *usermodel.User) (*usermodel.User, error) {
 		createdID = u.ID
 		return u, nil
@@ -306,7 +307,7 @@ func TestRegisterUsesUUIDv7ID(t *testing.T) {
 
 	p, _, err := env.svc.Register(context.Background(), validInput())
 	require.NoError(t, err)
-	assert.Equal(t, 7, int(createdID.Version()))
+	assert.Equal(t, 7, int(createdID.UUID().Version()))
 	assert.Equal(t, createdID.String(), p.ID)
 }
 
@@ -326,10 +327,10 @@ func TestIsOnboarded(t *testing.T) {
 
 func TestOnboardCreatesAdmin(t *testing.T) {
 	env := newTestEnv(t)
-	adminUserID := uuid.MustParse("01990000-0000-7000-8000-000000000003")
+	adminUserID := ident.MustParseUser("01990000-0000-7000-8000-000000000003")
 	ctx := clinicctx.WithTestClinic(context.Background())
 
-	env.setupRepo.EXPECT().Onboard(mock.Anything, mock.Anything, mock.Anything).RunAndReturn(func(ctx context.Context, adminUser *usermodel.User, systemIDs []uuid.UUID) (*usermodel.User, error) {
+	env.setupRepo.EXPECT().Onboard(mock.Anything, mock.Anything, mock.Anything).RunAndReturn(func(ctx context.Context, adminUser *usermodel.User, systemIDs []ident.IdentifierSystemID) (*usermodel.User, error) {
 		adminUser.ID = adminUserID
 		adminUser.RoleName = "admin"
 		return adminUser, nil
@@ -362,7 +363,7 @@ func TestConcurrentOnboardSingleWinner(t *testing.T) {
 	var setupMu sync.Mutex
 	setupDone := false
 
-	env.setupRepo.EXPECT().Onboard(mock.Anything, mock.Anything, mock.Anything).RunAndReturn(func(ctx context.Context, u *usermodel.User, systemIDs []uuid.UUID) (*usermodel.User, error) {
+	env.setupRepo.EXPECT().Onboard(mock.Anything, mock.Anything, mock.Anything).RunAndReturn(func(ctx context.Context, u *usermodel.User, systemIDs []ident.IdentifierSystemID) (*usermodel.User, error) {
 		setupMu.Lock()
 		defer setupMu.Unlock()
 		if setupDone {

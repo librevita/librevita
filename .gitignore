@@ -63,3 +63,6 @@ ent/
 
 # Generated mocks
 tests/mocks
+
+# Generated ident UUID codecs (source of truth: pkg/ident/types.go)
+pkg/ident/codec_gen.go

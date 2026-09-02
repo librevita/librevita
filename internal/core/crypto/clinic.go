@@ -4,15 +4,15 @@ import (
 	"context"
 
 	"github.com/cockroachdb/errors"
-	"github.com/google/uuid"
 
+	"librevita.org/pkg/ident"
 	"librevita.org/pkg/urn"
 )
 
 // EnsureClinicDEK returns the clinic DEK, creating and wrapping it with the
 // installation KEK if it does not exist yet. A destroyed key is terminal and
 // is never recreated.
-func (e *Engine) EnsureClinicDEK(ctx context.Context, clinicID uuid.UUID) ([]byte, error) {
+func (e *Engine) EnsureClinicDEK(ctx context.Context, clinicID ident.ClinicID) ([]byte, error) {
 	dek, err := e.GetClinicDEK(ctx, clinicID)
 	if err == nil {
 		return dek, nil
@@ -33,7 +33,7 @@ func (e *Engine) EnsureClinicDEK(ctx context.Context, clinicID uuid.UUID) ([]byt
 }
 
 // GetClinicDEK unwraps the clinic DEK with the installation KEK.
-func (e *Engine) GetClinicDEK(ctx context.Context, clinicID uuid.UUID) ([]byte, error) {
+func (e *Engine) GetClinicDEK(ctx context.Context, clinicID ident.ClinicID) ([]byte, error) {
 	key := urn.Clinic(clinicID)
 	return e.cachedDEK(ctx, key, func() ([]byte, error) {
 		encDEK, err := e.keystore.GetDEK(ctx, key)
@@ -46,7 +46,7 @@ func (e *Engine) GetClinicDEK(ctx context.Context, clinicID uuid.UUID) ([]byte, 
 
 // DeleteClinicDEK removes the clinic DEK from the keystore (crypto-shred of the
 // clinic). Patient DEKs wrapped by it become unreadable.
-func (e *Engine) DeleteClinicDEK(ctx context.Context, clinicID uuid.UUID) error {
+func (e *Engine) DeleteClinicDEK(ctx context.Context, clinicID ident.ClinicID) error {
 	err := e.keystore.DeleteDEK(ctx, urn.Clinic(clinicID))
 	if err == nil {
 		ClearRequestKeyCache(ctx)
@@ -54,10 +54,10 @@ func (e *Engine) DeleteClinicDEK(ctx context.Context, clinicID uuid.UUID) error 
 	return err
 }
 
-func clinicIDFromURN(clinicURN string) (uuid.UUID, error) {
+func clinicIDFromURN(clinicURN string) (ident.ClinicID, error) {
 	clinicID, ok := urn.ParseClinic(clinicURN)
 	if !ok {
-		return uuid.Nil, errors.Newf("crypto: invalid clinic urn %q", clinicURN)
+		return ident.ClinicID{}, errors.Newf("crypto: invalid clinic urn %q", clinicURN)
 	}
 	return clinicID, nil
 }
@@ -103,12 +103,12 @@ func (e *Engine) EnsureClinicDEKForURN(ctx context.Context, clinicURN string) ([
 // SetupPatientDEKForClinic generates a patient DEK and wraps it with the
 // clinic DEK. The operation is idempotent when another request wins the
 // create-if-absent race.
-func (e *Engine) SetupPatientDEKForClinic(ctx context.Context, clinicID, patientID uuid.UUID) ([]byte, error) {
+func (e *Engine) SetupPatientDEKForClinic(ctx context.Context, clinicID ident.ClinicID, patientID ident.PatientID) ([]byte, error) {
 	return e.EnsurePatientDEKForClinic(ctx, clinicID, patientID)
 }
 
 // GetPatientDEKForClinic unwraps the patient DEK with the clinic DEK.
-func (e *Engine) GetPatientDEKForClinic(ctx context.Context, clinicID, patientID uuid.UUID) ([]byte, error) {
+func (e *Engine) GetPatientDEKForClinic(ctx context.Context, clinicID ident.ClinicID, patientID ident.PatientID) ([]byte, error) {
 	clinicDEK, err := e.GetClinicDEK(ctx, clinicID)
 	if err != nil {
 		return nil, err
@@ -128,8 +128,8 @@ func (e *Engine) GetPatientDEKForClinic(ctx context.Context, clinicID, patientID
 // GetPatientDEKsForClinic retrieves and unwraps each requested patient DEK
 // once. Missing patient keys are omitted from the result; terminal or backend
 // errors abort the batch.
-func (e *Engine) GetPatientDEKsForClinic(ctx context.Context, clinicID uuid.UUID, patientIDs []uuid.UUID) (map[uuid.UUID][]byte, error) {
-	result := make(map[uuid.UUID][]byte, len(patientIDs))
+func (e *Engine) GetPatientDEKsForClinic(ctx context.Context, clinicID ident.ClinicID, patientIDs []ident.PatientID) (map[ident.PatientID][]byte, error) {
+	result := make(map[ident.PatientID][]byte, len(patientIDs))
 	if len(patientIDs) == 0 {
 		return result, nil
 	}
@@ -158,9 +158,9 @@ func (e *Engine) GetPatientDEKsForClinic(ctx context.Context, clinicID uuid.UUID
 	return result, nil
 }
 
-func (e *Engine) collectCachedPatientDEKs(ctx context.Context, clinicID uuid.UUID, patientIDs []uuid.UUID, result map[uuid.UUID][]byte) ([]string, map[string]uuid.UUID) {
+func (e *Engine) collectCachedPatientDEKs(ctx context.Context, clinicID ident.ClinicID, patientIDs []ident.PatientID, result map[ident.PatientID][]byte) ([]string, map[string]ident.PatientID) {
 	urns := make([]string, 0, len(patientIDs))
-	idsByURN := make(map[string]uuid.UUID, len(patientIDs))
+	idsByURN := make(map[string]ident.PatientID, len(patientIDs))
 	for _, patientID := range patientIDs {
 		key := urn.Patient(clinicID, patientID)
 		if _, exists := idsByURN[key]; exists {
@@ -175,7 +175,7 @@ func (e *Engine) collectCachedPatientDEKs(ctx context.Context, clinicID uuid.UUI
 	return urns, idsByURN
 }
 
-func (e *Engine) takeCachedPatientDEK(ctx context.Context, urn string, patientID uuid.UUID, result map[uuid.UUID][]byte) bool {
+func (e *Engine) takeCachedPatientDEK(ctx context.Context, urn string, patientID ident.PatientID, result map[ident.PatientID][]byte) bool {
 	cache := requestCacheFromContext(ctx)
 	if cache == nil {
 		return false
@@ -190,7 +190,7 @@ func (e *Engine) takeCachedPatientDEK(ctx context.Context, urn string, patientID
 	return false
 }
 
-func (e *Engine) unwrapMissingPatientDEKs(ctx context.Context, clinicDEK []byte, urns []string, idsByURN map[string]uuid.UUID, wrapped map[string]DEKResult, result map[uuid.UUID][]byte) error {
+func (e *Engine) unwrapMissingPatientDEKs(ctx context.Context, clinicDEK []byte, urns []string, idsByURN map[string]ident.PatientID, wrapped map[string]DEKResult, result map[ident.PatientID][]byte) error {
 	for _, urn := range urns {
 		item := wrapped[urn]
 		if errors.Is(item.Err, ErrKeyNotFound) {
@@ -215,7 +215,7 @@ func (e *Engine) unwrapMissingPatientDEKs(ctx context.Context, clinicDEK []byte,
 
 // EnsurePatientDEKForClinic returns the existing patient DEK or creates one.
 // It never recreates a key that the keystore has marked as destroyed.
-func (e *Engine) EnsurePatientDEKForClinic(ctx context.Context, clinicID, patientID uuid.UUID) ([]byte, error) {
+func (e *Engine) EnsurePatientDEKForClinic(ctx context.Context, clinicID ident.ClinicID, patientID ident.PatientID) ([]byte, error) {
 	clinicDEK, err := e.EnsureClinicDEK(ctx, clinicID)
 	if err != nil {
 		return nil, err
@@ -249,7 +249,7 @@ func (e *Engine) EnsurePatientDEKForClinic(ctx context.Context, clinicID, patien
 
 // DeletePatientDEKForClinic removes the patient DEK and leaves a terminal
 // tombstone in the keystore so future reads cannot recreate it.
-func (e *Engine) DeletePatientDEKForClinic(ctx context.Context, clinicID, patientID uuid.UUID) error {
+func (e *Engine) DeletePatientDEKForClinic(ctx context.Context, clinicID ident.ClinicID, patientID ident.PatientID) error {
 	key := urn.Patient(clinicID, patientID)
 	err := e.keystore.DeleteDEK(ctx, key)
 	if err == nil {
@@ -260,7 +260,7 @@ func (e *Engine) DeletePatientDEKForClinic(ctx context.Context, clinicID, patien
 
 // ResolvePatientEncryptor creates an Encryptor backed by the patient's DEK.
 // The unwrapped DEK is zeroed after the Encryptor has copied it.
-func (e *Engine) ResolvePatientEncryptor(ctx context.Context, clinicID, patientID uuid.UUID) (Encryptor, error) {
+func (e *Engine) ResolvePatientEncryptor(ctx context.Context, clinicID ident.ClinicID, patientID ident.PatientID) (Encryptor, error) {
 	dek, err := e.GetPatientDEKForClinic(ctx, clinicID, patientID)
 	if err != nil {
 		return nil, err
@@ -307,7 +307,7 @@ func uniqueStrings(values []string) []string {
 	return out
 }
 
-func zeroDEKMap(deks map[uuid.UUID][]byte) {
+func zeroDEKMap(deks map[ident.PatientID][]byte) {
 	for _, dek := range deks {
 		ZeroBytes(dek)
 	}

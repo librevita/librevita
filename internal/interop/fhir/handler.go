@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/cockroachdb/errors"
-	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 
 	"librevita.org/internal/core/audit"
@@ -16,6 +15,7 @@ import (
 	"librevita.org/internal/core/server"
 	episodemodel "librevita.org/internal/domain/episode/model"
 	"librevita.org/internal/domain/episode/usecase"
+	"librevita.org/pkg/ident"
 	"librevita.org/pkg/log"
 )
 
@@ -55,7 +55,7 @@ func (h *Handler) CreateBundle(c echo.Context) error {
 	if err != nil {
 		return writeOutcome(c, http.StatusBadRequest, "error", "invalid", err.Error())
 	}
-	authorID, err := uuid.Parse(principal.ID)
+	authorID, err := ident.ParseUser(principal.ID)
 	if err != nil {
 		return writeOutcome(c, http.StatusInternalServerError, "fatal", "exception", "invalid principal id")
 	}
@@ -68,7 +68,7 @@ func (h *Handler) CreateBundle(c echo.Context) error {
 	ctx := c.Request().Context()
 	var saved *usecase.Episode
 	action := "chart.create"
-	if ep.ID == uuid.Nil {
+	if ep.ID.IsZero() {
 		saved, err = h.svc.Create(ctx, principal, *ep)
 	} else {
 		saved, err = h.svc.UpdateDraft(ctx, principal, *ep)
@@ -140,7 +140,7 @@ func (h *Handler) SearchEncounter(c echo.Context) error {
 	if err != nil {
 		return writeOutcome(c, http.StatusBadRequest, "error", "invalid", err.Error())
 	}
-	patientID, err := uuid.Parse(strings.TrimPrefix(c.QueryParam("patient"), "Patient/"))
+	patientID, err := ident.ParsePatient(strings.TrimPrefix(c.QueryParam("patient"), "Patient/"))
 	if err != nil {
 		return writeOutcome(c, http.StatusBadRequest, "error", "invalid", "patient query parameter is required")
 	}
@@ -202,12 +202,12 @@ func (h *Handler) loadEpisode(c echo.Context, rawID string) (*usecase.Episode, e
 		_ = writeOutcome(c, http.StatusBadRequest, "error", "invalid", err.Error())
 		return nil, nil
 	}
-	id, err := uuid.Parse(rawID)
+	episodeID, err := ident.ParseEpisode(rawID)
 	if err != nil {
 		_ = writeOutcome(c, http.StatusBadRequest, "error", "invalid", "invalid id")
 		return nil, nil
 	}
-	ep, err := h.svc.Get(c.Request().Context(), principal, clinicID, id)
+	ep, err := h.svc.Get(c.Request().Context(), principal, clinicID, episodeID)
 	if err != nil {
 		_ = h.fhirError(c, err)
 		return nil, nil

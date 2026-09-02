@@ -19,10 +19,10 @@ import (
 	"github.com/cockroachdb/errors"
 	"github.com/google/cel-go/cel"
 	"github.com/google/cel-go/common/types"
-	"github.com/google/uuid"
 
 	"librevita.org/internal/core/auth"
 	"librevita.org/internal/core/clinicctx"
+	"librevita.org/pkg/ident"
 	"librevita.org/pkg/log"
 )
 
@@ -145,7 +145,7 @@ type Repository interface {
 type PolicyEngine struct {
 	env   *cel.Env
 	mu    sync.RWMutex
-	progs map[uuid.UUID]map[string]cel.Program
+	progs map[ident.ClinicID]map[string]cel.Program
 	repo  Repository
 	log   log.Logger
 
@@ -186,7 +186,7 @@ func NewPolicyEngine(repo Repository, logger log.Logger) (*PolicyEngine, error) 
 
 	return &PolicyEngine{
 		env:   env,
-		progs: make(map[uuid.UUID]map[string]cel.Program),
+		progs: make(map[ident.ClinicID]map[string]cel.Program),
 		repo:  repo,
 		log:   logger,
 	}, nil
@@ -203,7 +203,7 @@ func (pe *PolicyEngine) Load(ctx context.Context) error {
 	return pe.loadClinic(ctx, id)
 }
 
-func (pe *PolicyEngine) loadClinic(ctx context.Context, id uuid.UUID) error {
+func (pe *PolicyEngine) loadClinic(ctx context.Context, clinicID ident.ClinicID) error {
 	if err := pe.repo.SeedDefaults(ctx, DefaultPolicies); err != nil {
 		return err
 	}
@@ -220,36 +220,33 @@ func (pe *PolicyEngine) loadClinic(ctx context.Context, id uuid.UUID) error {
 		compiled[row.Name] = prog
 	}
 	pe.mu.Lock()
-	pe.progs[id] = compiled
+	pe.progs[clinicID] = compiled
 	pe.mu.Unlock()
 	pe.log.InfoContext(ctx, "policies loaded",
-		log.Stringer("clinic_id", id),
+		log.Stringer("clinic_id", clinicID),
 		log.Int("count", len(compiled)),
 	)
 	return nil
 }
 
-func (pe *PolicyEngine) ensureLoaded(ctx context.Context) (uuid.UUID, error) {
-	id, ok := clinicctx.ClinicID(ctx)
-	if !ok {
-		id = uuid.Nil
-	}
+func (pe *PolicyEngine) ensureLoaded(ctx context.Context) (ident.ClinicID, error) {
+	clinicID, _ := clinicctx.ClinicID(ctx)
 	pe.mu.RLock()
-	_, loaded := pe.progs[id]
+	_, loaded := pe.progs[clinicID]
 	pe.mu.RUnlock()
 	if loaded {
-		return id, nil
+		return clinicID, nil
 	}
-	if id == uuid.Nil {
-		return id, pe.compileDefaults(id)
+	if clinicID.IsZero() {
+		return clinicID, pe.compileDefaults(clinicID)
 	}
-	if err := pe.loadClinic(ctx, id); err != nil {
-		return uuid.Nil, err
+	if err := pe.loadClinic(ctx, clinicID); err != nil {
+		return ident.ClinicID{}, err
 	}
-	return id, nil
+	return clinicID, nil
 }
 
-func (pe *PolicyEngine) compileDefaults(id uuid.UUID) error {
+func (pe *PolicyEngine) compileDefaults(clinicID ident.ClinicID) error {
 	compiled := make(map[string]cel.Program, len(DefaultPolicies))
 	for name, expr := range DefaultPolicies {
 		prog, err := pe.compile(name, expr)
@@ -259,7 +256,7 @@ func (pe *PolicyEngine) compileDefaults(id uuid.UUID) error {
 		compiled[name] = prog
 	}
 	pe.mu.Lock()
-	pe.progs[id] = compiled
+	pe.progs[clinicID] = compiled
 	pe.mu.Unlock()
 	return nil
 }
@@ -294,15 +291,12 @@ func (pe *PolicyEngine) Set(ctx context.Context, name, expression string, actor 
 		return err
 	}
 
-	id, ok := clinicctx.ClinicID(ctx)
-	if !ok {
-		id = uuid.Nil
-	}
+	clinicID, _ := clinicctx.ClinicID(ctx)
 	pe.mu.Lock()
-	if pe.progs[id] == nil {
-		pe.progs[id] = make(map[string]cel.Program)
+	if pe.progs[clinicID] == nil {
+		pe.progs[clinicID] = make(map[string]cel.Program)
 	}
-	pe.progs[id][name] = prog
+	pe.progs[clinicID][name] = prog
 	pe.mu.Unlock()
 	return nil
 }

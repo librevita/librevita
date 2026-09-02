@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 
 	episodemodel "librevita.org/internal/domain/episode/model"
+	"librevita.org/pkg/ident"
 )
 
 // DocumentContext is optional display data for outbound mapping.
@@ -259,18 +260,18 @@ func episodeFromResources(r *bundleResources) *episodemodel.Episode {
 }
 
 func applyBundleIDs(ep *episodemodel.Episode, r *bundleResources) {
-	if id, ok := parseUUID(r.comp.ID); ok {
-		ep.ID = id
-	} else if id, ok := parseUUID(r.enc.ID); ok {
-		ep.ID = id
+	if u, ok := parseUUID(r.comp.ID); ok {
+		ep.ID = ident.EpisodeID(u)
+	} else if u, ok := parseUUID(r.enc.ID); ok {
+		ep.ID = ident.EpisodeID(u)
 	}
 	if pid, ok := parseTypedRef(r.enc.Subject, "Patient"); ok {
-		ep.PatientID = pid
+		ep.PatientID = ident.PatientID(pid)
 	} else if pid, ok := parseTypedRef(r.comp.Subject, "Patient"); ok {
-		ep.PatientID = pid
+		ep.PatientID = ident.PatientID(pid)
 	}
 	if aid, ok := parseTypedRef(firstAuthor(r.comp, r.enc), "Practitioner"); ok {
-		ep.AuthorID = aid
+		ep.AuthorID = ident.UserID(aid)
 	}
 	if pred := predecessorFromRelatesTo(r.comp.RelatesTo); pred != nil {
 		ep.PredecessorID = pred
@@ -391,8 +392,8 @@ func findingFromObservation(o Observation) episodemodel.Finding {
 		Code:   conceptToCoding(o.Code),
 		Status: domainFindingStatus(o.Status),
 	}
-	if id, ok := parseUUID(o.ID); ok {
-		f.ID = id
+	if u, ok := parseUUID(o.ID); ok {
+		f.ID = ident.FindingID(u)
 	}
 	if t, ok := parseTime(o.EffectiveDateTime); ok {
 		f.EffectiveAt = t
@@ -446,8 +447,8 @@ func problemFromCondition(c Condition) episodemodel.Problem {
 		Category:           episodemodel.ProblemCategoryEncounter,
 		Rank:               1,
 	}
-	if id, ok := parseUUID(c.ID); ok {
-		p.ID = id
+	if u, ok := parseUUID(c.ID); ok {
+		p.ID = ident.ProblemID(u)
 	}
 	if c.Code != nil {
 		p.Code = conceptToCoding(*c.Code)
@@ -786,16 +787,18 @@ func episodeTypeFrom(types []CodeableConcept) (episodemodel.EpisodeType, bool) {
 	return "", false
 }
 
-func predecessorFromRelatesTo(rels []CompositionRelatesTo) *uuid.UUID {
+func predecessorFromRelatesTo(rels []CompositionRelatesTo) *ident.EpisodeID {
 	for _, r := range rels {
 		if r.Code != "replaces" {
 			continue
 		}
-		if id, ok := parseTypedRef(r.Target, "Composition"); ok {
-			return &id
+		if u, ok := parseTypedRef(r.Target, "Composition"); ok {
+			eid := ident.EpisodeID(u)
+			return &eid
 		}
-		if id, ok := parseTypedRef(r.Target, "Encounter"); ok {
-			return &id
+		if u, ok := parseTypedRef(r.Target, "Encounter"); ok {
+			eid := ident.EpisodeID(u)
+			return &eid
 		}
 	}
 	return nil

@@ -6,12 +6,11 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/google/uuid"
-
 	"librevita.org/ent"
 	"librevita.org/ent/role"
 	"librevita.org/internal/core/clinicctx"
 	"librevita.org/internal/core/database"
+	"librevita.org/pkg/ident"
 )
 
 // SeedInitialData seeds default identifier systems using Ent ORM.
@@ -46,10 +45,10 @@ func slugify(name string) string {
 
 // Clinic seeds a clinic row with the onboarding defaults (BR,
 // America/Sao_Paulo) so callers only provide the identifying fields.
-func Clinic(ctx context.Context, client *ent.Client, id, name, taxID string) error {
+func Clinic(ctx context.Context, client *ent.Client, clinicID, name, taxID string) error {
 	ctx = clinicctx.WithSkipIsolation(ctx)
 	create := client.Clinic.Create().
-		SetID(uuid.MustParse(id)).
+		SetID(ident.MustParseClinic(clinicID)).
 		SetSlug(slugify(name)).
 		SetName(name).
 		SetCountry("BR").
@@ -68,7 +67,7 @@ func Clinic(ctx context.Context, client *ent.Client, id, name, taxID string) err
 	if err != nil {
 		return err
 	}
-	clinicUUID := uuid.MustParse(id)
+	clinicUUID := ident.MustParseClinic(clinicID)
 	for _, sys := range systems {
 		if _, err := client.ClinicIdentifierSystem.Create().
 			SetClinicID(clinicUUID).
@@ -82,7 +81,7 @@ func Clinic(ctx context.Context, client *ent.Client, id, name, taxID string) err
 
 // User seeds an account with the given role name in the first clinic
 // (creating a test clinic and role when missing).
-func User(ctx context.Context, client *ent.Client, id, email, roleName, passwordHash string) error {
+func User(ctx context.Context, client *ent.Client, userID, email, roleName, passwordHash string) error {
 	ctx = clinicctx.WithSkipIsolation(ctx)
 	_ = database.SeedInitialData(ctx, client)
 
@@ -115,7 +114,7 @@ func User(ctx context.Context, client *ent.Client, id, email, roleName, password
 		}
 	}
 	_, err = client.User.Create().
-		SetID(uuid.MustParse(id)).
+		SetID(ident.MustParseUser(userID)).
 		SetClinicID(row.ID).
 		SetEmail(email).
 		SetPasswordHash(passwordHash).

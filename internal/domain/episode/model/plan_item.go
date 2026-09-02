@@ -3,15 +3,15 @@ package model
 import (
 	"time"
 
-	"github.com/google/uuid"
+	"librevita.org/pkg/ident"
 )
 
 // PlanItem is a structured plan activity belonging to an Episode.
 type PlanItem struct {
-	ID          uuid.UUID
-	ClinicID    uuid.UUID
-	PatientID   uuid.UUID
-	EpisodeID   uuid.UUID
+	ID          ident.PlanItemID
+	ClinicID    ident.ClinicID
+	PatientID   ident.PatientID
+	EpisodeID   ident.EpisodeID
 	Kind        PlanItemKind
 	Code        Coding
 	Description string

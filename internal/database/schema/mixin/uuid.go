@@ -1,32 +1,29 @@
 package mixin
 
 import (
-	"fmt"
+	"database/sql/driver"
 
 	"entgo.io/ent"
 	"entgo.io/ent/schema/field"
 	"entgo.io/ent/schema/mixin"
-	"github.com/google/uuid"
+
+	"librevita.org/pkg/ident"
 )
 
-// UUID defines the standard UUIDv7 primary key for entities.
-type UUID struct {
+// UUID defines the UUIDv7 primary key for an entity as defined type T.
+type UUID[T interface {
+	~[16]byte
+	driver.Valuer
+}] struct {
 	mixin.Schema
 }
 
 // Fields of the UUID mixin.
-func (UUID) Fields() []ent.Field {
+func (UUID[T]) Fields() []ent.Field {
+	var zero T
 	return []ent.Field{
-		field.UUID("id", uuid.UUID{}).
-			Default(newUUIDv7).
+		field.UUID("id", zero).
+			Default(ident.New[T]).
 			Immutable(),
 	}
-}
-
-func newUUIDv7() uuid.UUID {
-	id, err := uuid.NewV7()
-	if err != nil {
-		panic(fmt.Sprintf("failed to generate UUIDv7: %v", err))
-	}
-	return id
 }

@@ -41,10 +41,11 @@ import (
 	patientrepo "librevita.org/internal/domain/patient/repository"
 	"librevita.org/internal/domain/patient/usecase"
 	"librevita.org/internal/testutil"
+	"librevita.org/pkg/ident"
 	"librevita.org/pkg/log"
 )
 
-var testAdminID = uuid.MustParse("01990000-0000-7000-8000-00000000000a")
+var testAdminID = ident.MustParseUser("01990000-0000-7000-8000-00000000000a")
 
 // newIdentifierServices wires the identifier subsystem against a
 // migrated database: a fixed master key, the registry seeded from the
@@ -120,7 +121,7 @@ func newDocEnvFull(t *testing.T, dir string) (*echo.Echo, *auth.SessionManager, 
 	if err != nil {
 		t.Fatal(err)
 	}
-	clinicID := uuid.MustParse(testClinic)
+	clinicID := ident.MustParseClinic(testClinic)
 	clinicDEK, err := masterKey.EnsureClinicDEK(context.Background(), clinicID)
 	if err != nil {
 		t.Fatal(err)
@@ -184,9 +185,9 @@ func mustLocalStore(t *testing.T) storage.Store {
 
 func adminSession(t *testing.T, sessions *auth.SessionManager) *http.Cookie {
 	t.Helper()
-	id := uuid.MustParse(testClinic)
+	clinicID := ident.MustParseClinic(testClinic)
 	ctx := clinicctx.WithClinic(context.Background(), &clinicctx.Clinic{
-		ID:       id,
+		ID:       clinicID,
 		Slug:     "test-clinic",
 		Name:     "Test Clinic",
 		Timezone: "America/Sao_Paulo",
@@ -200,7 +201,7 @@ func adminSession(t *testing.T, sessions *auth.SessionManager) *http.Cookie {
 	return sessions.Cookie(token)
 }
 
-func newPatient(t *testing.T, svc *usecase.Service, clinicID string) uuid.UUID {
+func newPatient(t *testing.T, svc *usecase.Service, clinicID string) ident.PatientID {
 	t.Helper()
 	pt, err := svc.Create(context.Background(), clinicID, testAdminID.String(), usecase.PatientInput{
 		DisplayName: "Ana Souza",
@@ -243,7 +244,7 @@ func TestDocumentsUploadDownloadIDOR(t *testing.T) {
 		t.Fatalf("upload status = %d, want 302", rec.Code)
 	}
 
-	meta, err := files.List(context.Background(), "patient_document", patientID)
+	meta, err := files.List(context.Background(), "patient_document", patientID.UUID())
 	if err != nil || len(meta) != 1 {
 		t.Fatalf("index after upload = %v, %v; want 1 file", meta, err)
 	}
@@ -307,7 +308,7 @@ func TestDocumentsShredRemovesBlobAndPatient(t *testing.T) {
 	e.ServeHTTP(rec, req)
 	require.Equal(t, http.StatusFound, rec.Code)
 
-	filesBefore, err := files.List(context.Background(), "patient_document", patientID)
+	filesBefore, err := files.List(context.Background(), "patient_document", patientID.UUID())
 	require.NoError(t, err)
 	require.Len(t, filesBefore, 1)
 
@@ -317,7 +318,7 @@ func TestDocumentsShredRemovesBlobAndPatient(t *testing.T) {
 	e.ServeHTTP(shredRec, shred)
 	require.Equal(t, http.StatusFound, shredRec.Code)
 
-	filesAfter, err := files.List(context.Background(), "patient_document", patientID)
+	filesAfter, err := files.List(context.Background(), "patient_document", patientID.UUID())
 	require.NoError(t, err)
 	assert.Empty(t, filesAfter)
 	_, err = svc.Get(context.Background(), "01990000-0000-7000-8000-0000000000d0", patientID.String())
@@ -351,7 +352,7 @@ func TestDocumentsDownloadDetectsTampering(t *testing.T) {
 		t.Fatalf("upload status = %d, want 302", rec.Code)
 	}
 
-	meta, err := files.List(context.Background(), "patient_document", patientID)
+	meta, err := files.List(context.Background(), "patient_document", patientID.UUID())
 	if err != nil || len(meta) != 1 {
 		t.Fatalf("index after upload = %v, %v; want 1 file", meta, err)
 	}

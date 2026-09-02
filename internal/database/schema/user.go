@@ -5,9 +5,9 @@ import (
 	"entgo.io/ent/schema/edge"
 	"entgo.io/ent/schema/field"
 	"entgo.io/ent/schema/index"
-	"github.com/google/uuid"
 
 	"librevita.org/internal/database/schema/mixin"
+	"librevita.org/pkg/ident"
 )
 
 // User holds the schema definition for the User entity.
@@ -18,7 +18,7 @@ type User struct {
 // Mixin of the User.
 func (User) Mixin() []ent.Mixin {
 	return []ent.Mixin{
-		mixin.UUID{},
+		mixin.UUID[ident.UserID]{},
 		mixin.Clinic{},
 		mixin.Time{},
 	}
@@ -37,7 +37,7 @@ func (User) Fields() []ent.Field {
 		field.String("display_name").
 			NotEmpty().
 			Comment("User full display name"),
-		field.UUID("role_id", uuid.UUID{}).
+		field.UUID("role_id", ident.RoleID{}).
 			Comment("Assigned Role ID"),
 		field.Bool("active").
 			Default(true).

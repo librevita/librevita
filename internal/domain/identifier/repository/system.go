@@ -5,11 +5,11 @@ import (
 	"time"
 
 	"github.com/cockroachdb/errors"
-	"github.com/google/uuid"
 
 	"librevita.org/ent"
 	"librevita.org/ent/identifiersystem"
 	identifiermodel "librevita.org/internal/domain/identifier/model"
+	"librevita.org/pkg/ident"
 	"librevita.org/pkg/urn"
 )
 
@@ -50,7 +50,7 @@ func (r *systemRepository) ListActive(ctx context.Context) ([]*identifiermodel.I
 	return out, nil
 }
 
-func (r *systemRepository) GetByID(ctx context.Context, id uuid.UUID) (*identifiermodel.IdentifierSystem, error) {
+func (r *systemRepository) GetByID(ctx context.Context, id ident.IdentifierSystemID) (*identifiermodel.IdentifierSystem, error) {
 	row, err := r.client.IdentifierSystem.Get(ctx, id)
 	if err != nil {
 		if ent.IsNotFound(err) {
@@ -130,7 +130,7 @@ func (r *systemRepository) Update(ctx context.Context, s *identifiermodel.Identi
 	return toSystemDomain(updated), nil
 }
 
-func (r *systemRepository) SetActive(ctx context.Context, id uuid.UUID, active bool) error {
+func (r *systemRepository) SetActive(ctx context.Context, id ident.IdentifierSystemID, active bool) error {
 	err := r.client.IdentifierSystem.UpdateOneID(id).
 		SetActive(active).
 		SetUpdatedAt(time.Now()).
@@ -203,10 +203,7 @@ func (r *systemRepository) SeedDefaults(ctx context.Context) error {
 		if exists {
 			continue
 		}
-		sID, err := uuid.NewV7()
-		if err != nil {
-			return err
-		}
+		sID := ident.New[ident.IdentifierSystemID]()
 		if err := r.client.IdentifierSystem.Create().
 			SetID(sID).
 			SetSystem(sys.System).

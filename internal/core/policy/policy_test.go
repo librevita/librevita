@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"librevita.org/pkg/ident"
 	_ "modernc.org/sqlite"
 
 	"librevita.org/ent"
@@ -126,7 +127,12 @@ func TestPolicyRejectsNonBoolean(t *testing.T) {
 	prog, err := env.Program(ast)
 	require.NoError(t, err)
 
-	pe := &PolicyEngine{progs: map[uuid.UUID]map[string]cel.Program{uuid.Nil: {"weird": prog}}, log: log.Nop()}
+	pe := &PolicyEngine{
+		progs: map[ident.ClinicID]map[string]cel.Program{
+			{}: {"weird": prog},
+		},
+		log: log.Nop(),
+	}
 	p := &auth.Principal{ID: "01990000-0000-7000-8000-000000000001", Email: "u@example.org", Name: "User", Role: auth.RoleAdmin}
 
 	_, err = pe.Allowed(context.Background(), "weird", p, RequestInfo{})

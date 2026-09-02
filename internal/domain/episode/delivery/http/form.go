@@ -5,12 +5,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 
 	clinicmodel "librevita.org/internal/domain/clinic/model"
 	"librevita.org/internal/domain/episode/delivery/views"
 	episodemodel "librevita.org/internal/domain/episode/model"
+	"librevita.org/pkg/ident"
 )
 
 const occurredLayout = "2006-01-02T15:04"
@@ -160,7 +160,7 @@ func findingValueText(f episodemodel.Finding) string {
 	return f.Value.String
 }
 
-func episodeFromForm(v views.EpisodeFormValues, clinicID, patientID, authorID uuid.UUID, clock *clinicmodel.Clock) episodemodel.Episode {
+func episodeFromForm(v views.EpisodeFormValues, clinicID ident.ClinicID, patientID ident.PatientID, authorID ident.UserID, clock *clinicmodel.Clock) episodemodel.Episode {
 	occurred := clock.Now().UTC()
 	if t, err := time.ParseInLocation(occurredLayout, v.OccurredAt, clock.Zone()); err == nil {
 		occurred = t.UTC()

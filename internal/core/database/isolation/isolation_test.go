@@ -8,9 +8,9 @@ import (
 
 	"entgo.io/ent/dialect"
 	entsql "entgo.io/ent/dialect/sql"
-	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"librevita.org/pkg/ident"
 	_ "modernc.org/sqlite"
 
 	"librevita.org/ent"
@@ -45,8 +45,8 @@ func TestCrossClinicUsersAndFLE(t *testing.T) {
 	client.Intercept(ent.FLEDecryptionInterceptor(encDefault))
 
 	seed := clinicctx.WithSkipIsolation(context.Background())
-	norteID := uuid.MustParse("01990000-0000-7000-8000-0000000000a1")
-	sulID := uuid.MustParse("01990000-0000-7000-8000-0000000000a2")
+	norteID := ident.MustParseClinic("01990000-0000-7000-8000-0000000000a1")
+	sulID := ident.MustParseClinic("01990000-0000-7000-8000-0000000000a2")
 	_, err = client.Clinic.Create().SetID(norteID).SetSlug("norte").SetName("Norte").SetCountry("BR").SetTimezone("America/Sao_Paulo").Save(seed)
 	require.NoError(t, err)
 	_, err = client.Clinic.Create().SetID(sulID).SetSlug("sul").SetName("Sul").SetCountry("BR").SetTimezone("America/Sao_Paulo").Save(seed)
@@ -68,12 +68,12 @@ func TestCrossClinicUsersAndFLE(t *testing.T) {
 	require.NoError(t, err)
 
 	ctxA := clinicctx.WithClinic(context.Background(), &clinicctx.Clinic{ID: norteID, Slug: "norte", Name: "Norte", Timezone: "America/Sao_Paulo"})
-	ctxA = fle.WithClinicID(ctxA, norteID.String())
+	ctxA = fle.WithClinicID(ctxA, norteID)
 	ctxA = fle.WithEncryptor(ctxA, encA)
 	ctxA = fle.WithHasher(ctxA, hashA)
 
 	ctxB := clinicctx.WithClinic(context.Background(), &clinicctx.Clinic{ID: sulID, Slug: "sul", Name: "Sul", Timezone: "America/Sao_Paulo"})
-	ctxB = fle.WithClinicID(ctxB, sulID.String())
+	ctxB = fle.WithClinicID(ctxB, sulID)
 	ctxB = fle.WithEncryptor(ctxB, encB)
 	ctxB = fle.WithHasher(ctxB, hashB)
 
@@ -128,7 +128,7 @@ func TestCrossClinicUsersAndFLE(t *testing.T) {
 
 	wrongCtx := clinicctx.WithSkipIsolation(context.Background())
 	wrongCtx = fle.WithEncryptor(wrongCtx, encB)
-	wrongCtx = fle.WithClinicID(wrongCtx, sulID.String())
+	wrongCtx = fle.WithClinicID(wrongCtx, sulID)
 	wrongFetched, err := client.Patient.Get(wrongCtx, pA.ID)
 	require.Error(t, err)
 	assert.Nil(t, wrongFetched)

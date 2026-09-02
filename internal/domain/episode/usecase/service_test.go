@@ -6,10 +6,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"librevita.org/pkg/ident"
 
 	"librevita.org/internal/core/auth"
 	"librevita.org/internal/core/policy"
@@ -19,12 +19,12 @@ import (
 )
 
 type memRepo struct {
-	byID     map[uuid.UUID]episodemodel.Episode
-	patients map[uuid.UUID]bool
+	byID     map[ident.EpisodeID]episodemodel.Episode
+	patients map[ident.PatientID]bool
 }
 
 func newMemRepo() *memRepo {
-	return &memRepo{byID: map[uuid.UUID]episodemodel.Episode{}, patients: map[uuid.UUID]bool{}}
+	return &memRepo{byID: map[ident.EpisodeID]episodemodel.Episode{}, patients: map[ident.PatientID]bool{}}
 }
 
 func (m *memRepo) Create(_ context.Context, ep episodemodel.Episode) (*episodemodel.Episode, error) {
@@ -46,7 +46,7 @@ func (m *memRepo) UpdateDraft(_ context.Context, ep episodemodel.Episode) (*epis
 	m.byID[ep.ID] = ep
 	return &ep, nil
 }
-func (m *memRepo) Get(_ context.Context, clinicID, episodeID uuid.UUID) (*episodemodel.Episode, error) {
+func (m *memRepo) Get(_ context.Context, clinicID ident.ClinicID, episodeID ident.EpisodeID) (*episodemodel.Episode, error) {
 	ep, ok := m.byID[episodeID]
 	if !ok || ep.ClinicID != clinicID {
 		return nil, episodemodel.ErrNotFound
@@ -55,7 +55,7 @@ func (m *memRepo) Get(_ context.Context, clinicID, episodeID uuid.UUID) (*episod
 	fillSuccessor(m.byID, &cp)
 	return &cp, nil
 }
-func (m *memRepo) GetByPredecessor(_ context.Context, clinicID, predecessorID uuid.UUID) (*episodemodel.Episode, error) {
+func (m *memRepo) GetByPredecessor(_ context.Context, clinicID ident.ClinicID, predecessorID ident.EpisodeID) (*episodemodel.Episode, error) {
 	for _, ep := range m.byID {
 		if ep.ClinicID == clinicID && ep.PredecessorID != nil && *ep.PredecessorID == predecessorID {
 			cp := ep
@@ -65,7 +65,7 @@ func (m *memRepo) GetByPredecessor(_ context.Context, clinicID, predecessorID uu
 	}
 	return nil, episodemodel.ErrNotFound
 }
-func (m *memRepo) ListByPatient(_ context.Context, clinicID, patientID uuid.UUID, status *episodemodel.EpisodeStatus) ([]episodemodel.Episode, error) {
+func (m *memRepo) ListByPatient(_ context.Context, clinicID ident.ClinicID, patientID ident.PatientID, status *episodemodel.EpisodeStatus) ([]episodemodel.Episode, error) {
 	var out []episodemodel.Episode
 	for _, ep := range m.byID {
 		if ep.ClinicID != clinicID || ep.PatientID != patientID {
@@ -80,7 +80,7 @@ func (m *memRepo) ListByPatient(_ context.Context, clinicID, patientID uuid.UUID
 	}
 	return out, nil
 }
-func (m *memRepo) SetStatus(_ context.Context, clinicID, episodeID uuid.UUID, status episodemodel.EpisodeStatus) error {
+func (m *memRepo) SetStatus(_ context.Context, clinicID ident.ClinicID, episodeID ident.EpisodeID, status episodemodel.EpisodeStatus) error {
 	ep, ok := m.byID[episodeID]
 	if !ok || ep.ClinicID != clinicID {
 		return episodemodel.ErrNotFound
@@ -89,11 +89,11 @@ func (m *memRepo) SetStatus(_ context.Context, clinicID, episodeID uuid.UUID, st
 	m.byID[episodeID] = ep
 	return nil
 }
-func (m *memRepo) PatientExists(_ context.Context, _, patientID uuid.UUID) (bool, error) {
+func (m *memRepo) PatientExists(_ context.Context, _ ident.ClinicID, patientID ident.PatientID) (bool, error) {
 	return m.patients[patientID], nil
 }
 
-func rejectDupPredecessor(byID map[uuid.UUID]episodemodel.Episode, ep episodemodel.Episode) error {
+func rejectDupPredecessor(byID map[ident.EpisodeID]episodemodel.Episode, ep episodemodel.Episode) error {
 	if ep.PredecessorID == nil {
 		return nil
 	}
@@ -105,7 +105,7 @@ func rejectDupPredecessor(byID map[uuid.UUID]episodemodel.Episode, ep episodemod
 	return nil
 }
 
-func fillSuccessor(byID map[uuid.UUID]episodemodel.Episode, ep *episodemodel.Episode) {
+func fillSuccessor(byID map[ident.EpisodeID]episodemodel.Episode, ep *episodemodel.Episode) {
 	for _, other := range byID {
 		if other.PredecessorID != nil && *other.PredecessorID == ep.ID {
 			id := other.ID
@@ -131,9 +131,9 @@ func setupEpisodeSvc(t *testing.T, repo *memRepo) *usecase.Service {
 }
 
 func TestCreateGetFinalize(t *testing.T) {
-	clinicID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
-	userID := uuid.MustParse("00000000-0000-0000-0000-000000000002")
-	patientID := uuid.MustParse("00000000-0000-0000-0000-000000000003")
+	clinicID := ident.MustParseClinic("00000000-0000-0000-0000-000000000001")
+	userID := ident.MustParseUser("00000000-0000-0000-0000-000000000002")
+	patientID := ident.MustParsePatient("00000000-0000-0000-0000-000000000003")
 	repo := newMemRepo()
 	repo.patients[patientID] = true
 	svc := setupEpisodeSvc(t, repo)
@@ -151,7 +151,7 @@ func TestCreateGetFinalize(t *testing.T) {
 	saved, err := svc.Create(context.Background(), p, ep)
 	require.NoError(t, err)
 	assert.Equal(t, episodemodel.EpisodeStatusDraft, saved.Status)
-	assert.NotEqual(t, uuid.Nil, saved.ID)
+	assert.False(t, saved.ID.IsZero())
 
 	got, err := svc.Get(context.Background(), p, clinicID, saved.ID)
 	require.NoError(t, err)
@@ -182,9 +182,9 @@ func TestCreateGetFinalize(t *testing.T) {
 }
 
 func TestAmendLinearChain(t *testing.T) {
-	clinicID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
-	userID := uuid.MustParse("00000000-0000-0000-0000-000000000002")
-	patientID := uuid.MustParse("00000000-0000-0000-0000-000000000003")
+	clinicID := ident.MustParseClinic("00000000-0000-0000-0000-000000000001")
+	userID := ident.MustParseUser("00000000-0000-0000-0000-000000000002")
+	patientID := ident.MustParsePatient("00000000-0000-0000-0000-000000000003")
 	repo := newMemRepo()
 	repo.patients[patientID] = true
 	svc := setupEpisodeSvc(t, repo)
@@ -219,9 +219,9 @@ func TestAmendLinearChain(t *testing.T) {
 }
 
 func TestPatientCannotViewDraft(t *testing.T) {
-	clinicID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
-	userID := uuid.MustParse("00000000-0000-0000-0000-000000000002")
-	patientID := uuid.MustParse("00000000-0000-0000-0000-000000000003")
+	clinicID := ident.MustParseClinic("00000000-0000-0000-0000-000000000001")
+	userID := ident.MustParseUser("00000000-0000-0000-0000-000000000002")
+	patientID := ident.MustParsePatient("00000000-0000-0000-0000-000000000003")
 	repo := newMemRepo()
 	repo.patients[patientID] = true
 	svc := setupEpisodeSvc(t, repo)
@@ -239,9 +239,9 @@ func TestPatientCannotViewDraft(t *testing.T) {
 }
 
 func TestReceptionistCannotWrite(t *testing.T) {
-	clinicID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
-	userID := uuid.MustParse("00000000-0000-0000-0000-000000000002")
-	patientID := uuid.MustParse("00000000-0000-0000-0000-000000000003")
+	clinicID := ident.MustParseClinic("00000000-0000-0000-0000-000000000001")
+	userID := ident.MustParseUser("00000000-0000-0000-0000-000000000002")
+	patientID := ident.MustParsePatient("00000000-0000-0000-0000-000000000003")
 	repo := newMemRepo()
 	repo.patients[patientID] = true
 	svc := setupEpisodeSvc(t, repo)

@@ -5,9 +5,9 @@ import (
 	"entgo.io/ent/schema/edge"
 	"entgo.io/ent/schema/field"
 	"entgo.io/ent/schema/index"
-	"github.com/google/uuid"
 
 	"librevita.org/internal/database/schema/mixin"
+	"librevita.org/pkg/ident"
 )
 
 // StaffChangeRequest holds the schema definition for the StaffChangeRequest entity.
@@ -18,7 +18,7 @@ type StaffChangeRequest struct {
 // Mixin of the StaffChangeRequest.
 func (StaffChangeRequest) Mixin() []ent.Mixin {
 	return []ent.Mixin{
-		mixin.UUID{},
+		mixin.UUID[ident.StaffChangeRequestID]{},
 		mixin.Clinic{},
 		mixin.CreatedAt{},
 	}
@@ -27,9 +27,9 @@ func (StaffChangeRequest) Mixin() []ent.Mixin {
 // Fields of the StaffChangeRequest.
 func (StaffChangeRequest) Fields() []ent.Field {
 	return []ent.Field{
-		field.UUID("user_id", uuid.UUID{}).
+		field.UUID("user_id", ident.UserID{}).
 			Comment("Target staff user account ID"),
-		field.UUID("requested_by", uuid.UUID{}).
+		field.UUID("requested_by", ident.UserID{}).
 			Comment("User ID who created the request"),
 		field.Enum("status").
 			Values("pending", "approved", "rejected").
@@ -45,7 +45,7 @@ func (StaffChangeRequest) Fields() []ent.Field {
 		field.Time("decided_at").
 			Optional().
 			Nillable(),
-		field.UUID("decided_by", uuid.UUID{}).
+		field.UUID("decided_by", ident.UserID{}).
 			Optional().
 			Nillable(),
 	}

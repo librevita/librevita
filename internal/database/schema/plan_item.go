@@ -7,6 +7,7 @@ import (
 
 	"librevita.org/internal/core/database/fle"
 	"librevita.org/internal/database/schema/mixin"
+	"librevita.org/pkg/ident"
 )
 
 // PlanItem holds a structured plan activity belonging to an Episode.
@@ -17,7 +18,7 @@ type PlanItem struct {
 // Mixin of the PlanItem.
 func (PlanItem) Mixin() []ent.Mixin {
 	return []ent.Mixin{
-		mixin.UUID{},
+		mixin.UUID[ident.PlanItemID]{},
 		mixin.Clinic{},
 		mixin.ClinicalChild{},
 		mixin.Time{},

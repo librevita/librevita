@@ -5,9 +5,8 @@ import (
 	"regexp"
 	"time"
 
-	"github.com/google/uuid"
-
 	"librevita.org/internal/core/clinicctx"
+	"librevita.org/pkg/ident"
 )
 
 // clinicSlugRE is the DNS-safe hostname label used as the clinic subdomain.
@@ -23,7 +22,7 @@ func ValidSlug(slug string) bool {
 
 // Clinic is the domain model representing a clinic profile.
 type Clinic struct {
-	ID          uuid.UUID
+	ID          ident.ClinicID
 	Slug        string
 	Name        string
 	TaxID       string
@@ -47,9 +46,9 @@ func (c *Clinic) Onboarded() bool {
 
 // Repository defines the storage contract for clinic data.
 type Repository interface {
-	GetByID(ctx context.Context, id uuid.UUID) (*Clinic, error)
+	GetByID(ctx context.Context, id ident.ClinicID) (*Clinic, error)
 	GetBySlug(ctx context.Context, slug string) (*Clinic, error)
 	CreateShell(ctx context.Context, c *Clinic) (*Clinic, error)
-	MarkOnboarded(ctx context.Context, id uuid.UUID, at time.Time) error
+	MarkOnboarded(ctx context.Context, id ident.ClinicID, at time.Time) error
 	List(ctx context.Context) ([]*Clinic, error)
 }

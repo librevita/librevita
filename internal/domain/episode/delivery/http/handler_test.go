@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"librevita.org/pkg/ident"
 
 	"librevita.org/internal/core/audit"
 	"librevita.org/internal/core/auth"
@@ -29,8 +30,8 @@ import (
 )
 
 type memRepo struct {
-	byID     map[uuid.UUID]episodemodel.Episode
-	patients map[uuid.UUID]bool
+	byID     map[ident.EpisodeID]episodemodel.Episode
+	patients map[ident.PatientID]bool
 }
 
 func (m *memRepo) Create(_ context.Context, ep episodemodel.Episode) (*episodemodel.Episode, error) {
@@ -48,7 +49,7 @@ func (m *memRepo) UpdateDraft(_ context.Context, ep episodemodel.Episode) (*epis
 	m.byID[ep.ID] = ep
 	return &ep, nil
 }
-func (m *memRepo) Get(_ context.Context, clinicID, episodeID uuid.UUID) (*episodemodel.Episode, error) {
+func (m *memRepo) Get(_ context.Context, clinicID ident.ClinicID, episodeID ident.EpisodeID) (*episodemodel.Episode, error) {
 	ep, ok := m.byID[episodeID]
 	if !ok || ep.ClinicID != clinicID {
 		return nil, episodemodel.ErrNotFound
@@ -57,7 +58,7 @@ func (m *memRepo) Get(_ context.Context, clinicID, episodeID uuid.UUID) (*episod
 	fillHTTPSuccessor(m.byID, &cp)
 	return &cp, nil
 }
-func (m *memRepo) GetByPredecessor(_ context.Context, clinicID, predecessorID uuid.UUID) (*episodemodel.Episode, error) {
+func (m *memRepo) GetByPredecessor(_ context.Context, clinicID ident.ClinicID, predecessorID ident.EpisodeID) (*episodemodel.Episode, error) {
 	for _, ep := range m.byID {
 		if ep.ClinicID == clinicID && ep.PredecessorID != nil && *ep.PredecessorID == predecessorID {
 			cp := ep
@@ -67,7 +68,7 @@ func (m *memRepo) GetByPredecessor(_ context.Context, clinicID, predecessorID uu
 	}
 	return nil, episodemodel.ErrNotFound
 }
-func (m *memRepo) ListByPatient(_ context.Context, clinicID, patientID uuid.UUID, status *episodemodel.EpisodeStatus) ([]episodemodel.Episode, error) {
+func (m *memRepo) ListByPatient(_ context.Context, clinicID ident.ClinicID, patientID ident.PatientID, status *episodemodel.EpisodeStatus) ([]episodemodel.Episode, error) {
 	var out []episodemodel.Episode
 	for _, ep := range m.byID {
 		if ep.ClinicID == clinicID && ep.PatientID == patientID {
@@ -81,7 +82,7 @@ func (m *memRepo) ListByPatient(_ context.Context, clinicID, patientID uuid.UUID
 	}
 	return out, nil
 }
-func (m *memRepo) SetStatus(_ context.Context, clinicID, episodeID uuid.UUID, status episodemodel.EpisodeStatus) error {
+func (m *memRepo) SetStatus(_ context.Context, clinicID ident.ClinicID, episodeID ident.EpisodeID, status episodemodel.EpisodeStatus) error {
 	ep, ok := m.byID[episodeID]
 	if !ok || ep.ClinicID != clinicID {
 		return episodemodel.ErrNotFound
@@ -90,11 +91,11 @@ func (m *memRepo) SetStatus(_ context.Context, clinicID, episodeID uuid.UUID, st
 	m.byID[episodeID] = ep
 	return nil
 }
-func (m *memRepo) PatientExists(_ context.Context, _, patientID uuid.UUID) (bool, error) {
+func (m *memRepo) PatientExists(_ context.Context, _ ident.ClinicID, patientID ident.PatientID) (bool, error) {
 	return m.patients[patientID], nil
 }
 
-func fillHTTPSuccessor(byID map[uuid.UUID]episodemodel.Episode, ep *episodemodel.Episode) {
+func fillHTTPSuccessor(byID map[ident.EpisodeID]episodemodel.Episode, ep *episodemodel.Episode) {
 	for _, other := range byID {
 		if other.PredecessorID != nil && *other.PredecessorID == ep.ID {
 			id := other.ID
@@ -123,15 +124,15 @@ func setupHandler(t *testing.T, repo *memRepo, auditRepo *auditmocks.MockReposit
 }
 
 func TestListFragment(t *testing.T) {
-	clinicID := uuid.MustParse("01990000-0000-7000-8000-000000000001")
-	patientID := uuid.MustParse("01990000-0000-7000-8000-0000000000bb")
+	clinicID := ident.MustParseClinic("01990000-0000-7000-8000-000000000001")
+	patientID := ident.MustParsePatient("01990000-0000-7000-8000-0000000000bb")
 	ep := episodemodel.Episode{
-		ID:       uuid.MustParse("01990000-0000-7000-8000-0000000000aa"),
+		ID:       ident.MustParseEpisode("01990000-0000-7000-8000-0000000000aa"),
 		ClinicID: clinicID, PatientID: patientID,
 		Type: episodemodel.EpisodeTypeConsultation, Status: episodemodel.EpisodeStatusDraft,
 		Class: episodemodel.CareSettingAmbulatory, OccurredAt: time.Now().UTC(),
 	}
-	repo := &memRepo{byID: map[uuid.UUID]episodemodel.Episode{ep.ID: ep}, patients: map[uuid.UUID]bool{patientID: true}}
+	repo := &memRepo{byID: map[ident.EpisodeID]episodemodel.Episode{ep.ID: ep}, patients: map[ident.PatientID]bool{patientID: true}}
 	auditRepo := auditmocks.NewMockRepository(t)
 	h := setupHandler(t, repo, auditRepo)
 
@@ -152,10 +153,10 @@ func TestListFragment(t *testing.T) {
 }
 
 func TestListHidesAmendWhenSuccessorExists(t *testing.T) {
-	clinicID := uuid.MustParse("01990000-0000-7000-8000-000000000001")
-	patientID := uuid.MustParse("01990000-0000-7000-8000-0000000000bb")
-	aID := uuid.MustParse("01990000-0000-7000-8000-0000000000aa")
-	bID := uuid.MustParse("01990000-0000-7000-8000-0000000000ab")
+	clinicID := ident.MustParseClinic("01990000-0000-7000-8000-000000000001")
+	patientID := ident.MustParsePatient("01990000-0000-7000-8000-0000000000bb")
+	aID := ident.MustParseEpisode("01990000-0000-7000-8000-0000000000aa")
+	bID := ident.MustParseEpisode("01990000-0000-7000-8000-0000000000ab")
 	pred := aID
 	final := episodemodel.Episode{
 		ID: aID, ClinicID: clinicID, PatientID: patientID,
@@ -167,7 +168,7 @@ func TestListHidesAmendWhenSuccessorExists(t *testing.T) {
 		Type: episodemodel.EpisodeTypeConsultation, Status: episodemodel.EpisodeStatusDraft,
 		Class: episodemodel.CareSettingAmbulatory, OccurredAt: time.Now().UTC(),
 	}
-	repo := &memRepo{byID: map[uuid.UUID]episodemodel.Episode{aID: final, bID: draft}, patients: map[uuid.UUID]bool{patientID: true}}
+	repo := &memRepo{byID: map[ident.EpisodeID]episodemodel.Episode{aID: final, bID: draft}, patients: map[ident.PatientID]bool{patientID: true}}
 	auditRepo := auditmocks.NewMockRepository(t)
 	h := setupHandler(t, repo, auditRepo)
 
@@ -187,15 +188,15 @@ func TestListHidesAmendWhenSuccessorExists(t *testing.T) {
 }
 
 func TestListShowsAmendWhenFinalized(t *testing.T) {
-	clinicID := uuid.MustParse("01990000-0000-7000-8000-000000000001")
-	patientID := uuid.MustParse("01990000-0000-7000-8000-0000000000bb")
+	clinicID := ident.MustParseClinic("01990000-0000-7000-8000-000000000001")
+	patientID := ident.MustParsePatient("01990000-0000-7000-8000-0000000000bb")
 	ep := episodemodel.Episode{
-		ID:       uuid.MustParse("01990000-0000-7000-8000-0000000000aa"),
+		ID:       ident.MustParseEpisode("01990000-0000-7000-8000-0000000000aa"),
 		ClinicID: clinicID, PatientID: patientID,
 		Type: episodemodel.EpisodeTypeConsultation, Status: episodemodel.EpisodeStatusFinalized,
 		Class: episodemodel.CareSettingAmbulatory, OccurredAt: time.Now().UTC(),
 	}
-	repo := &memRepo{byID: map[uuid.UUID]episodemodel.Episode{ep.ID: ep}, patients: map[uuid.UUID]bool{patientID: true}}
+	repo := &memRepo{byID: map[ident.EpisodeID]episodemodel.Episode{ep.ID: ep}, patients: map[ident.PatientID]bool{patientID: true}}
 	auditRepo := auditmocks.NewMockRepository(t)
 	h := setupHandler(t, repo, auditRepo)
 
@@ -214,10 +215,10 @@ func TestListShowsAmendWhenFinalized(t *testing.T) {
 }
 
 func TestCreateDraft(t *testing.T) {
-	clinicID := uuid.MustParse("01990000-0000-7000-8000-000000000001")
-	patientID := uuid.MustParse("01990000-0000-7000-8000-0000000000bb")
-	authorID := uuid.MustParse("01990000-0000-7000-8000-0000000000cc")
-	repo := &memRepo{byID: map[uuid.UUID]episodemodel.Episode{}, patients: map[uuid.UUID]bool{patientID: true}}
+	clinicID := ident.MustParseClinic("01990000-0000-7000-8000-000000000001")
+	patientID := ident.MustParsePatient("01990000-0000-7000-8000-0000000000bb")
+	authorID := ident.MustParseUser("01990000-0000-7000-8000-0000000000cc")
+	repo := &memRepo{byID: map[ident.EpisodeID]episodemodel.Episode{}, patients: map[ident.PatientID]bool{patientID: true}}
 	auditRepo := auditmocks.NewMockRepository(t)
 	auditRepo.EXPECT().LastSignature(mock.Anything).Return("", nil).Once()
 	auditRepo.EXPECT().Record(mock.Anything, mock.MatchedBy(func(ev audit.Event) bool {

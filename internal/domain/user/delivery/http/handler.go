@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/cockroachdb/errors"
-	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 
 	"librevita.org/internal/core/audit"
@@ -26,6 +25,7 @@ import (
 	"librevita.org/internal/domain/user/delivery/views"
 	"librevita.org/internal/domain/user/usecase"
 	"librevita.org/internal/ui/components"
+	"librevita.org/pkg/ident"
 )
 
 // Handler renders the auth pages and processes form submissions.
@@ -139,11 +139,11 @@ func (h *Handler) Setup(c echo.Context) error {
 		return c.Redirect(http.StatusFound, "/auth/login")
 	}
 
-	var systemIDs []uuid.UUID
+	var systemIDs []ident.IdentifierSystemID
 	if form, err := c.FormParams(); err == nil {
 		for _, raw := range form["identifier_system_id"] {
-			if id, err := uuid.Parse(raw); err == nil {
-				systemIDs = append(systemIDs, id)
+			if sysID, err := ident.ParseIdentifierSystem(raw); err == nil {
+				systemIDs = append(systemIDs, sysID)
 			}
 		}
 	}

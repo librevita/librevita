@@ -4,13 +4,13 @@ import (
 	"context"
 
 	"github.com/cockroachdb/errors"
-	"github.com/google/uuid"
 
 	"librevita.org/ent"
 	"librevita.org/ent/role"
 	"librevita.org/ent/user"
 	"librevita.org/internal/core/clinicctx"
 	usermodel "librevita.org/internal/domain/user/model"
+	"librevita.org/pkg/ident"
 )
 
 type roleRepository struct {
@@ -37,7 +37,7 @@ func (r *roleRepository) List(ctx context.Context) ([]usermodel.Role, error) {
 	return rows, nil
 }
 
-func (r *roleRepository) GetByID(ctx context.Context, id uuid.UUID) (*usermodel.Role, error) {
+func (r *roleRepository) GetByID(ctx context.Context, id ident.RoleID) (*usermodel.Role, error) {
 	rl, err := r.client.Role.Get(ctx, id)
 	if err != nil {
 		if ent.IsNotFound(err) {
@@ -93,7 +93,7 @@ func (r *roleRepository) Update(ctx context.Context, roleModel *usermodel.Role) 
 	return toRoleDomain(saved), nil
 }
 
-func (r *roleRepository) Delete(ctx context.Context, id uuid.UUID) error {
+func (r *roleRepository) Delete(ctx context.Context, id ident.RoleID) error {
 	err := r.client.Role.DeleteOneID(id).Exec(ctx)
 	if err != nil {
 		return errors.Wrap(err, "role repository: delete")
@@ -101,7 +101,7 @@ func (r *roleRepository) Delete(ctx context.Context, id uuid.UUID) error {
 	return nil
 }
 
-func (r *roleRepository) CountUsersWithRole(ctx context.Context, roleID uuid.UUID) (int, error) {
+func (r *roleRepository) CountUsersWithRole(ctx context.Context, roleID ident.RoleID) (int, error) {
 	count, err := r.client.User.Query().Where(user.RoleIDEQ(roleID)).Count(ctx)
 	if err != nil {
 		return 0, errors.Wrap(err, "role repository: count users")
@@ -132,10 +132,7 @@ func (r *roleRepository) SeedDefaults(ctx context.Context) error {
 		if exists {
 			continue
 		}
-		rID, err := uuid.NewV7()
-		if err != nil {
-			return err
-		}
+		rID := ident.New[ident.RoleID]()
 		if err := r.client.Role.Create().
 			SetID(rID).
 			SetClinicID(clinicID).

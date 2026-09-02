@@ -7,6 +7,7 @@ import (
 
 	"librevita.org/internal/core/database/fle"
 	"librevita.org/internal/database/schema/mixin"
+	"librevita.org/pkg/ident"
 )
 
 // Problem holds a structured assessment diagnosis belonging to an Episode.
@@ -17,7 +18,7 @@ type Problem struct {
 // Mixin of the Problem.
 func (Problem) Mixin() []ent.Mixin {
 	return []ent.Mixin{
-		mixin.UUID{},
+		mixin.UUID[ident.ProblemID]{},
 		mixin.Clinic{},
 		mixin.ClinicalChild{},
 		mixin.Time{},

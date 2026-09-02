@@ -5,27 +5,28 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"librevita.org/pkg/ident"
 
 	episodemodel "librevita.org/internal/domain/episode/model"
 )
 
 func TestSOAPBundleRoundTrip(t *testing.T) {
 	t.Parallel()
-	id := uuid.MustParse("01990000-0000-7000-8000-0000000000aa")
-	patientID := uuid.MustParse("01990000-0000-7000-8000-0000000000bb")
-	authorID := uuid.MustParse("01990000-0000-7000-8000-0000000000cc")
-	findingID := uuid.MustParse("01990000-0000-7000-8000-0000000000dd")
-	problemID := uuid.MustParse("01990000-0000-7000-8000-0000000000ee")
-	planID := uuid.MustParse("01990000-0000-7000-8000-0000000000ff")
-	pred := uuid.MustParse("01990000-0000-7000-8000-000000000099")
+	episodeID := ident.MustParseEpisode("01990000-0000-7000-8000-0000000000aa")
+	clinicID := ident.MustParseClinic("01990000-0000-7000-8000-0000000000aa")
+	patientID := ident.MustParsePatient("01990000-0000-7000-8000-0000000000bb")
+	authorID := ident.MustParseUser("01990000-0000-7000-8000-0000000000cc")
+	findingID := ident.MustParseFinding("01990000-0000-7000-8000-0000000000dd")
+	problemID := ident.MustParseProblem("01990000-0000-7000-8000-0000000000ee")
+	planID := ident.MustParsePlanItem("01990000-0000-7000-8000-0000000000ff")
+	pred := ident.MustParseEpisode("01990000-0000-7000-8000-000000000099")
 	occurred := time.Date(2026, 8, 28, 15, 0, 0, 0, time.UTC)
 	qty := 120.0
 	ep := episodemodel.Episode{
-		ID:            id,
-		ClinicID:      id,
+		ID:            episodeID,
+		ClinicID:      clinicID,
 		PatientID:     patientID,
 		AuthorID:      authorID,
 		PredecessorID: &pred,
@@ -69,7 +70,7 @@ func TestSOAPBundleRoundTrip(t *testing.T) {
 	bundle, err := ToDocumentBundle(ep, DocumentContext{PatientName: "Ana", AuthorName: "Dr. Silva"})
 	require.NoError(t, err)
 	require.Equal(t, "document", bundle.Type)
-	require.Equal(t, "Composition/"+id.String(), bundle.Entry[0].FullURL)
+	require.Equal(t, "Composition/"+episodeID.String(), bundle.Entry[0].FullURL)
 	assert.Equal(t, "Composition", PeekType(bundle.Entry[0].Resource))
 	var obs Observation
 	require.NoError(t, json.Unmarshal(bundle.Entry[2].Resource, &obs))
@@ -108,9 +109,9 @@ func TestSOAPBundleRoundTrip(t *testing.T) {
 
 func TestWantFinalize(t *testing.T) {
 	t.Parallel()
-	id := uuid.MustParse("01990000-0000-7000-8000-0000000000aa")
+	raw := "01990000-0000-7000-8000-0000000000aa"
 	ep := episodemodel.Episode{
-		ID: id, ClinicID: id, PatientID: id, AuthorID: id,
+		ID: ident.MustParseEpisode(raw), ClinicID: ident.MustParseClinic(raw), PatientID: ident.MustParsePatient(raw), AuthorID: ident.MustParseUser(raw),
 		Type: episodemodel.EpisodeTypeConsultation, Status: episodemodel.EpisodeStatusFinalized,
 		Class: episodemodel.CareSettingAmbulatory, OccurredAt: time.Now().UTC(),
 	}

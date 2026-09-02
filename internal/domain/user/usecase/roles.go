@@ -5,7 +5,8 @@ import (
 	"strings"
 
 	"github.com/cockroachdb/errors"
-	"github.com/google/uuid"
+
+	"librevita.org/pkg/ident"
 )
 
 const maxRoleNameLen = 40
@@ -24,19 +25,16 @@ func (s *Service) CreateRole(ctx context.Context, name string, clinical bool) (*
 	if len(name) > maxRoleNameLen {
 		return nil, &ValidationError{Msg: "role name is too long"}
 	}
-	id, err := uuid.NewV7()
-	if err != nil {
-		return nil, errors.Wrap(err, "usecase: generate role id")
-	}
+	roleID := ident.New[ident.RoleID]()
 	return s.roleRepo.Create(ctx, &Role{
-		ID:         id,
+		ID:         roleID,
 		Name:       name,
 		IsClinical: clinical,
 	})
 }
 
 // RenameRole changes a non-system role's name.
-func (s *Service) RenameRole(ctx context.Context, id, name string) (*Role, error) {
+func (s *Service) RenameRole(ctx context.Context, roleID, name string) (*Role, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return nil, &ValidationError{Msg: "role name is required"}
@@ -44,7 +42,7 @@ func (s *Service) RenameRole(ctx context.Context, id, name string) (*Role, error
 	if len(name) > maxRoleNameLen {
 		return nil, &ValidationError{Msg: "role name is too long"}
 	}
-	rUUID, err := uuid.Parse(id)
+	rUUID, err := ident.ParseRole(roleID)
 	if err != nil {
 		return nil, errors.Wrap(err, "usecase: invalid role id")
 	}
@@ -63,8 +61,8 @@ func (s *Service) RenameRole(ctx context.Context, id, name string) (*Role, error
 }
 
 // DeleteRole removes a non-system role that no account uses.
-func (s *Service) DeleteRole(ctx context.Context, id string) error {
-	rUUID, err := uuid.Parse(id)
+func (s *Service) DeleteRole(ctx context.Context, roleID string) error {
+	rUUID, err := ident.ParseRole(roleID)
 	if err != nil {
 		return errors.Wrap(err, "usecase: invalid role id")
 	}
@@ -86,8 +84,8 @@ func (s *Service) DeleteRole(ctx context.Context, id string) error {
 }
 
 // SetRoleClinical marks a non-system role as clinical staff.
-func (s *Service) SetRoleClinical(ctx context.Context, id string, clinical bool) error {
-	rUUID, err := uuid.Parse(id)
+func (s *Service) SetRoleClinical(ctx context.Context, roleID string, clinical bool) error {
+	rUUID, err := ident.ParseRole(roleID)
 	if err != nil {
 		return errors.Wrap(err, "usecase: invalid role id")
 	}
@@ -110,8 +108,8 @@ func (s *Service) SetRoleClinical(ctx context.Context, id string, clinical bool)
 }
 
 // RoleByID loads a role.
-func (s *Service) RoleByID(ctx context.Context, id string) (*Role, error) {
-	rUUID, err := uuid.Parse(id)
+func (s *Service) RoleByID(ctx context.Context, roleID string) (*Role, error) {
+	rUUID, err := ident.ParseRole(roleID)
 	if err != nil {
 		return nil, errors.Wrap(err, "usecase: invalid role id")
 	}

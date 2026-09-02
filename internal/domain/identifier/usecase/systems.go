@@ -5,9 +5,9 @@ import (
 	"strings"
 
 	"github.com/cockroachdb/errors"
-	"github.com/google/uuid"
 
 	identifiermodel "librevita.org/internal/domain/identifier/model"
+	"librevita.org/pkg/ident"
 	"librevita.org/pkg/urn"
 )
 
@@ -27,12 +27,12 @@ func (s *systemsService) List(ctx context.Context) ([]*identifiermodel.Identifie
 }
 
 // SystemByID returns one system, active or inactive.
-func (s *systemsService) SystemByID(ctx context.Context, id string) (*identifiermodel.IdentifierSystem, error) {
-	uUUID, err := uuid.Parse(id)
+func (s *systemsService) SystemByID(ctx context.Context, systemID string) (*identifiermodel.IdentifierSystem, error) {
+	sysID, err := ident.ParseIdentifierSystem(systemID)
 	if err != nil {
 		return nil, errors.Wrap(err, "identifier: invalid system id")
 	}
-	return s.repo.GetByID(ctx, uUUID)
+	return s.repo.GetByID(ctx, sysID)
 }
 
 // Create registers a new document system.
@@ -41,19 +41,19 @@ func (s *systemsService) Create(ctx context.Context, createdBy string, in System
 	if err != nil {
 		return nil, err
 	}
-	id, err := uuid.NewV7()
-	if err != nil {
-		return nil, errors.Wrap(err, "identifier: generate system id")
-	}
+	sysID := ident.New[ident.IdentifierSystemID]()
 
-	var cb *uuid.UUID
+	var cb *ident.UserID
 	if createdBy != "" {
-		parsed := uuid.MustParse(createdBy)
+		parsed, perr := ident.ParseUser(createdBy)
+		if perr != nil {
+			return nil, errors.Wrap(perr, "identifier: invalid created_by")
+		}
 		cb = &parsed
 	}
 
 	sys := &identifiermodel.IdentifierSystem{
-		ID:               id,
+		ID:               sysID,
 		System:           cfg.System,
 		DisplayName:      cfg.DisplayName,
 		Pattern:          cfg.Pattern,
@@ -78,18 +78,18 @@ func (s *systemsService) Create(ctx context.Context, createdBy string, in System
 }
 
 // Update replaces the definition of an existing system.
-func (s *systemsService) Update(ctx context.Context, id string, in SystemInput) (*identifiermodel.IdentifierSystem, error) {
+func (s *systemsService) Update(ctx context.Context, systemID string, in SystemInput) (*identifiermodel.IdentifierSystem, error) {
 	cfg, err := validateInput(in)
 	if err != nil {
 		return nil, err
 	}
-	uUUID, err := uuid.Parse(id)
+	sysID, err := ident.ParseIdentifierSystem(systemID)
 	if err != nil {
 		return nil, errors.Wrap(err, "identifier: invalid system id")
 	}
 
 	sys := &identifiermodel.IdentifierSystem{
-		ID:               uUUID,
+		ID:               sysID,
 		System:           cfg.System,
 		DisplayName:      cfg.DisplayName,
 		Pattern:          cfg.Pattern,
@@ -112,12 +112,12 @@ func (s *systemsService) Update(ctx context.Context, id string, in SystemInput) 
 }
 
 // SetActive activates or deactivates a system.
-func (s *systemsService) SetActive(ctx context.Context, id string, active bool) error {
-	uUUID, err := uuid.Parse(id)
+func (s *systemsService) SetActive(ctx context.Context, systemID string, active bool) error {
+	sysID, err := ident.ParseIdentifierSystem(systemID)
 	if err != nil {
 		return errors.Wrap(err, "identifier: invalid system id")
 	}
-	if err := s.repo.SetActive(ctx, uUUID, active); err != nil {
+	if err := s.repo.SetActive(ctx, sysID, active); err != nil {
 		return err
 	}
 	return s.reload(ctx)

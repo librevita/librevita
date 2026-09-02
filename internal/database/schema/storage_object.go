@@ -5,9 +5,9 @@ import (
 	"entgo.io/ent/schema/edge"
 	"entgo.io/ent/schema/field"
 	"entgo.io/ent/schema/index"
-	"github.com/google/uuid"
 
 	"librevita.org/internal/database/schema/mixin"
+	"librevita.org/pkg/ident"
 )
 
 // StorageObject holds the schema definition for the StorageObject metadata entity.
@@ -18,7 +18,7 @@ type StorageObject struct {
 // Mixin of the StorageObject.
 func (StorageObject) Mixin() []ent.Mixin {
 	return []ent.Mixin{
-		mixin.UUID{},
+		mixin.UUID[ident.StorageObjectID]{},
 		mixin.Clinic{},
 		mixin.CreatedAt{},
 	}
@@ -52,7 +52,7 @@ func (StorageObject) Fields() []ent.Field {
 		field.String("checksum").
 			NotEmpty().
 			Comment("Canonical BLAKE2b-256 digest of the payload"),
-		field.UUID("created_by", uuid.UUID{}).
+		field.UUID("created_by", ident.UserID{}).
 			Comment("User ID who uploaded the file"),
 	}
 }

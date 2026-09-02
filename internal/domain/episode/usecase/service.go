@@ -5,11 +5,11 @@ import (
 	"time"
 
 	"github.com/cockroachdb/errors"
-	"github.com/google/uuid"
 
 	"librevita.org/internal/core/auth"
 	"librevita.org/internal/core/policy"
 	episodemodel "librevita.org/internal/domain/episode/model"
+	"librevita.org/pkg/ident"
 )
 
 // Re-export domain types for delivery adapters.
@@ -81,7 +81,7 @@ func (s *Service) UpdateDraft(ctx context.Context, principal *auth.Principal, ep
 }
 
 // Finalize locks a draft episode.
-func (s *Service) Finalize(ctx context.Context, principal *auth.Principal, clinicID, episodeID uuid.UUID) (*Episode, error) {
+func (s *Service) Finalize(ctx context.Context, principal *auth.Principal, clinicID ident.ClinicID, episodeID ident.EpisodeID) (*Episode, error) {
 	existing, err := s.repo.Get(ctx, clinicID, episodeID)
 	if err != nil {
 		return nil, err
@@ -102,7 +102,7 @@ func (s *Service) Finalize(ctx context.Context, principal *auth.Principal, clini
 // A second call while that draft is open returns the same episode. After the
 // successor is finalized, Amend of the original note is ErrAlreadyAmended;
 // Amend of the successor starts the next link.
-func (s *Service) Amend(ctx context.Context, principal *auth.Principal, clinicID, episodeID uuid.UUID) (*Episode, error) {
+func (s *Service) Amend(ctx context.Context, principal *auth.Principal, clinicID ident.ClinicID, episodeID ident.EpisodeID) (*Episode, error) {
 	existing, err := s.repo.Get(ctx, clinicID, episodeID)
 	if err != nil {
 		return nil, err
@@ -118,7 +118,7 @@ func (s *Service) Amend(ctx context.Context, principal *auth.Principal, clinicID
 	} else if child != nil {
 		return child, nil
 	}
-	authorID, err := uuid.Parse(principal.ID)
+	authorID, err := ident.ParseUser(principal.ID)
 	if err != nil {
 		return nil, errors.Wrap(err, "usecase: amend author")
 	}
@@ -143,7 +143,7 @@ func (s *Service) Amend(ctx context.Context, principal *auth.Principal, clinicID
 	return s.amendAfterCreateConflict(ctx, clinicID, existing.ID, err)
 }
 
-func (s *Service) amendAfterCreateConflict(ctx context.Context, clinicID, predecessorID uuid.UUID, err error) (*Episode, error) {
+func (s *Service) amendAfterCreateConflict(ctx context.Context, clinicID ident.ClinicID, predecessorID ident.EpisodeID, err error) (*Episode, error) {
 	if !errors.Is(err, ErrAlreadyAmended) {
 		return nil, err
 	}
@@ -157,7 +157,7 @@ func (s *Service) amendAfterCreateConflict(ctx context.Context, clinicID, predec
 	return nil, ErrAlreadyAmended
 }
 
-func (s *Service) successorDraft(ctx context.Context, clinicID, predecessorID uuid.UUID) (*Episode, error) {
+func (s *Service) successorDraft(ctx context.Context, clinicID ident.ClinicID, predecessorID ident.EpisodeID) (*Episode, error) {
 	child, err := s.repo.GetByPredecessor(ctx, clinicID, predecessorID)
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {
@@ -172,7 +172,7 @@ func (s *Service) successorDraft(ctx context.Context, clinicID, predecessorID uu
 }
 
 // Get returns one episode after chart.view authorization.
-func (s *Service) Get(ctx context.Context, principal *auth.Principal, clinicID, episodeID uuid.UUID) (*Episode, error) {
+func (s *Service) Get(ctx context.Context, principal *auth.Principal, clinicID ident.ClinicID, episodeID ident.EpisodeID) (*Episode, error) {
 	ep, err := s.repo.Get(ctx, clinicID, episodeID)
 	if err != nil {
 		return nil, err
@@ -184,7 +184,7 @@ func (s *Service) Get(ctx context.Context, principal *auth.Principal, clinicID, 
 }
 
 // ListByPatient returns episodes for a patient (staff: all; portal: finalized own).
-func (s *Service) ListByPatient(ctx context.Context, principal *auth.Principal, clinicID, patientID uuid.UUID) ([]Episode, error) {
+func (s *Service) ListByPatient(ctx context.Context, principal *auth.Principal, clinicID ident.ClinicID, patientID ident.PatientID) ([]Episode, error) {
 	dummy := &Episode{PatientID: patientID, Status: episodemodel.EpisodeStatusFinalized}
 	if err := s.authorizeView(ctx, principal, dummy); err != nil {
 		return nil, err
@@ -197,7 +197,7 @@ func (s *Service) ListByPatient(ctx context.Context, principal *auth.Principal, 
 	return s.repo.ListByPatient(ctx, clinicID, patientID, status)
 }
 
-func (s *Service) authorizeWrite(ctx context.Context, principal *auth.Principal, patientID uuid.UUID) error {
+func (s *Service) authorizeWrite(ctx context.Context, principal *auth.Principal, patientID ident.PatientID) error {
 	if principal == nil {
 		return ErrForbidden
 	}
@@ -230,7 +230,7 @@ func (s *Service) authorizeView(ctx context.Context, principal *auth.Principal, 
 		if principal.PatientID != ep.PatientID.String() {
 			return ErrForbidden
 		}
-		if ep.Status != episodemodel.EpisodeStatusFinalized && ep.ID != uuid.Nil {
+		if ep.Status != episodemodel.EpisodeStatusFinalized && !ep.ID.IsZero() {
 			return ErrForbidden
 		}
 	}
@@ -238,12 +238,8 @@ func (s *Service) authorizeView(ctx context.Context, principal *auth.Principal, 
 }
 
 func prepareNew(ep *Episode) error {
-	if ep.ID == uuid.Nil {
-		id, err := uuid.NewV7()
-		if err != nil {
-			return errors.Wrap(err, "usecase: episode id")
-		}
-		ep.ID = id
+	if ep.ID.IsZero() {
+		ep.ID = ident.New[ident.EpisodeID]()
 	}
 	ep.Status = episodemodel.EpisodeStatusDraft
 	if ep.Type == "" {
@@ -261,7 +257,7 @@ func prepareNew(ep *Episode) error {
 func prepareUpdate(ep, existing *Episode) error {
 	ep.ClinicID = existing.ClinicID
 	ep.PatientID = existing.PatientID
-	if ep.AuthorID == uuid.Nil {
+	if ep.AuthorID.IsZero() {
 		ep.AuthorID = existing.AuthorID
 	}
 	if ep.Type == "" {
@@ -291,23 +287,16 @@ func assignChildIDs(ep *Episode) error {
 	return assignPlanItems(ep)
 }
 
-func ensureV7(id *uuid.UUID, wrap string) error {
-	if *id != uuid.Nil {
-		return nil
+func ensureNew[T interface{ ~[16]byte }](v *T) {
+	var zero T
+	if *v == zero {
+		*v = ident.New[T]()
 	}
-	v, err := uuid.NewV7()
-	if err != nil {
-		return errors.Wrap(err, wrap)
-	}
-	*id = v
-	return nil
 }
 
 func assignFindings(ep *Episode) error {
 	for i := range ep.Findings {
-		if err := ensureV7(&ep.Findings[i].ID, "usecase: finding id"); err != nil {
-			return err
-		}
+		ensureNew(&ep.Findings[i].ID)
 		ep.Findings[i].ClinicID = ep.ClinicID
 		ep.Findings[i].PatientID = ep.PatientID
 		ep.Findings[i].EpisodeID = ep.ID
@@ -323,9 +312,7 @@ func assignFindings(ep *Episode) error {
 
 func assignProblems(ep *Episode) error {
 	for i := range ep.Problems {
-		if err := ensureV7(&ep.Problems[i].ID, "usecase: problem id"); err != nil {
-			return err
-		}
+		ensureNew(&ep.Problems[i].ID)
 		ep.Problems[i].ClinicID = ep.ClinicID
 		ep.Problems[i].PatientID = ep.PatientID
 		ep.Problems[i].EpisodeID = ep.ID
@@ -347,9 +334,7 @@ func assignProblems(ep *Episode) error {
 
 func assignPlanItems(ep *Episode) error {
 	for i := range ep.PlanItems {
-		if err := ensureV7(&ep.PlanItems[i].ID, "usecase: plan item id"); err != nil {
-			return err
-		}
+		ensureNew(&ep.PlanItems[i].ID)
 		ep.PlanItems[i].ClinicID = ep.ClinicID
 		ep.PlanItems[i].PatientID = ep.PatientID
 		ep.PlanItems[i].EpisodeID = ep.ID

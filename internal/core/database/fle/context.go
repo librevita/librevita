@@ -6,9 +6,9 @@ import (
 	"sync"
 
 	"github.com/cockroachdb/errors"
-	"github.com/google/uuid"
 
 	"librevita.org/internal/core/crypto"
+	"librevita.org/pkg/ident"
 	"librevita.org/pkg/urn"
 )
 
@@ -110,8 +110,8 @@ func ResolveAAD(ctx context.Context) []byte {
 	if customAAD := AADFromContext(ctx); len(customAAD) > 0 {
 		return customAAD
 	}
-	if clinicID, ok := ClinicIDFromContext(ctx); ok && clinicID != "" {
-		return []byte(urn.ClinicPrefix + clinicID)
+	if clinicID, ok := ClinicIDFromContext(ctx); ok && !clinicID.IsZero() {
+		return []byte(urn.Clinic(clinicID))
 	}
 	return []byte(urn.Namespace)
 }
@@ -119,18 +119,18 @@ func ResolveAAD(ctx context.Context) []byte {
 // ResolveEntityAAD returns the authenticated data binding for a
 // patient-owned entity. Explicit custom AAD still takes precedence for
 // callers that need a protocol-specific binding.
-func ResolveEntityAAD(ctx context.Context, clinicID, patientID uuid.UUID) []byte {
+func ResolveEntityAAD(ctx context.Context, clinicID ident.ClinicID, patientID ident.PatientID) []byte {
 	if customAAD := AADFromContext(ctx); len(customAAD) > 0 {
 		return customAAD
 	}
-	if clinicID != uuid.Nil && patientID != uuid.Nil {
+	if !clinicID.IsZero() && !patientID.IsZero() {
 		return []byte(urn.Patient(clinicID, patientID))
 	}
 	return ResolveAAD(ctx)
 }
 
 // ResolveMutationAAD is the mutation equivalent of ResolveEntityAAD.
-func ResolveMutationAAD(ctx context.Context, clinicID, patientID uuid.UUID) []byte {
+func ResolveMutationAAD(ctx context.Context, clinicID ident.ClinicID, patientID ident.PatientID) []byte {
 	return ResolveEntityAAD(ctx, clinicID, patientID)
 }
 
@@ -209,45 +209,37 @@ func EncryptorResolverFromContext(ctx context.Context) (EncryptorResolver, bool)
 
 // WithClinicID attaches the clinic UUID used as FLE AAD
 // (urn:librevita:clinic:<id>).
-func WithClinicID(ctx context.Context, clinicID string) context.Context {
+func WithClinicID(ctx context.Context, clinicID ident.ClinicID) context.Context {
 	return context.WithValue(ctx, clinicIDKey, clinicID)
 }
 
-// ClinicIDFromContext retrieves the clinic ID string from context if present.
-func ClinicIDFromContext(ctx context.Context) (string, bool) {
-	val, ok := ctx.Value(clinicIDKey).(string)
-	return val, ok && val != ""
+// ClinicIDFromContext retrieves the clinic ID from context if present.
+func ClinicIDFromContext(ctx context.Context) (ident.ClinicID, bool) {
+	val, ok := ctx.Value(clinicIDKey).(ident.ClinicID)
+	return val, ok && !val.IsZero()
 }
 
-// ClinicUUIDFromContext parses the clinic UUID attached to the request.
-func ClinicUUIDFromContext(ctx context.Context) (uuid.UUID, bool) {
-	clinicID, ok := ClinicIDFromContext(ctx)
-	if !ok {
-		return uuid.Nil, false
-	}
-	id, err := uuid.Parse(clinicID)
-	if err != nil || id == uuid.Nil {
-		return uuid.Nil, false
-	}
-	return id, true
+// ClinicUUIDFromContext is ClinicIDFromContext.
+func ClinicUUIDFromContext(ctx context.Context) (ident.ClinicID, bool) {
+	return ClinicIDFromContext(ctx)
 }
 
 // WithPatientID attaches the patient UUID used when an Ent mutation does not
 // carry the patient_id field, such as an update-by-ID operation.
-func WithPatientID(ctx context.Context, patientID uuid.UUID) context.Context {
+func WithPatientID(ctx context.Context, patientID ident.PatientID) context.Context {
 	return context.WithValue(ctx, patientIDKey, patientID)
 }
 
 // PatientIDFromContext retrieves the patient UUID attached to the request.
-func PatientIDFromContext(ctx context.Context) (uuid.UUID, bool) {
-	id, ok := ctx.Value(patientIDKey).(uuid.UUID)
-	return id, ok && id != uuid.Nil
+func PatientIDFromContext(ctx context.Context) (ident.PatientID, bool) {
+	val, ok := ctx.Value(patientIDKey).(ident.PatientID)
+	return val, ok && !val.IsZero()
 }
 
 // PatientEncryptorResolver resolves an Encryptor for one patient entity.
 // The implementation normally loads and unwraps the Patient DEK.
 type PatientEncryptorResolver interface {
-	ResolvePatientEncryptor(ctx context.Context, clinicID, patientID uuid.UUID) (crypto.Encryptor, error)
+	ResolvePatientEncryptor(ctx context.Context, clinicID ident.ClinicID, patientID ident.PatientID) (crypto.Encryptor, error)
 }
 
 // WithPatientEncryptorResolver attaches an entity-key resolver to a request.
@@ -264,7 +256,7 @@ func PatientEncryptorResolverFromContext(ctx context.Context) (PatientEncryptorR
 // ResolvePatientEncryptor resolves a patient-scoped encryptor when a resolver
 // is installed. The fallback keeps isolated unit tests and non-patient
 // contexts usable without silently changing their configured encryptor.
-func ResolvePatientEncryptor(ctx context.Context, clinicID, patientID uuid.UUID, fallback crypto.Encryptor, defaults ...PatientEncryptorResolver) (crypto.Encryptor, error) {
+func ResolvePatientEncryptor(ctx context.Context, clinicID ident.ClinicID, patientID ident.PatientID, fallback crypto.Encryptor, defaults ...PatientEncryptorResolver) (crypto.Encryptor, error) {
 	resolver, ok := PatientEncryptorResolverFromContext(ctx)
 	if !ok {
 		if len(defaults) > 0 && defaults[0] != nil {
@@ -273,17 +265,17 @@ func ResolvePatientEncryptor(ctx context.Context, clinicID, patientID uuid.UUID,
 			return fallback, nil
 		}
 	}
-	if clinicID == uuid.Nil {
+	if clinicID.IsZero() {
 		if contextClinicID, contextOK := ClinicUUIDFromContext(ctx); contextOK {
 			clinicID = contextClinicID
 		}
 	}
-	if patientID == uuid.Nil {
+	if patientID.IsZero() {
 		if contextPatientID, contextOK := PatientIDFromContext(ctx); contextOK {
 			patientID = contextPatientID
 		}
 	}
-	if clinicID == uuid.Nil || patientID == uuid.Nil {
+	if clinicID.IsZero() || patientID.IsZero() {
 		return nil, errors.New("fle: patient scope is required for encrypted entity")
 	}
 	return resolver.ResolvePatientEncryptor(ctx, clinicID, patientID)

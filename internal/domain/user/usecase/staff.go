@@ -6,7 +6,8 @@ import (
 	"strings"
 
 	"github.com/cockroachdb/errors"
-	"github.com/google/uuid"
+
+	"librevita.org/pkg/ident"
 )
 
 // StaffChange is the JSON payload of a proposed physician profile change.
@@ -36,11 +37,11 @@ func (s *Service) CreateStaffChangeRequest(ctx context.Context, userID, requeste
 		return nil, err
 	}
 
-	uUUID, err := uuid.Parse(userID)
+	uUUID, err := ident.ParseUser(userID)
 	if err != nil {
 		return nil, errors.Wrap(err, "usecase: invalid user id")
 	}
-	reqUUID, err := uuid.Parse(requestedBy)
+	reqUUID, err := ident.ParseUser(requestedBy)
 	if err != nil {
 		return nil, errors.Wrap(err, "usecase: invalid requester id")
 	}
@@ -75,13 +76,10 @@ func (s *Service) CreateStaffChangeRequest(ctx context.Context, userID, requeste
 	if err != nil {
 		return nil, errors.Wrap(err, "usecase: encode staff change")
 	}
-	id, err := uuid.NewV7()
-	if err != nil {
-		return nil, errors.Wrap(err, "usecase: generate request id")
-	}
+	reqID := ident.New[ident.StaffChangeRequestID]()
 
 	req, err := s.staffReqRepo.Create(ctx, &StaffChangeRequest{
-		ID:          id,
+		ID:          reqID,
 		UserID:      uUUID,
 		RequestedBy: reqUUID,
 		Changes:     string(payload),
@@ -94,7 +92,7 @@ func (s *Service) CreateStaffChangeRequest(ctx context.Context, userID, requeste
 
 // ListMyStaffChangeRequests returns every request made by the given requester.
 func (s *Service) ListMyStaffChangeRequests(ctx context.Context, requesterID string) ([]ListStaffChangeRequestsByRequesterRow, error) {
-	reqUUID, err := uuid.Parse(requesterID)
+	reqUUID, err := ident.ParseUser(requesterID)
 	if err != nil {
 		return nil, errors.Wrap(err, "usecase: invalid requester id")
 	}
@@ -107,12 +105,12 @@ func (s *Service) ListStaffChangeRequestsFiltered(ctx context.Context, status, q
 }
 
 // ApproveStaffChangeRequest applies the proposed changes to the physician account and marks the request approved.
-func (s *Service) ApproveStaffChangeRequest(ctx context.Context, id, decidedBy string) error {
-	reqUUID, err := uuid.Parse(id)
+func (s *Service) ApproveStaffChangeRequest(ctx context.Context, requestID, decidedBy string) error {
+	reqUUID, err := ident.ParseStaffChangeRequest(requestID)
 	if err != nil {
 		return errors.Wrap(err, "usecase: invalid request id")
 	}
-	deciderUUID, err := uuid.Parse(decidedBy)
+	deciderUUID, err := ident.ParseUser(decidedBy)
 	if err != nil {
 		return errors.Wrap(err, "usecase: invalid decider id")
 	}
@@ -133,23 +131,27 @@ func (s *Service) ApproveStaffChangeRequest(ctx context.Context, id, decidedBy s
 		return err
 	}
 
-	var spUUIDs []uuid.UUID
+	var spIDs []ident.SpecialtyID
 	for _, spID := range change.Specialties {
 		if spID != "" {
-			spUUIDs = append(spUUIDs, uuid.MustParse(spID))
+			parsed, perr := ident.ParseSpecialty(spID)
+			if perr != nil {
+				return errors.Wrap(perr, "usecase: invalid specialty id")
+			}
+			spIDs = append(spIDs, parsed)
 		}
 	}
 
-	return s.userRepo.ApplyApprovedStaffChange(ctx, reqUUID, req.UserID, deciderUUID, change.Name, change.Email, spUUIDs)
+	return s.userRepo.ApplyApprovedStaffChange(ctx, reqUUID, req.UserID, deciderUUID, change.Name, change.Email, spIDs)
 }
 
 // RejectStaffChangeRequest marks the request rejected with a note.
-func (s *Service) RejectStaffChangeRequest(ctx context.Context, id, decidedBy, note string) error {
-	reqUUID, err := uuid.Parse(id)
+func (s *Service) RejectStaffChangeRequest(ctx context.Context, requestID, decidedBy, note string) error {
+	reqUUID, err := ident.ParseStaffChangeRequest(requestID)
 	if err != nil {
 		return errors.Wrap(err, "usecase: invalid request id")
 	}
-	deciderUUID, err := uuid.Parse(decidedBy)
+	deciderUUID, err := ident.ParseUser(decidedBy)
 	if err != nil {
 		return errors.Wrap(err, "usecase: invalid decider id")
 	}

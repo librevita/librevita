@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/cockroachdb/errors"
-	"github.com/google/uuid"
 
 	"librevita.org/ent"
 	"librevita.org/ent/clinicidentifiersystem"
@@ -12,6 +11,7 @@ import (
 	"librevita.org/ent/patient"
 	"librevita.org/ent/patientidentifier"
 	identifiermodel "librevita.org/internal/domain/identifier/model"
+	"librevita.org/pkg/ident"
 )
 
 type identifierRepository struct {
@@ -45,7 +45,7 @@ func (r *identifierRepository) Add(ctx context.Context, rec identifiermodel.Iden
 	return toIdentifierRecordDomain(saved), nil
 }
 
-func (r *identifierRepository) AllowsSystem(ctx context.Context, clinicID uuid.UUID, system string) (bool, error) {
+func (r *identifierRepository) AllowsSystem(ctx context.Context, clinicID ident.ClinicID, system string) (bool, error) {
 	ok, err := r.client.ClinicIdentifierSystem.Query().
 		Where(
 			clinicidentifiersystem.ClinicIDEQ(clinicID),
@@ -58,7 +58,7 @@ func (r *identifierRepository) AllowsSystem(ctx context.Context, clinicID uuid.U
 	return ok, nil
 }
 
-func (r *identifierRepository) FindByBlindIndex(ctx context.Context, clinicID uuid.UUID, blindIndex string) (*identifiermodel.IdentifierRecord, error) {
+func (r *identifierRepository) FindByBlindIndex(ctx context.Context, clinicID ident.ClinicID, blindIndex string) (*identifiermodel.IdentifierRecord, error) {
 	row, err := r.client.PatientIdentifier.Query().
 		Where(
 			patientidentifier.BlindIndexEQ(blindIndex),
@@ -74,7 +74,7 @@ func (r *identifierRepository) FindByBlindIndex(ctx context.Context, clinicID uu
 	return toIdentifierRecordDomain(row), nil
 }
 
-func (r *identifierRepository) ListByPatient(ctx context.Context, patientID uuid.UUID) ([]identifiermodel.IdentifierRecord, error) {
+func (r *identifierRepository) ListByPatient(ctx context.Context, patientID ident.PatientID) ([]identifiermodel.IdentifierRecord, error) {
 	rows, err := r.client.PatientIdentifier.Query().
 		Where(patientidentifier.PatientIDEQ(patientID)).
 		Order(ent.Asc(patientidentifier.FieldCreatedAt)).
@@ -89,7 +89,7 @@ func (r *identifierRepository) ListByPatient(ctx context.Context, patientID uuid
 	return out, nil
 }
 
-func (r *identifierRepository) ListByPatients(ctx context.Context, patientIDs []uuid.UUID) ([]identifiermodel.IdentifierRecord, error) {
+func (r *identifierRepository) ListByPatients(ctx context.Context, patientIDs []ident.PatientID) ([]identifiermodel.IdentifierRecord, error) {
 	if len(patientIDs) == 0 {
 		return nil, nil
 	}
@@ -106,7 +106,7 @@ func (r *identifierRepository) ListByPatients(ctx context.Context, patientIDs []
 	return out, nil
 }
 
-func (r *identifierRepository) Remove(ctx context.Context, patientID, identifierID uuid.UUID) error {
+func (r *identifierRepository) Remove(ctx context.Context, patientID ident.PatientID, identifierID ident.PatientIdentifierID) error {
 	count, err := r.client.PatientIdentifier.Delete().
 		Where(
 			patientidentifier.IDEQ(identifierID),
@@ -122,7 +122,7 @@ func (r *identifierRepository) Remove(ctx context.Context, patientID, identifier
 	return nil
 }
 
-func (r *identifierRepository) PatientExists(ctx context.Context, clinicID, patientID uuid.UUID) (bool, error) {
+func (r *identifierRepository) PatientExists(ctx context.Context, clinicID ident.ClinicID, patientID ident.PatientID) (bool, error) {
 	return r.client.Patient.Query().
 		Where(
 			patient.IDEQ(patientID),

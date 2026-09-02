@@ -8,6 +8,7 @@ import (
 	"entgo.io/ent/schema/field"
 
 	"librevita.org/internal/database/schema/mixin"
+	"librevita.org/pkg/ident"
 )
 
 // clinicSlugRE is the DNS-safe hostname label used as the clinic subdomain.
@@ -21,7 +22,7 @@ type Clinic struct {
 // Mixin of the Clinic.
 func (Clinic) Mixin() []ent.Mixin {
 	return []ent.Mixin{
-		mixin.UUID{},
+		mixin.UUID[ident.ClinicID]{},
 		mixin.Time{},
 	}
 }

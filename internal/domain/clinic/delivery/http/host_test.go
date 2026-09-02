@@ -5,11 +5,11 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"librevita.org/pkg/ident"
 
 	"librevita.org/internal/core/clinicctx"
 	"librevita.org/internal/core/config"
@@ -22,7 +22,7 @@ import (
 func TestHostMiddleware(t *testing.T) {
 	logger := log.Nop()
 	cfg := &config.Config{BaseDomain: "lv.test"}
-	norteID := uuid.MustParse("01990000-0000-7000-8000-0000000000a1")
+	norteID := ident.MustParseClinic("01990000-0000-7000-8000-0000000000a1")
 
 	cases := []struct {
 		name   string

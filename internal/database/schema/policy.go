@@ -11,6 +11,7 @@ import (
 	"entgo.io/ent/schema/index"
 
 	"librevita.org/internal/database/schema/mixin"
+	"librevita.org/pkg/ident"
 )
 
 // AccessPolicy holds the schema definition for dynamic CEL authorization policies.
@@ -28,7 +29,7 @@ func (AccessPolicy) Annotations() []schema.Annotation {
 // Mixin of the AccessPolicy.
 func (AccessPolicy) Mixin() []ent.Mixin {
 	return []ent.Mixin{
-		mixin.UUID{},
+		mixin.UUID[ident.PolicyID]{},
 		mixin.Clinic{},
 	}
 }

@@ -177,7 +177,7 @@ func (h *Handler) UserAvatar(c echo.Context) error {
 		}
 		return err
 	}
-	return h.serveAvatar(ctx, c, user.ID, user.DisplayName)
+	return h.serveAvatar(ctx, c, user.ID.UUID(), user.DisplayName)
 }
 
 // serveAvatar streams the newest avatar of userID, or the initials

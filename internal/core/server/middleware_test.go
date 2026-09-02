@@ -7,12 +7,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"librevita.org/pkg/ident"
 
 	"librevita.org/internal/core/audit"
 	"librevita.org/internal/core/auth"
@@ -85,7 +85,7 @@ func TestRequireAuthRedirectsAnonymous(t *testing.T) {
 
 func TestRequireAuthAcceptsValidSession(t *testing.T) {
 	sessions, sessionRepo := newMockSessionManager(t)
-	userID := uuid.MustParse("01990000-0000-7000-8000-000000000001")
+	userID := ident.MustParseUser("01990000-0000-7000-8000-000000000001")
 
 	token, err := sessions.Create(context.Background(), auth.Principal{
 		ID:    userID.String(),
@@ -97,7 +97,7 @@ func TestRequireAuthAcceptsValidSession(t *testing.T) {
 
 	sessionRepo.EXPECT().GetActive(mock.Anything, mock.Anything, mock.Anything).Return(&auth.SessionRecord{
 		User: &auth.SessionUser{
-			ID:     userID,
+			ID:     userID.UUID(),
 			Email:  "user@example.org",
 			Name:   "Test User",
 			Role:   auth.RoleAdmin,
@@ -221,7 +221,7 @@ func TestNotFoundRedirectsAnonymous(t *testing.T) {
 
 func TestNotFoundAuthenticated(t *testing.T) {
 	sessions, sessionRepo := newMockSessionManager(t)
-	userID := uuid.MustParse("01990000-0000-7000-8000-000000000001")
+	userID := ident.MustParseUser("01990000-0000-7000-8000-000000000001")
 
 	token, err := sessions.Create(context.Background(), auth.Principal{
 		ID:    userID.String(),
@@ -233,7 +233,7 @@ func TestNotFoundAuthenticated(t *testing.T) {
 
 	sessionRepo.EXPECT().GetActive(mock.Anything, mock.Anything, mock.Anything).Return(&auth.SessionRecord{
 		User: &auth.SessionUser{
-			ID:     userID,
+			ID:     userID.UUID(),
 			Email:  "user@example.org",
 			Name:   "Test User",
 			Role:   auth.RoleAdmin,

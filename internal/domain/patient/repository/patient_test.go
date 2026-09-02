@@ -8,7 +8,6 @@ import (
 
 	"entgo.io/ent/dialect"
 	entsql "entgo.io/ent/dialect/sql"
-	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	_ "modernc.org/sqlite"
@@ -19,13 +18,14 @@ import (
 	"librevita.org/internal/core/normalize"
 	patientmodel "librevita.org/internal/domain/patient/model"
 	"librevita.org/internal/domain/patient/repository"
+	"librevita.org/pkg/ident"
 )
 
 const testKeyB64 = "nAmIvOXVc0vb6M9G7P9q2j2yK1WxP3sJ8q5dR4tU6wA=" // gitleaks:allow
 
 func strPtr(s string) *string { return &s }
 
-func setupTestRepository(t *testing.T) (patientmodel.PatientRepository, *ent.Client, crypto.Hasher, uuid.UUID, uuid.UUID) {
+func setupTestRepository(t *testing.T) (patientmodel.PatientRepository, *ent.Client, crypto.Hasher, ident.ClinicID, ident.UserID) {
 	t.Helper()
 
 	db, err := sql.Open("sqlite", "file:ent?mode=memory&cache=shared&_pragma=foreign_keys(1)")
@@ -54,7 +54,7 @@ func setupTestRepository(t *testing.T) (patientmodel.PatientRepository, *ent.Cli
 	repo := repository.NewPatientRepository(client)
 
 	// Create clinic, role, and user
-	clinicID := uuid.New()
+	clinicID := ident.New[ident.ClinicID]()
 	_, err = client.Clinic.Create().
 		SetID(clinicID).
 		SetSlug("clinica-central").
@@ -62,7 +62,7 @@ func setupTestRepository(t *testing.T) (patientmodel.PatientRepository, *ent.Cli
 		Save(context.Background())
 	require.NoError(t, err)
 
-	roleID := uuid.New()
+	roleID := ident.New[ident.RoleID]()
 	_, err = client.Role.Create().
 		SetID(roleID).
 		SetClinicID(clinicID).
@@ -70,7 +70,7 @@ func setupTestRepository(t *testing.T) (patientmodel.PatientRepository, *ent.Cli
 		Save(context.Background())
 	require.NoError(t, err)
 
-	userID := uuid.New()
+	userID := ident.New[ident.UserID]()
 	_, err = client.User.Create().
 		SetID(userID).
 		SetClinicID(clinicID).
@@ -88,7 +88,7 @@ func TestPatientRepository_CRUD(t *testing.T) {
 	repo, client, hasher, clinicID, userID := setupTestRepository(t)
 	ctx := context.Background()
 
-	patientID := uuid.New()
+	patientID := ident.New[ident.PatientID]()
 	p := patientmodel.Patient{
 		ID:          patientID,
 		ClinicID:    clinicID,
@@ -144,7 +144,7 @@ func TestPatientRepository_CRUD(t *testing.T) {
 	require.Equal(t, 1, totalCandidates)
 	require.Len(t, candidates, 1)
 	assert.Equal(t, patientID, candidates[0].ID)
-	hydrated, err := optimized.GetMany(ctx, clinicID, []uuid.UUID{patientID})
+	hydrated, err := optimized.GetMany(ctx, clinicID, []ident.PatientID{patientID})
 	require.NoError(t, err)
 	require.Len(t, hydrated, 1)
 	assert.Equal(t, "Maria Joana", hydrated[0].DisplayName)
@@ -189,7 +189,7 @@ func TestPatientRepository_CRUD(t *testing.T) {
 	assert.Equal(t, "Maria Joana da Silva", listActive[0].DisplayName)
 
 	// 6. BulkSetStatus
-	count, err := repo.BulkSetStatus(ctx, clinicID, []uuid.UUID{patientID}, patientmodel.PatientStatusArchived)
+	count, err := repo.BulkSetStatus(ctx, clinicID, []ident.PatientID{patientID}, patientmodel.PatientStatusArchived)
 	require.NoError(t, err)
 	assert.Equal(t, 1, count)
 

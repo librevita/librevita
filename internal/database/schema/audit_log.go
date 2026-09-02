@@ -7,9 +7,9 @@ import (
 	"entgo.io/ent/schema/edge"
 	"entgo.io/ent/schema/field"
 	"entgo.io/ent/schema/index"
-	"github.com/google/uuid"
 
 	"librevita.org/internal/database/schema/mixin"
+	"librevita.org/pkg/ident"
 )
 
 // AuditLog holds the schema definition for the immutable AuditLog entity.
@@ -36,7 +36,7 @@ func (AuditLog) Fields() []ent.Field {
 	return []ent.Field{
 		field.Int("id").
 			Immutable(),
-		field.UUID("clinic_id", uuid.UUID{}).
+		field.UUID("clinic_id", ident.ClinicID{}).
 			Optional().
 			Nillable().
 			Comment("Owning clinic; null for apex events"),

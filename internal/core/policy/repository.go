@@ -6,12 +6,11 @@ import (
 
 	"github.com/cockroachdb/errors"
 
-	"github.com/google/uuid"
-
 	"librevita.org/ent"
 	"librevita.org/ent/accesspolicy"
 	"librevita.org/ent/accesspolicyversion"
 	"librevita.org/internal/core/clinicctx"
+	"librevita.org/pkg/ident"
 )
 
 type policyRepository struct {
@@ -39,10 +38,7 @@ func (r *policyRepository) SeedDefaults(ctx context.Context, defaults map[string
 			continue
 		}
 
-		pID, err := uuid.NewV7()
-		if err != nil {
-			return errors.Wrapf(err, "policy repository: uuid for %q", name)
-		}
+		pID := ident.New[ident.PolicyID]()
 
 		tx, err := r.client.Tx(ctx)
 		if err != nil {
@@ -111,13 +107,9 @@ func (r *policyRepository) Set(ctx context.Context, name, expression string, act
 		return errors.Wrap(err, "policy repository: lookup")
 	}
 
-	var polID uuid.UUID
+	var polID ident.PolicyID
 	if ent.IsNotFound(err) {
-		pID, err := uuid.NewV7()
-		if err != nil {
-			_ = tx.Rollback()
-			return errors.Wrap(err, "policy repository: uuid")
-		}
+		pID := ident.New[ident.PolicyID]()
 		create := tx.AccessPolicy.Create().
 			SetID(pID).
 			SetName(name).

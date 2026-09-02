@@ -15,6 +15,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"librevita.org/pkg/ident"
 	_ "modernc.org/sqlite"
 
 	"librevita.org/ent"
@@ -121,11 +122,11 @@ func TestFLE_MultiTenant_DynamicKey_Concurrency(t *testing.T) {
 	client := setupTestEntClient(t, hasher, nil)
 
 	// Create 2 clinics (tenants)
-	clinic1ID := uuid.New()
+	clinic1ID := ident.ClinicID(uuid.New())
 	_, err = client.Clinic.Create().SetID(clinic1ID).SetSlug("tenant-a").SetName("Clínica Tenant A").Save(context.Background())
 	require.NoError(t, err)
 
-	clinic2ID := uuid.New()
+	clinic2ID := ident.ClinicID(uuid.New())
 	_, err = client.Clinic.Create().SetID(clinic2ID).SetSlug("tenant-b").SetName("Clínica Tenant B").Save(context.Background())
 	require.NoError(t, err)
 
@@ -147,9 +148,9 @@ func TestFLE_MultiTenant_DynamicKey_Concurrency(t *testing.T) {
 		defer wg.Done()
 		for i := 0; i < iterations; i++ {
 			ctx := fle.WithEncryptor(context.Background(), encTenant1)
-			ctx = fle.WithClinicID(ctx, clinic1ID.String())
+			ctx = fle.WithClinicID(ctx, clinic1ID)
 
-			pID := uuid.New()
+			pID := ident.PatientID(uuid.New())
 			name := fmt.Sprintf("Patient Tenant A %d", i)
 			p, err := client.Patient.Create().
 				SetID(pID).
@@ -180,9 +181,9 @@ func TestFLE_MultiTenant_DynamicKey_Concurrency(t *testing.T) {
 		defer wg.Done()
 		for i := 0; i < iterations; i++ {
 			ctx := fle.WithEncryptor(context.Background(), encTenant2)
-			ctx = fle.WithClinicID(ctx, clinic2ID.String())
+			ctx = fle.WithClinicID(ctx, clinic2ID)
 
-			pID := uuid.New()
+			pID := ident.PatientID(uuid.New())
 			name := fmt.Sprintf("Patient Tenant B %d", i)
 			p, err := client.Patient.Create().
 				SetID(pID).
@@ -227,9 +228,9 @@ func TestFLE_UsesPatientDEKPerEntity(t *testing.T) {
 	master := generateTestKey(t)
 	engine, err := crypto.NewEngine(base64.StdEncoding.EncodeToString(master), v)
 	require.NoError(t, err)
-	clinicID := uuid.New()
-	patientA := uuid.New()
-	patientB := uuid.New()
+	clinicID := ident.ClinicID(uuid.New())
+	patientA := ident.PatientID(uuid.New())
+	patientB := ident.PatientID(uuid.New())
 	_, err = client.Clinic.Create().
 		SetID(clinicID).
 		SetSlug("patient-scoped").
@@ -249,7 +250,7 @@ func TestFLE_UsesPatientDEKPerEntity(t *testing.T) {
 	client.Use(ent.FLEMutationHook(clinicHasher, clinicEnc, engine))
 	client.Intercept(ent.FLEDecryptionInterceptor(clinicEnc, engine))
 
-	ctx := fle.WithClinicID(context.Background(), clinicID.String())
+	ctx := fle.WithClinicID(context.Background(), clinicID)
 	ctx = crypto.WithRequestKeyCache(ctx)
 	defer crypto.ClearRequestKeyCache(ctx)
 	ctx = fle.WithEncryptor(ctx, clinicEnc)

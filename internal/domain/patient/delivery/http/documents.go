@@ -69,7 +69,7 @@ func (h *Handler) UploadDocument(c echo.Context) error {
 	name := sanitizeFileName(file.Filename)
 	_, err = h.files.UploadEncrypted(ctx, storage.UploadInput{
 		Domain:       patientDocumentDomain,
-		ResourceID:   pt.ID,
+		ResourceID:   pt.ID.UUID(),
 		OriginalName: name,
 		ContentType:  contentTypeOr(file.Header.Get("Content-Type"), "application/octet-stream"),
 		CreatedBy:    uuid.MustParse(server.ActorID(c)),
@@ -107,7 +107,7 @@ func (h *Handler) DownloadDocument(c echo.Context) error {
 	}
 	defer crypto.ZeroBytes(dek)
 	patientURN := urn.Patient(pt.ClinicID, pt.ID)
-	meta, obj, err := h.files.OpenEncryptedForResource(ctx, patientDocumentDomain, pt.ID, fileID, dek, []byte(patientURN))
+	meta, obj, err := h.files.OpenEncryptedForResource(ctx, patientDocumentDomain, pt.ID.UUID(), fileID, dek, []byte(patientURN))
 	if err != nil {
 		if storage.IsNotFound(err) {
 			return echo.NewHTTPError(http.StatusNotFound)

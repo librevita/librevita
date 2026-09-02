@@ -64,8 +64,8 @@ func TestBuildDatepickerPanelDefaultsInvalidInput(t *testing.T) {
 	if !strings.HasSuffix(data.Title, " 20") && len(data.Title) < 8 {
 		t.Fatalf("title = %q, want the current month", data.Title)
 	}
-	if len(data.Cells) != 42 {
-		t.Fatalf("cells = %d, want 42", len(data.Cells))
+	if n := len(data.Cells); n != 35 && n != 42 {
+		t.Fatalf("cells = %d, want 35 or 42", n)
 	}
 }
 

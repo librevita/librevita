@@ -4,9 +4,9 @@ import (
 	"entgo.io/ent"
 	"entgo.io/ent/schema/edge"
 	"entgo.io/ent/schema/field"
-	"github.com/google/uuid"
 
 	"librevita.org/internal/database/schema/mixin"
+	"librevita.org/pkg/ident"
 )
 
 // IdentifierSystem holds the schema definition for the IdentifierSystem catalog.
@@ -17,7 +17,7 @@ type IdentifierSystem struct {
 // Mixin of the IdentifierSystem.
 func (IdentifierSystem) Mixin() []ent.Mixin {
 	return []ent.Mixin{
-		mixin.UUID{},
+		mixin.UUID[ident.IdentifierSystemID]{},
 		mixin.Time{},
 	}
 }
@@ -53,7 +53,7 @@ func (IdentifierSystem) Fields() []ent.Field {
 			Default(true),
 		field.String("mask").
 			Default(""),
-		field.UUID("created_by", uuid.UUID{}).
+		field.UUID("created_by", ident.UserID{}).
 			Optional().
 			Nillable(),
 	}

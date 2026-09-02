@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"librevita.org/pkg/ident"
 
 	"librevita.org/internal/core/audit"
 	"librevita.org/internal/core/auth"
@@ -65,7 +66,7 @@ func TestCreateBundleRejectsInvalidJSON(t *testing.T) {
 	req.Header.Set(echo.HeaderContentType, ContentType)
 	rec := httptest.NewRecorder()
 	c := e.NewContext(req, rec)
-	clinicID := uuid.MustParse("01990000-0000-7000-8000-000000000001")
+	clinicID := ident.MustParseClinic("01990000-0000-7000-8000-000000000001")
 	c.Set("server.principal", &auth.Principal{ID: clinicID.String(), Role: auth.RolePhysician})
 	c.SetRequest(req.WithContext(clinicctx.WithClinic(req.Context(), &clinicctx.Clinic{ID: clinicID, Slug: "t", Name: "T"})))
 	require.NoError(t, h.CreateBundle(c))
@@ -94,7 +95,7 @@ func TestFHIRErrorHidesInternalError(t *testing.T) {
 }
 
 type memEpisodeRepo struct {
-	byID map[uuid.UUID]episodemodel.Episode
+	byID map[ident.EpisodeID]episodemodel.Episode
 }
 
 func (m *memEpisodeRepo) Create(_ context.Context, ep episodemodel.Episode) (*episodemodel.Episode, error) {
@@ -112,7 +113,7 @@ func (m *memEpisodeRepo) UpdateDraft(_ context.Context, ep episodemodel.Episode)
 	m.byID[ep.ID] = ep
 	return &ep, nil
 }
-func (m *memEpisodeRepo) Get(_ context.Context, clinicID, episodeID uuid.UUID) (*episodemodel.Episode, error) {
+func (m *memEpisodeRepo) Get(_ context.Context, clinicID ident.ClinicID, episodeID ident.EpisodeID) (*episodemodel.Episode, error) {
 	ep, ok := m.byID[episodeID]
 	if !ok || ep.ClinicID != clinicID {
 		return nil, episodemodel.ErrNotFound
@@ -121,7 +122,7 @@ func (m *memEpisodeRepo) Get(_ context.Context, clinicID, episodeID uuid.UUID) (
 	fillFHIRSuccessor(m.byID, &cp)
 	return &cp, nil
 }
-func (m *memEpisodeRepo) GetByPredecessor(_ context.Context, clinicID, predecessorID uuid.UUID) (*episodemodel.Episode, error) {
+func (m *memEpisodeRepo) GetByPredecessor(_ context.Context, clinicID ident.ClinicID, predecessorID ident.EpisodeID) (*episodemodel.Episode, error) {
 	for _, ep := range m.byID {
 		if ep.ClinicID == clinicID && ep.PredecessorID != nil && *ep.PredecessorID == predecessorID {
 			cp := ep
@@ -131,7 +132,7 @@ func (m *memEpisodeRepo) GetByPredecessor(_ context.Context, clinicID, predecess
 	}
 	return nil, episodemodel.ErrNotFound
 }
-func (m *memEpisodeRepo) ListByPatient(_ context.Context, clinicID, patientID uuid.UUID, status *episodemodel.EpisodeStatus) ([]episodemodel.Episode, error) {
+func (m *memEpisodeRepo) ListByPatient(_ context.Context, clinicID ident.ClinicID, patientID ident.PatientID, status *episodemodel.EpisodeStatus) ([]episodemodel.Episode, error) {
 	var out []episodemodel.Episode
 	for _, ep := range m.byID {
 		if ep.ClinicID == clinicID && ep.PatientID == patientID {
@@ -145,7 +146,7 @@ func (m *memEpisodeRepo) ListByPatient(_ context.Context, clinicID, patientID uu
 	}
 	return out, nil
 }
-func (m *memEpisodeRepo) SetStatus(_ context.Context, clinicID, episodeID uuid.UUID, status episodemodel.EpisodeStatus) error {
+func (m *memEpisodeRepo) SetStatus(_ context.Context, clinicID ident.ClinicID, episodeID ident.EpisodeID, status episodemodel.EpisodeStatus) error {
 	ep, ok := m.byID[episodeID]
 	if !ok || ep.ClinicID != clinicID {
 		return episodemodel.ErrNotFound
@@ -154,11 +155,11 @@ func (m *memEpisodeRepo) SetStatus(_ context.Context, clinicID, episodeID uuid.U
 	m.byID[episodeID] = ep
 	return nil
 }
-func (m *memEpisodeRepo) PatientExists(_ context.Context, _, _ uuid.UUID) (bool, error) {
+func (m *memEpisodeRepo) PatientExists(_ context.Context, _ ident.ClinicID, _ ident.PatientID) (bool, error) {
 	return true, nil
 }
 
-func fillFHIRSuccessor(byID map[uuid.UUID]episodemodel.Episode, ep *episodemodel.Episode) {
+func fillFHIRSuccessor(byID map[ident.EpisodeID]episodemodel.Episode, ep *episodemodel.Episode) {
 	for _, other := range byID {
 		if other.PredecessorID != nil && *other.PredecessorID == ep.ID {
 			id := other.ID
@@ -168,7 +169,7 @@ func fillFHIRSuccessor(byID map[uuid.UUID]episodemodel.Episode, ep *episodemodel
 	}
 }
 
-func viewTestHandler(t *testing.T, auditRepo *auditmocks.MockRepository, ep episodemodel.Episode) (*Handler, uuid.UUID) {
+func viewTestHandler(t *testing.T, auditRepo *auditmocks.MockRepository, ep episodemodel.Episode) (*Handler, ident.ClinicID) {
 	t.Helper()
 	log := log.Nop()
 	auditLogger, err := audit.NewLogger(auditRepo, log)
@@ -183,17 +184,17 @@ func viewTestHandler(t *testing.T, auditRepo *auditmocks.MockRepository, ep epis
 	policies, err := policy.NewPolicyEngine(policyRepo, log)
 	require.NoError(t, err)
 	require.NoError(t, policies.Load(context.Background()))
-	repo := &memEpisodeRepo{byID: map[uuid.UUID]episodemodel.Episode{ep.ID: ep}}
+	repo := &memEpisodeRepo{byID: map[ident.EpisodeID]episodemodel.Episode{ep.ID: ep}}
 	return NewHandler(usecase.NewService(repo, policies), auditLogger, log), ep.ClinicID
 }
 
 func sampleEpisode() episodemodel.Episode {
-	clinicID := uuid.MustParse("01990000-0000-7000-8000-000000000001")
+	clinicID := ident.MustParseClinic("01990000-0000-7000-8000-000000000001")
 	return episodemodel.Episode{
-		ID:         uuid.MustParse("01990000-0000-7000-8000-0000000000aa"),
+		ID:         ident.MustParseEpisode("01990000-0000-7000-8000-0000000000aa"),
 		ClinicID:   clinicID,
-		PatientID:  uuid.MustParse("01990000-0000-7000-8000-0000000000bb"),
-		AuthorID:   uuid.MustParse("01990000-0000-7000-8000-0000000000cc"),
+		PatientID:  ident.MustParsePatient("01990000-0000-7000-8000-0000000000bb"),
+		AuthorID:   ident.MustParseUser("01990000-0000-7000-8000-0000000000cc"),
 		Type:       episodemodel.EpisodeTypeConsultation,
 		Status:     episodemodel.EpisodeStatusFinalized,
 		Class:      episodemodel.CareSettingAmbulatory,
@@ -209,7 +210,7 @@ func expectChartView(auditRepo *auditmocks.MockRepository, resource string) {
 	}), mock.Anything, mock.Anything).Return(nil).Once()
 }
 
-func physicianContext(e *echo.Echo, method, path string, clinicID uuid.UUID) (echo.Context, *httptest.ResponseRecorder) {
+func physicianContext(e *echo.Echo, method, path string, clinicID ident.ClinicID) (echo.Context, *httptest.ResponseRecorder) {
 	req := httptest.NewRequest(method, path, nil)
 	rec := httptest.NewRecorder()
 	c := e.NewContext(req, rec)
@@ -224,7 +225,7 @@ func physicianContext(e *echo.Echo, method, path string, clinicID uuid.UUID) (ec
 func TestCreateBundleCreateReturns201(t *testing.T) {
 	ep := sampleEpisode()
 	ep.Status = episodemodel.EpisodeStatusDraft
-	ep.ID = uuid.MustParse("01990000-0000-7000-8000-0000000000ab")
+	ep.ID = ident.MustParseEpisode("01990000-0000-7000-8000-0000000000ab")
 	auditRepo := auditmocks.NewMockRepository(t)
 	auditRepo.EXPECT().LastSignature(mock.Anything).Return("", nil).Once()
 	auditRepo.EXPECT().Record(mock.Anything, mock.MatchedBy(func(ev audit.Event) bool {
@@ -326,7 +327,7 @@ func TestDocumentDoesNotAuditMissingEpisode(t *testing.T) {
 	h, clinicID := viewTestHandler(t, auditRepo, ep)
 
 	e := echo.New()
-	missing := uuid.MustParse("01990000-0000-7000-8000-0000000000ff")
+	missing := ident.MustParseEpisode("01990000-0000-7000-8000-0000000000ff")
 	c, rec := physicianContext(e, http.MethodGet, "/fhir/r4/Composition/"+missing.String()+"/$document", clinicID)
 	c.SetParamNames("id")
 	c.SetParamValues(missing.String())

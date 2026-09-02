@@ -7,6 +7,7 @@ import (
 	"entgo.io/ent/schema/index"
 
 	"librevita.org/internal/database/schema/mixin"
+	"librevita.org/pkg/ident"
 )
 
 // Role holds the schema definition for the Role entity.
@@ -17,7 +18,7 @@ type Role struct {
 // Mixin of the Role.
 func (Role) Mixin() []ent.Mixin {
 	return []ent.Mixin{
-		mixin.UUID{},
+		mixin.UUID[ident.RoleID]{},
 		mixin.Clinic{},
 		mixin.CreatedAt{},
 	}

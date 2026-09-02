@@ -7,6 +7,7 @@ import (
 	"entgo.io/ent/schema/index"
 
 	"librevita.org/internal/database/schema/mixin"
+	"librevita.org/pkg/ident"
 )
 
 // Specialty holds the schema definition for the Specialty entity.
@@ -17,7 +18,7 @@ type Specialty struct {
 // Mixin of the Specialty.
 func (Specialty) Mixin() []ent.Mixin {
 	return []ent.Mixin{
-		mixin.UUID{},
+		mixin.UUID[ident.SpecialtyID]{},
 		mixin.Clinic{},
 		mixin.CreatedAt{},
 	}

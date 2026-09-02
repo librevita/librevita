@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/cockroachdb/errors"
-	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 
 	"librevita.org/internal/core/audit"
@@ -19,6 +18,7 @@ import (
 	episodemodel "librevita.org/internal/domain/episode/model"
 	"librevita.org/internal/domain/episode/usecase"
 	patientusecase "librevita.org/internal/domain/patient/usecase"
+	"librevita.org/pkg/ident"
 )
 
 // Handler renders SOAP chart pages nested under the patient record.
@@ -94,7 +94,7 @@ func (h *Handler) NewPage(c echo.Context) error {
 
 // Create inserts a draft note.
 func (h *Handler) Create(c echo.Context) error {
-	return h.save(c, uuid.Nil)
+	return h.save(c, ident.EpisodeID{})
 }
 
 // EditPage renders the draft editor.
@@ -126,11 +126,11 @@ func (h *Handler) EditPage(c echo.Context) error {
 
 // Update saves a draft, optionally finalizing.
 func (h *Handler) Update(c echo.Context) error {
-	id, err := uuid.Parse(c.Param("episodeID"))
+	episodeID, err := ident.ParseEpisode(c.Param("episodeID"))
 	if err != nil {
 		return echo.NewHTTPError(http.StatusNotFound)
 	}
-	return h.save(c, id)
+	return h.save(c, episodeID)
 }
 
 // View renders a read-only SOAP note.
@@ -198,7 +198,7 @@ func (h *Handler) Amend(c echo.Context) error {
 	return c.Redirect(http.StatusFound, "/patients/"+patientID.String()+"/episodes/"+saved.ID.String()+"/edit")
 }
 
-func (h *Handler) save(c echo.Context, episodeID uuid.UUID) error {
+func (h *Handler) save(c echo.Context, episodeID ident.EpisodeID) error {
 	principal := server.Principal(c)
 	clinicID, patientID, err := h.ids(c)
 	if err != nil {
@@ -215,13 +215,13 @@ func (h *Handler) save(c echo.Context, episodeID uuid.UUID) error {
 			return err
 		}
 		idStr := ""
-		if episodeID != uuid.Nil {
+		if !episodeID.IsZero() {
 			idStr = episodeID.String()
 		}
 		return server.Render(c, http.StatusOK, views.EpisodeFormPage(
 			server.CSRFToken(c, h.csrf), principal, patientID.String(), idStr, name, "", applyAdd(values, add)))
 	}
-	authorID, err := uuid.Parse(principal.ID)
+	authorID, err := ident.ParseUser(principal.ID)
 	if err != nil {
 		return echo.NewHTTPError(http.StatusInternalServerError)
 	}
@@ -229,7 +229,7 @@ func (h *Handler) save(c echo.Context, episodeID uuid.UUID) error {
 	ep.ID = episodeID
 	var saved *usecase.Episode
 	action := "chart.create"
-	if episodeID == uuid.Nil {
+	if episodeID.IsZero() {
 		saved, err = h.svc.Create(c.Request().Context(), principal, ep)
 	} else {
 		saved, err = h.svc.UpdateDraft(c.Request().Context(), principal, ep)
@@ -241,7 +241,7 @@ func (h *Handler) save(c echo.Context, episodeID uuid.UUID) error {
 			return nerr
 		}
 		idStr := ""
-		if episodeID != uuid.Nil {
+		if !episodeID.IsZero() {
 			idStr = episodeID.String()
 		}
 		return server.Render(c, http.StatusBadRequest, views.EpisodeFormPage(
@@ -259,12 +259,12 @@ func (h *Handler) save(c echo.Context, episodeID uuid.UUID) error {
 	return c.Redirect(http.StatusFound, "/patients/"+patientID.String()+"/episodes/"+saved.ID.String())
 }
 
-func (h *Handler) load(c echo.Context, clinicID, patientID uuid.UUID) (*usecase.Episode, error) {
-	id, err := uuid.Parse(c.Param("episodeID"))
+func (h *Handler) load(c echo.Context, clinicID ident.ClinicID, patientID ident.PatientID) (*usecase.Episode, error) {
+	episodeID, err := ident.ParseEpisode(c.Param("episodeID"))
 	if err != nil {
 		return nil, echo.NewHTTPError(http.StatusNotFound)
 	}
-	ep, err := h.svc.Get(c.Request().Context(), server.Principal(c), clinicID, id)
+	ep, err := h.svc.Get(c.Request().Context(), server.Principal(c), clinicID, episodeID)
 	if err != nil {
 		return nil, h.httpError(err)
 	}
@@ -274,19 +274,19 @@ func (h *Handler) load(c echo.Context, clinicID, patientID uuid.UUID) (*usecase.
 	return ep, nil
 }
 
-func (h *Handler) ids(c echo.Context) (clinicID, patientID uuid.UUID, err error) {
+func (h *Handler) ids(c echo.Context) (clinicID ident.ClinicID, patientID ident.PatientID, err error) {
 	clinicID, err = clinicctx.MustClinicID(c.Request().Context())
 	if err != nil {
-		return uuid.Nil, uuid.Nil, echo.NewHTTPError(http.StatusBadRequest, err.Error())
+		return ident.ClinicID{}, ident.PatientID{}, echo.NewHTTPError(http.StatusBadRequest, err.Error())
 	}
-	patientID, err = uuid.Parse(c.Param("id"))
+	patientID, err = ident.ParsePatient(c.Param("id"))
 	if err != nil {
-		return uuid.Nil, uuid.Nil, echo.NewHTTPError(http.StatusNotFound)
+		return ident.ClinicID{}, ident.PatientID{}, echo.NewHTTPError(http.StatusNotFound)
 	}
 	return clinicID, patientID, nil
 }
 
-func (h *Handler) patientName(ctx context.Context, clinicID, patientID uuid.UUID) (string, error) {
+func (h *Handler) patientName(ctx context.Context, clinicID ident.ClinicID, patientID ident.PatientID) (string, error) {
 	pt, err := h.patients.Get(ctx, clinicID.String(), patientID.String())
 	if err != nil {
 		if errors.Is(err, patientusecase.ErrNotFound) {

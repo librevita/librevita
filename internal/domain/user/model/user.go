@@ -4,7 +4,8 @@ import (
 	"time"
 
 	"github.com/cockroachdb/errors"
-	"github.com/google/uuid"
+
+	"librevita.org/pkg/ident"
 )
 
 // Standard system role names.
@@ -39,12 +40,12 @@ var (
 
 // User represents a user account domain model.
 type User struct {
-	ID           uuid.UUID
-	ClinicID     uuid.UUID
+	ID           ident.UserID
+	ClinicID     ident.ClinicID
 	Email        string
 	PasswordHash string
 	DisplayName  string
-	RoleID       uuid.UUID
+	RoleID       ident.RoleID
 	RoleName     string
 	Active       bool
 	Timezone     string
@@ -55,7 +56,7 @@ type User struct {
 
 // Role represents a role domain model.
 type Role struct {
-	ID         uuid.UUID
+	ID         ident.RoleID
 	Name       string
 	System     bool
 	IsClinical bool
@@ -64,23 +65,23 @@ type Role struct {
 
 // Specialty represents a medical specialty domain model.
 type Specialty struct {
-	ID        uuid.UUID
-	ClinicID  uuid.UUID
+	ID        ident.SpecialtyID
+	ClinicID  ident.ClinicID
 	Name      string
 	CreatedAt time.Time
 }
 
 // StaffChangeRequest represents a staff change request domain model.
 type StaffChangeRequest struct {
-	ID           uuid.UUID
-	UserID       uuid.UUID
-	RequestedBy  uuid.UUID
+	ID           ident.StaffChangeRequestID
+	UserID       ident.UserID
+	RequestedBy  ident.UserID
 	Status       string
 	Changes      string
 	DecisionNote *string
 	CreatedAt    time.Time
 	DecidedAt    *time.Time
-	DecidedBy    *uuid.UUID
+	DecidedBy    *ident.UserID
 }
 
 // Preferences holds user visual/locale preferences.
@@ -93,7 +94,7 @@ type Preferences struct {
 
 // ListUsersRow is a projection for the users management list.
 type ListUsersRow struct {
-	ID          uuid.UUID
+	ID          ident.UserID
 	Email       string
 	DisplayName string
 	RoleName    string
@@ -103,11 +104,11 @@ type ListUsersRow struct {
 
 // GetUserByIDRow is a projection for user detail views.
 type GetUserByIDRow struct {
-	ID             uuid.UUID
+	ID             ident.UserID
 	Email          string
 	PasswordHash   string
 	DisplayName    string
-	RoleID         uuid.UUID
+	RoleID         ident.RoleID
 	RoleName       string
 	RoleIsClinical bool
 	Active         bool
@@ -119,7 +120,7 @@ type GetUserByIDRow struct {
 
 // ListRecentUsersRow is a projection for the recent users widget.
 type ListRecentUsersRow struct {
-	ID          uuid.UUID
+	ID          ident.UserID
 	Email       string
 	DisplayName string
 	RoleName    string
@@ -128,7 +129,7 @@ type ListRecentUsersRow struct {
 
 // ListPhysiciansPageRow is a projection for the physician directory table.
 type ListPhysiciansPageRow struct {
-	ID          uuid.UUID
+	ID          ident.UserID
 	DisplayName string
 	Email       string
 	Active      bool
@@ -137,13 +138,13 @@ type ListPhysiciansPageRow struct {
 
 // ListStaffChangeRequestsByRequesterRow is a projection for requester's change history.
 type ListStaffChangeRequestsByRequesterRow struct {
-	ID           uuid.UUID
-	UserID       uuid.UUID
+	ID           ident.StaffChangeRequestID
+	UserID       ident.UserID
 	UserName     string
 	UserEmail    string
 	StaffName    string
 	StaffEmail   string
-	RequestedBy  uuid.UUID
+	RequestedBy  ident.UserID
 	Status       string
 	Changes      string
 	DecisionNote *string
@@ -153,17 +154,17 @@ type ListStaffChangeRequestsByRequesterRow struct {
 
 // ListStaffChangeRequestsFilteredRow is a projection for admin change requests review.
 type ListStaffChangeRequestsFilteredRow struct {
-	ID            uuid.UUID
-	UserID        uuid.UUID
+	ID            ident.StaffChangeRequestID
+	UserID        ident.UserID
 	StaffName     string
 	StaffEmail    string
-	RequestedBy   uuid.UUID
+	RequestedBy   ident.UserID
 	RequesterName string
 	Status        string
 	Changes       string
 	DecisionNote  *string
 	CreatedAt     time.Time
 	DecidedAt     *time.Time
-	DecidedBy     *uuid.UUID
+	DecidedBy     *ident.UserID
 	DeciderName   *string
 }

@@ -7,7 +7,6 @@ import (
 	entsql "entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqljson"
 	"github.com/cockroachdb/errors"
-	"github.com/google/uuid"
 
 	"librevita.org/ent"
 	"librevita.org/ent/appointment"
@@ -21,6 +20,7 @@ import (
 	"librevita.org/internal/core/database"
 	patientmodel "librevita.org/internal/domain/patient/model"
 	"librevita.org/pkg/flow"
+	"librevita.org/pkg/ident"
 )
 
 type patientRepository struct {
@@ -59,7 +59,7 @@ func (r *patientRepository) Create(ctx context.Context, p patientmodel.Patient) 
 	return toDomainPatient(saved), nil
 }
 
-func (r *patientRepository) Get(ctx context.Context, clinicID, patientID uuid.UUID) (*patientmodel.Patient, error) {
+func (r *patientRepository) Get(ctx context.Context, clinicID ident.ClinicID, patientID ident.PatientID) (*patientmodel.Patient, error) {
 	p, err := r.client.Patient.Query().
 		Where(
 			patient.IDEQ(patientID),
@@ -75,7 +75,7 @@ func (r *patientRepository) Get(ctx context.Context, clinicID, patientID uuid.UU
 	return toDomainPatient(p), nil
 }
 
-func (r *patientRepository) GetWithCreator(ctx context.Context, clinicID, patientID uuid.UUID) (*patientmodel.GetPatientWithCreatorRow, error) {
+func (r *patientRepository) GetWithCreator(ctx context.Context, clinicID ident.ClinicID, patientID ident.PatientID) (*patientmodel.GetPatientWithCreatorRow, error) {
 	p, err := r.client.Patient.Query().
 		Where(
 			patient.IDEQ(patientID),
@@ -185,7 +185,7 @@ func setOrClear[T any](s *string, set func(string) T, clear func() T) {
 	clear()
 }
 
-func (r *patientRepository) BulkSetStatus(ctx context.Context, clinicID uuid.UUID, patientIDs []uuid.UUID, status patientmodel.PatientStatus) (int, error) {
+func (r *patientRepository) BulkSetStatus(ctx context.Context, clinicID ident.ClinicID, patientIDs []ident.PatientID, status patientmodel.PatientStatus) (int, error) {
 	count, err := r.client.Patient.Update().
 		Where(
 			patient.ClinicIDEQ(clinicID),
@@ -200,7 +200,7 @@ func (r *patientRepository) BulkSetStatus(ctx context.Context, clinicID uuid.UUI
 	return count, nil
 }
 
-func (r *patientRepository) ListByClinicAndStatus(ctx context.Context, clinicID uuid.UUID, status *patientmodel.PatientStatus) ([]patientmodel.Patient, error) {
+func (r *patientRepository) ListByClinicAndStatus(ctx context.Context, clinicID ident.ClinicID, status *patientmodel.PatientStatus) ([]patientmodel.Patient, error) {
 	query := r.client.Patient.Query().Where(patient.ClinicIDEQ(clinicID))
 	if status != nil {
 		query = query.Where(patient.StatusEQ(patient.Status(*status)))
@@ -219,7 +219,7 @@ func (r *patientRepository) ListByClinicAndStatus(ctx context.Context, clinicID 
 
 // ListCandidates selects only identifiers, status, and timestamps so the
 // database can paginate before any Patient DEK is loaded.
-func (r *patientRepository) ListCandidates(ctx context.Context, clinicID uuid.UUID, status *patientmodel.PatientStatus, nameTokens []string, emailBlindIndex string, limit, offset int) ([]patientmodel.PatientCandidate, int, error) {
+func (r *patientRepository) ListCandidates(ctx context.Context, clinicID ident.ClinicID, status *patientmodel.PatientStatus, nameTokens []string, emailBlindIndex string, limit, offset int) ([]patientmodel.PatientCandidate, int, error) {
 	query := r.client.Patient.Query().Where(patient.ClinicIDEQ(clinicID))
 	if status != nil {
 		query = query.Where(patient.StatusEQ(patient.Status(*status)))
@@ -263,7 +263,7 @@ func (r *patientRepository) ListCandidates(ctx context.Context, clinicID uuid.UU
 }
 
 // GetMany hydrates only the requested page of patients.
-func (r *patientRepository) GetMany(ctx context.Context, clinicID uuid.UUID, patientIDs []uuid.UUID) ([]patientmodel.Patient, error) {
+func (r *patientRepository) GetMany(ctx context.Context, clinicID ident.ClinicID, patientIDs []ident.PatientID) ([]patientmodel.Patient, error) {
 	if len(patientIDs) == 0 {
 		return nil, nil
 	}
@@ -297,7 +297,7 @@ func (r *patientRepository) GetMany(ctx context.Context, clinicID uuid.UUID, pat
 // DeleteAggregate removes relational patient data in dependency order. The
 // operation is idempotent so cleanup can be retried after a key has already
 // been shredded.
-func (r *patientRepository) DeleteAggregate(ctx context.Context, clinicID, patientID uuid.UUID) error {
+func (r *patientRepository) DeleteAggregate(ctx context.Context, clinicID ident.ClinicID, patientID ident.PatientID) error {
 	return database.WithTx(ctx, r.client, func(tx *ent.Tx) error {
 		return flow.Exec(
 			func() error {
@@ -367,7 +367,7 @@ func (r *patientRepository) DeleteAggregate(ctx context.Context, clinicID, patie
 	})
 }
 
-func (r *patientRepository) Count(ctx context.Context, clinicID uuid.UUID) (int, error) {
+func (r *patientRepository) Count(ctx context.Context, clinicID ident.ClinicID) (int, error) {
 	count, err := r.client.Patient.Query().Where(patient.ClinicIDEQ(clinicID)).Count(ctx)
 	if err != nil {
 		return 0, errors.Wrap(err, "patient repository: count")

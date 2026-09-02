@@ -12,6 +12,7 @@ import (
 	"librevita.org/ent/user"
 	"librevita.org/internal/core/clinicctx"
 	"librevita.org/internal/core/kv"
+	"librevita.org/pkg/ident"
 	"librevita.org/pkg/urn"
 )
 
@@ -145,7 +146,7 @@ func (r *sessionRepository) GetActive(ctx context.Context, id string, now time.T
 
 func (r *sessionRepository) loadUser(ctx context.Context, userID uuid.UUID) (*SessionUser, error) {
 	usr, err := r.client.User.Query().
-		Where(user.IDEQ(userID)).
+		Where(user.IDEQ(ident.UserID(userID))).
 		WithRole().
 		WithPortalPatient().
 		Only(ctx)
@@ -160,7 +161,7 @@ func (r *sessionRepository) loadUser(ctx context.Context, userID uuid.UUID) (*Se
 		roleName = Role(usr.Edges.Role.Name)
 	}
 	u := &SessionUser{
-		ID:       usr.ID,
+		ID:       usr.ID.UUID(),
 		Email:    usr.Email,
 		Name:     usr.DisplayName,
 		Role:     roleName,

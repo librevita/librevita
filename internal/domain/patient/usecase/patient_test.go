@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -15,18 +14,19 @@ import (
 	"librevita.org/internal/core/policy"
 	patientmodel "librevita.org/internal/domain/patient/model"
 	"librevita.org/internal/domain/patient/usecase"
+	"librevita.org/pkg/ident"
 	policymocks "librevita.org/tests/mocks/core/policy"
 	patientmocks "librevita.org/tests/mocks/domain/patient/model"
 )
 
 var (
-	testClinicID = uuid.MustParse("00000000-0000-0000-0000-000000000001")
-	testUserID   = uuid.MustParse("00000000-0000-0000-0000-000000000002")
-	missingID    = uuid.MustParse("00000000-0000-0000-0000-00000000ffff")
-	ghostID      = uuid.MustParse("00000000-0000-0000-0000-00000000fffe")
+	testClinicID = ident.MustParseClinic("00000000-0000-0000-0000-000000000001")
+	testUserID   = ident.MustParseUser("00000000-0000-0000-0000-000000000002")
+	missingID    = ident.MustParsePatient("00000000-0000-0000-0000-00000000ffff")
+	ghostID      = ident.MustParseUser("00000000-0000-0000-0000-00000000fffe")
 )
 
-func uuidStrPtrTest(u *uuid.UUID) *string {
+func uuidStrPtrTest(u *ident.UserID) *string {
 	if u == nil {
 		return nil
 	}
@@ -95,7 +95,7 @@ func TestCreateAndGet(t *testing.T) {
 
 	pt, err := svc.Create(context.Background(), testClinicID.String(), testUserID.String(), validInput())
 	require.NoError(t, err)
-	assert.NotEqual(t, uuid.Nil, pt.ID)
+	assert.False(t, pt.ID.IsZero())
 	assert.Equal(t, patientmodel.PatientStatusActive, pt.Status)
 
 	repoMock.EXPECT().Get(mock.Anything, testClinicID, pt.ID).Return(&savedPatient, nil).Once()
@@ -200,7 +200,7 @@ func TestListAndSearch(t *testing.T) {
 	assert.Empty(t, none)
 
 	// Status filter
-	repoMock.EXPECT().BulkSetStatus(mock.Anything, testClinicID, []uuid.UUID{hit[0].ID}, patientmodel.PatientStatusInactive).Return(1, nil).Once()
+	repoMock.EXPECT().BulkSetStatus(mock.Anything, testClinicID, []ident.PatientID{hit[0].ID}, patientmodel.PatientStatusInactive).Return(1, nil).Once()
 	err = svc.SetStatus(context.Background(), testClinicID.String(), hit[0].ID.String(), patientmodel.PatientStatusInactive)
 	require.NoError(t, err)
 
@@ -233,7 +233,7 @@ func TestSetStatus(t *testing.T) {
 	pt, err := svc.Create(context.Background(), testClinicID.String(), testUserID.String(), validInput())
 	require.NoError(t, err)
 
-	repoMock.EXPECT().BulkSetStatus(mock.Anything, testClinicID, []uuid.UUID{pt.ID}, patientmodel.PatientStatusInactive).Return(1, nil).Once()
+	repoMock.EXPECT().BulkSetStatus(mock.Anything, testClinicID, []ident.PatientID{pt.ID}, patientmodel.PatientStatusInactive).Return(1, nil).Once()
 	err = svc.SetStatus(context.Background(), testClinicID.String(), pt.ID.String(), patientmodel.PatientStatusInactive)
 	require.NoError(t, err)
 
@@ -254,7 +254,7 @@ func TestCount(t *testing.T) {
 	assert.Equal(t, int64(0), n)
 
 	repoMock.EXPECT().Create(mock.Anything, mock.Anything).Return(&patientmodel.Patient{
-		ID:       uuid.New(),
+		ID:       ident.New[ident.PatientID](),
 		ClinicID: testClinicID,
 	}, nil).Once()
 
@@ -343,9 +343,9 @@ func TestAuthorizePatientEdit(t *testing.T) {
 	owner := &auth.Principal{ID: "01990000-0000-7000-8000-000000000002", Email: "owner@c.org", Name: "Owner", Role: auth.RolePhysician}
 	other := &auth.Principal{ID: "01990000-0000-7000-8000-000000000003", Email: "other@c.org", Name: "Other", Role: auth.RolePhysician}
 
-	ownerUUID := uuid.MustParse(owner.ID)
+	ownerUUID := ident.MustParseUser(owner.ID)
 	repoMock.EXPECT().Create(mock.Anything, mock.Anything).Return(&patientmodel.Patient{
-		ID:        uuid.MustParse("01990000-0000-7000-8000-000000000010"),
+		ID:        ident.MustParsePatient("01990000-0000-7000-8000-000000000010"),
 		ClinicID:  testClinicID,
 		CreatedBy: &ownerUUID,
 		Status:    patientmodel.PatientStatusActive,

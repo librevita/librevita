@@ -5,13 +5,13 @@ import (
 	"strings"
 
 	"github.com/cockroachdb/errors"
-	"github.com/google/uuid"
 
 	"librevita.org/internal/core/auth"
 	"librevita.org/internal/core/crypto"
 	"librevita.org/internal/domain/clinic/model"
 	"librevita.org/internal/domain/clinic/repository"
 	"librevita.org/pkg/flow"
+	"librevita.org/pkg/ident"
 )
 
 var (
@@ -62,12 +62,9 @@ func (s *PlatformService) Bootstrap(ctx context.Context, name, email, password s
 	if err != nil {
 		return nil, "", err
 	}
-	id, err := uuid.NewV7()
-	if err != nil {
-		return nil, "", err
-	}
+	userID := ident.New[ident.PlatformUserID]()
 	u, err := s.users.Create(ctx, &repository.PlatformUser{
-		ID:           id,
+		ID:           userID,
 		Email:        email,
 		PasswordHash: hash,
 		DisplayName:  name,
@@ -129,7 +126,7 @@ func (s *PlatformService) Provision(ctx context.Context, in ProvisionInput) (*mo
 	}
 
 	var shell *model.Clinic
-	var id uuid.UUID
+	var clinicID ident.ClinicID
 
 	err := flow.New().
 		Step("validate slug", func() error {
@@ -145,14 +142,13 @@ func (s *PlatformService) Provision(ctx context.Context, in ProvisionInput) (*mo
 			return nil
 		}).
 		Step("generate clinic id", func() error {
-			var gerr error
-			id, gerr = uuid.NewV7()
-			return gerr
+			clinicID = ident.New[ident.ClinicID]()
+			return nil
 		}).
 		Step("create clinic shell", func() error {
 			var cerr error
 			shell, cerr = s.clinics.CreateShell(ctx, &model.Clinic{
-				ID:         id,
+				ID:         clinicID,
 				Slug:       slug,
 				Name:       name,
 				TaxID:      strings.TrimSpace(in.TaxID),

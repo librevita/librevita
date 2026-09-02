@@ -3,7 +3,7 @@ package model
 import (
 	"time"
 
-	"github.com/google/uuid"
+	"librevita.org/pkg/ident"
 )
 
 // Transform is the canonicalization mode applied to raw input before
@@ -62,7 +62,7 @@ func (a CheckAlgorithm) Valid() bool {
 
 // IdentifierSystem is the domain model representing a document system.
 type IdentifierSystem struct {
-	ID               uuid.UUID
+	ID               ident.IdentifierSystemID
 	System           string
 	DisplayName      string
 	Pattern          string
@@ -73,20 +73,20 @@ type IdentifierSystem struct {
 	CheckDVCount     int
 	CheckStartWeight int
 	Active           bool
-	CreatedBy        *uuid.UUID
+	CreatedBy        *ident.UserID
 	CreatedAt        time.Time
 	UpdatedAt        time.Time
 }
 
 // IdentifierRecord is the encrypted physical record of an identifier.
 type IdentifierRecord struct {
-	ID              uuid.UUID
-	ClinicID        uuid.UUID
-	PatientID       uuid.UUID
+	ID              ident.PatientIdentifierID
+	ClinicID        ident.ClinicID
+	PatientID       ident.PatientID
 	System          string
 	ValueCiphertext []byte
 	BlindIndex      string
-	CreatedBy       *uuid.UUID
+	CreatedBy       *ident.UserID
 	CreatedAt       time.Time
 	UpdatedAt       time.Time
 }

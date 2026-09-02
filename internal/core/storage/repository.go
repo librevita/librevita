@@ -9,6 +9,7 @@ import (
 	"librevita.org/ent"
 	"librevita.org/ent/storageobject"
 	"librevita.org/internal/core/clinicctx"
+	"librevita.org/pkg/ident"
 )
 
 type indexRepository struct {
@@ -26,7 +27,7 @@ func (r *indexRepository) Insert(ctx context.Context, f StoredFile) (*StoredFile
 		return nil, errors.Wrap(err, "storage repository: insert")
 	}
 	created, err := r.client.StorageObject.Create().
-		SetID(f.ID).
+		SetID(ident.StorageObjectID(f.ID)).
 		SetClinicID(clinicID).
 		SetKey(f.Key).
 		SetDomain(f.Domain).
@@ -36,7 +37,7 @@ func (r *indexRepository) Insert(ctx context.Context, f StoredFile) (*StoredFile
 		SetSize(f.Size).
 		SetEtag(f.ETag).
 		SetChecksum(f.Checksum).
-		SetCreatedBy(f.CreatedBy).
+		SetCreatedBy(ident.UserID(f.CreatedBy)).
 		Save(ctx)
 	if err != nil {
 		return nil, errors.Wrap(err, "storage repository: insert")
@@ -44,8 +45,8 @@ func (r *indexRepository) Insert(ctx context.Context, f StoredFile) (*StoredFile
 	return storedFileFromEnt(created), nil
 }
 
-func (r *indexRepository) Get(ctx context.Context, id uuid.UUID) (*StoredFile, error) {
-	obj, err := r.client.StorageObject.Get(ctx, id)
+func (r *indexRepository) Get(ctx context.Context, objectID uuid.UUID) (*StoredFile, error) {
+	obj, err := r.client.StorageObject.Get(ctx, ident.StorageObjectID(objectID))
 	if err != nil {
 		if ent.IsNotFound(err) {
 			return nil, ErrNotFound
@@ -55,12 +56,12 @@ func (r *indexRepository) Get(ctx context.Context, id uuid.UUID) (*StoredFile, e
 	return storedFileFromEnt(obj), nil
 }
 
-func (r *indexRepository) GetForResource(ctx context.Context, domain string, resourceID, id uuid.UUID) (*StoredFile, error) {
+func (r *indexRepository) GetForResource(ctx context.Context, domain string, resourceID, objectID uuid.UUID) (*StoredFile, error) {
 	obj, err := r.client.StorageObject.Query().
 		Where(
 			storageobject.DomainEQ(domain),
 			storageobject.ResourceIDEQ(resourceID.String()),
-			storageobject.IDEQ(id),
+			storageobject.IDEQ(ident.StorageObjectID(objectID)),
 		).
 		Only(ctx)
 	if err != nil {
@@ -90,15 +91,15 @@ func (r *indexRepository) List(ctx context.Context, domain string, resourceID uu
 	return out, nil
 }
 
-func (r *indexRepository) Delete(ctx context.Context, id uuid.UUID) (string, error) {
-	obj, err := r.client.StorageObject.Get(ctx, id)
+func (r *indexRepository) Delete(ctx context.Context, objectID uuid.UUID) (string, error) {
+	obj, err := r.client.StorageObject.Get(ctx, ident.StorageObjectID(objectID))
 	if err != nil {
 		if ent.IsNotFound(err) {
 			return "", ErrNotFound
 		}
 		return "", errors.Wrap(err, "storage repository: get for delete")
 	}
-	if err := r.client.StorageObject.DeleteOneID(id).Exec(ctx); err != nil {
+	if err := r.client.StorageObject.DeleteOneID(ident.StorageObjectID(objectID)).Exec(ctx); err != nil {
 		return "", errors.Wrap(err, "storage repository: delete")
 	}
 	return obj.Key, nil
@@ -111,7 +112,7 @@ func (r *indexRepository) KeyExists(ctx context.Context, key string) (bool, erro
 func storedFileFromEnt(obj *ent.StorageObject) *StoredFile {
 	resID, _ := uuid.Parse(obj.ResourceID)
 	return &StoredFile{
-		ID:           obj.ID,
+		ID:           obj.ID.UUID(),
 		Key:          obj.Key,
 		Domain:       obj.Domain,
 		ResourceID:   resID,
@@ -120,7 +121,7 @@ func storedFileFromEnt(obj *ent.StorageObject) *StoredFile {
 		Size:         obj.Size,
 		ETag:         obj.Etag,
 		Checksum:     obj.Checksum,
-		CreatedBy:    obj.CreatedBy,
+		CreatedBy:    obj.CreatedBy.UUID(),
 		CreatedAt:    obj.CreatedAt,
 	}
 }

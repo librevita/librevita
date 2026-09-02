@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/cockroachdb/errors"
-	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 
 	"librevita.org/ent"
@@ -33,24 +32,25 @@ import (
 	patientrepo "librevita.org/internal/domain/patient/repository"
 	"librevita.org/internal/domain/patient/usecase"
 	"librevita.org/internal/testutil"
+	"librevita.org/pkg/ident"
 	"librevita.org/pkg/urn"
 )
 
 var testClinic = "01990000-0000-7000-8000-0000000000d0"
 
 func attachSeededClinic(engine *crypto.Engine, enc crypto.Encryptor, hasher crypto.Hasher) echo.MiddlewareFunc {
-	id := uuid.MustParse(testClinic)
+	clinicID := ident.MustParseClinic(testClinic)
 	now := time.Now()
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
 			ctx := clinicctx.WithClinic(c.Request().Context(), &clinicctx.Clinic{
-				ID:          id,
+				ID:          clinicID,
 				Slug:        "test-clinic",
 				Name:        "Test Clinic",
 				Timezone:    "America/Sao_Paulo",
 				OnboardedAt: &now,
 			})
-			ctx = fle.WithClinicID(ctx, id.String())
+			ctx = fle.WithClinicID(ctx, clinicID)
 			ctx = crypto.WithRequestKeyCache(ctx)
 			defer crypto.ClearRequestKeyCache(ctx)
 			ctx = fle.WithEncryptor(ctx, enc)
@@ -110,7 +110,7 @@ func newIdentEnv(t *testing.T) (*echo.Echo, *auth.SessionManager, *usecase.Servi
 	if err != nil {
 		t.Fatal(err)
 	}
-	clinicID := uuid.MustParse(testClinic)
+	clinicID := ident.MustParseClinic(testClinic)
 	clinicDEK, err := masterKey.EnsureClinicDEK(context.Background(), clinicID)
 	if err != nil {
 		t.Fatal(err)

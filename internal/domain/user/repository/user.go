@@ -7,7 +7,6 @@ import (
 
 	entsql "entgo.io/ent/dialect/sql"
 	"github.com/cockroachdb/errors"
-	"github.com/google/uuid"
 
 	"librevita.org/ent"
 	"librevita.org/ent/patient"
@@ -17,6 +16,7 @@ import (
 	"librevita.org/ent/user"
 	"librevita.org/internal/core/clinicctx"
 	usermodel "librevita.org/internal/domain/user/model"
+	"librevita.org/pkg/ident"
 )
 
 type userRepository struct {
@@ -30,7 +30,7 @@ func NewUserRepository(client *ent.Client) usermodel.UserRepository {
 
 func (r *userRepository) Create(ctx context.Context, u *usermodel.User) (*usermodel.User, error) {
 	clinicID := u.ClinicID
-	if clinicID == uuid.Nil {
+	if clinicID.IsZero() {
 		var err error
 		clinicID, err = clinicctx.MustClinicID(ctx)
 		if err != nil {
@@ -64,7 +64,7 @@ func (r *userRepository) Create(ctx context.Context, u *usermodel.User) (*usermo
 	return toUserDomain(saved, roleName), nil
 }
 
-func (r *userRepository) BindPortalPatient(ctx context.Context, userID, patientID uuid.UUID) error {
+func (r *userRepository) BindPortalPatient(ctx context.Context, userID ident.UserID, patientID ident.PatientID) error {
 	n, err := r.client.Patient.Update().
 		Where(patient.IDEQ(patientID), patient.UserIDIsNil()).
 		SetUserID(userID).
@@ -81,7 +81,7 @@ func (r *userRepository) BindPortalPatient(ctx context.Context, userID, patientI
 	return nil
 }
 
-func (r *userRepository) GetByID(ctx context.Context, id uuid.UUID) (*usermodel.GetUserByIDRow, error) {
+func (r *userRepository) GetByID(ctx context.Context, id ident.UserID) (*usermodel.GetUserByIDRow, error) {
 	u, err := r.client.User.Query().
 		Where(user.IDEQ(id)).
 		WithRole().
@@ -173,7 +173,7 @@ func (r *userRepository) Update(ctx context.Context, u *usermodel.User) (*usermo
 	return toUserDomain(saved, u.RoleName), nil
 }
 
-func (r *userRepository) UpdatePreferences(ctx context.Context, id uuid.UUID, timezone, theme string) error {
+func (r *userRepository) UpdatePreferences(ctx context.Context, id ident.UserID, timezone, theme string) error {
 	err := r.client.User.UpdateOneID(id).
 		SetTimezone(timezone).
 		SetUITheme(user.UITheme(theme)).
@@ -335,7 +335,7 @@ func (r *userRepository) ListPhysiciansPage(ctx context.Context, limit, offset i
 	return rows, int64(total), nil
 }
 
-func (r *userRepository) SetSpecialties(ctx context.Context, userID uuid.UUID, specialtyIDs []uuid.UUID) error {
+func (r *userRepository) SetSpecialties(ctx context.Context, userID ident.UserID, specialtyIDs []ident.SpecialtyID) error {
 	tx, err := r.client.Tx(ctx)
 	if err != nil {
 		return errors.Wrap(err, "user repository: begin specialty tx")
@@ -356,7 +356,7 @@ func (r *userRepository) SetSpecialties(ctx context.Context, userID uuid.UUID, s
 	return nil
 }
 
-func (r *userRepository) ApplyApprovedStaffChange(ctx context.Context, reqID, userID, deciderID uuid.UUID, name, email string, specialtyIDs []uuid.UUID) error {
+func (r *userRepository) ApplyApprovedStaffChange(ctx context.Context, reqID ident.StaffChangeRequestID, userID, deciderID ident.UserID, name, email string, specialtyIDs []ident.SpecialtyID) error {
 	tx, err := r.client.Tx(ctx)
 	if err != nil {
 		return errors.Wrap(err, "user repository: begin staff change tx")

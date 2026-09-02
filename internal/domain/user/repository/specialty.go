@@ -4,12 +4,12 @@ import (
 	"context"
 
 	"github.com/cockroachdb/errors"
-	"github.com/google/uuid"
 
 	"librevita.org/ent"
 	"librevita.org/ent/specialty"
 	"librevita.org/ent/user"
 	usermodel "librevita.org/internal/domain/user/model"
+	"librevita.org/pkg/ident"
 )
 
 type specialtyRepository struct {
@@ -21,7 +21,7 @@ func NewSpecialtyRepository(client *ent.Client) usermodel.SpecialtyRepository {
 	return &specialtyRepository{client: client}
 }
 
-func (r *specialtyRepository) ListByClinic(ctx context.Context, clinicID uuid.UUID) ([]usermodel.Specialty, error) {
+func (r *specialtyRepository) ListByClinic(ctx context.Context, clinicID ident.ClinicID) ([]usermodel.Specialty, error) {
 	specialties, err := r.client.Specialty.Query().
 		Where(specialty.ClinicIDEQ(clinicID)).
 		Order(ent.Asc(specialty.FieldName)).
@@ -37,7 +37,7 @@ func (r *specialtyRepository) ListByClinic(ctx context.Context, clinicID uuid.UU
 	return rows, nil
 }
 
-func (r *specialtyRepository) ListPageByClinic(ctx context.Context, clinicID uuid.UUID, limit, offset int) ([]usermodel.Specialty, int64, error) {
+func (r *specialtyRepository) ListPageByClinic(ctx context.Context, clinicID ident.ClinicID, limit, offset int) ([]usermodel.Specialty, int64, error) {
 	specialties, err := r.client.Specialty.Query().
 		Where(specialty.ClinicIDEQ(clinicID)).
 		Order(ent.Asc(specialty.FieldName)).
@@ -88,7 +88,7 @@ func (r *specialtyRepository) Create(ctx context.Context, sp *usermodel.Specialt
 	return toSpecialtyDomain(saved), nil
 }
 
-func (r *specialtyRepository) Delete(ctx context.Context, clinicID, id uuid.UUID) error {
+func (r *specialtyRepository) Delete(ctx context.Context, clinicID ident.ClinicID, id ident.SpecialtyID) error {
 	_, err := r.client.Specialty.Delete().
 		Where(
 			specialty.IDEQ(id),
@@ -101,7 +101,7 @@ func (r *specialtyRepository) Delete(ctx context.Context, clinicID, id uuid.UUID
 	return nil
 }
 
-func (r *specialtyRepository) ListByUser(ctx context.Context, userID uuid.UUID) ([]usermodel.Specialty, error) {
+func (r *specialtyRepository) ListByUser(ctx context.Context, userID ident.UserID) ([]usermodel.Specialty, error) {
 	u, err := r.client.User.Query().
 		Where(user.IDEQ(userID)).
 		WithSpecialties(func(sq *ent.SpecialtyQuery) {
@@ -122,7 +122,7 @@ func (r *specialtyRepository) ListByUser(ctx context.Context, userID uuid.UUID) 
 	return rows, nil
 }
 
-func (r *specialtyRepository) CheckClinicScope(ctx context.Context, clinicID uuid.UUID, specialtyIDs []uuid.UUID) (bool, error) {
+func (r *specialtyRepository) CheckClinicScope(ctx context.Context, clinicID ident.ClinicID, specialtyIDs []ident.SpecialtyID) (bool, error) {
 	count, err := r.client.Specialty.Query().
 		Where(
 			specialty.IDIn(specialtyIDs...),

@@ -3,7 +3,7 @@ package model
 import (
 	"time"
 
-	"github.com/google/uuid"
+	"librevita.org/pkg/ident"
 )
 
 // SOAP is the four narrative sections of a clinical note.
@@ -16,13 +16,13 @@ type SOAP struct {
 
 // Episode is the SOAP chart aggregate for one encounter.
 type Episode struct {
-	ID            uuid.UUID
-	ClinicID      uuid.UUID
-	PatientID     uuid.UUID
-	AuthorID      uuid.UUID
-	AppointmentID *uuid.UUID
-	PredecessorID *uuid.UUID
-	SuccessorID   *uuid.UUID
+	ID            ident.EpisodeID
+	ClinicID      ident.ClinicID
+	PatientID     ident.PatientID
+	AuthorID      ident.UserID
+	AppointmentID *ident.AppointmentID
+	PredecessorID *ident.EpisodeID
+	SuccessorID   *ident.EpisodeID
 	Type          EpisodeType
 	Status        EpisodeStatus
 	Class         CareSetting
@@ -65,7 +65,7 @@ func (e Episode) Validate() error {
 }
 
 func (e Episode) validateHeader() error {
-	if e.ClinicID == uuid.Nil || e.PatientID == uuid.Nil || e.AuthorID == uuid.Nil {
+	if e.ClinicID.IsZero() || e.PatientID.IsZero() || e.AuthorID.IsZero() {
 		return ErrInvalidSOAP
 	}
 	if !e.Type.Valid() || !e.Status.Valid() || !e.Class.Valid() {

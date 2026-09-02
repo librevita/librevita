@@ -4,15 +4,15 @@ import (
 	"context"
 
 	"github.com/cockroachdb/errors"
-	"github.com/google/uuid"
 
 	"librevita.org/ent"
 	"librevita.org/ent/platformuser"
+	"librevita.org/pkg/ident"
 )
 
 // PlatformUser is an installation operator stored in platform_users.
 type PlatformUser struct {
-	ID           uuid.UUID
+	ID           ident.PlatformUserID
 	Email        string
 	PasswordHash string
 	DisplayName  string
@@ -24,7 +24,7 @@ type PlatformUserRepository interface {
 	Count(ctx context.Context) (int, error)
 	Create(ctx context.Context, u *PlatformUser) (*PlatformUser, error)
 	GetByEmail(ctx context.Context, email string) (*PlatformUser, error)
-	GetByID(ctx context.Context, id uuid.UUID) (*PlatformUser, error)
+	GetByID(ctx context.Context, id ident.PlatformUserID) (*PlatformUser, error)
 }
 
 type platformUserRepository struct {
@@ -72,7 +72,7 @@ func (r *platformUserRepository) GetByEmail(ctx context.Context, email string) (
 	return toPlatformUser(row), nil
 }
 
-func (r *platformUserRepository) GetByID(ctx context.Context, id uuid.UUID) (*PlatformUser, error) {
+func (r *platformUserRepository) GetByID(ctx context.Context, id ident.PlatformUserID) (*PlatformUser, error) {
 	row, err := r.client.PlatformUser.Get(ctx, id)
 	if err != nil {
 		if ent.IsNotFound(err) {
