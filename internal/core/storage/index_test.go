@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"librevita.org/pkg/ident"
 	_ "modernc.org/sqlite"
 
 	"librevita.org/ent"
@@ -64,13 +65,13 @@ func TestStorageIndexWire(t *testing.T) {
 	blob, err := store.Put(ctx, key, strings.NewReader("pdf-bytes"), 9, "application/pdf")
 	require.NoError(t, err)
 
-	owner := uuid.MustParse("01990000-0000-7000-8000-00000000000a")
+	owner := ident.MustParseUser("01990000-0000-7000-8000-00000000000a")
 	resource := uuid.MustParse("01990000-0000-7000-8000-000000000001")
-	id, err := uuid.NewV7()
+	objID, err := uuid.NewV7()
 	require.NoError(t, err)
 
 	created, err := client.StorageObject.Create().
-		SetID(id).
+		SetID(ident.StorageObjectID(objID)).
 		SetClinicID(clinicctx.TestClinicID).
 		SetKey(key).
 		SetDomain("patient_document").
@@ -121,7 +122,7 @@ func TestStorageIndexRejectsNegativeSize(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = client.StorageObject.Create().
-		SetID(badID).
+		SetID(ident.StorageObjectID(badID)).
 		SetClinicID(clinicctx.TestClinicID).
 		SetKey("k/1").
 		SetDomain("d").
@@ -131,7 +132,7 @@ func TestStorageIndexRejectsNegativeSize(t *testing.T) {
 		SetSize(-1).
 		SetEtag("e").
 		SetChecksum("c").
-		SetCreatedBy(uuid.MustParse("01990000-0000-7000-8000-00000000000a")).
+		SetCreatedBy(ident.MustParseUser("01990000-0000-7000-8000-00000000000a")).
 		Save(ctx)
 	assert.Error(t, err, "negative size must violate the CHECK constraint")
 }

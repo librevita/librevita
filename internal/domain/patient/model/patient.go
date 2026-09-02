@@ -5,7 +5,8 @@ import (
 	"time"
 
 	"github.com/cockroachdb/errors"
-	"github.com/google/uuid"
+
+	"librevita.org/pkg/ident"
 )
 
 // Sex is the patient sex value. It mirrors the CHECK constraint on
@@ -81,8 +82,8 @@ var (
 
 // Patient represents the in-memory patient domain model.
 type Patient struct {
-	ID          uuid.UUID
-	ClinicID    uuid.UUID
+	ID          ident.PatientID
+	ClinicID    ident.ClinicID
 	DisplayName string
 	BirthDate   *string
 	Sex         Sex
@@ -94,15 +95,15 @@ type Patient struct {
 	PostalCode  *string
 	Notes       *string
 	Status      PatientStatus
-	CreatedBy   *uuid.UUID
+	CreatedBy   *ident.UserID
 	CreatedAt   time.Time
 	UpdatedAt   time.Time
 }
 
 // GetPatientWithCreatorRow is a projection that includes creator metadata.
 type GetPatientWithCreatorRow struct {
-	ID           uuid.UUID
-	ClinicID     uuid.UUID
+	ID           ident.PatientID
+	ClinicID     ident.ClinicID
 	DisplayName  string
 	BirthDate    *string
 	Sex          Sex
@@ -114,7 +115,7 @@ type GetPatientWithCreatorRow struct {
 	PostalCode   *string
 	Notes        *string
 	Status       PatientStatus
-	CreatedBy    *uuid.UUID
+	CreatedBy    *ident.UserID
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
 	CreatorEmail *string
@@ -124,8 +125,8 @@ type GetPatientWithCreatorRow struct {
 // PatientCandidate contains only the non-sensitive fields needed to select a
 // page before loading patient PHI and Patient DEKs.
 type PatientCandidate struct {
-	ID        uuid.UUID
-	ClinicID  uuid.UUID
+	ID        ident.PatientID
+	ClinicID  ident.ClinicID
 	Status    PatientStatus
 	CreatedAt time.Time
 }
@@ -150,19 +151,19 @@ type PatientInput struct {
 // PatientRepository defines the storage interface for patient domain models with transparent encryption.
 type PatientRepository interface {
 	Create(ctx context.Context, patient Patient) (*Patient, error)
-	Get(ctx context.Context, clinicID, patientID uuid.UUID) (*Patient, error)
-	GetWithCreator(ctx context.Context, clinicID, patientID uuid.UUID) (*GetPatientWithCreatorRow, error)
+	Get(ctx context.Context, clinicID ident.ClinicID, patientID ident.PatientID) (*Patient, error)
+	GetWithCreator(ctx context.Context, clinicID ident.ClinicID, patientID ident.PatientID) (*GetPatientWithCreatorRow, error)
 	Update(ctx context.Context, patient Patient) (*Patient, error)
-	BulkSetStatus(ctx context.Context, clinicID uuid.UUID, patientIDs []uuid.UUID, status PatientStatus) (int, error)
-	ListByClinicAndStatus(ctx context.Context, clinicID uuid.UUID, status *PatientStatus) ([]Patient, error)
-	Count(ctx context.Context, clinicID uuid.UUID) (int, error)
+	BulkSetStatus(ctx context.Context, clinicID ident.ClinicID, patientIDs []ident.PatientID, status PatientStatus) (int, error)
+	ListByClinicAndStatus(ctx context.Context, clinicID ident.ClinicID, status *PatientStatus) ([]Patient, error)
+	Count(ctx context.Context, clinicID ident.ClinicID) (int, error)
 }
 
 // PatientDeletionRepository performs an idempotent aggregate delete for one
 // clinic patient and all relational clinical rows owned by it.
 type PatientDeletionRepository interface {
 	PatientRepository
-	DeleteAggregate(ctx context.Context, clinicID, patientID uuid.UUID) error
+	DeleteAggregate(ctx context.Context, clinicID ident.ClinicID, patientID ident.PatientID) error
 }
 
 // PatientQueryRepository is the optimized extension used by the production
@@ -170,6 +171,6 @@ type PatientDeletionRepository interface {
 // limited to the returned page.
 type PatientQueryRepository interface {
 	PatientRepository
-	ListCandidates(ctx context.Context, clinicID uuid.UUID, status *PatientStatus, nameTokens []string, emailBlindIndex string, limit, offset int) ([]PatientCandidate, int, error)
-	GetMany(ctx context.Context, clinicID uuid.UUID, patientIDs []uuid.UUID) ([]Patient, error)
+	ListCandidates(ctx context.Context, clinicID ident.ClinicID, status *PatientStatus, nameTokens []string, emailBlindIndex string, limit, offset int) ([]PatientCandidate, int, error)
+	GetMany(ctx context.Context, clinicID ident.ClinicID, patientIDs []ident.PatientID) ([]Patient, error)
 }

@@ -3,15 +3,15 @@ package model
 import (
 	"time"
 
-	"github.com/google/uuid"
+	"librevita.org/pkg/ident"
 )
 
 // Problem is a structured assessment diagnosis belonging to an Episode.
 type Problem struct {
-	ID                 uuid.UUID
-	ClinicID           uuid.UUID
-	PatientID          uuid.UUID
-	EpisodeID          uuid.UUID
+	ID                 ident.ProblemID
+	ClinicID           ident.ClinicID
+	PatientID          ident.PatientID
+	EpisodeID          ident.EpisodeID
 	Code               Coding
 	Text               string
 	ClinicalStatus     ProblemClinicalStatus

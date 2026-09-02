@@ -168,11 +168,24 @@ tasks:
       - taskfile.yaml
     generates:
       - .tools/bin/zizmor
+  # SQL/text codecs for pkg/ident defined types. types.go is the source
+  # of truth; gen.go writes codec_gen.go (gitignored, like ent/).
+  gen-ident:
+    desc: Generate ident UUID codecs from types.go
+    cmds:
+      - go generate ./pkg/ident
+    sources:
+      - pkg/ident/types.go
+      - pkg/ident/gen.go
+    generates:
+      - pkg/ident/codec_gen.go
   # Generated Ent entities and versioned migration helpers. The bootstrap
   # file seeds the target package so `ent generate` can resolve the ent
   # package path on a clean checkout (ent/ is not tracked).
   gen-ent:
     desc: Regenerate Ent client, entities, and migration helpers
+    deps:
+      - gen-ident
     cmds:
       - mkdir -p ent
       - 'printf "package ent\n" > ent/doc.go'
@@ -247,8 +260,9 @@ tasks:
     generates:
       - 'tests/mocks/**/*.go'
   gen:
-    desc: Regenerate Ent models, schema, mocks, and templ views
+    desc: Regenerate Ent models, schema, mocks, templ views, and ident codecs
     deps:
+      - gen-ident
       - gen-ent
       - gen-mocks
       - gen-templ

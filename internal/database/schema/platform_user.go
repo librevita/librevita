@@ -7,6 +7,7 @@ import (
 	"entgo.io/ent/schema/field"
 
 	"librevita.org/internal/database/schema/mixin"
+	"librevita.org/pkg/ident"
 )
 
 // PlatformUser is an installation operator. They authenticate only on the
@@ -25,7 +26,7 @@ func (PlatformUser) Annotations() []schema.Annotation {
 // Mixin of the PlatformUser.
 func (PlatformUser) Mixin() []ent.Mixin {
 	return []ent.Mixin{
-		mixin.UUID{},
+		mixin.UUID[ident.PlatformUserID]{},
 		mixin.Time{},
 	}
 }

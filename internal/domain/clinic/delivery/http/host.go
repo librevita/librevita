@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/cockroachdb/errors"
-	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 
 	"librevita.org/internal/core/clinicctx"
@@ -15,6 +14,7 @@ import (
 	"librevita.org/internal/core/database/fle"
 	"librevita.org/internal/core/host"
 	"librevita.org/internal/domain/clinic/model"
+	"librevita.org/pkg/ident"
 	"librevita.org/pkg/log"
 )
 
@@ -66,7 +66,7 @@ func serveHost(c echo.Context, next echo.HandlerFunc, cfg *config.Config, clinic
 		OnboardedAt: row.OnboardedAt,
 	}
 	ctx = clinicctx.WithClinic(ctx, resolved)
-	ctx = fle.WithClinicID(ctx, row.ID.String())
+	ctx = fle.WithClinicID(ctx, row.ID)
 
 	if engine != nil {
 		var attachErr error
@@ -81,7 +81,7 @@ func serveHost(c echo.Context, next echo.HandlerFunc, cfg *config.Config, clinic
 	return next(c)
 }
 
-func attachClinicCrypto(ctx context.Context, clinicID uuid.UUID, engine *crypto.Engine, cfg *config.Config, logger log.Logger) (context.Context, error) {
+func attachClinicCrypto(ctx context.Context, clinicID ident.ClinicID, engine *crypto.Engine, cfg *config.Config, logger log.Logger) (context.Context, error) {
 	ctx = crypto.WithRequestKeyCache(ctx)
 	dek, dekErr := engine.GetClinicDEK(ctx, clinicID)
 	if errors.Is(dekErr, crypto.ErrKeyNotFound) {

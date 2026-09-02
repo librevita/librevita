@@ -6,10 +6,10 @@ import (
 	"entgo.io/ent/schema/edge"
 	"entgo.io/ent/schema/field"
 	"entgo.io/ent/schema/index"
-	"github.com/google/uuid"
 
 	"librevita.org/internal/core/database/fle"
 	"librevita.org/internal/database/schema/mixin"
+	"librevita.org/pkg/ident"
 )
 
 // Patient holds the schema definition for the Patient entity.
@@ -20,7 +20,7 @@ type Patient struct {
 // Mixin of the Patient.
 func (Patient) Mixin() []ent.Mixin {
 	return []ent.Mixin{
-		mixin.UUID{},
+		mixin.UUID[ident.PatientID]{},
 		mixin.Clinic{},
 		mixin.Time{},
 	}
@@ -29,7 +29,7 @@ func (Patient) Mixin() []ent.Mixin {
 // Fields of the Patient.
 func (Patient) Fields() []ent.Field {
 	return []ent.Field{
-		field.UUID("user_id", uuid.UUID{}).
+		field.UUID("user_id", ident.UserID{}).
 			Optional().
 			Nillable().
 			Comment("Optional portal login (users.clinic_id must match); unique per clinic when set"),
@@ -102,7 +102,7 @@ func (Patient) Fields() []ent.Field {
 			Optional().
 			Comment("Clinical / general notes (stored as BLOB/BYTEA in DB)"),
 
-		field.UUID("created_by", uuid.UUID{}).
+		field.UUID("created_by", ident.UserID{}).
 			Optional().
 			Nillable().
 			Comment("User ID who registered this patient"),

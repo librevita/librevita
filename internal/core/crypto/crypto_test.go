@@ -8,11 +8,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/fx"
 	"go.uber.org/fx/fxtest"
+	"librevita.org/pkg/ident"
 
 	"librevita.org/internal/core/config"
 	"librevita.org/internal/core/crypto"
@@ -72,8 +72,8 @@ func TestKEKDEKPatientDataEncryptionAndCryptoShredding(t *testing.T) {
 	eng, err := crypto.NewEngine(testKey, v)
 	require.NoError(t, err)
 
-	clinicID := uuid.MustParse("01990000-0000-7000-8000-0000000000a1")
-	patientID := uuid.MustParse("01990000-0000-7000-8000-000000000099")
+	clinicID := ident.MustParseClinic("01990000-0000-7000-8000-0000000000a1")
+	patientID := ident.MustParsePatient("01990000-0000-7000-8000-000000000099")
 	patientURN := urn.Patient(clinicID, patientID)
 	aad := []byte(patientURN)
 	plaintext := []byte("12345678900")
@@ -215,8 +215,8 @@ func TestFxModuleIntegration(t *testing.T) {
 
 	ctx := context.Background()
 	pURN := urn.Patient(
-		uuid.MustParse("01990000-0000-7000-8000-0000000000a1"),
-		uuid.MustParse("01990000-0000-7000-8000-0000000000ff"),
+		ident.MustParseClinic("01990000-0000-7000-8000-0000000000a1"),
+		ident.MustParsePatient("01990000-0000-7000-8000-0000000000ff"),
 	)
 	_, err = eng.SetupPatientDEK(ctx, pURN)
 	require.NoError(t, err)
@@ -226,9 +226,9 @@ func TestClinicDEKEnvelopeAndCryptoShred(t *testing.T) {
 	ctx := context.Background()
 	eng := mustEngine(t)
 
-	clinicA := uuid.MustParse("01990000-0000-7000-8000-0000000000a1")
-	clinicB := uuid.MustParse("01990000-0000-7000-8000-0000000000a2")
-	patientID := uuid.MustParse("01990000-0000-7000-8000-0000000000b1")
+	clinicA := ident.MustParseClinic("01990000-0000-7000-8000-0000000000a1")
+	clinicB := ident.MustParseClinic("01990000-0000-7000-8000-0000000000a2")
+	patientID := ident.MustParsePatient("01990000-0000-7000-8000-0000000000b1")
 
 	dekA, err := eng.EnsureClinicDEK(ctx, clinicA)
 	require.NoError(t, err)
@@ -270,7 +270,7 @@ func TestClinicDEKEnvelopeAndCryptoShred(t *testing.T) {
 func TestClinicDEKByURN(t *testing.T) {
 	ctx := context.Background()
 	eng := mustEngine(t)
-	clinicID := uuid.MustParse("01990000-0000-7000-8000-0000000000c1")
+	clinicID := ident.MustParseClinic("01990000-0000-7000-8000-0000000000c1")
 	clinicURN := urn.Clinic(clinicID)
 	aad := []byte(clinicURN)
 
@@ -304,9 +304,9 @@ func TestBatchPatientDEKResolutionUsesOneKeyStoreBatch(t *testing.T) {
 	ctx := crypto.WithRequestKeyCache(context.Background())
 	defer crypto.ClearRequestKeyCache(ctx)
 	eng := mustEngine(t)
-	clinicID := uuid.MustParse("01990000-0000-7000-8000-0000000000a1")
-	patientA := uuid.MustParse("01990000-0000-7000-8000-0000000000b1")
-	patientB := uuid.MustParse("01990000-0000-7000-8000-0000000000b2")
+	clinicID := ident.MustParseClinic("01990000-0000-7000-8000-0000000000a1")
+	patientA := ident.MustParsePatient("01990000-0000-7000-8000-0000000000b1")
+	patientB := ident.MustParsePatient("01990000-0000-7000-8000-0000000000b2")
 
 	_, err := eng.EnsurePatientDEKForClinic(ctx, clinicID, patientA)
 	require.NoError(t, err)
@@ -315,7 +315,7 @@ func TestBatchPatientDEKResolutionUsesOneKeyStoreBatch(t *testing.T) {
 	before := eng.KeyMetrics()
 	crypto.ClearRequestKeyCache(ctx)
 
-	deks, err := eng.GetPatientDEKsForClinic(ctx, clinicID, []uuid.UUID{patientA, patientB, patientA})
+	deks, err := eng.GetPatientDEKsForClinic(ctx, clinicID, []ident.PatientID{patientA, patientB, patientA})
 	require.NoError(t, err)
 	require.Len(t, deks, 2)
 	assert.Len(t, deks[patientA], crypto.SizeDEK)
@@ -327,7 +327,7 @@ func TestBatchPatientDEKResolutionUsesOneKeyStoreBatch(t *testing.T) {
 
 func TestConcurrentClinicDEKProvisioningIsCreateIfAbsent(t *testing.T) {
 	eng := mustEngine(t)
-	clinicID := uuid.MustParse("01990000-0000-7000-8000-0000000000a3")
+	clinicID := ident.MustParseClinic("01990000-0000-7000-8000-0000000000a3")
 	const workers = 16
 	results := make(chan []byte, workers)
 	errs := make(chan error, workers)

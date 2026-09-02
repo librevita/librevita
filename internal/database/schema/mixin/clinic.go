@@ -4,7 +4,8 @@ import (
 	"entgo.io/ent"
 	"entgo.io/ent/schema/field"
 	"entgo.io/ent/schema/mixin"
-	"github.com/google/uuid"
+
+	"librevita.org/pkg/ident"
 )
 
 // Clinic defines the owning clinic tenant ID field.
@@ -15,7 +16,7 @@ type Clinic struct {
 // Fields of the Clinic mixin.
 func (Clinic) Fields() []ent.Field {
 	return []ent.Field{
-		field.UUID("clinic_id", uuid.UUID{}).
+		field.UUID("clinic_id", ident.ClinicID{}).
 			Comment("Clinic tenant ID"),
 	}
 }

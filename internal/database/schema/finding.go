@@ -9,6 +9,7 @@ import (
 
 	"librevita.org/internal/core/database/fle"
 	"librevita.org/internal/database/schema/mixin"
+	"librevita.org/pkg/ident"
 )
 
 // Finding holds a structured objective finding belonging to an Episode.
@@ -19,7 +20,7 @@ type Finding struct {
 // Mixin of the Finding.
 func (Finding) Mixin() []ent.Mixin {
 	return []ent.Mixin{
-		mixin.UUID{},
+		mixin.UUID[ident.FindingID]{},
 		mixin.Clinic{},
 		mixin.ClinicalChild{},
 		mixin.Time{},

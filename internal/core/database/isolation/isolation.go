@@ -7,11 +7,11 @@ import (
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
 	"github.com/cockroachdb/errors"
-	"github.com/google/uuid"
 
 	entgen "librevita.org/ent"
 	"librevita.org/ent/intercept"
 	"librevita.org/internal/core/clinicctx"
+	"librevita.org/pkg/ident"
 )
 
 var clinicScopedTypes = map[string]struct{}{
@@ -32,8 +32,8 @@ var clinicScopedTypes = map[string]struct{}{
 }
 
 type clinicIDMutation interface {
-	SetClinicID(uuid.UUID)
-	ClinicID() (uuid.UUID, bool)
+	SetClinicID(ident.ClinicID)
+	ClinicID() (ident.ClinicID, bool)
 }
 
 type wherePMutation interface {
@@ -93,24 +93,24 @@ func isolateMutation(ctx context.Context, next ent.Mutator, m ent.Mutation) (ent
 	return next.Mutate(ctx, m)
 }
 
-func applyCreateClinicID(m ent.Mutation, id uuid.UUID) error {
+func applyCreateClinicID(m ent.Mutation, clinicID ident.ClinicID) error {
 	setter, ok := m.(clinicIDMutation)
 	if !ok {
 		return nil
 	}
-	if existing, set := setter.ClinicID(); set && existing != uuid.Nil && existing != id {
+	if existing, set := setter.ClinicID(); set && !existing.IsZero() && existing != clinicID {
 		return errors.New("isolation: clinic_id mismatch")
 	}
-	setter.SetClinicID(id)
+	setter.SetClinicID(clinicID)
 	return nil
 }
 
-func restrictMutationToClinic(m ent.Mutation, id uuid.UUID) {
+func restrictMutationToClinic(m ent.Mutation, clinicID ident.ClinicID) {
 	wp, ok := m.(wherePMutation)
 	if !ok {
 		return
 	}
 	wp.WhereP(func(s *sql.Selector) {
-		s.Where(sql.EQ(s.C("clinic_id"), id))
+		s.Where(sql.EQ(s.C("clinic_id"), clinicID))
 	})
 }

@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/cockroachdb/errors"
-	"github.com/google/uuid"
 
 	"librevita.org/ent"
 	"librevita.org/ent/accesspolicyversion"
@@ -13,6 +12,7 @@ import (
 	"librevita.org/internal/core/clinicctx"
 	"librevita.org/internal/core/policy"
 	usermodel "librevita.org/internal/domain/user/model"
+	"librevita.org/pkg/ident"
 )
 
 type setupRepository struct {
@@ -42,7 +42,7 @@ func (r *setupRepository) IsOnboarded(ctx context.Context) (bool, error) {
 	return row.OnboardedAt != nil && !row.OnboardedAt.IsZero(), nil
 }
 
-func (r *setupRepository) Onboard(ctx context.Context, admin *usermodel.User, systemIDs []uuid.UUID) (*usermodel.User, error) {
+func (r *setupRepository) Onboard(ctx context.Context, admin *usermodel.User, systemIDs []ident.IdentifierSystemID) (*usermodel.User, error) {
 	clinicID, err := clinicctx.MustClinicID(ctx)
 	if err != nil {
 		return nil, err
@@ -70,7 +70,7 @@ func (r *setupRepository) Onboard(ctx context.Context, admin *usermodel.User, sy
 	return user, nil
 }
 
-func (r *setupRepository) onboardTx(ctx context.Context, tx *ent.Tx, clinicID uuid.UUID, admin *usermodel.User, systemIDs []uuid.UUID) (*usermodel.User, error) {
+func (r *setupRepository) onboardTx(ctx context.Context, tx *ent.Tx, clinicID ident.ClinicID, admin *usermodel.User, systemIDs []ident.IdentifierSystemID) (*usermodel.User, error) {
 	row, err := tx.Clinic.Get(ctx, clinicID)
 	if err != nil {
 		return nil, errors.Wrap(err, "setup repository: load clinic")
@@ -113,7 +113,7 @@ func (r *setupRepository) onboardTx(ctx context.Context, tx *ent.Tx, clinicID uu
 	return toUserDomain(createdUser, "admin"), nil
 }
 
-func seedRoles(ctx context.Context, tx *ent.Tx, clinicID uuid.UUID) (uuid.UUID, error) {
+func seedRoles(ctx context.Context, tx *ent.Tx, clinicID ident.ClinicID) (ident.RoleID, error) {
 	roles := []struct {
 		name     string
 		clinical bool
@@ -123,21 +123,18 @@ func seedRoles(ctx context.Context, tx *ent.Tx, clinicID uuid.UUID) (uuid.UUID, 
 		{"receptionist", false},
 		{"patient", false},
 	}
-	var adminRoleID uuid.UUID
+	var adminRoleID ident.RoleID
 	for _, rl := range roles {
-		id, err := uuid.NewV7()
-		if err != nil {
-			return uuid.Nil, err
-		}
+		rid := ident.New[ident.RoleID]()
 		created, err := tx.Role.Create().
-			SetID(id).
+			SetID(rid).
 			SetClinicID(clinicID).
 			SetName(rl.name).
 			SetSystem(true).
 			SetIsClinical(rl.clinical).
 			Save(ctx)
 		if err != nil {
-			return uuid.Nil, errors.Wrapf(err, "setup repository: seed role %q", rl.name)
+			return ident.RoleID{}, errors.Wrapf(err, "setup repository: seed role %q", rl.name)
 		}
 		if rl.name == "admin" {
 			adminRoleID = created.ID
@@ -146,12 +143,9 @@ func seedRoles(ctx context.Context, tx *ent.Tx, clinicID uuid.UUID) (uuid.UUID, 
 	return adminRoleID, nil
 }
 
-func seedPolicies(ctx context.Context, tx *ent.Tx, clinicID uuid.UUID) error {
+func seedPolicies(ctx context.Context, tx *ent.Tx, clinicID ident.ClinicID) error {
 	for name, expr := range policy.DefaultPolicies {
-		pID, err := uuid.NewV7()
-		if err != nil {
-			return err
-		}
+		pID := ident.New[ident.PolicyID]()
 		pol, err := tx.AccessPolicy.Create().
 			SetID(pID).
 			SetClinicID(clinicID).
@@ -172,7 +166,7 @@ func seedPolicies(ctx context.Context, tx *ent.Tx, clinicID uuid.UUID) error {
 	return nil
 }
 
-func optInIdentifierSystems(ctx context.Context, tx *ent.Tx, clinicID uuid.UUID, systemIDs []uuid.UUID) error {
+func optInIdentifierSystems(ctx context.Context, tx *ent.Tx, clinicID ident.ClinicID, systemIDs []ident.IdentifierSystemID) error {
 	if len(systemIDs) == 0 {
 		active, err := tx.IdentifierSystem.Query().Where(identifiersystem.ActiveEQ(true)).All(ctx)
 		if err != nil {
@@ -183,10 +177,7 @@ func optInIdentifierSystems(ctx context.Context, tx *ent.Tx, clinicID uuid.UUID,
 		}
 	}
 	for _, sysID := range systemIDs {
-		optID, err := uuid.NewV7()
-		if err != nil {
-			return err
-		}
+		optID := ident.New[ident.ClinicIdentifierSystemID]()
 		if err := tx.ClinicIdentifierSystem.Create().
 			SetID(optID).
 			SetClinicID(clinicID).

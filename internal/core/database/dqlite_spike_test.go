@@ -10,7 +10,6 @@ import (
 
 	"entgo.io/ent/dialect"
 	entsql "entgo.io/ent/dialect/sql"
-	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -23,6 +22,7 @@ import (
 	identifierusecase "librevita.org/internal/domain/identifier/usecase"
 	patientrepo "librevita.org/internal/domain/patient/repository"
 	"librevita.org/internal/domain/patient/usecase"
+	"librevita.org/pkg/ident"
 )
 
 // TestDqliteSpike connects to the local dqlite cluster (see
@@ -53,7 +53,7 @@ func TestDqliteSpike(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = tx.Clinic.Create().
-		SetID(uuid.MustParse("00000000-0000-0000-0000-0000000000d1")).
+		SetID(ident.MustParseClinic("00000000-0000-0000-0000-0000000000d1")).
 		SetSlug("dqlite").
 		SetName("Dqlite").
 		SetTaxID("1").
@@ -68,7 +68,7 @@ func TestDqliteSpike(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = tx.Clinic.Create().
-		SetID(uuid.MustParse("00000000-0000-0000-0000-0000000000d2")).
+		SetID(ident.MustParseClinic("00000000-0000-0000-0000-0000000000d2")).
 		SetSlug("rolled").
 		SetName("Rolled").
 		SetTaxID("2").
@@ -78,7 +78,7 @@ func TestDqliteSpike(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, tx.Rollback())
 
-	count, err := client.Clinic.Query().Where(clinic.IDEQ(uuid.MustParse("00000000-0000-0000-0000-0000000000d2"))).Count(context.Background())
+	count, err := client.Clinic.Query().Where(clinic.IDEQ(ident.MustParseClinic("00000000-0000-0000-0000-0000000000d2"))).Count(context.Background())
 	require.NoError(t, err)
 	assert.Equal(t, 0, count)
 
@@ -86,15 +86,15 @@ func TestDqliteSpike(t *testing.T) {
 	clinicID := "00000000-0000-0000-0000-0000000000d1"
 	adminID := "00000000-0000-0000-0000-0000000000d5"
 	adminRole, err := client.Role.Create().
-		SetClinicID(uuid.MustParse(clinicID)).
+		SetClinicID(ident.MustParseClinic(clinicID)).
 		SetName("admin").
 		SetSystem(true).
 		Save(context.Background())
 	require.NoError(t, err)
 
 	_, err = client.User.Create().
-		SetID(uuid.MustParse(adminID)).
-		SetClinicID(uuid.MustParse(clinicID)).
+		SetID(ident.MustParseUser(adminID)).
+		SetClinicID(ident.MustParseClinic(clinicID)).
 		SetEmail("admin@dqlite.test").
 		SetPasswordHash("x").
 		SetDisplayName("Admin").
@@ -121,7 +121,7 @@ func TestDqliteSpike(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, reg.Reload(rows))
 
-	clinicUUID := uuid.MustParse(clinicID)
+	clinicUUID := ident.MustParseClinic(clinicID)
 	for _, row := range rows {
 		_, err = client.ClinicIdentifierSystem.Create().
 			SetClinicID(clinicUUID).

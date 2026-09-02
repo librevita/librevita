@@ -5,13 +5,13 @@ import (
 	"strings"
 
 	"github.com/cockroachdb/errors"
-	"github.com/google/uuid"
 
 	"librevita.org/internal/core/clinicctx"
 	"librevita.org/internal/core/crypto"
 	"librevita.org/internal/core/database/fle"
 	identifiermodel "librevita.org/internal/domain/identifier/model"
 	"librevita.org/pkg/flow"
+	"librevita.org/pkg/ident"
 	"librevita.org/pkg/log"
 	"librevita.org/pkg/urn"
 )
@@ -35,20 +35,20 @@ func (s *service) blindIndex(ctx context.Context, system, value string) (string,
 	return s.key.BlindIndex(system, value)
 }
 
-func (s *service) decryptValue(ctx context.Context, clinicID, patientID uuid.UUID, system string, ciphertext []byte) ([]byte, error) {
+func (s *service) decryptValue(ctx context.Context, clinicID ident.ClinicID, patientID ident.PatientID, system string, ciphertext []byte) ([]byte, error) {
 	pURN := urn.Patient(clinicID, patientID)
 	_ = system
 	return s.key.DecryptPatientData(ctx, pURN, []byte(pURN), ciphertext)
 }
 
-func (s *service) decryptValueWithDEK(clinicID, patientID uuid.UUID, dek, ciphertext []byte) ([]byte, error) {
+func (s *service) decryptValueWithDEK(clinicID ident.ClinicID, patientID ident.PatientID, dek, ciphertext []byte) ([]byte, error) {
 	pURN := urn.Patient(clinicID, patientID)
 	return s.key.DecryptPatientDataWithDEK(dek, []byte(pURN), ciphertext)
 }
 
 // AddIdentifier normalizes, validates, encrypts, and stores in.
 func (s *service) AddIdentifier(ctx context.Context, clinicID, createdBy string, in Input) (*identifiermodel.Identifier, error) {
-	cUUID, err := uuid.Parse(clinicID)
+	cUUID, err := ident.ParseClinic(clinicID)
 	if err != nil {
 		return nil, errors.Wrap(err, "identifier: invalid clinic id")
 	}
@@ -57,8 +57,11 @@ func (s *service) AddIdentifier(ctx context.Context, clinicID, createdBy string,
 	var normalized string
 	var blind string
 	var ciphertext []byte
-	var id uuid.UUID
-	pUUID := uuid.MustParse(in.PatientID)
+	var recID ident.PatientIdentifierID
+	pUUID, err := ident.ParsePatient(in.PatientID)
+	if err != nil {
+		return nil, errors.Wrap(err, "identifier: invalid patient id")
+	}
 	pURN := urn.Patient(cUUID, pUUID)
 
 	err = flow.New().
@@ -88,22 +91,21 @@ func (s *service) AddIdentifier(ctx context.Context, clinicID, createdBy string,
 			return eerr
 		}).
 		Step("generate id", func() error {
-			var gerr error
-			id, gerr = uuid.NewV7()
-			if gerr != nil {
-				return errors.Wrap(gerr, "identifier: generate id")
-			}
+			recID = ident.New[ident.PatientIdentifierID]()
 			return nil
 		}).
 		Step("persist identifier", func() error {
-			var cb *uuid.UUID
+			var cb *ident.UserID
 			if createdBy != "" {
-				parsed := uuid.MustParse(createdBy)
+				parsed, perr := ident.ParseUser(createdBy)
+				if perr != nil {
+					return errors.Wrap(perr, "identifier: invalid created_by")
+				}
 				cb = &parsed
 			}
 
 			rec := identifiermodel.IdentifierRecord{
-				ID:              id,
+				ID:              recID,
 				ClinicID:        cUUID,
 				PatientID:       pUUID,
 				System:          strategy.System(),
@@ -121,7 +123,7 @@ func (s *service) AddIdentifier(ctx context.Context, clinicID, createdBy string,
 	}
 
 	return &identifiermodel.Identifier{
-		ID:        id.String(),
+		ID:        recID.String(),
 		PatientID: in.PatientID,
 		System:    strategy.System(),
 		Value:     normalized,
@@ -133,7 +135,7 @@ func (s *service) FindByValue(ctx context.Context, clinicID, raw string) ([]*ide
 	if strings.TrimSpace(raw) == "" {
 		return nil, ErrValueRequired
 	}
-	cUUID, err := uuid.Parse(clinicID)
+	cUUID, err := ident.ParseClinic(clinicID)
 	if err != nil {
 		return nil, errors.Wrap(err, "identifier: invalid clinic id")
 	}
@@ -180,11 +182,11 @@ func (s *service) FindByValue(ctx context.Context, clinicID, raw string) ([]*ide
 
 // List returns the decrypted identifiers of a patient.
 func (s *service) List(ctx context.Context, clinicID, patientID string) ([]*identifiermodel.Identifier, error) {
-	pUUID, err := uuid.Parse(patientID)
+	pUUID, err := ident.ParsePatient(patientID)
 	if err != nil {
 		return nil, errors.Wrap(err, "identifier: invalid patient id")
 	}
-	cUUID, err := uuid.Parse(clinicID)
+	cUUID, err := ident.ParseClinic(clinicID)
 	if err != nil {
 		return nil, errors.Wrap(err, "identifier: invalid clinic id")
 	}
@@ -202,7 +204,7 @@ func (s *service) List(ctx context.Context, clinicID, patientID string) ([]*iden
 		return nil, errors.Wrap(err, "identifier: list")
 	}
 	out := make([]*identifiermodel.Identifier, 0, len(rows))
-	deks, err := s.key.GetPatientDEKsForClinic(ctx, cUUID, []uuid.UUID{pUUID})
+	deks, err := s.key.GetPatientDEKsForClinic(ctx, cUUID, []ident.PatientID{pUUID})
 	if err != nil {
 		if errors.Is(err, crypto.ErrKeyNotFound) || errors.Is(err, crypto.ErrKeyDestroyed) {
 			return out, nil
@@ -220,7 +222,7 @@ func (s *service) List(ctx context.Context, clinicID, patientID string) ([]*iden
 	}
 	for _, row := range rows {
 		cid := row.ClinicID
-		if cid == uuid.Nil {
+		if cid.IsZero() {
 			cid = cUUID
 		}
 		value, err := s.decryptValueWithDEK(cid, row.PatientID, dek, row.ValueCiphertext)
@@ -247,12 +249,12 @@ func (s *service) List(ctx context.Context, clinicID, patientID string) ([]*iden
 // ListByPatients returns the decrypted values of a page of patients.
 func (s *service) ListByPatients(ctx context.Context, patientIDs []string) (map[string][]string, error) {
 	out := make(map[string][]string, len(patientIDs))
-	pUUIDs := parsePatientUUIDs(patientIDs)
-	if len(pUUIDs) == 0 {
+	pIDs := parsePatientIDs(patientIDs)
+	if len(pIDs) == 0 {
 		return out, nil
 	}
 
-	rows, err := s.repo.ListByPatients(ctx, pUUIDs)
+	rows, err := s.repo.ListByPatients(ctx, pIDs)
 	if err != nil {
 		return nil, errors.Wrap(err, "identifier: list by patients")
 	}
@@ -265,26 +267,26 @@ func (s *service) ListByPatients(ctx context.Context, patientIDs []string) (map[
 	return out, nil
 }
 
-func parsePatientUUIDs(patientIDs []string) []uuid.UUID {
-	var pUUIDs []uuid.UUID
+func parsePatientIDs(patientIDs []string) []ident.PatientID {
+	var pIDs []ident.PatientID
 	for _, pid := range patientIDs {
-		if u, err := uuid.Parse(pid); err == nil {
-			pUUIDs = append(pUUIDs, u)
+		if u, err := ident.ParsePatient(pid); err == nil {
+			pIDs = append(pIDs, u)
 		}
 	}
-	return pUUIDs
+	return pIDs
 }
 
-func recordClinicID(ctx context.Context, row identifiermodel.IdentifierRecord) uuid.UUID {
-	if row.ClinicID != uuid.Nil {
+func recordClinicID(ctx context.Context, row identifiermodel.IdentifierRecord) ident.ClinicID {
+	if !row.ClinicID.IsZero() {
 		return row.ClinicID
 	}
 	cid, _ := clinicctx.ClinicID(ctx)
 	return cid
 }
 
-func (s *service) loadDEKsByClinic(ctx context.Context, rows []identifiermodel.IdentifierRecord) (map[uuid.UUID]map[uuid.UUID][]byte, func(), error) {
-	keysByClinic := make(map[uuid.UUID]map[uuid.UUID][]byte)
+func (s *service) loadDEKsByClinic(ctx context.Context, rows []identifiermodel.IdentifierRecord) (map[ident.ClinicID]map[ident.PatientID][]byte, func(), error) {
+	keysByClinic := make(map[ident.ClinicID]map[ident.PatientID][]byte)
 	cleanup := func() {
 		for _, deks := range keysByClinic {
 			for _, dek := range deks {
@@ -292,10 +294,10 @@ func (s *service) loadDEKsByClinic(ctx context.Context, rows []identifiermodel.I
 			}
 		}
 	}
-	idsByClinic := make(map[uuid.UUID][]uuid.UUID)
+	idsByClinic := make(map[ident.ClinicID][]ident.PatientID)
 	for _, row := range rows {
 		cid := recordClinicID(ctx, row)
-		if cid == uuid.Nil {
+		if cid.IsZero() {
 			continue
 		}
 		idsByClinic[cid] = append(idsByClinic[cid], row.PatientID)
@@ -311,7 +313,7 @@ func (s *service) loadDEKsByClinic(ctx context.Context, rows []identifiermodel.I
 	return keysByClinic, cleanup, nil
 }
 
-func (s *service) decryptIdentifierRows(ctx context.Context, rows []identifiermodel.IdentifierRecord, keysByClinic map[uuid.UUID]map[uuid.UUID][]byte, out map[string][]string) {
+func (s *service) decryptIdentifierRows(ctx context.Context, rows []identifiermodel.IdentifierRecord, keysByClinic map[ident.ClinicID]map[ident.PatientID][]byte, out map[string][]string) {
 	for _, row := range rows {
 		cid := recordClinicID(ctx, row)
 		dek, ok := keysByClinic[cid][row.PatientID]
@@ -337,15 +339,15 @@ func (s *service) decryptIdentifierRows(ctx context.Context, rows []identifiermo
 
 // Remove deletes one identifier of the patient, scoped to the clinic.
 func (s *service) Remove(ctx context.Context, clinicID, patientID, identifierID string) error {
-	pUUID, err := uuid.Parse(patientID)
+	pUUID, err := ident.ParsePatient(patientID)
 	if err != nil {
 		return errors.Wrap(err, "identifier: invalid patient id")
 	}
-	cUUID, err := uuid.Parse(clinicID)
+	cUUID, err := ident.ParseClinic(clinicID)
 	if err != nil {
 		return errors.Wrap(err, "identifier: invalid clinic id")
 	}
-	idUUID, err := uuid.Parse(identifierID)
+	idUUID, err := ident.ParsePatientIdentifier(identifierID)
 	if err != nil {
 		return errors.Wrap(err, "identifier: invalid identifier id")
 	}

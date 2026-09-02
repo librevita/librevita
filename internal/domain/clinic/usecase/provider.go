@@ -5,10 +5,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/google/uuid"
-
 	"librevita.org/internal/core/clinicctx"
 	"librevita.org/internal/domain/clinic/model"
+	"librevita.org/pkg/ident"
 )
 
 // clockCacheTTL bounds how stale a cached clinic profile can be.
@@ -24,30 +23,30 @@ type cachedClinic struct {
 type ClockProvider struct {
 	repo  model.Repository
 	mu    sync.Mutex
-	cache map[uuid.UUID]cachedClinic
+	cache map[ident.ClinicID]cachedClinic
 }
 
 // NewClockProvider is the Fx provider.
 func NewClockProvider(repo model.Repository) *ClockProvider {
-	return &ClockProvider{repo: repo, cache: make(map[uuid.UUID]cachedClinic)}
+	return &ClockProvider{repo: repo, cache: make(map[ident.ClinicID]cachedClinic)}
 }
 
-func (p *ClockProvider) loadByID(ctx context.Context, id uuid.UUID) (*model.Clinic, error) {
+func (p *ClockProvider) loadByID(ctx context.Context, clinicID ident.ClinicID) (*model.Clinic, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	if entry, ok := p.cache[id]; ok && time.Now().Before(entry.exp) {
+	if entry, ok := p.cache[clinicID]; ok && time.Now().Before(entry.exp) {
 		return entry.row, nil
 	}
 
-	row, err := p.repo.GetByID(ctx, id)
+	row, err := p.repo.GetByID(ctx, clinicID)
 	if err != nil {
 		return nil, err
 	}
 	if row == nil {
-		row = &model.Clinic{ID: id, Timezone: model.DefaultTimezone}
+		row = &model.Clinic{ID: clinicID, Timezone: model.DefaultTimezone}
 	}
-	p.cache[id] = cachedClinic{row: row, exp: time.Now().Add(clockCacheTTL)}
+	p.cache[clinicID] = cachedClinic{row: row, exp: time.Now().Add(clockCacheTTL)}
 	return row, nil
 }
 

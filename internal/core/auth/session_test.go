@@ -17,6 +17,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"librevita.org/pkg/ident"
 	_ "modernc.org/sqlite"
 
 	"librevita.org/ent"
@@ -163,7 +164,7 @@ func TestAuthenticateRejectsOtherClinic(t *testing.T) {
 	assert.Equal(t, clinicctx.TestClinicID.String(), p.ClinicID)
 
 	other := clinicctx.WithClinic(context.Background(), &clinicctx.Clinic{
-		ID:       uuid.MustParse("01990000-0000-7000-8000-0000000000c2"),
+		ID:       ident.MustParseClinic("01990000-0000-7000-8000-0000000000c2"),
 		Slug:     "other",
 		Name:     "Other",
 		Timezone: "America/Sao_Paulo",
@@ -197,7 +198,7 @@ func TestSessionRejectsDeactivatedUser(t *testing.T) {
 	client := openSessionTest(t)
 	seedUser(t, client, testUserID)
 
-	userUUID := uuid.MustParse(testUserID)
+	userUUID := ident.MustParseUser(testUserID)
 	err := client.User.UpdateOneID(userUUID).SetActive(false).Exec(context.Background())
 	require.NoError(t, err)
 	m := newManager(t, client, time.Hour)

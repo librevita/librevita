@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"librevita.org/pkg/ident"
 
 	"librevita.org/ent/patient"
 	"librevita.org/internal/core/config"
@@ -46,7 +47,7 @@ func TestStoreSQLiteAndEntClient(t *testing.T) {
 	require.NoError(t, err)
 
 	// Test Ent Patient entity operations (AL-FLE)
-	clinicID := uuid.New()
+	clinicID := ident.ClinicID(uuid.New())
 	_, err = store.Ent().Clinic.Create().
 		SetID(clinicID).
 		SetSlug("test-clinic").
@@ -65,7 +66,7 @@ func TestStoreSQLiteAndEntClient(t *testing.T) {
 		Save(ctx)
 	require.NoError(t, err)
 
-	assert.NotEqual(t, uuid.Nil, created.ID)
+	assert.False(t, created.ID.IsZero())
 	assert.Equal(t, "Maria Teste", created.DisplayName)
 
 	// Query by display name within clinic

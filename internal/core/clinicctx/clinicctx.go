@@ -8,7 +8,8 @@ import (
 	"time"
 
 	"github.com/cockroachdb/errors"
-	"github.com/google/uuid"
+
+	"librevita.org/pkg/ident"
 )
 
 // ErrMissingClinic is returned when a clinic-scoped operation runs without
@@ -25,7 +26,7 @@ const (
 
 // Clinic is the request-scoped clinic profile (not the full Ent row).
 type Clinic struct {
-	ID          uuid.UUID
+	ID          ident.ClinicID
 	Slug        string
 	Name        string
 	Timezone    string
@@ -40,25 +41,25 @@ func WithClinic(ctx context.Context, c *Clinic) context.Context {
 // FromContext returns the clinic attached to ctx, if any.
 func FromContext(ctx context.Context) (*Clinic, bool) {
 	c, ok := ctx.Value(clinicKey).(*Clinic)
-	return c, ok && c != nil && c.ID != uuid.Nil
+	return c, ok && c != nil && !c.ID.IsZero()
 }
 
 // ClinicID returns the clinic UUID in ctx.
-func ClinicID(ctx context.Context) (uuid.UUID, bool) {
+func ClinicID(ctx context.Context) (ident.ClinicID, bool) {
 	c, ok := FromContext(ctx)
 	if !ok {
-		return uuid.Nil, false
+		return ident.ClinicID{}, false
 	}
 	return c.ID, true
 }
 
 // MustClinicID returns the clinic UUID or ErrMissingClinic.
-func MustClinicID(ctx context.Context) (uuid.UUID, error) {
-	id, ok := ClinicID(ctx)
+func MustClinicID(ctx context.Context) (ident.ClinicID, error) {
+	cid, ok := ClinicID(ctx)
 	if !ok {
-		return uuid.Nil, ErrMissingClinic
+		return ident.ClinicID{}, ErrMissingClinic
 	}
-	return id, nil
+	return cid, nil
 }
 
 // WithSkipIsolation marks ctx as allowed to query without a clinic
@@ -100,7 +101,7 @@ func IsReservedSlug(slug string) bool {
 }
 
 // TestClinicID is a stable UUID for unit tests that need a clinic in context.
-var TestClinicID = uuid.MustParse("01990000-0000-7000-8000-0000000000c1")
+var TestClinicID = ident.MustParseClinic("01990000-0000-7000-8000-0000000000c1")
 
 // WithTestClinic attaches a named onboarded clinic (slug "test") for tests.
 func WithTestClinic(ctx context.Context) context.Context {

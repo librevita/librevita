@@ -6,11 +6,10 @@ import (
 
 	"github.com/cockroachdb/errors"
 
-	"github.com/google/uuid"
-
 	"librevita.org/ent"
 	"librevita.org/ent/auditlog"
 	"librevita.org/internal/core/clinicctx"
+	"librevita.org/pkg/ident"
 )
 
 type auditRepository struct {
@@ -111,8 +110,8 @@ func (r *auditRepository) Record(ctx context.Context, ev Event, createdAt time.T
 		SetCreatedAt(createdAt)
 
 	if ev.ClinicID != "" {
-		if id, err := uuid.Parse(ev.ClinicID); err == nil {
-			create.SetClinicID(id)
+		if cid, err := ident.ParseClinic(ev.ClinicID); err == nil {
+			create.SetClinicID(cid)
 		}
 	}
 
@@ -172,10 +171,10 @@ func (r *auditRepository) All(ctx context.Context) ([]StoredEntry, error) {
 	return out, nil
 }
 
-func uuidString(id *uuid.UUID) *string {
-	if id == nil {
+func uuidString(cid *ident.ClinicID) *string {
+	if cid == nil {
 		return nil
 	}
-	s := id.String()
+	s := cid.String()
 	return &s
 }

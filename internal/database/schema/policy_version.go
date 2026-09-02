@@ -7,9 +7,9 @@ import (
 	"entgo.io/ent/schema/edge"
 	"entgo.io/ent/schema/field"
 	"entgo.io/ent/schema/index"
-	"github.com/google/uuid"
 
 	"librevita.org/internal/database/schema/mixin"
+	"librevita.org/pkg/ident"
 )
 
 // AccessPolicyVersion holds the schema definition for historical policy expression snapshots.
@@ -36,7 +36,7 @@ func (AccessPolicyVersion) Fields() []ent.Field {
 	return []ent.Field{
 		field.Int("id").
 			Immutable(),
-		field.UUID("policy_id", uuid.UUID{}).
+		field.UUID("policy_id", ident.PolicyID{}).
 			Comment("Parent Policy ID"),
 		field.String("expression").
 			NotEmpty().

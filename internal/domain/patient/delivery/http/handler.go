@@ -24,6 +24,7 @@ import (
 	patientmodel "librevita.org/internal/domain/patient/model"
 	"librevita.org/internal/domain/patient/usecase"
 	"librevita.org/internal/ui/components"
+	"librevita.org/pkg/ident"
 	"librevita.org/pkg/log"
 )
 
@@ -300,7 +301,7 @@ func (h *Handler) Detail(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-	docs, err := h.documentRows(ctx, row.ID)
+	docs, err := h.documentRows(ctx, row.ID.UUID())
 	if err != nil {
 		return err
 	}
@@ -520,7 +521,7 @@ func (h *Handler) Restore(c echo.Context) error {
 // a later cleanup step fails.
 func (h *Handler) Shred(c echo.Context) error {
 	ctx := c.Request().Context()
-	id, err := patientID(c)
+	patientUUID, err := patientID(c)
 	if err != nil {
 		return err
 	}
@@ -532,22 +533,22 @@ func (h *Handler) Shred(c echo.Context) error {
 		return errors.New("patient shred: crypto engine is unavailable")
 	}
 
-	_, getErr := h.svc.Get(ctx, clinicID, id.String())
+	_, getErr := h.svc.Get(ctx, clinicID, patientUUID.String())
 	if getErr != nil &&
 		!errors.Is(getErr, crypto.ErrKeyNotFound) &&
 		!errors.Is(getErr, crypto.ErrKeyDestroyed) &&
 		!errors.Is(getErr, usecase.ErrNotFound) {
 		return getErr
 	}
-	files, err := h.files.List(ctx, patientDocumentDomain, id)
+	files, err := h.files.List(ctx, patientDocumentDomain, patientUUID)
 	if err != nil {
 		return err
 	}
-	clinicUUID, err := uuid.Parse(clinicID)
+	clinicUUID, err := ident.ParseClinic(clinicID)
 	if err != nil {
 		return errors.Wrap(err, "patient shred: invalid clinic id")
 	}
-	if err := h.engine.DeletePatientDEKForClinic(ctx, clinicUUID, id); err != nil {
+	if err := h.engine.DeletePatientDEKForClinic(ctx, clinicUUID, ident.PatientID(patientUUID)); err != nil {
 		return err
 	}
 	for _, file := range files {
@@ -555,11 +556,11 @@ func (h *Handler) Shred(c echo.Context) error {
 			return err
 		}
 	}
-	if err := h.svc.Delete(ctx, clinicID, id.String()); err != nil {
+	if err := h.svc.Delete(ctx, clinicID, patientUUID.String()); err != nil {
 		return err
 	}
 	h.audit.Record(ctx, server.EventFromRequest(c, audit.AuditResultSuccess,
-		"patient.shred", "patient:"+id.String(), "", ""))
+		"patient.shred", "patient:"+patientUUID.String(), "", ""))
 	return server.HtmxRedirect(c, "/patients")
 }
 
@@ -818,8 +819,8 @@ func patientInput(pt *usecase.GetPatientWithCreatorRow) usecase.PatientInput {
 
 // uuidStrPtr maps a stored uuid to the nullable string form the policy
 // checks use; a Nil uuid (no registrar recorded) becomes nil.
-func uuidStrPtr(u *uuid.UUID) *string {
-	if u == nil || *u == uuid.Nil {
+func uuidStrPtr(u *ident.UserID) *string {
+	if u == nil || u.IsZero() {
 		return nil
 	}
 	s := u.String()

@@ -6,9 +6,9 @@ import (
 	"time"
 
 	"github.com/cockroachdb/errors"
-	"github.com/google/uuid"
 
 	"librevita.org/internal/core/auth"
+	"librevita.org/pkg/ident"
 	"librevita.org/pkg/validator"
 )
 
@@ -43,10 +43,7 @@ func (s *Service) CreateUser(ctx context.Context, in CreateUserInput) (*User, er
 		return nil, err
 	}
 
-	userID, err := uuid.NewV7()
-	if err != nil {
-		return nil, errors.Wrap(err, "usecase: generate user id")
-	}
+	userID := ident.New[ident.UserID]()
 
 	roleRow, err := s.roleRepo.GetByName(ctx, roleName)
 	if err != nil {
@@ -69,7 +66,7 @@ func (s *Service) CreateUser(ctx context.Context, in CreateUserInput) (*User, er
 }
 
 // UpdateUser changes the profile, role, or status of an account.
-func (s *Service) UpdateUser(ctx context.Context, id string, actorID string, in UpdateUserInput) (*User, error) {
+func (s *Service) UpdateUser(ctx context.Context, userID string, actorID string, in UpdateUserInput) (*User, error) {
 	name := strings.TrimSpace(in.Name)
 	email := normalizeEmail(in.Email)
 	roleName := in.Role
@@ -87,7 +84,7 @@ func (s *Service) UpdateUser(ctx context.Context, id string, actorID string, in 
 		return nil, err
 	}
 
-	if id == actorID {
+	if userID == actorID {
 		if roleName != auth.RoleAdmin.String() || !in.Active {
 			return nil, ErrCannotDemoteSelf
 		}
@@ -98,7 +95,7 @@ func (s *Service) UpdateUser(ctx context.Context, id string, actorID string, in 
 		return nil, &ValidationError{Msg: "unsupported role"}
 	}
 
-	uUUID, err := uuid.Parse(id)
+	uUUID, err := ident.ParseUser(userID)
 	if err != nil {
 		return nil, errors.Wrap(err, "usecase: invalid user id")
 	}
@@ -171,7 +168,7 @@ func (s *Service) UpdatePreferences(ctx context.Context, userID, timezone string
 	if err := v.Err(); err != nil {
 		return err
 	}
-	uUUID, err := uuid.Parse(userID)
+	uUUID, err := ident.ParseUser(userID)
 	if err != nil {
 		return errors.Wrap(err, "usecase: invalid user id")
 	}

@@ -6,11 +6,10 @@ import (
 
 	"github.com/cockroachdb/errors"
 
-	"github.com/google/uuid"
-
 	"librevita.org/ent"
 	"librevita.org/ent/clinic"
 	"librevita.org/internal/domain/clinic/model"
+	"librevita.org/pkg/ident"
 )
 
 type clinicRepository struct {
@@ -22,7 +21,7 @@ func NewClinicRepository(client *ent.Client) model.Repository {
 	return &clinicRepository{client: client}
 }
 
-func (r *clinicRepository) GetByID(ctx context.Context, id uuid.UUID) (*model.Clinic, error) {
+func (r *clinicRepository) GetByID(ctx context.Context, id ident.ClinicID) (*model.Clinic, error) {
 	row, err := r.client.Clinic.Get(ctx, id)
 	if err != nil {
 		if ent.IsNotFound(err) {
@@ -82,7 +81,7 @@ func (r *clinicRepository) CreateShell(ctx context.Context, c *model.Clinic) (*m
 	return toClinicDomain(row), nil
 }
 
-func (r *clinicRepository) MarkOnboarded(ctx context.Context, id uuid.UUID, at time.Time) error {
+func (r *clinicRepository) MarkOnboarded(ctx context.Context, id ident.ClinicID, at time.Time) error {
 	err := r.client.Clinic.UpdateOneID(id).SetOnboardedAt(at).Exec(ctx)
 	if err != nil {
 		return errors.Wrap(err, "clinic repository: mark onboarded")

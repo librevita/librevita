@@ -3,15 +3,15 @@ package urn_test
 import (
 	"testing"
 
-	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 
+	"librevita.org/pkg/ident"
 	"librevita.org/pkg/urn"
 )
 
 func TestConstructors(t *testing.T) {
-	clinicID := uuid.MustParse("01990000-0000-7000-8000-0000000000c1")
-	patientID := uuid.MustParse("01990000-0000-7000-8000-0000000000d1")
+	clinicID := ident.MustParseClinic("01990000-0000-7000-8000-0000000000c1")
+	patientID := ident.MustParsePatient("01990000-0000-7000-8000-0000000000d1")
 
 	assert.Equal(t, "urn:librevita:clinic:"+clinicID.String(), urn.Clinic(clinicID))
 	assert.Equal(t, "urn:librevita:clinic:"+clinicID.String()+":patient:"+patientID.String(),
@@ -28,8 +28,8 @@ func TestConstructors(t *testing.T) {
 }
 
 func TestParsePatient(t *testing.T) {
-	clinicID := uuid.MustParse("01990000-0000-7000-8000-0000000000c1")
-	patientID := uuid.MustParse("01990000-0000-7000-8000-0000000000d1")
+	clinicID := ident.MustParseClinic("01990000-0000-7000-8000-0000000000c1")
+	patientID := ident.MustParsePatient("01990000-0000-7000-8000-0000000000d1")
 	gotClinic, gotPatient, ok := urn.ParsePatient(urn.Patient(clinicID, patientID))
 	assert.True(t, ok)
 	assert.Equal(t, clinicID, gotClinic)
@@ -44,12 +44,12 @@ func TestParsePatient(t *testing.T) {
 }
 
 func TestParseClinic(t *testing.T) {
-	clinicID := uuid.MustParse("01990000-0000-7000-8000-0000000000c1")
+	clinicID := ident.MustParseClinic("01990000-0000-7000-8000-0000000000c1")
 	got, ok := urn.ParseClinic(urn.Clinic(clinicID))
 	assert.True(t, ok)
 	assert.Equal(t, clinicID, got)
 
-	_, ok = urn.ParseClinic(urn.Patient(clinicID, uuid.MustParse("01990000-0000-7000-8000-0000000000d1")))
+	_, ok = urn.ParseClinic(urn.Patient(clinicID, ident.MustParsePatient("01990000-0000-7000-8000-0000000000d1")))
 	assert.False(t, ok)
 	_, ok = urn.ParseClinic(urn.ClinicSession(clinicID, "blake2s$abc"))
 	assert.False(t, ok)
@@ -74,6 +74,6 @@ func TestParseIdentifier(t *testing.T) {
 	assert.False(t, ok)
 	_, ok = urn.ParseIdentifier(urn.IdentifierPrefix + "br:")
 	assert.False(t, ok)
-	_, ok = urn.ParseIdentifier(urn.Clinic(uuid.MustParse("01990000-0000-7000-8000-0000000000c1")))
+	_, ok = urn.ParseIdentifier(urn.Clinic(ident.MustParseClinic("01990000-0000-7000-8000-0000000000c1")))
 	assert.False(t, ok)
 }

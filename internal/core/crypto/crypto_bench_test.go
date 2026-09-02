@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
+	"librevita.org/pkg/ident"
 
 	"librevita.org/internal/core/crypto"
 	"librevita.org/internal/core/keystore"
@@ -32,13 +33,13 @@ func BenchmarkBatchPatientDEKResolution(b *testing.B) {
 				b.Fatal(err)
 			}
 			crypto.ZeroBytes(master)
-			clinicID := uuid.New()
+			clinicID := ident.ClinicID(uuid.New())
 			setupCtx := context.Background()
-			patientIDs := make([]uuid.UUID, 0, size)
+			patientIDs := make([]ident.PatientID, 0, size)
 			for i := 0; i < size; i++ {
-				id := uuid.New()
-				patientIDs = append(patientIDs, id)
-				if _, err := engine.EnsurePatientDEKForClinic(setupCtx, clinicID, id); err != nil {
+				pid := ident.PatientID(uuid.New())
+				patientIDs = append(patientIDs, pid)
+				if _, err := engine.EnsurePatientDEKForClinic(setupCtx, clinicID, pid); err != nil {
 					b.Fatal(err)
 				}
 			}

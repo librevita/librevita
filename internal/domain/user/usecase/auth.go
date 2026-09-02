@@ -7,11 +7,11 @@ import (
 	"strings"
 
 	"github.com/cockroachdb/errors"
-	"github.com/google/uuid"
 
 	"librevita.org/internal/core/audit"
 	"librevita.org/internal/core/auth"
 	"librevita.org/internal/core/clinicctx"
+	"librevita.org/pkg/ident"
 	"librevita.org/pkg/validator"
 )
 
@@ -95,7 +95,7 @@ func (s *Service) Register(ctx context.Context, in RegisterInput) (*auth.Princip
 		return nil, "", err
 	}
 
-	patientUUID, err := uuid.Parse(strings.TrimSpace(in.PatientID))
+	patientID, err := ident.ParsePatient(strings.TrimSpace(in.PatientID))
 	if err != nil {
 		s.audit.Record(ctx, audit.Event{
 			Action: "register", Resource: "user", Result: audit.AuditResultFailure,
@@ -109,10 +109,7 @@ func (s *Service) Register(ctx context.Context, in RegisterInput) (*auth.Princip
 		return nil, "", err
 	}
 
-	userID, err := uuid.NewV7()
-	if err != nil {
-		return nil, "", errors.Wrap(err, "usecase: generate user id")
-	}
+	userID := ident.New[ident.UserID]()
 
 	patientRole, err := s.roleRepo.GetByName(ctx, auth.RolePatient.String())
 	if err != nil {
@@ -130,7 +127,7 @@ func (s *Service) Register(ctx context.Context, in RegisterInput) (*auth.Princip
 	if err != nil {
 		return nil, "", ErrEmailTaken
 	}
-	if err := s.userRepo.BindPortalPatient(ctx, u.ID, patientUUID); err != nil {
+	if err := s.userRepo.BindPortalPatient(ctx, u.ID, patientID); err != nil {
 		return nil, "", &ValidationError{Msg: "could not link the patient portal"}
 	}
 
@@ -169,8 +166,8 @@ func (s *Service) ListRecentUsers(ctx context.Context, limit int) ([]ListRecentU
 }
 
 // UserByID returns the account with the given id.
-func (s *Service) UserByID(ctx context.Context, id string) (*GetUserByIDRow, error) {
-	uUUID, err := uuid.Parse(id)
+func (s *Service) UserByID(ctx context.Context, userID string) (*GetUserByIDRow, error) {
+	uUUID, err := ident.ParseUser(userID)
 	if err != nil {
 		return nil, errors.Wrap(err, "usecase: invalid user id")
 	}
@@ -179,7 +176,7 @@ func (s *Service) UserByID(ctx context.Context, id string) (*GetUserByIDRow, err
 
 // Onboard creates the first clinic admin, system roles, and policies for the
 // clinic already in context (the Host shell).
-func (s *Service) Onboard(ctx context.Context, admin RegisterInput, systemIDs []uuid.UUID) (*auth.Principal, string, error) {
+func (s *Service) Onboard(ctx context.Context, admin RegisterInput, systemIDs []ident.IdentifierSystemID) (*auth.Principal, string, error) {
 	name := strings.TrimSpace(admin.Name)
 	email := normalizeEmail(admin.Email)
 
@@ -197,10 +194,7 @@ func (s *Service) Onboard(ctx context.Context, admin RegisterInput, systemIDs []
 		return nil, "", err
 	}
 
-	adminID, err := uuid.NewV7()
-	if err != nil {
-		return nil, "", errors.Wrap(err, "usecase: generate admin id")
-	}
+	adminID := ident.New[ident.UserID]()
 
 	adminUser := &User{
 		ID:           adminID,

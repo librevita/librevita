@@ -7,7 +7,7 @@ package urn
 import (
 	"strings"
 
-	"github.com/google/uuid"
+	"librevita.org/pkg/ident"
 )
 
 const (
@@ -34,12 +34,12 @@ const (
 const patientSegment = ":patient:"
 
 // Clinic is the keystore key and FLE AAD for a clinic DEK.
-func Clinic(clinicID uuid.UUID) string {
+func Clinic(clinicID ident.ClinicID) string {
 	return ClinicPrefix + clinicID.String()
 }
 
 // Patient is the keystore key and FLE AAD for a patient DEK wrapped by the clinic DEK.
-func Patient(clinicID, patientID uuid.UUID) string {
+func Patient(clinicID ident.ClinicID, patientID ident.PatientID) string {
 	return Clinic(clinicID) + patientSegment + patientID.String()
 }
 
@@ -49,7 +49,7 @@ func Meta(key string) string {
 }
 
 // ClinicSession is the revocation-index key for a clinic PASETO session.
-func ClinicSession(clinicID uuid.UUID, tokenHash string) string {
+func ClinicSession(clinicID ident.ClinicID, tokenHash string) string {
 	return Clinic(clinicID) + ":session:" + tokenHash
 }
 
@@ -85,34 +85,34 @@ func ParseIdentifier(s string) (parts []string, ok bool) {
 }
 
 // ParsePatient extracts clinic and patient IDs from a clinic-scoped patient URN.
-func ParsePatient(s string) (clinicID, patientID uuid.UUID, ok bool) {
+func ParsePatient(s string) (clinicID ident.ClinicID, patientID ident.PatientID, ok bool) {
 	if !strings.HasPrefix(s, ClinicPrefix) {
-		return uuid.Nil, uuid.Nil, false
+		return ident.ClinicID{}, ident.PatientID{}, false
 	}
 	rest := strings.TrimPrefix(s, ClinicPrefix)
 	clinicStr, patientStr, found := strings.Cut(rest, patientSegment)
 	if !found {
-		return uuid.Nil, uuid.Nil, false
+		return ident.ClinicID{}, ident.PatientID{}, false
 	}
-	cid, err := uuid.Parse(clinicStr)
+	cid, err := ident.ParseClinic(clinicStr)
 	if err != nil {
-		return uuid.Nil, uuid.Nil, false
+		return ident.ClinicID{}, ident.PatientID{}, false
 	}
-	pid, err := uuid.Parse(patientStr)
+	pid, err := ident.ParsePatient(patientStr)
 	if err != nil {
-		return uuid.Nil, uuid.Nil, false
+		return ident.ClinicID{}, ident.PatientID{}, false
 	}
 	return cid, pid, true
 }
 
 // ParseClinic extracts a clinic ID from a clinic-scoped key URN.
-func ParseClinic(s string) (clinicID uuid.UUID, ok bool) {
+func ParseClinic(s string) (clinicID ident.ClinicID, ok bool) {
 	if !strings.HasPrefix(s, ClinicPrefix) {
-		return uuid.Nil, false
+		return ident.ClinicID{}, false
 	}
-	id, err := uuid.Parse(strings.TrimPrefix(s, ClinicPrefix))
-	if err != nil || id == uuid.Nil {
-		return uuid.Nil, false
+	parsed, err := ident.ParseClinic(strings.TrimPrefix(s, ClinicPrefix))
+	if err != nil || parsed.IsZero() {
+		return ident.ClinicID{}, false
 	}
-	return id, true
+	return parsed, true
 }

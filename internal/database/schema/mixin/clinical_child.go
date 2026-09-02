@@ -5,7 +5,8 @@ import (
 	"entgo.io/ent/schema/field"
 	"entgo.io/ent/schema/index"
 	"entgo.io/ent/schema/mixin"
-	"github.com/google/uuid"
+
+	"librevita.org/pkg/ident"
 )
 
 // ClinicalChild defines common patient and episode foreign keys and query indexes for SOAP clinical sub-resources.
@@ -16,9 +17,9 @@ type ClinicalChild struct {
 // Fields of the ClinicalChild mixin.
 func (ClinicalChild) Fields() []ent.Field {
 	return []ent.Field{
-		field.UUID("patient_id", uuid.UUID{}).
+		field.UUID("patient_id", ident.PatientID{}).
 			Comment("Patient ID (denormalized for FLE / isolation)"),
-		field.UUID("episode_id", uuid.UUID{}).
+		field.UUID("episode_id", ident.EpisodeID{}).
 			Comment("Owning SOAP episode"),
 	}
 }

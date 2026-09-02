@@ -10,6 +10,7 @@ import (
 	"librevita.org/ent"
 	"librevita.org/ent/platformuser"
 	"librevita.org/internal/core/kv"
+	"librevita.org/pkg/ident"
 	"librevita.org/pkg/urn"
 )
 
@@ -37,8 +38,8 @@ func (r *platformSessionRepository) Create(ctx context.Context, id string, userI
 	return nil
 }
 
-func (r *platformSessionRepository) GetActive(ctx context.Context, id string, now time.Time) (*SessionRecord, error) {
-	p, err := r.getActive(ctx, urn.PlatformSession(id), now)
+func (r *platformSessionRepository) GetActive(ctx context.Context, sessionID string, now time.Time) (*SessionRecord, error) {
+	p, err := r.getActive(ctx, urn.PlatformSession(sessionID), now)
 	if err != nil {
 		return nil, errors.Wrap(err, "platform session repository: get active")
 	}
@@ -46,7 +47,7 @@ func (r *platformSessionRepository) GetActive(ctx context.Context, id string, no
 		return nil, nil
 	}
 	usr, err := r.client.PlatformUser.Query().
-		Where(platformuser.IDEQ(p.UserID)).
+		Where(platformuser.IDEQ(ident.PlatformUserID(p.UserID))).
 		Only(ctx)
 	if err != nil {
 		if ent.IsNotFound(err) {
@@ -55,11 +56,11 @@ func (r *platformSessionRepository) GetActive(ctx context.Context, id string, no
 		return nil, errors.Wrap(err, "platform session repository: load user")
 	}
 	return &SessionRecord{
-		ID:        id,
+		ID:        sessionID,
 		UserID:    p.UserID,
 		ExpiresAt: p.ExpiresAt,
 		User: &SessionUser{
-			ID:     usr.ID,
+			ID:     usr.ID.UUID(),
 			Email:  usr.Email,
 			Name:   usr.DisplayName,
 			Active: usr.Active,

@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"librevita.org/pkg/ident"
 	_ "modernc.org/sqlite"
 
 	"librevita.org/ent"
@@ -43,26 +44,26 @@ func TestEpisodeRepository_SOAPAggregate(t *testing.T) {
 	client.Intercept(ent.FLEDecryptionInterceptor(encryptor))
 
 	ctx := context.Background()
-	clinicID := uuid.New()
+	clinicID := ident.ClinicID(uuid.New())
 	_, err = client.Clinic.Create().SetID(clinicID).SetSlug("soap").SetName("SOAP Clinic").Save(ctx)
 	require.NoError(t, err)
-	roleID := uuid.New()
+	roleID := ident.RoleID(uuid.New())
 	_, err = client.Role.Create().SetID(roleID).SetClinicID(clinicID).SetName("physician").SetSystem(true).Save(ctx)
 	require.NoError(t, err)
-	userID := uuid.New()
+	userID := ident.UserID(uuid.New())
 	_, err = client.User.Create().SetID(userID).SetClinicID(clinicID).SetRoleID(roleID).
 		SetEmail("dr@example.org").SetDisplayName("Dr").SetPasswordHash("x").Save(ctx)
 	require.NoError(t, err)
-	patientID := uuid.New()
+	patientID := ident.PatientID(uuid.New())
 	_, err = client.Patient.Create().SetID(patientID).SetClinicID(clinicID).
 		SetDisplayName("Ana").SetStatus("active").SetPhone("1").SetEmail("a@b.c").Save(ctx)
 	require.NoError(t, err)
 
 	repo := repository.NewEpisodeRepository(client)
 	now := time.Now().UTC().Truncate(time.Second)
-	findingID := uuid.New()
+	findingID := ident.FindingID(uuid.New())
 	ep := episodemodel.Episode{
-		ID: uuid.New(), ClinicID: clinicID, PatientID: patientID, AuthorID: userID,
+		ID: ident.EpisodeID(uuid.New()), ClinicID: clinicID, PatientID: patientID, AuthorID: userID,
 		Type: episodemodel.EpisodeTypeEvolution, Status: episodemodel.EpisodeStatusDraft,
 		Class: episodemodel.CareSettingAmbulatory, OccurredAt: now,
 		SOAP: episodemodel.SOAP{Subjective: "queixa", Objective: "exame", Assessment: "dx", Plan: "rx"},
@@ -73,14 +74,14 @@ func TestEpisodeRepository_SOAPAggregate(t *testing.T) {
 			EffectiveAt: now,
 		}},
 		Problems: []episodemodel.Problem{{
-			ID: uuid.New(), ClinicalStatus: episodemodel.ProblemClinicalActive,
+			ID: ident.ProblemID(uuid.New()), ClinicalStatus: episodemodel.ProblemClinicalActive,
 			VerificationStatus: episodemodel.ProblemVerificationConfirmed,
 			Category:           episodemodel.ProblemCategoryEncounter, Rank: 1,
 			Code: episodemodel.Coding{System: "http://hl7.org/fhir/sid/icd-10", Code: "G43.9"},
 			Text: "enxaqueca",
 		}},
 		PlanItems: []episodemodel.PlanItem{{
-			ID: uuid.New(), Kind: episodemodel.PlanItemKindInstruction,
+			ID: ident.PlanItemID(uuid.New()), Kind: episodemodel.PlanItemKindInstruction,
 			Status: episodemodel.PlanItemStatusActive, Description: "retorno",
 		}},
 	}
@@ -113,7 +114,7 @@ func TestEpisodeRepository_SOAPAggregate(t *testing.T) {
 	assert.Len(t, list, 1)
 
 	amendment := *got
-	amendment.ID = uuid.New()
+	amendment.ID = ident.EpisodeID(uuid.New())
 	amendment.Status = episodemodel.EpisodeStatusDraft
 	amendment.PredecessorID = &got.ID
 	amendment.Findings, amendment.Problems, amendment.PlanItems = nil, nil, nil
@@ -123,7 +124,7 @@ func TestEpisodeRepository_SOAPAggregate(t *testing.T) {
 	assert.Equal(t, got.ID, *child.PredecessorID)
 
 	dup := amendment
-	dup.ID = uuid.New()
+	dup.ID = ident.EpisodeID(uuid.New())
 	_, err = repo.Create(ctx, dup)
 	assert.ErrorIs(t, err, episodemodel.ErrAlreadyAmended)
 

@@ -4,17 +4,17 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
+	"librevita.org/pkg/ident"
 )
 
 func TestEpisodeValidate(t *testing.T) {
 	t.Parallel()
-	id := uuid.MustParse("01990000-0000-7000-8000-000000000001")
+	raw := "01990000-0000-7000-8000-000000000001"
 	valid := Episode{
-		ID:         id,
-		ClinicID:   id,
-		PatientID:  id,
-		AuthorID:   id,
+		ID:         ident.MustParseEpisode(raw),
+		ClinicID:   ident.MustParseClinic(raw),
+		PatientID:  ident.MustParsePatient(raw),
+		AuthorID:   ident.MustParseUser(raw),
 		Type:       EpisodeTypeConsultation,
 		Status:     EpisodeStatusDraft,
 		Class:      CareSettingAmbulatory,

@@ -5,13 +5,13 @@ import (
 	"time"
 
 	"github.com/cockroachdb/errors"
-	"github.com/google/uuid"
 
 	"librevita.org/ent"
 	"librevita.org/ent/staffchangerequest"
 	"librevita.org/ent/user"
 	"librevita.org/internal/core/clinicctx"
 	usermodel "librevita.org/internal/domain/user/model"
+	"librevita.org/pkg/ident"
 )
 
 type staffRequestRepository struct {
@@ -40,7 +40,7 @@ func (r *staffRequestRepository) Create(ctx context.Context, req *usermodel.Staf
 	return toStaffChangeRequestDomain(saved), nil
 }
 
-func (r *staffRequestRepository) GetByID(ctx context.Context, id uuid.UUID) (*usermodel.StaffChangeRequest, error) {
+func (r *staffRequestRepository) GetByID(ctx context.Context, id ident.StaffChangeRequestID) (*usermodel.StaffChangeRequest, error) {
 	req, err := r.client.StaffChangeRequest.Get(ctx, id)
 	if err != nil {
 		if ent.IsNotFound(err) {
@@ -51,7 +51,7 @@ func (r *staffRequestRepository) GetByID(ctx context.Context, id uuid.UUID) (*us
 	return toStaffChangeRequestDomain(req), nil
 }
 
-func (r *staffRequestRepository) ListByRequester(ctx context.Context, requesterID uuid.UUID, limit int) ([]usermodel.ListStaffChangeRequestsByRequesterRow, error) {
+func (r *staffRequestRepository) ListByRequester(ctx context.Context, requesterID ident.UserID, limit int) ([]usermodel.ListStaffChangeRequestsByRequesterRow, error) {
 	requests, err := r.client.StaffChangeRequest.Query().
 		Where(staffchangerequest.RequestedByEQ(requesterID)).
 		WithUser().
@@ -163,7 +163,7 @@ func (r *staffRequestRepository) ListFiltered(ctx context.Context, status, q str
 	return rows, int64(total), nil
 }
 
-func (r *staffRequestRepository) Reject(ctx context.Context, id, deciderID uuid.UUID, note string) error {
+func (r *staffRequestRepository) Reject(ctx context.Context, id ident.StaffChangeRequestID, deciderID ident.UserID, note string) error {
 	decidedAt := time.Now().UTC()
 	update := r.client.StaffChangeRequest.UpdateOneID(id).
 		SetStatus(staffchangerequest.StatusRejected).

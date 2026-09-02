@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/cockroachdb/errors"
-	"github.com/google/uuid"
 
 	"librevita.org/internal/core/auth"
 	"librevita.org/internal/core/crypto"
@@ -16,6 +15,7 @@ import (
 	"librevita.org/internal/core/policy"
 	patientmodel "librevita.org/internal/domain/patient/model"
 	"librevita.org/pkg/flow"
+	"librevita.org/pkg/ident"
 	"librevita.org/pkg/validator"
 )
 
@@ -83,23 +83,23 @@ func (s *Service) Create(ctx context.Context, clinicID, createdBy string, in Pat
 	if err != nil {
 		return nil, err
 	}
-	id, err := uuid.NewV7()
-	if err != nil {
-		return nil, errors.Wrap(err, "usecase: generate patient id")
-	}
-	cUUID, err := uuid.Parse(clinicID)
+	patientID := ident.New[ident.PatientID]()
+	cUUID, err := ident.ParseClinic(clinicID)
 	if err != nil {
 		return nil, errors.Wrap(err, "usecase: invalid clinic id")
 	}
 
-	var cb *uuid.UUID
+	var cb *ident.UserID
 	if createdBy != "" {
-		parsed := uuid.MustParse(createdBy)
+		parsed, perr := ident.ParseUser(createdBy)
+		if perr != nil {
+			return nil, errors.Wrap(perr, "usecase: invalid created_by")
+		}
 		cb = &parsed
 	}
 
 	p := Patient{
-		ID:          id,
+		ID:          patientID,
 		ClinicID:    cUUID,
 		DisplayName: normalized.DisplayName,
 		BirthDate:   strPtr(normalized.BirthDate),
@@ -119,7 +119,7 @@ func (s *Service) Create(ctx context.Context, clinicID, createdBy string, in Pat
 	err = flow.New().
 		StepWithRollback("provision patient dek", func() error {
 			if s.engine != nil {
-				_, err := s.engine.EnsurePatientDEKForClinic(ctx, cUUID, id)
+				_, err := s.engine.EnsurePatientDEKForClinic(ctx, cUUID, patientID)
 				if err != nil {
 					return errors.Wrap(err, "usecase: provision patient dek")
 				}
@@ -127,7 +127,7 @@ func (s *Service) Create(ctx context.Context, clinicID, createdBy string, in Pat
 			return nil
 		}, func() error {
 			if s.engine != nil {
-				return s.engine.DeletePatientDEKForClinic(ctx, cUUID, id)
+				return s.engine.DeletePatientDEKForClinic(ctx, cUUID, patientID)
 			}
 			return nil
 		}).
@@ -145,12 +145,12 @@ func (s *Service) Create(ctx context.Context, clinicID, createdBy string, in Pat
 }
 
 // Get returns a patient by id, scoped to the clinic.
-func (s *Service) Get(ctx context.Context, clinicID, id string) (*Patient, error) {
-	pUUID, err := uuid.Parse(id)
+func (s *Service) Get(ctx context.Context, clinicID, patientID string) (*Patient, error) {
+	pUUID, err := ident.ParsePatient(patientID)
 	if err != nil {
 		return nil, errors.Wrap(err, "usecase: invalid patient id")
 	}
-	cUUID, err := uuid.Parse(clinicID)
+	cUUID, err := ident.ParseClinic(clinicID)
 	if err != nil {
 		return nil, errors.Wrap(err, "usecase: invalid clinic id")
 	}
@@ -159,12 +159,12 @@ func (s *Service) Get(ctx context.Context, clinicID, id string) (*Patient, error
 }
 
 // GetWithCreator returns a patient with the registrar's email, scoped to the clinic.
-func (s *Service) GetWithCreator(ctx context.Context, clinicID, id string) (*GetPatientWithCreatorRow, error) {
-	pUUID, err := uuid.Parse(id)
+func (s *Service) GetWithCreator(ctx context.Context, clinicID, patientID string) (*GetPatientWithCreatorRow, error) {
+	pUUID, err := ident.ParsePatient(patientID)
 	if err != nil {
 		return nil, errors.Wrap(err, "usecase: invalid patient id")
 	}
-	cUUID, err := uuid.Parse(clinicID)
+	cUUID, err := ident.ParseClinic(clinicID)
 	if err != nil {
 		return nil, errors.Wrap(err, "usecase: invalid clinic id")
 	}
@@ -174,13 +174,13 @@ func (s *Service) GetWithCreator(ctx context.Context, clinicID, id string) (*Get
 
 // GetMany returns patients from one clinic, preserving the order of ids.
 func (s *Service) GetMany(ctx context.Context, clinicID string, ids []string) ([]Patient, error) {
-	cUUID, err := uuid.Parse(clinicID)
+	cUUID, err := ident.ParseClinic(clinicID)
 	if err != nil {
 		return nil, errors.Wrap(err, "usecase: invalid clinic id")
 	}
-	patientIDs := make([]uuid.UUID, 0, len(ids))
-	for _, id := range ids {
-		pUUID, err := uuid.Parse(id)
+	patientIDs := make([]ident.PatientID, 0, len(ids))
+	for _, rawID := range ids {
+		pUUID, err := ident.ParsePatient(rawID)
 		if err != nil {
 			return nil, errors.Wrap(err, "usecase: invalid patient id")
 		}
@@ -191,7 +191,7 @@ func (s *Service) GetMany(ctx context.Context, clinicID string, ids []string) ([
 		if err != nil {
 			return nil, err
 		}
-		byID := make(map[uuid.UUID]Patient, len(patients))
+		byID := make(map[ident.PatientID]Patient, len(patients))
 		for _, patient := range patients {
 			byID[patient.ID] = patient
 		}
@@ -219,12 +219,12 @@ func (s *Service) GetMany(ctx context.Context, clinicID string, ids []string) ([
 // Delete removes a patient aggregate after the caller has completed its
 // crypto-shredding step. The concrete repository must support aggregate
 // deletion in production.
-func (s *Service) Delete(ctx context.Context, clinicID, id string) error {
-	cUUID, err := uuid.Parse(clinicID)
+func (s *Service) Delete(ctx context.Context, clinicID, patientID string) error {
+	cUUID, err := ident.ParseClinic(clinicID)
 	if err != nil {
 		return errors.Wrap(err, "usecase: invalid clinic id")
 	}
-	pUUID, err := uuid.Parse(id)
+	pUUID, err := ident.ParsePatient(patientID)
 	if err != nil {
 		return errors.Wrap(err, "usecase: invalid patient id")
 	}
@@ -236,16 +236,16 @@ func (s *Service) Delete(ctx context.Context, clinicID, id string) error {
 }
 
 // Update validates in and updates the patient.
-func (s *Service) Update(ctx context.Context, clinicID, id string, in PatientInput) (*Patient, error) {
+func (s *Service) Update(ctx context.Context, clinicID, patientID string, in PatientInput) (*Patient, error) {
 	normalized, err := normalize(in)
 	if err != nil {
 		return nil, err
 	}
-	pUUID, err := uuid.Parse(id)
+	pUUID, err := ident.ParsePatient(patientID)
 	if err != nil {
 		return nil, errors.Wrap(err, "usecase: invalid patient id")
 	}
-	cUUID, err := uuid.Parse(clinicID)
+	cUUID, err := ident.ParseClinic(clinicID)
 	if err != nil {
 		return nil, errors.Wrap(err, "usecase: invalid clinic id")
 	}
@@ -276,17 +276,17 @@ func (s *Service) Update(ctx context.Context, clinicID, id string, in PatientInp
 }
 
 // SetStatus updates the patient status, scoped to the clinic.
-func (s *Service) SetStatus(ctx context.Context, clinicID, id string, status patientmodel.PatientStatus) error {
-	pUUID, err := uuid.Parse(id)
+func (s *Service) SetStatus(ctx context.Context, clinicID, patientID string, status patientmodel.PatientStatus) error {
+	pUUID, err := ident.ParsePatient(patientID)
 	if err != nil {
 		return errors.Wrap(err, "usecase: invalid patient id")
 	}
-	cUUID, err := uuid.Parse(clinicID)
+	cUUID, err := ident.ParseClinic(clinicID)
 	if err != nil {
 		return errors.Wrap(err, "usecase: invalid clinic id")
 	}
 
-	count, err := s.repo.BulkSetStatus(ctx, cUUID, []uuid.UUID{pUUID}, status)
+	count, err := s.repo.BulkSetStatus(ctx, cUUID, []ident.PatientID{pUUID}, status)
 	if err != nil {
 		return errors.Wrap(err, "usecase: set patient status")
 	}
@@ -301,15 +301,15 @@ func (s *Service) BulkSetStatus(ctx context.Context, clinicID string, ids []stri
 	if len(ids) == 0 {
 		return 0, nil
 	}
-	cUUID, err := uuid.Parse(clinicID)
+	cUUID, err := ident.ParseClinic(clinicID)
 	if err != nil {
 		return 0, errors.Wrap(err, "usecase: invalid clinic id")
 	}
-	uuids := make([]uuid.UUID, 0, len(ids))
-	for _, id := range ids {
-		u, err := uuid.Parse(id)
+	uuids := make([]ident.PatientID, 0, len(ids))
+	for _, rawID := range ids {
+		u, err := ident.ParsePatient(rawID)
 		if err != nil {
-			return 0, errors.Wrapf(err, "usecase: invalid patient id %q", id)
+			return 0, errors.Wrapf(err, "usecase: invalid patient id %q", rawID)
 		}
 		uuids = append(uuids, u)
 	}
@@ -318,7 +318,7 @@ func (s *Service) BulkSetStatus(ctx context.Context, clinicID string, ids []stri
 
 // List returns decrypted patients matching clinic and status filters with pagination.
 func (s *Service) List(ctx context.Context, clinicID, q, status, field string, limit, offset int) ([]Patient, int64, error) {
-	cUUID, err := uuid.Parse(clinicID)
+	cUUID, err := ident.ParseClinic(clinicID)
 	if err != nil {
 		return nil, 0, errors.Wrap(err, "usecase: invalid clinic id")
 	}
@@ -381,7 +381,7 @@ func paginatePatients(filtered []Patient, limit, offset int) []Patient {
 func (s *Service) listOptimized(
 	ctx context.Context,
 	repo patientmodel.PatientQueryRepository,
-	clinicID uuid.UUID,
+	clinicID ident.ClinicID,
 	q, field string,
 	status *patientmodel.PatientStatus,
 	limit, offset int,
@@ -446,11 +446,11 @@ func nameSearchTokens(hasher crypto.Hasher, q string) (searchQuery, error) {
 func hydrateCandidates(
 	ctx context.Context,
 	repo patientmodel.PatientQueryRepository,
-	clinicID uuid.UUID,
+	clinicID ident.ClinicID,
 	candidates []patientmodel.PatientCandidate,
 	total int,
 ) ([]Patient, int64, error) {
-	ids := make([]uuid.UUID, 0, len(candidates))
+	ids := make([]ident.PatientID, 0, len(candidates))
 	for _, candidate := range candidates {
 		ids = append(ids, candidate.ID)
 	}
@@ -458,7 +458,7 @@ func hydrateCandidates(
 	if err != nil {
 		return nil, 0, errors.Wrap(err, "usecase: hydrate patients")
 	}
-	byID := make(map[uuid.UUID]Patient, len(hydrated))
+	byID := make(map[ident.PatientID]Patient, len(hydrated))
 	for _, patient := range hydrated {
 		byID[patient.ID] = patient
 	}
@@ -488,7 +488,7 @@ func matchWordPrefix(text, query string) bool {
 
 // Count returns total number of patients for the clinic.
 func (s *Service) Count(ctx context.Context, clinicID string) (int64, error) {
-	cUUID, err := uuid.Parse(clinicID)
+	cUUID, err := ident.ParseClinic(clinicID)
 	if err != nil {
 		return 0, errors.Wrap(err, "usecase: invalid clinic id")
 	}

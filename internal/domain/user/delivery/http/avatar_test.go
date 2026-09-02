@@ -14,8 +14,8 @@ import (
 
 	"entgo.io/ent/dialect"
 	entsql "entgo.io/ent/dialect/sql"
-	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
+	"librevita.org/pkg/ident"
 	_ "modernc.org/sqlite"
 
 	"librevita.org/ent"
@@ -38,7 +38,7 @@ import (
 )
 
 // testAdminID is the seeded admin used by the avatar fixtures.
-var testAdminID = uuid.MustParse("01990000-0000-7000-8000-00000000000a")
+var testAdminID = ident.MustParseUser("01990000-0000-7000-8000-00000000000a")
 
 // mustFileManager builds a FileManager over a temp local store.
 func mustFileManager(t *testing.T, client *ent.Client) *storage.FileManager {
@@ -97,7 +97,7 @@ func newAvatarEnv(t *testing.T) (*echo.Echo, *auth.SessionManager, *storage.File
 	e.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
 			ctx := clinicctx.WithTestClinic(c.Request().Context())
-			ctx = fle.WithClinicID(ctx, clinicctx.TestClinicID.String())
+			ctx = fle.WithClinicID(ctx, clinicctx.TestClinicID)
 			c.SetRequest(c.Request().WithContext(ctx))
 			return next(c)
 		}
@@ -198,7 +198,7 @@ func TestAvatarUploadServeRemove(t *testing.T) {
 	if cnt != 1 {
 		t.Errorf("storage_objects rows = %d, want 1 (only the newest avatar)", cnt)
 	}
-	avatars, err := files.List(ctx, "avatar", testAdminID)
+	avatars, err := files.List(ctx, "avatar", testAdminID.UUID())
 	if err != nil {
 		t.Fatal(err)
 	}

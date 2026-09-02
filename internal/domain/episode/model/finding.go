@@ -3,7 +3,7 @@ package model
 import (
 	"time"
 
-	"github.com/google/uuid"
+	"librevita.org/pkg/ident"
 )
 
 // Quantity is a measured amount with optional UCUM coding.
@@ -25,10 +25,10 @@ type FindingValue struct {
 
 // Finding is a structured objective finding belonging to an Episode.
 type Finding struct {
-	ID          uuid.UUID
-	ClinicID    uuid.UUID
-	PatientID   uuid.UUID
-	EpisodeID   uuid.UUID
+	ID          ident.FindingID
+	ClinicID    ident.ClinicID
+	PatientID   ident.PatientID
+	EpisodeID   ident.EpisodeID
 	Code        Coding
 	Value       FindingValue
 	Status      FindingStatus

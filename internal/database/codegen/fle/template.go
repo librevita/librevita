@@ -143,11 +143,11 @@ import (
 	"context"
 
 	"github.com/cockroachdb/errors"
-	"github.com/google/uuid"
 
 	"librevita.org/internal/core/crypto"
 	"librevita.org/internal/core/database/fle"
 	"librevita.org/internal/core/normalize"
+	"librevita.org/pkg/ident"
 )
 
 {{ range $n := $nodes }}
@@ -212,14 +212,14 @@ func encrypt{{ $n.Name }}Mutation(ctx context.Context, hasher crypto.Hasher, enc
 	}
 	{{- end }}
 	clinicID, clinicOK := m.ClinicID()
-	patientID, patientOK := uuid.Nil, false
+	patientID, patientOK := ident.PatientID{}, false
 	{{- if eq $n.Name "Patient" }}
-	if id, ok := m.ID(); ok {
-		patientID, patientOK = id, true
+	if pid, ok := m.ID(); ok {
+		patientID, patientOK = pid, true
 	}
 	{{- else }}
-	if id, ok := m.PatientID(); ok {
-		patientID, patientOK = id, true
+	if pid, ok := m.PatientID(); ok {
+		patientID, patientOK = pid, true
 	}
 	{{- end }}
 	if !clinicOK {

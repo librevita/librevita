@@ -9,11 +9,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"librevita.org/pkg/ident"
 
 	"librevita.org/internal/core/audit"
 	"librevita.org/internal/core/auth"
@@ -31,7 +31,7 @@ import (
 	usecasemocks "librevita.org/tests/mocks/domain/identifier/usecase"
 )
 
-var testAdminID = uuid.MustParse("01990000-0000-7000-8000-00000000000a")
+var testAdminID = ident.MustParseUser("01990000-0000-7000-8000-00000000000a")
 
 type httpTestEnv struct {
 	echo       *echo.Echo
@@ -48,7 +48,7 @@ func newHTTPEnv(t *testing.T) *httpTestEnv {
 	sessionRepoMock.EXPECT().Create(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil).Maybe()
 	sessionRepoMock.EXPECT().GetActive(mock.Anything, mock.Anything, mock.Anything).Return(&auth.SessionRecord{
 		User: &auth.SessionUser{
-			ID:     testAdminID,
+			ID:     testAdminID.UUID(),
 			Email:  "admin@example.org",
 			Name:   "Admin",
 			Role:   auth.RoleAdmin,
@@ -136,7 +136,7 @@ func TestIdentifierSystemsAdmin(t *testing.T) {
 	env := newHTTPEnv(t)
 	cookie := adminSession(t, env.sessions)
 
-	systemID := uuid.MustParse("01990000-0000-7000-8000-000000000055")
+	systemID := ident.MustParseIdentifierSystem("01990000-0000-7000-8000-000000000055")
 	cedulaSystem := &identifiermodel.IdentifierSystem{
 		ID:               systemID,
 		System:           urn.Identifier("py", "cedula"),

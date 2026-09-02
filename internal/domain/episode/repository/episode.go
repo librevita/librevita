@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/cockroachdb/errors"
-	"github.com/google/uuid"
 
 	"librevita.org/ent"
 	"librevita.org/ent/episode"
@@ -17,6 +16,7 @@ import (
 	"librevita.org/internal/core/database"
 	"librevita.org/internal/core/database/fle"
 	episodemodel "librevita.org/internal/domain/episode/model"
+	"librevita.org/pkg/ident"
 )
 
 type episodeRepository struct {
@@ -30,7 +30,7 @@ func NewEpisodeRepository(client *ent.Client) episodemodel.EpisodeRepository {
 
 func (r *episodeRepository) Create(ctx context.Context, ep episodemodel.Episode) (*episodemodel.Episode, error) {
 	ctx = fle.WithPatientID(ctx, ep.PatientID)
-	ctx = fle.WithClinicID(ctx, ep.ClinicID.String())
+	ctx = fle.WithClinicID(ctx, ep.ClinicID)
 	var saved *ent.Episode
 	err := database.WithTx(ctx, r.client, func(tx *ent.Tx) error {
 		create := tx.Episode.Create().
@@ -70,7 +70,7 @@ func (r *episodeRepository) Create(ctx context.Context, ep episodemodel.Episode)
 
 func (r *episodeRepository) UpdateDraft(ctx context.Context, ep episodemodel.Episode) (*episodemodel.Episode, error) {
 	ctx = fle.WithPatientID(ctx, ep.PatientID)
-	ctx = fle.WithClinicID(ctx, ep.ClinicID.String())
+	ctx = fle.WithClinicID(ctx, ep.ClinicID)
 	err := database.WithTx(ctx, r.client, func(tx *ent.Tx) error {
 		row, err := tx.Episode.Query().
 			Where(episode.IDEQ(ep.ID), episode.ClinicIDEQ(ep.ClinicID)).
@@ -117,7 +117,7 @@ func (r *episodeRepository) UpdateDraft(ctx context.Context, ep episodemodel.Epi
 	return r.Get(ctx, ep.ClinicID, ep.ID)
 }
 
-func (r *episodeRepository) Get(ctx context.Context, clinicID, episodeID uuid.UUID) (*episodemodel.Episode, error) {
+func (r *episodeRepository) Get(ctx context.Context, clinicID ident.ClinicID, episodeID ident.EpisodeID) (*episodemodel.Episode, error) {
 	row, err := r.client.Episode.Query().
 		Where(episode.IDEQ(episodeID), episode.ClinicIDEQ(clinicID)).
 		WithFindings().
@@ -137,7 +137,7 @@ func (r *episodeRepository) Get(ctx context.Context, clinicID, episodeID uuid.UU
 	return ep, nil
 }
 
-func (r *episodeRepository) GetByPredecessor(ctx context.Context, clinicID, predecessorID uuid.UUID) (*episodemodel.Episode, error) {
+func (r *episodeRepository) GetByPredecessor(ctx context.Context, clinicID ident.ClinicID, predecessorID ident.EpisodeID) (*episodemodel.Episode, error) {
 	row, err := r.client.Episode.Query().
 		Where(episode.PredecessorIDEQ(predecessorID), episode.ClinicIDEQ(clinicID)).
 		WithFindings().
@@ -157,7 +157,7 @@ func (r *episodeRepository) GetByPredecessor(ctx context.Context, clinicID, pred
 	return ep, nil
 }
 
-func (r *episodeRepository) ListByPatient(ctx context.Context, clinicID, patientID uuid.UUID, status *episodemodel.EpisodeStatus) ([]episodemodel.Episode, error) {
+func (r *episodeRepository) ListByPatient(ctx context.Context, clinicID ident.ClinicID, patientID ident.PatientID, status *episodemodel.EpisodeStatus) ([]episodemodel.Episode, error) {
 	q := r.client.Episode.Query().
 		Where(episode.ClinicIDEQ(clinicID), episode.PatientIDEQ(patientID)).
 		Order(ent.Desc(episode.FieldOccurredAt))
@@ -191,7 +191,7 @@ func (r *episodeRepository) attachSuccessor(ctx context.Context, ep *episodemode
 }
 
 func attachSuccessors(out []episodemodel.Episode) {
-	byPred := make(map[uuid.UUID]uuid.UUID, len(out))
+	byPred := make(map[ident.EpisodeID]ident.EpisodeID, len(out))
 	for i := range out {
 		if out[i].PredecessorID != nil {
 			byPred[*out[i].PredecessorID] = out[i].ID
@@ -204,7 +204,7 @@ func attachSuccessors(out []episodemodel.Episode) {
 	}
 }
 
-func (r *episodeRepository) SetStatus(ctx context.Context, clinicID, episodeID uuid.UUID, status episodemodel.EpisodeStatus) error {
+func (r *episodeRepository) SetStatus(ctx context.Context, clinicID ident.ClinicID, episodeID ident.EpisodeID, status episodemodel.EpisodeStatus) error {
 	n, err := r.client.Episode.Update().
 		Where(episode.IDEQ(episodeID), episode.ClinicIDEQ(clinicID)).
 		SetStatus(episode.Status(status)).
@@ -219,7 +219,7 @@ func (r *episodeRepository) SetStatus(ctx context.Context, clinicID, episodeID u
 	return nil
 }
 
-func (r *episodeRepository) PatientExists(ctx context.Context, clinicID, patientID uuid.UUID) (bool, error) {
+func (r *episodeRepository) PatientExists(ctx context.Context, clinicID ident.ClinicID, patientID ident.PatientID) (bool, error) {
 	ok, err := r.client.Patient.Query().
 		Where(patient.IDEQ(patientID), patient.ClinicIDEQ(clinicID)).
 		Exist(ctx)

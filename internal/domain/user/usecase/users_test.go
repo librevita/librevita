@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"librevita.org/pkg/ident"
 
 	"librevita.org/internal/core/auth"
 	usermodel "librevita.org/internal/domain/user/model"
@@ -16,15 +17,15 @@ import (
 )
 
 var (
-	testClinic  = uuid.MustParse("00000000-0000-0000-0000-000000000011")
-	testAdminID = uuid.MustParse("00000000-0000-0000-0000-000000000021")
+	testClinic  = ident.MustParseClinic("00000000-0000-0000-0000-000000000011")
+	testAdminID = ident.MustParseUser("00000000-0000-0000-0000-000000000021")
 )
 
 func TestCreateUser(t *testing.T) {
 	env := newTestEnv(t)
 	ctx := context.Background()
-	physicianRoleID := uuid.MustParse("01990000-0000-7000-8000-000000000003")
-	userID := uuid.MustParse("01990000-0000-7000-8000-000000000010")
+	physicianRoleID := ident.MustParseRole("01990000-0000-7000-8000-000000000003")
+	userID := ident.MustParseUser("01990000-0000-7000-8000-000000000010")
 
 	env.roleRepo.EXPECT().GetByName(ctx, "physician").Return(&usermodel.Role{
 		ID:   physicianRoleID,
@@ -62,7 +63,7 @@ func TestCreateUser(t *testing.T) {
 	assert.Equal(t, "physician", loaded.RoleName)
 
 	// Duplicate email maps to ErrEmailTaken
-	patientRoleID := uuid.MustParse("01990000-0000-7000-8000-000000000001")
+	patientRoleID := ident.MustParseRole("01990000-0000-7000-8000-000000000001")
 	env.roleRepo.EXPECT().GetByName(ctx, "patient").Return(&usermodel.Role{ID: patientRoleID, Name: "patient"}, nil).Once()
 	env.userRepo.EXPECT().Create(ctx, mock.Anything).Return(nil, usecase.ErrEmailTaken).Once()
 
@@ -92,8 +93,8 @@ func TestCreateUserValidation(t *testing.T) {
 func TestUpdateUserRoleAndStatus(t *testing.T) {
 	env := newTestEnv(t)
 	ctx := context.Background()
-	staffID := uuid.MustParse("01990000-0000-7000-8000-000000000010")
-	physicianRoleID := uuid.MustParse("01990000-0000-7000-8000-000000000003")
+	staffID := ident.MustParseUser("01990000-0000-7000-8000-000000000010")
+	physicianRoleID := ident.MustParseRole("01990000-0000-7000-8000-000000000003")
 
 	env.roleRepo.EXPECT().GetByName(ctx, "physician").Return(&usermodel.Role{ID: physicianRoleID, Name: "physician"}, nil).Maybe()
 
@@ -145,9 +146,9 @@ func TestUpdateUserRoleAndStatus(t *testing.T) {
 func TestUpdateUserAntiLockout(t *testing.T) {
 	env := newTestEnv(t)
 	ctx := context.Background()
-	adminID := uuid.MustParse("01990000-0000-7000-8000-000000000001")
-	adminRoleID := uuid.MustParse("01990000-0000-7000-8000-000000000002")
-	patientRoleID := uuid.MustParse("01990000-0000-7000-8000-000000000001")
+	adminID := ident.MustParseUser("01990000-0000-7000-8000-000000000001")
+	adminRoleID := ident.MustParseRole("01990000-0000-7000-8000-000000000002")
+	patientRoleID := ident.MustParseRole("01990000-0000-7000-8000-000000000001")
 
 	adminUserRow := &usermodel.GetUserByIDRow{
 		ID:          adminID,
@@ -180,7 +181,7 @@ func TestListUsersSearch(t *testing.T) {
 
 	users := []usermodel.ListUsersRow{
 		{
-			ID:          uuid.New(),
+			ID:          ident.UserID(uuid.New()),
 			DisplayName: "Ana Lima",
 			Email:       "ana@example.org",
 			RoleName:    "physician",
@@ -205,9 +206,9 @@ func TestListUsersSearch(t *testing.T) {
 func TestSpecialties(t *testing.T) {
 	env := newTestEnv(t)
 	ctx := context.Background()
-	psyID := uuid.MustParse("01990000-0000-7000-8000-000000000031")
-	physioID := uuid.MustParse("01990000-0000-7000-8000-000000000032")
-	staffID := uuid.MustParse("01990000-0000-7000-8000-000000000010")
+	psyID := ident.MustParseSpecialty("01990000-0000-7000-8000-000000000031")
+	physioID := ident.MustParseSpecialty("01990000-0000-7000-8000-000000000032")
+	staffID := ident.MustParseUser("01990000-0000-7000-8000-000000000010")
 
 	psy := &usermodel.Specialty{ID: psyID, ClinicID: testClinic, Name: "Psychologist"}
 	physio := &usermodel.Specialty{ID: physioID, ClinicID: testClinic, Name: "Physiotherapist"}
@@ -237,8 +238,8 @@ func TestSpecialties(t *testing.T) {
 	assert.Len(t, rows, 2)
 
 	// SetUserSpecialties
-	env.specialtyRepo.EXPECT().CheckClinicScope(ctx, testClinic, []uuid.UUID{psyID, physioID}).Return(true, nil).Once()
-	env.userRepo.EXPECT().SetSpecialties(ctx, staffID, []uuid.UUID{psyID, physioID}).Return(nil).Once()
+	env.specialtyRepo.EXPECT().CheckClinicScope(ctx, testClinic, []ident.SpecialtyID{psyID, physioID}).Return(true, nil).Once()
+	env.userRepo.EXPECT().SetSpecialties(ctx, staffID, []ident.SpecialtyID{psyID, physioID}).Return(nil).Once()
 	err = env.svc.SetUserSpecialties(ctx, testClinic.String(), staffID.String(), []string{psyID.String(), physioID.String()})
 	require.NoError(t, err)
 
@@ -258,10 +259,10 @@ func TestStaffChangeRequests(t *testing.T) {
 	env := newTestEnv(t)
 	ctx := context.Background()
 
-	physID := uuid.MustParse("01990000-0000-7000-8000-000000000010")
-	receptionistID := uuid.MustParse("01990000-0000-7000-8000-000000000011")
-	reqID := uuid.MustParse("01990000-0000-7000-8000-000000000050")
-	psyID := uuid.MustParse("01990000-0000-7000-8000-000000000031")
+	physID := ident.MustParseUser("01990000-0000-7000-8000-000000000010")
+	receptionistID := ident.MustParseUser("01990000-0000-7000-8000-000000000011")
+	reqID := ident.MustParseStaffChangeRequest("01990000-0000-7000-8000-000000000050")
+	psyID := ident.MustParseSpecialty("01990000-0000-7000-8000-000000000031")
 
 	physUserRow := &usermodel.GetUserByIDRow{
 		ID:          physID,
@@ -272,7 +273,7 @@ func TestStaffChangeRequests(t *testing.T) {
 	// Email collision check returns ErrEmailInUse
 	env.userRepo.EXPECT().GetByID(ctx, physID).Return(physUserRow, nil).Once()
 	env.specialtyRepo.EXPECT().ListByUser(ctx, physID).Return(nil, nil).Once()
-	env.userRepo.EXPECT().GetByEmail(ctx, "other@example.org").Return(&usermodel.GetUserByIDRow{ID: uuid.New(), Email: "other@example.org"}, nil).Once()
+	env.userRepo.EXPECT().GetByEmail(ctx, "other@example.org").Return(&usermodel.GetUserByIDRow{ID: ident.UserID(uuid.New()), Email: "other@example.org"}, nil).Once()
 	_, err := env.svc.CreateStaffChangeRequest(ctx, physID.String(), receptionistID.String(), usecase.StaffChange{
 		Name: "Dr. Lima", Email: "other@example.org", Specialties: nil,
 	})
@@ -311,7 +312,7 @@ func TestStaffChangeRequests(t *testing.T) {
 
 	// Approve
 	env.staffReqRepo.EXPECT().GetByID(ctx, reqID).Return(reqObj, nil).Once()
-	env.userRepo.EXPECT().ApplyApprovedStaffChange(ctx, reqID, physID, testAdminID, "Dr. Lima Jr", "dr.lima@example.org", []uuid.UUID{psyID}).Return(nil).Once()
+	env.userRepo.EXPECT().ApplyApprovedStaffChange(ctx, reqID, physID, testAdminID, "Dr. Lima Jr", "dr.lima@example.org", []ident.SpecialtyID{psyID}).Return(nil).Once()
 	err = env.svc.ApproveStaffChangeRequest(ctx, reqID.String(), testAdminID.String())
 	require.NoError(t, err)
 
@@ -323,7 +324,7 @@ func TestStaffChangeRequests(t *testing.T) {
 	require.ErrorIs(t, err, usecase.ErrRequestNotPending)
 
 	// Reject
-	req2ID := uuid.MustParse("01990000-0000-7000-8000-000000000051")
+	req2ID := ident.MustParseStaffChangeRequest("01990000-0000-7000-8000-000000000051")
 	req2Obj := &usermodel.StaffChangeRequest{
 		ID:          req2ID,
 		UserID:      physID,
@@ -342,7 +343,7 @@ func TestListPhysicians(t *testing.T) {
 
 	physicians := []usermodel.ListPhysiciansPageRow{
 		{
-			ID:          uuid.New(),
+			ID:          ident.UserID(uuid.New()),
 			DisplayName: "Dr. Ana",
 			Email:       "dr.ana@example.org",
 			Specialties: "Psychologist",
@@ -360,8 +361,8 @@ func TestListPhysicians(t *testing.T) {
 func TestMalformedSpecialtyIDsFailValidation(t *testing.T) {
 	env := newTestEnv(t)
 	ctx := context.Background()
-	physID := uuid.New()
-	receptionistID := uuid.New()
+	physID := ident.UserID(uuid.New())
+	receptionistID := ident.UserID(uuid.New())
 
 	// Direct assignment rejects malformed UUID
 	err := env.svc.SetUserSpecialties(ctx, testClinic.String(), physID.String(), []string{"not-a-uuid"})
@@ -374,7 +375,7 @@ func TestMalformedSpecialtyIDsFailValidation(t *testing.T) {
 	require.Error(t, err)
 
 	// Poisoned request fails on approve
-	badReqID := uuid.New()
+	badReqID := ident.StaffChangeRequestID(uuid.New())
 	badReq := &usermodel.StaffChangeRequest{
 		ID:          badReqID,
 		UserID:      physID,
@@ -390,14 +391,14 @@ func TestMalformedSpecialtyIDsFailValidation(t *testing.T) {
 func TestRolesCRUD(t *testing.T) {
 	env := newTestEnv(t)
 	ctx := context.Background()
-	systemRoleID := uuid.MustParse("01990000-0000-7000-8000-000000000001")
-	customRoleID := uuid.MustParse("01990000-0000-7000-8000-000000000005")
+	systemRoleID := ident.MustParseRole("01990000-0000-7000-8000-000000000001")
+	customRoleID := ident.MustParseRole("01990000-0000-7000-8000-000000000005")
 
 	roles := []usermodel.Role{
 		{ID: systemRoleID, Name: "admin", System: true},
-		{ID: uuid.New(), Name: "physician", System: true},
-		{ID: uuid.New(), Name: "receptionist", System: true},
-		{ID: uuid.New(), Name: "patient", System: true},
+		{ID: ident.RoleID(uuid.New()), Name: "physician", System: true},
+		{ID: ident.RoleID(uuid.New()), Name: "receptionist", System: true},
+		{ID: ident.RoleID(uuid.New()), Name: "patient", System: true},
 	}
 
 	env.roleRepo.EXPECT().List(ctx).Return(roles, nil).Once()
@@ -443,7 +444,7 @@ func TestRolesCRUD(t *testing.T) {
 	assert.Equal(t, "psychotherapist", renamed.Name)
 
 	// Delete unused custom role
-	spareID := uuid.MustParse("01990000-0000-7000-8000-000000000006")
+	spareID := ident.MustParseRole("01990000-0000-7000-8000-000000000006")
 	spareRole := &usermodel.Role{ID: spareID, Name: "spare", System: false}
 	env.roleRepo.EXPECT().GetByID(ctx, spareID).Return(spareRole, nil).Once()
 	env.roleRepo.EXPECT().CountUsersWithRole(ctx, spareID).Return(0, nil).Once()
@@ -455,7 +456,7 @@ func TestRolesCRUD(t *testing.T) {
 func TestUpdatePreferences(t *testing.T) {
 	env := newTestEnv(t)
 	ctx := context.Background()
-	userID := uuid.MustParse("01990000-0000-7000-8000-000000000010")
+	userID := ident.MustParseUser("01990000-0000-7000-8000-000000000010")
 
 	// Invalid preferences rejected before touching repo
 	err := env.svc.UpdatePreferences(ctx, userID.String(), "America/Sao_Paulo", auth.UITheme("sepia"))
@@ -478,10 +479,10 @@ func TestUpdatePreferences(t *testing.T) {
 func TestSetUserSpecialtiesRejectsCrossClinic(t *testing.T) {
 	env := newTestEnv(t)
 	ctx := context.Background()
-	staffID := uuid.New()
-	otherSpecialtyID := uuid.New()
+	staffID := ident.UserID(uuid.New())
+	otherSpecialtyID := ident.SpecialtyID(uuid.New())
 
-	env.specialtyRepo.EXPECT().CheckClinicScope(ctx, testClinic, []uuid.UUID{otherSpecialtyID}).Return(false, nil).Once()
+	env.specialtyRepo.EXPECT().CheckClinicScope(ctx, testClinic, []ident.SpecialtyID{otherSpecialtyID}).Return(false, nil).Once()
 	err := env.svc.SetUserSpecialties(ctx, testClinic.String(), staffID.String(), []string{otherSpecialtyID.String()})
 	require.ErrorIs(t, err, usecase.ErrSpecialtyScope)
 }

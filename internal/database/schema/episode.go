@@ -7,10 +7,10 @@ import (
 	"entgo.io/ent/schema/edge"
 	"entgo.io/ent/schema/field"
 	"entgo.io/ent/schema/index"
-	"github.com/google/uuid"
 
 	"librevita.org/internal/core/database/fle"
 	"librevita.org/internal/database/schema/mixin"
+	"librevita.org/pkg/ident"
 )
 
 // Episode holds the schema definition for a SOAP clinical note (one encounter).
@@ -22,7 +22,7 @@ type Episode struct {
 // Mixin of the Episode.
 func (Episode) Mixin() []ent.Mixin {
 	return []ent.Mixin{
-		mixin.UUID{},
+		mixin.UUID[ident.EpisodeID]{},
 		mixin.Clinic{},
 		mixin.Time{},
 	}
@@ -31,15 +31,15 @@ func (Episode) Mixin() []ent.Mixin {
 // Fields of the Episode.
 func (Episode) Fields() []ent.Field {
 	return []ent.Field{
-		field.UUID("patient_id", uuid.UUID{}).
+		field.UUID("patient_id", ident.PatientID{}).
 			Comment("Patient ID"),
-		field.UUID("user_id", uuid.UUID{}).
+		field.UUID("user_id", ident.UserID{}).
 			Comment("Attending physician / author ID"),
-		field.UUID("appointment_id", uuid.UUID{}).
+		field.UUID("appointment_id", ident.AppointmentID{}).
 			Optional().
 			Nillable().
 			Comment("Linked appointment ID if applicable"),
-		field.UUID("predecessor_id", uuid.UUID{}).
+		field.UUID("predecessor_id", ident.EpisodeID{}).
 			Optional().
 			Nillable().
 			Comment("Finalized episode this note amends"),

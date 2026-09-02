@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"librevita.org/pkg/ident"
 
 	"librevita.org/internal/core/clinicctx"
 	"librevita.org/internal/domain/clinic/model"
@@ -18,7 +18,7 @@ import (
 func TestClockProviderReadsClinicZone(t *testing.T) {
 	repoMock := mocks.NewMockRepository(t)
 	ctx := clinicctx.WithClinic(context.Background(), &clinicctx.Clinic{
-		ID:       uuid.MustParse("01990000-0000-7000-8000-000000000001"),
+		ID:       ident.MustParseClinic("01990000-0000-7000-8000-000000000001"),
 		Timezone: "America/New_York",
 	})
 
@@ -40,7 +40,7 @@ func TestClockProviderFallsBackBeforeOnboarding(t *testing.T) {
 }
 
 func TestClockProviderRefreshesAfterTTL(t *testing.T) {
-	clinicID := uuid.MustParse("01990000-0000-7000-8000-000000000001")
+	clinicID := ident.MustParseClinic("01990000-0000-7000-8000-000000000001")
 	ctx := clinicctx.WithClinic(context.Background(), &clinicctx.Clinic{
 		ID:       clinicID,
 		Timezone: "America/New_York",
@@ -77,7 +77,7 @@ func TestClockProviderRefreshesAfterTTL(t *testing.T) {
 }
 
 func TestClockProviderClinicIDAndProfile(t *testing.T) {
-	clinicID := uuid.MustParse("01990000-0000-7000-8000-000000000001")
+	clinicID := ident.MustParseClinic("01990000-0000-7000-8000-000000000001")
 	clinic := &model.Clinic{
 		ID:       clinicID,
 		Name:     "Test Clinic",

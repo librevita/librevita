@@ -15,6 +15,7 @@ import (
 	"librevita.org/internal/core/clinicctx"
 	"librevita.org/internal/core/config"
 	"librevita.org/internal/core/crypto"
+	"librevita.org/pkg/ident"
 	"librevita.org/pkg/log"
 )
 
@@ -46,8 +47,8 @@ type SessionUser struct {
 	Active    bool
 	Timezone  string
 	UITheme   UITheme
-	ClinicID  uuid.UUID
-	PatientID uuid.UUID
+	ClinicID  ident.ClinicID
+	PatientID ident.PatientID
 }
 
 // SessionRecord holds the session storage row.
@@ -212,7 +213,7 @@ func (m *SessionManager) authenticateClinic(ctx context.Context, hashed string, 
 		return nil, ErrNoSession
 	}
 	u := sess.User
-	if cid, ok := clinicctx.ClinicID(ctx); ok && u.ClinicID != uuid.Nil && u.ClinicID != cid {
+	if cid, ok := clinicctx.ClinicID(ctx); ok && !u.ClinicID.IsZero() && u.ClinicID != cid {
 		return nil, ErrNoSession
 	}
 	p := &Principal{
@@ -225,10 +226,10 @@ func (m *SessionManager) authenticateClinic(ctx context.Context, hashed string, 
 		ClinicID:  u.ClinicID.String(),
 		PatientID: "",
 	}
-	if u.PatientID != uuid.Nil {
+	if !u.PatientID.IsZero() {
 		p.PatientID = u.PatientID.String()
 	}
-	if u.ClinicID == uuid.Nil {
+	if u.ClinicID.IsZero() {
 		p.ClinicID = ""
 	}
 	return p, nil

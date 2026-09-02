@@ -27,10 +27,9 @@ const (
 	KeyScopePatient byte = 'p'
 )
 
-const (
-	keyEnvelopeMagic      byte = 0xD1
-	keyEnvelopeHeaderSize      = 4
-)
+const keyEnvelopeMagic byte = 0xD1
+
+const keyEnvelopeHeaderSize = 4
 
 var (
 	// ErrInvalidKeyEnvelope indicates a malformed or unexpected wrapped key.
