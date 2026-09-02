@@ -168,4 +168,3 @@ func TestRegisterDatepickerRoutes(t *testing.T) {
 		t.Fatal("expected module to be defined")
 	}
 }
-

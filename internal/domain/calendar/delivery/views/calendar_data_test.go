@@ -184,4 +184,3 @@ func TestCalendarStyleAndHelpers(t *testing.T) {
 	_, _, ok = appointmentSlot("25:99")
 	assert.False(t, ok)
 }
-

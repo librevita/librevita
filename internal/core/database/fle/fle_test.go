@@ -472,4 +472,3 @@ func TestFLEContextFunctions(t *testing.T) {
 	assert.True(t, ok)
 	assert.Equal(t, "hello", target.Val)
 }
-

@@ -146,4 +146,3 @@ func TestForResourceAndPagination(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, recentPaged, 2)
 }
-

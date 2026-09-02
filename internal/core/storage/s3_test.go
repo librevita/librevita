@@ -137,4 +137,3 @@ func TestS3VerifyAndList(t *testing.T) {
 }
 
 var _ Store = (*S3)(nil)
-

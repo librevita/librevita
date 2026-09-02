@@ -421,5 +421,3 @@ func TestAuthModuleLifecycle(t *testing.T) {
 	require.NoError(t, lc.Stop(context.Background()))
 	assert.NotNil(t, Module)
 }
-
-

@@ -395,7 +395,10 @@ func TestPatientUsecaseAdditionalOperations(t *testing.T) {
 	assert.ErrorIs(t, svc.SetStatus(ctx, testClinicID.String(), pID1.String(), patientmodel.PatientStatusInactive), usecase.ErrNotFound)
 
 	// 4. BulkSetStatus
-	assert.Equal(t, 0, func() int { c, _ := svc.BulkSetStatus(ctx, testClinicID.String(), nil, patientmodel.PatientStatusActive); return c }())
+	assert.Equal(t, 0, func() int {
+		c, _ := svc.BulkSetStatus(ctx, testClinicID.String(), nil, patientmodel.PatientStatusActive)
+		return c
+	}())
 	repoMock.EXPECT().BulkSetStatus(ctx, testClinicID, []ident.PatientID{pID1, pID2}, patientmodel.PatientStatusActive).Return(2, nil).Once()
 	bulkCount, err := svc.BulkSetStatus(ctx, testClinicID.String(), []string{pID1.String(), pID2.String()}, patientmodel.PatientStatusActive)
 	require.NoError(t, err)
@@ -484,7 +487,7 @@ func TestUpdateAndAuthorizePatientEdit(t *testing.T) {
 	assert.Error(t, err)
 
 	// 3. AuthorizePatientEdit
-		phys := &auth.Principal{ID: testUserID.String(), Role: auth.RolePhysician, ClinicID: testClinicID.String()}
+	phys := &auth.Principal{ID: testUserID.String(), Role: auth.RolePhysician, ClinicID: testClinicID.String()}
 	createdByStr := testUserID.String()
 	require.NoError(t, svc.AuthorizePatientEdit(ctx, phys, pID.String(), &createdByStr, patientmodel.PatientStatusActive))
 }

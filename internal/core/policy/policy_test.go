@@ -489,5 +489,3 @@ func TestPolicyModuleLifecycle(t *testing.T) {
 	require.NoError(t, lc.Stop(pctx()))
 	assert.NotNil(t, Module)
 }
-
-

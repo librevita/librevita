@@ -74,4 +74,3 @@ func TestInputAndCheckboxClass(t *testing.T) {
 		t.Errorf("CheckboxClass(\"extra\") = %q, want base extra", got)
 	}
 }
-

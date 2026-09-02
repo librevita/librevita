@@ -41,4 +41,3 @@ func TestNewTokenAndValidCSRF(t *testing.T) {
 	assert.False(t, ValidCSRF("", tok1))
 	assert.False(t, ValidCSRF(tok1, ""))
 }
-

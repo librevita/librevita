@@ -15,8 +15,8 @@ import (
 	"librevita.org/internal/core/policy"
 	httphandler "librevita.org/internal/domain/user/delivery/http"
 	"librevita.org/pkg/log"
-	authmocks "librevita.org/tests/mocks/core/auth"
 	auditmocks "librevita.org/tests/mocks/core/audit"
+	authmocks "librevita.org/tests/mocks/core/auth"
 	policymocks "librevita.org/tests/mocks/core/policy"
 )
 
@@ -56,4 +56,3 @@ func TestRegisterRoutes(t *testing.T) {
 	registerRoutes(e, h, sessions, policies, auditLogger, logger)
 	assert.NotEmpty(t, e.Routes())
 }
-

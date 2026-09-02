@@ -121,4 +121,3 @@ func TestEncryptedSizeAndReaderEdgeCases(t *testing.T) {
 	_, err = NewDecryptedReader(bytes.NewReader(tamperedVer), key, aad)
 	assert.ErrorIs(t, err, ErrInvalidEncryptedObject)
 }
-

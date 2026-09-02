@@ -224,4 +224,3 @@ func TestPatientDetailShredAndSearchFields(t *testing.T) {
 	e.ServeHTTP(rec, req)
 	assert.True(t, rec.Code == http.StatusOK || rec.Code == http.StatusFound || rec.Code == http.StatusSeeOther)
 }
-

@@ -411,6 +411,3 @@ func TestFHIREndpointsUnauthenticatedAndErrors(t *testing.T) {
 		assert.Equal(t, tc.code, w.Code)
 	}
 }
-
-
-
