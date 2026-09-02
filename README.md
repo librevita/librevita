@@ -180,10 +180,10 @@ Security-relevant and clinical events (register, login, logout, policy denials, 
 
 ## Quick start
 
-Requirements: [Task](https://taskfile.dev/install) 3.x, a Go toolchain (the Taskfile pin is downloaded automatically), and Node 24 LTS (`.nvmrc`) for the frontend pipeline. Generated Ent and templ output is not committed.
+Requirements: [Task](https://taskfile.dev/install) 3.x, a Go toolchain (the Taskfile pin is downloaded automatically), and Node 24 LTS (`.nvmrc`) for the frontend pipeline. Generated Ent, ident codecs, and templ output is not committed.
 
 ```sh
-task gen    # Ent models, schema helpers, templ views (needed for the editor and the first build)
+task gen    # Ent models, ident codecs, schema helpers, templ views (needed for the editor and the first build)
 task dev    # unoptimized binary at bin/librevita-dev
 ./bin/librevita-dev --mode=development
 ```
@@ -211,7 +211,7 @@ Full flags, production keys, TLS/DNS, and database drivers: [Production: keys, T
 - curl for `task hadolint` / `task zizmor` (pinned GitHub release binaries)
 
 ```sh
-task gen                    # regenerate Ent models, schema helpers, and templ views
+task gen                    # regenerate Ent models, ident codecs, schema helpers, and templ views
 task dev                    # fast unoptimized binary (bin/librevita-dev)
 task build                  # optimized production binary (bin/librevita)
 task image                  # OCI image (podman by default; task image -- IMG=docker)
@@ -514,11 +514,11 @@ Clinical attachments are managed via `storage.Manager`, which streams authentica
 
 ## Database and migrations
 
-Persistence uses Ent (`entgo.io/ent`). Schemas live in `internal/database/schema`; the generator writes the typed client to `ent/` (not committed; `task gen`).
+Persistence uses Ent (`entgo.io/ent`). Schemas live in `internal/database/schema`; the generator writes the typed client to `ent/` (not committed; `task gen`). `task gen` also writes `pkg/ident` SQL/text codecs from `types.go`.
 
 SQLite uses `modernc.org/sqlite` (no CGO). PostgreSQL uses `github.com/jackc/pgx/v5`. The factory enables WAL (SQLite), foreign keys, and per-backend pools.
 
-Primary keys are UUIDv7 (`TEXT` in SQLite, `UUID` in PostgreSQL), generated in the application (`github.com/google/uuid`), stored lowercase. UUIDv7 is time-sortable and non-enumerable (an id is not “patient #42”), which matters when merging records. Inserts always pass `id`; the code never depends on `last_insert_rowid`. Display identifiers such as an MRN are separate columns.
+Primary keys are UUIDv7 (`TEXT` in SQLite, `UUID` in PostgreSQL), generated in the application (`ident.New[T]`, google/uuid v7), stored lowercase. UUIDv7 is time-sortable and non-enumerable (an id is not “patient #42”), which matters when merging records. Inserts always pass `id`; the code never depends on `last_insert_rowid`. Display identifiers such as an MRN are separate columns.
 
 Go creates `data_dir` at startup. Unset database and log paths become `data_dir/librevita.db` and `data_dir/librevita.log`.
 
@@ -526,7 +526,7 @@ The `database` section mirrors storage: a `driver` switch plus `sqlite` / `postg
 
 Node candidates come from `database.dqlite.addrs` and/or `database.dqlite.discovery_srv` (DNS SRV, resolved on each attempt); at least one is required. Candidates only help find the leader; membership then syncs from the cluster. SRV tracks membership without restarts; static addresses remain the fallback.
 
-Closed value sets are enforced twice: a SQL `CHECK` and a typed enum (`AuditResult`, `PatientStatus`, `Sex`, `StaffRequestStatus`, `PolicyOrigin`, `UITheme`). Timestamps map to `time.Time`; UUID columns are `uuid.UUID`.
+Closed value sets are enforced twice: a SQL `CHECK` and a typed enum (`AuditResult`, `PatientStatus`, `Sex`, `StaffRequestStatus`, `PolicyOrigin`, `UITheme`). Timestamps map to `time.Time`. Entity UUID columns map to distinct `pkg/ident` types (`ident.PatientID`, `ident.ClinicID`, …) so the compiler rejects a patient id where a clinic id is required. Sessions that may be a clinic or platform user stay `uuid.UUID`; integer audit ids and polymorphic string resource ids are unchanged.
 
 Session revocation lives in the sessions KV store (bbolt, NATS, or etcd), independent of the SQL driver. The principal is still loaded from SQL on each request.
 
@@ -702,6 +702,13 @@ Abuse controls:
 - The HTTP server enforces read timeouts
 
 ## Internals
+
+### Typed entity IDs (`pkg/ident`)
+
+Entity primary keys and foreign keys are defined types over UUIDv7 (`ident.PatientID`, `ident.ClinicID`, and the rest). SQL columns stay UUID. HTTP and FHIR parse path/form strings at the edge; CEL, views, and `auth.Principal` stay strings. Resource URNs in `pkg/urn` take these types.
+
+- **`types.go`** — source of truth; every declaration is `type NameID uuid.UUID` (defined type, not alias)
+- **`task gen`** — writes `codec_gen.go` (SQL `Scan`/`Value`, text marshal, `ParseClinic` / `MustParsePatient`, …; not committed)
 
 ### Validation and internationalization (`pkg/validator`)
 
