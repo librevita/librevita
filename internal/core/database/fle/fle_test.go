@@ -18,11 +18,11 @@ import (
 	"librevita.org/pkg/ident"
 	_ "modernc.org/sqlite"
 
-	"librevita.org/ent"
-	"librevita.org/ent/enttest"
 	"librevita.org/internal/core/crypto"
 	"librevita.org/internal/core/database/fle"
 	"librevita.org/internal/core/keystore"
+	"librevita.org/internal/database/record"
+	"librevita.org/internal/database/record/enttest"
 )
 
 func generateTestKey(t *testing.T) []byte {
@@ -96,20 +96,20 @@ func TestResolveEncryptor_ContextHierarchy(t *testing.T) {
 	assert.Equal(t, ctxEnc, resolved)
 }
 
-func setupTestEntClient(t *testing.T, hasher crypto.Hasher, defaultEnc crypto.Encryptor) *ent.Client {
+func setupTestEntClient(t *testing.T, hasher crypto.Hasher, defaultEnc crypto.Encryptor) *record.Client {
 	t.Helper()
 	db, err := sql.Open("sqlite", "file:ent_fle?mode=memory&cache=shared&_pragma=foreign_keys(1)")
 	require.NoError(t, err)
 
 	drv := entsql.OpenDB(dialect.SQLite, db)
-	client := enttest.NewClient(t, enttest.WithOptions(ent.Driver(drv)))
+	client := enttest.NewClient(t, enttest.WithOptions(record.Driver(drv)))
 	t.Cleanup(func() {
 		_ = client.Close()
 		_ = db.Close()
 	})
 
-	client.Use(ent.FLEMutationHook(hasher, defaultEnc))
-	client.Intercept(ent.FLEDecryptionInterceptor(defaultEnc))
+	client.Use(record.FLEMutationHook(hasher, defaultEnc))
+	client.Intercept(record.FLEDecryptionInterceptor(defaultEnc))
 	return client
 }
 
@@ -217,7 +217,7 @@ func TestFLE_UsesPatientDEKPerEntity(t *testing.T) {
 	t.Cleanup(func() { _ = db.Close() })
 
 	drv := entsql.OpenDB(dialect.SQLite, db)
-	client := enttest.NewClient(t, enttest.WithOptions(ent.Driver(drv)))
+	client := enttest.NewClient(t, enttest.WithOptions(record.Driver(drv)))
 	t.Cleanup(func() { _ = client.Close() })
 
 	require.NoError(t, client.Schema.Create(context.Background()))
@@ -247,8 +247,8 @@ func TestFLE_UsesPatientDEKPerEntity(t *testing.T) {
 	require.NoError(t, err)
 	crypto.ZeroBytes(clinicDEK)
 
-	client.Use(ent.FLEMutationHook(clinicHasher, clinicEnc, engine))
-	client.Intercept(ent.FLEDecryptionInterceptor(clinicEnc, engine))
+	client.Use(record.FLEMutationHook(clinicHasher, clinicEnc, engine))
+	client.Intercept(record.FLEDecryptionInterceptor(clinicEnc, engine))
 
 	ctx := fle.WithClinicID(context.Background(), clinicID)
 	ctx = crypto.WithRequestKeyCache(ctx)

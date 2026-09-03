@@ -20,8 +20,6 @@ import (
 	"github.com/stretchr/testify/require"
 	_ "modernc.org/sqlite"
 
-	"librevita.org/ent"
-	"librevita.org/ent/auditlog"
 	"librevita.org/internal/core/audit"
 	"librevita.org/internal/core/auth"
 	"librevita.org/internal/core/clinicctx"
@@ -33,6 +31,8 @@ import (
 	"librevita.org/internal/core/policy"
 	"librevita.org/internal/core/server"
 	"librevita.org/internal/core/storage"
+	"librevita.org/internal/database/record"
+	"librevita.org/internal/database/record/auditlog"
 	clinicrepo "librevita.org/internal/domain/clinic/repository"
 	clinicusecase "librevita.org/internal/domain/clinic/usecase"
 	identifiermodel "librevita.org/internal/domain/identifier/model"
@@ -40,7 +40,7 @@ import (
 	identifierusecase "librevita.org/internal/domain/identifier/usecase"
 	patientrepo "librevita.org/internal/domain/patient/repository"
 	"librevita.org/internal/domain/patient/usecase"
-	"librevita.org/internal/testutil"
+	"librevita.org/internal/test"
 	"librevita.org/pkg/ident"
 	"librevita.org/pkg/log"
 )
@@ -50,7 +50,7 @@ var testAdminID = ident.MustParseUser("01990000-0000-7000-8000-00000000000a")
 // newIdentifierServices wires the identifier subsystem against a
 // migrated database: a fixed master key, the registry seeded from the
 // migration rows, and the two services the handlers use.
-func newIdentifierServices(t *testing.T, client *ent.Client, key *crypto.MasterKey, logger log.Logger) (identifierusecase.Service, identifierusecase.SystemsService) {
+func newIdentifierServices(t *testing.T, client *record.Client, key *crypto.MasterKey, logger log.Logger) (identifierusecase.Service, identifierusecase.SystemsService) {
 	t.Helper()
 	reg := identifiermodel.NewRegistry()
 	sysRepo := identifierrepo.NewSystemRepository(client)
@@ -73,7 +73,7 @@ func newDocEnv(t *testing.T) (*echo.Echo, *auth.SessionManager, *usecase.Service
 // newDocEnvFull is newDocEnv with the blob directory and the database
 // exposed, so the tests can tamper with stored objects and inspect the
 // audit trail.
-func newDocEnvFull(t *testing.T, dir string) (*echo.Echo, *auth.SessionManager, *usecase.Service, *storage.FileManager, *ent.Client) {
+func newDocEnvFull(t *testing.T, dir string) (*echo.Echo, *auth.SessionManager, *usecase.Service, *storage.FileManager, *record.Client) {
 	t.Helper()
 	client := openDocDB(t)
 	log := log.Nop()
@@ -111,10 +111,10 @@ func newDocEnvFull(t *testing.T, dir string) (*echo.Echo, *auth.SessionManager, 
 		t.Fatal(err)
 	}
 	csrf := auth.NewCSRF(&config.Config{Mode: "development"})
-	if err := testutil.Clinic(context.Background(), client, "01990000-0000-7000-8000-0000000000d0", "Test Clinic", "000.000.000-00"); err != nil {
+	if err := test.Clinic(context.Background(), client, "01990000-0000-7000-8000-0000000000d0", "Test Clinic", "000.000.000-00"); err != nil {
 		t.Fatalf("seed clinic: %v", err)
 	}
-	if err := testutil.User(context.Background(), client, "01990000-0000-7000-8000-00000000000a", "admin@example.org", "admin", "x"); err != nil {
+	if err := test.User(context.Background(), client, "01990000-0000-7000-8000-00000000000a", "admin@example.org", "admin", "x"); err != nil {
 		t.Fatalf("seed admin: %v", err)
 	}
 	masterKey, err := crypto.NewMasterKey("nAmIvOXVc0vb6M9G7P9q2j2yK1WxP3sJ8q5dR4tU6wA=", v) // gitleaks:allow
@@ -135,8 +135,8 @@ func newDocEnvFull(t *testing.T, dir string) (*echo.Echo, *auth.SessionManager, 
 	if err != nil {
 		t.Fatal(err)
 	}
-	client.Use(ent.FLEMutationHook(hasher, enc, masterKey))
-	client.Intercept(ent.FLEDecryptionInterceptor(enc, masterKey))
+	client.Use(record.FLEMutationHook(hasher, enc, masterKey))
+	client.Intercept(record.FLEDecryptionInterceptor(enc, masterKey))
 	svc := usecase.NewService(patientrepo.NewPatientRepositoryWithEngine(client, masterKey), policies, masterKey)
 	ids, systems := newIdentifierServices(t, client, masterKey, log)
 	h := NewHandler(svc, clinicusecase.NewClockProvider(clinicrepo.NewClinicRepository(client)), csrf, auditLogger, files, ids, systems, masterKey, log)
@@ -164,7 +164,7 @@ func newDocEnvFull(t *testing.T, dir string) (*echo.Echo, *auth.SessionManager, 
 	return e, sessions, svc, files, client
 }
 
-func openDocDB(t *testing.T) *ent.Client {
+func openDocDB(t *testing.T) *record.Client {
 	t.Helper()
 	name := "patient-docs-" + uuid.NewString()
 	db, err := sql.Open("sqlite", "file:"+name+"?mode=memory&cache=shared")
@@ -178,7 +178,7 @@ func openDocDB(t *testing.T) *ent.Client {
 	}
 
 	drv := entsql.OpenDB(dialect.SQLite, db)
-	client := ent.NewClient(ent.Driver(drv))
+	client := record.NewClient(record.Driver(drv))
 	t.Cleanup(func() { _ = client.Close() })
 	return client
 }
@@ -386,7 +386,7 @@ func TestDocumentsDownloadDetectsTampering(t *testing.T) {
 
 	lastAudit, err := db.AuditLog.Query().
 		Where(auditlog.ActionEQ("file.read"), auditlog.ResultEQ("failure")).
-		Order(ent.Desc(auditlog.FieldID)).
+		Order(record.Desc(auditlog.FieldID)).
 		First(context.Background())
 	if err != nil {
 		t.Fatalf("query audit trail: %v", err)

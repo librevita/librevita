@@ -11,10 +11,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"librevita.org/ent/role"
 	"librevita.org/internal/core/auth"
 	"librevita.org/internal/core/clinicctx"
-	"librevita.org/internal/testutil"
+	"librevita.org/internal/database/record/role"
+	"librevita.org/internal/test"
 	"librevita.org/pkg/ident"
 )
 
@@ -24,7 +24,7 @@ func TestStaffRoutes(t *testing.T) {
 
 	// Seed a physician user with clinical role
 	physID := "01990000-0000-7000-8000-00000000000b"
-	require.NoError(t, testutil.User(ctx, env.client, physID, "dr.phys@example.org", "physician", "PhysPass123!"))
+	require.NoError(t, test.User(ctx, env.client, physID, "dr.phys@example.org", "physician", "PhysPass123!"))
 
 	// Ensure role is marked as clinical
 	r, err := env.client.Role.Query().Where(role.NameEQ("physician")).Only(ctx)
@@ -234,7 +234,7 @@ func TestStaffHTMXAndErrorBranches(t *testing.T) {
 	ctx := clinicctx.WithTestClinic(context.Background())
 
 	physID := "01990000-0000-7000-8000-00000000000c"
-	require.NoError(t, testutil.User(ctx, env.client, physID, "dr.htmx@example.org", "physician", "PhysPass123!"))
+	require.NoError(t, test.User(ctx, env.client, physID, "dr.htmx@example.org", "physician", "PhysPass123!"))
 	r, err := env.client.Role.Query().Where(role.NameEQ("physician")).Only(ctx)
 	require.NoError(t, err)
 	_, err = env.client.Role.UpdateOneID(r.ID).SetIsClinical(true).Save(ctx)

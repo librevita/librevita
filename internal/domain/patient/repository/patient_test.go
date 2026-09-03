@@ -12,10 +12,10 @@ import (
 	"github.com/stretchr/testify/require"
 	_ "modernc.org/sqlite"
 
-	"librevita.org/ent"
-	"librevita.org/ent/enttest"
 	"librevita.org/internal/core/crypto"
 	"librevita.org/internal/core/normalize"
+	"librevita.org/internal/database/record"
+	"librevita.org/internal/database/record/enttest"
 	patientmodel "librevita.org/internal/domain/patient/model"
 	"librevita.org/internal/domain/patient/repository"
 	"librevita.org/pkg/ident"
@@ -25,14 +25,14 @@ const testKeyB64 = "nAmIvOXVc0vb6M9G7P9q2j2yK1WxP3sJ8q5dR4tU6wA=" // gitleaks:al
 
 func strPtr(s string) *string { return &s }
 
-func setupTestRepository(t *testing.T) (patientmodel.PatientRepository, *ent.Client, crypto.Hasher, ident.ClinicID, ident.UserID) {
+func setupTestRepository(t *testing.T) (patientmodel.PatientRepository, *record.Client, crypto.Hasher, ident.ClinicID, ident.UserID) {
 	t.Helper()
 
 	db, err := sql.Open("sqlite", "file:ent?mode=memory&cache=shared&_pragma=foreign_keys(1)")
 	require.NoError(t, err)
 
 	drv := entsql.OpenDB(dialect.SQLite, db)
-	client := enttest.NewClient(t, enttest.WithOptions(ent.Driver(drv)))
+	client := enttest.NewClient(t, enttest.WithOptions(record.Driver(drv)))
 	t.Cleanup(func() {
 		_ = client.Close()
 		_ = db.Close()
@@ -48,8 +48,8 @@ func setupTestRepository(t *testing.T) (patientmodel.PatientRepository, *ent.Cli
 	require.NoError(t, err)
 
 	// Register compile-time typed FLE hook and context-aware decryption interceptor
-	client.Use(ent.FLEMutationHook(hasher, encryptor))
-	client.Intercept(ent.FLEDecryptionInterceptor(encryptor))
+	client.Use(record.FLEMutationHook(hasher, encryptor))
+	client.Intercept(record.FLEDecryptionInterceptor(encryptor))
 
 	repo := repository.NewPatientRepository(client)
 

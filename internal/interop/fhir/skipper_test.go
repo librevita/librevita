@@ -11,8 +11,8 @@ import (
 	"librevita.org/internal/core/auth"
 	"librevita.org/internal/core/config"
 	"librevita.org/internal/core/server"
+	authmocks "librevita.org/internal/test/mock/core/auth"
 	"librevita.org/pkg/log"
-	authmocks "librevita.org/tests/mocks/core/auth"
 )
 
 func TestCSRFSkipperExemptsFHIRPrefix(t *testing.T) {

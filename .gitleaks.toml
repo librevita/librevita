@@ -17,9 +17,10 @@ regexes = [
 [[allowlists]]
 description = "Generated sources, caches, and install trees"
 paths = [
-    '''(^|/)ent/''',
+    '''(^|/)internal/database/record/''',
     '''_templ\.go$''',
-    '''(^|/)tests/mocks/''',
+    '''(^|/)internal/test/mock/''',
+    '''(^|/)test/mock/''',
     '''(^|/)node_modules/''',
     '''(^|/)internal/ui/static/''',
     '''(^|/)\.git/''',

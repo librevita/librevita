@@ -7,8 +7,8 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"librevita.org/internal/core/config"
+	clinicmocks "librevita.org/internal/test/mock/domain/clinic/model"
 	"librevita.org/pkg/log"
-	clinicmocks "librevita.org/tests/mocks/domain/clinic/model"
 )
 
 func TestRegisterHostMiddleware(t *testing.T) {

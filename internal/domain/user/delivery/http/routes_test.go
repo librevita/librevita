@@ -18,7 +18,6 @@ import (
 	"github.com/stretchr/testify/require"
 	_ "modernc.org/sqlite"
 
-	"librevita.org/ent"
 	"librevita.org/internal/core/audit"
 	"librevita.org/internal/core/auth"
 	"librevita.org/internal/core/clinicctx"
@@ -30,6 +29,7 @@ import (
 	"librevita.org/internal/core/kv"
 	"librevita.org/internal/core/policy"
 	"librevita.org/internal/core/storage"
+	"librevita.org/internal/database/record"
 	clinicrepo "librevita.org/internal/domain/clinic/repository"
 	clinicusecase "librevita.org/internal/domain/clinic/usecase"
 	identrepo "librevita.org/internal/domain/identifier/repository"
@@ -38,7 +38,7 @@ import (
 	httphandler "librevita.org/internal/domain/user/delivery/http"
 	userrepo "librevita.org/internal/domain/user/repository"
 	"librevita.org/internal/domain/user/usecase"
-	"librevita.org/internal/testutil"
+	"librevita.org/internal/test"
 	"librevita.org/pkg/ident"
 	"librevita.org/pkg/log"
 )
@@ -48,7 +48,7 @@ type userHttpTestEnv struct {
 	handler     *httphandler.Handler
 	svc         *usecase.Service
 	sessions    *auth.SessionManager
-	client      *ent.Client
+	client      *record.Client
 	adminToken  string
 	adminUser   *usecase.GetUserByIDRow
 	adminCookie *http.Cookie
@@ -78,7 +78,7 @@ func setupUserHttpEnv(t *testing.T) *userHttpTestEnv {
 	require.NoError(t, database.Migrate(context.Background(), db, logger))
 
 	drv := entsql.OpenDB(dialect.SQLite, db)
-	client := ent.NewClient(ent.Driver(drv))
+	client := record.NewClient(record.Driver(drv))
 	t.Cleanup(func() { _ = client.Close() })
 
 	sessKV, err := kv.OpenBBolt(filepath.Join(t.TempDir(), "sessions.db"))
@@ -143,7 +143,7 @@ func setupUserHttpEnv(t *testing.T) *userHttpTestEnv {
 	// Hash password properly for login test
 	hash, err := auth.HashPassword("AdminPassword123!")
 	require.NoError(t, err)
-	require.NoError(t, testutil.User(ctx, client, "01990000-0000-7000-8000-00000000000a", "admin@example.org", "admin", hash))
+	require.NoError(t, test.User(ctx, client, "01990000-0000-7000-8000-00000000000a", "admin@example.org", "admin", hash))
 
 	adminUser, err := svc.GetUser(ctx, "01990000-0000-7000-8000-00000000000a")
 	require.NoError(t, err)
@@ -947,7 +947,7 @@ func TestUserStatusToggle(t *testing.T) {
 	// Create a second user to toggle
 	hash, err := auth.HashPassword("Password123!")
 	require.NoError(t, err)
-	require.NoError(t, testutil.User(ctx, env.client, "01990000-0000-7000-8000-00000000000b", "toggle@example.org", "physician", hash))
+	require.NoError(t, test.User(ctx, env.client, "01990000-0000-7000-8000-00000000000b", "toggle@example.org", "physician", hash))
 
 	// Toggle user status (deactivate)
 	req := httptest.NewRequest(http.MethodPost, "/users/01990000-0000-7000-8000-00000000000b/status", nil)
@@ -998,7 +998,7 @@ func TestSetupPageAndSubmit(t *testing.T) {
 	require.NoError(t, database.Migrate(context.Background(), db, logger))
 
 	drv := entsql.OpenDB(dialect.SQLite, db)
-	client := ent.NewClient(ent.Driver(drv))
+	client := record.NewClient(record.Driver(drv))
 	t.Cleanup(func() { _ = client.Close() })
 
 	sessKV, err := kv.OpenBBolt(filepath.Join(t.TempDir(), "sessions.db"))

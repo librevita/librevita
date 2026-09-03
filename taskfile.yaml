@@ -169,7 +169,7 @@ tasks:
     generates:
       - .tools/bin/zizmor
   # SQL/text codecs for pkg/ident defined types. types.go is the source
-  # of truth; gen.go writes codec_gen.go (gitignored, like ent/).
+  # of truth; gen.go writes codec_gen.go.
   gen-ident:
     desc: Generate ident UUID codecs from types.go
     cmds:
@@ -180,30 +180,30 @@ tasks:
     generates:
       - pkg/ident/codec_gen.go
   # Generated Ent entities and versioned migration helpers. The bootstrap
-  # file seeds the target package so `ent generate` can resolve the ent
-  # package path on a clean checkout (ent/ is not tracked).
+  # file seeds the target package so `ent generate` can resolve the record
+  # package path on a clean checkout.
   gen-ent:
     desc: Regenerate Ent client, entities, and migration helpers
     deps:
       - gen-ident
     cmds:
-      - mkdir -p ent
-      - 'printf "package ent\n" > ent/doc.go'
+      - mkdir -p internal/database/record
+      - 'printf "package record\n" > internal/database/record/doc.go'
       - go generate ./internal/database/schema
     sources:
       - internal/database/schema/**/*.go
       - internal/database/codegen/**/*.go
       - internal/core/database/fle/*.go
     generates:
-      - ent/doc.go
-      - ent/client.go
-      - ent/ent.go
-      - ent/mutation.go
-      - ent/patient.go
-      - ent/runtime.go
-      - ent/tx.go
-      - ent/migrate/migrate.go
-      - ent/migrate/schema.go
+      - internal/database/record/doc.go
+      - internal/database/record/client.go
+      - internal/database/record/record.go
+      - internal/database/record/mutation.go
+      - internal/database/record/patient.go
+      - internal/database/record/runtime.go
+      - internal/database/record/tx.go
+      - internal/database/record/migrate/migrate.go
+      - internal/database/record/migrate/schema.go
   # Generate a new versioned Goose migration using Atlas from Ent schema diffs for SQLite and PostgreSQL.
   db-diff:
     desc: 'Generate versioned Goose migrations from Ent schema for SQLite and PostgreSQL (usage: task db-diff -- name=add_patient_model)'
@@ -253,12 +253,13 @@ tasks:
       - tools
       - gen-ent
     cmds:
+      - rm -rf internal/test/mock
       - 'PATH={{.ROOT_DIR}}/.tools/bin:$PATH mockery'
     sources:
       - .mockery.yaml
       - 'internal/**/*.go'
     generates:
-      - 'tests/mocks/**/*.go'
+      - 'internal/test/mock/**/*.go'
   gen:
     desc: Regenerate Ent models, schema, mocks, templ views, and ident codecs
     deps:
@@ -500,7 +501,6 @@ tasks:
       - 'internal/**/*.templ'
       - 'internal/ui/static/**'
       - 'pkg/**/*.go'
-      - 'ent/**/*.go'
       - 'db/**'
       - go.mod
       - go.sum
@@ -532,7 +532,6 @@ tasks:
       - 'internal/**/*.templ'
       - 'internal/ui/static/**'
       - 'pkg/**/*.go'
-      - 'ent/**/*.go'
       - 'db/**'
       - go.mod
       - go.sum

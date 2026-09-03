@@ -16,11 +16,11 @@ import (
 	"librevita.org/internal/core/policy"
 	"librevita.org/internal/domain/identifier/delivery/http"
 	identifiermodel "librevita.org/internal/domain/identifier/model"
+	auditmocks "librevita.org/internal/test/mock/core/audit"
+	authmocks "librevita.org/internal/test/mock/core/auth"
+	policymocks "librevita.org/internal/test/mock/core/policy"
+	identifiermocks "librevita.org/internal/test/mock/domain/identifier/model"
 	"librevita.org/pkg/log"
-	auditmocks "librevita.org/tests/mocks/core/audit"
-	authmocks "librevita.org/tests/mocks/core/auth"
-	policymocks "librevita.org/tests/mocks/core/policy"
-	identifiermocks "librevita.org/tests/mocks/domain/identifier/model"
 )
 
 func TestIdentifierModuleLifecycleAndRoutes(t *testing.T) {

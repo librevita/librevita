@@ -18,10 +18,10 @@ import (
 	"librevita.org/internal/core/config"
 	usermodel "librevita.org/internal/domain/user/model"
 	"librevita.org/internal/domain/user/usecase"
+	auditmocks "librevita.org/internal/test/mock/core/audit"
+	authmocks "librevita.org/internal/test/mock/core/auth"
+	usermocks "librevita.org/internal/test/mock/domain/user/model"
 	"librevita.org/pkg/log"
-	auditmocks "librevita.org/tests/mocks/core/audit"
-	authmocks "librevita.org/tests/mocks/core/auth"
-	usermocks "librevita.org/tests/mocks/domain/user/model"
 )
 
 type testEnv struct {

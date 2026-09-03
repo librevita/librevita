@@ -82,6 +82,10 @@ linters:
           - gocognit
           - maintidx
 issues:
+  exclude-dirs:
+    - internal/database/record
+    - internal/test/mock
+    - test/mock
   exclude-files:
     - "**/*_templ.go"
     - "pkg/ident/codec_gen.go"

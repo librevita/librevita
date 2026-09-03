@@ -15,9 +15,9 @@ import (
 	"librevita.org/pkg/ident"
 	_ "modernc.org/sqlite"
 
-	"librevita.org/ent"
-	"librevita.org/ent/enttest"
 	"librevita.org/internal/core/crypto"
+	"librevita.org/internal/database/record"
+	"librevita.org/internal/database/record/enttest"
 	episodemodel "librevita.org/internal/domain/episode/model"
 	"librevita.org/internal/domain/episode/repository"
 )
@@ -28,7 +28,7 @@ func TestEpisodeRepository_SOAPAggregate(t *testing.T) {
 	db, err := sql.Open("sqlite", "file:episode?mode=memory&cache=shared&_pragma=foreign_keys(1)")
 	require.NoError(t, err)
 	drv := entsql.OpenDB(dialect.SQLite, db)
-	client := enttest.NewClient(t, enttest.WithOptions(ent.Driver(drv)))
+	client := enttest.NewClient(t, enttest.WithOptions(record.Driver(drv)))
 	t.Cleanup(func() {
 		_ = client.Close()
 		_ = db.Close()
@@ -40,8 +40,8 @@ func TestEpisodeRepository_SOAPAggregate(t *testing.T) {
 	require.NoError(t, err)
 	encryptor, err := crypto.NewPatientEncryptor(key)
 	require.NoError(t, err)
-	client.Use(ent.FLEMutationHook(hasher, encryptor))
-	client.Intercept(ent.FLEDecryptionInterceptor(encryptor))
+	client.Use(record.FLEMutationHook(hasher, encryptor))
+	client.Intercept(record.FLEDecryptionInterceptor(encryptor))
 
 	ctx := context.Background()
 	clinicID := ident.ClinicID(uuid.New())

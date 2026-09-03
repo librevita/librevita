@@ -8,10 +8,10 @@ import (
 	"github.com/cockroachdb/errors"
 	"github.com/google/uuid"
 
-	"librevita.org/ent"
-	"librevita.org/ent/user"
 	"librevita.org/internal/core/clinicctx"
 	"librevita.org/internal/core/kv"
+	"librevita.org/internal/database/record"
+	"librevita.org/internal/database/record/user"
 	"librevita.org/pkg/ident"
 	"librevita.org/pkg/urn"
 )
@@ -23,7 +23,7 @@ type sessionPayload struct {
 
 type sessionKV struct {
 	store  kv.Store
-	client *ent.Client
+	client *record.Client
 }
 
 func encodeSession(userID uuid.UUID, expiresAt time.Time) ([]byte, error) {
@@ -105,7 +105,7 @@ type sessionRepository struct {
 }
 
 // NewSessionRepository stores clinic sessions in kv and loads users from SQL.
-func NewSessionRepository(store kv.Store, client *ent.Client) SessionRepository {
+func NewSessionRepository(store kv.Store, client *record.Client) SessionRepository {
 	return &sessionRepository{sessionKV: sessionKV{store: store, client: client}}
 }
 
@@ -151,7 +151,7 @@ func (r *sessionRepository) loadUser(ctx context.Context, userID uuid.UUID) (*Se
 		WithPortalPatient().
 		Only(ctx)
 	if err != nil {
-		if ent.IsNotFound(err) {
+		if record.IsNotFound(err) {
 			return nil, nil
 		}
 		return nil, errors.Wrap(err, "session repository: load user")

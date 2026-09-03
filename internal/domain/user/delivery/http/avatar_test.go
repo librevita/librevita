@@ -18,7 +18,6 @@ import (
 	"librevita.org/pkg/ident"
 	_ "modernc.org/sqlite"
 
-	"librevita.org/ent"
 	"librevita.org/internal/core/audit"
 	"librevita.org/internal/core/auth"
 	"librevita.org/internal/core/clinicctx"
@@ -29,11 +28,12 @@ import (
 	"librevita.org/internal/core/policy"
 	"librevita.org/internal/core/server"
 	"librevita.org/internal/core/storage"
+	"librevita.org/internal/database/record"
 	clinicrepo "librevita.org/internal/domain/clinic/repository"
 	clinicusecase "librevita.org/internal/domain/clinic/usecase"
 	userrepo "librevita.org/internal/domain/user/repository"
 	"librevita.org/internal/domain/user/usecase"
-	"librevita.org/internal/testutil"
+	"librevita.org/internal/test"
 	"librevita.org/pkg/log"
 )
 
@@ -41,7 +41,7 @@ import (
 var testAdminID = ident.MustParseUser("01990000-0000-7000-8000-00000000000a")
 
 // mustFileManager builds a FileManager over a temp local store.
-func mustFileManager(t *testing.T, client *ent.Client) *storage.FileManager {
+func mustFileManager(t *testing.T, client *record.Client) *storage.FileManager {
 	t.Helper()
 	s, err := storage.NewLocal(t.TempDir())
 	if err != nil {
@@ -54,7 +54,7 @@ func mustFileManager(t *testing.T, client *ent.Client) *storage.FileManager {
 	return fm
 }
 
-func newAvatarEnv(t *testing.T) (*echo.Echo, *auth.SessionManager, *storage.FileManager, *ent.Client) {
+func newAvatarEnv(t *testing.T) (*echo.Echo, *auth.SessionManager, *storage.FileManager, *record.Client) {
 	t.Helper()
 	client := openAvatarDB(t)
 	logger := log.Nop()
@@ -86,7 +86,7 @@ func newAvatarEnv(t *testing.T) (*echo.Echo, *auth.SessionManager, *storage.File
 	setupRepo := userrepo.NewSetupRepository(client)
 
 	svc := usecase.NewService(userRepo, roleRepo, specialtyRepo, staffReqRepo, setupRepo, sessions, auditLogger, logger)
-	if err := testutil.User(context.Background(), client, "01990000-0000-7000-8000-00000000000a", "admin@example.org", "admin", "x"); err != nil {
+	if err := test.User(context.Background(), client, "01990000-0000-7000-8000-00000000000a", "admin@example.org", "admin", "x"); err != nil {
 		t.Fatalf("seed admin: %v", err)
 	}
 	files := mustFileManager(t, client)
@@ -112,7 +112,7 @@ func newAvatarEnv(t *testing.T) (*echo.Echo, *auth.SessionManager, *storage.File
 	return e, sessions, files, client
 }
 
-func openAvatarDB(t *testing.T) *ent.Client {
+func openAvatarDB(t *testing.T) *record.Client {
 	t.Helper()
 	db, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "avatar.db"))
 	if err != nil {
@@ -125,7 +125,7 @@ func openAvatarDB(t *testing.T) *ent.Client {
 	}
 
 	drv := entsql.OpenDB(dialect.SQLite, db)
-	client := ent.NewClient(ent.Driver(drv))
+	client := record.NewClient(record.Driver(drv))
 	t.Cleanup(func() { _ = client.Close() })
 	return client
 }

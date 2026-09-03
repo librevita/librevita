@@ -19,8 +19,8 @@ import (
 	"librevita.org/internal/core/keystore"
 	clinichttp "librevita.org/internal/domain/clinic/delivery/http"
 	"librevita.org/internal/domain/clinic/model"
+	modelmocks "librevita.org/internal/test/mock/domain/clinic/model"
 	"librevita.org/pkg/log"
-	modelmocks "librevita.org/tests/mocks/domain/clinic/model"
 )
 
 func TestHostMiddleware(t *testing.T) {

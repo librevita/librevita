@@ -5,26 +5,26 @@ import (
 
 	"github.com/cockroachdb/errors"
 
-	"librevita.org/ent"
-	"librevita.org/ent/specialty"
-	"librevita.org/ent/user"
+	"librevita.org/internal/database/record"
+	"librevita.org/internal/database/record/specialty"
+	"librevita.org/internal/database/record/user"
 	usermodel "librevita.org/internal/domain/user/model"
 	"librevita.org/pkg/ident"
 )
 
 type specialtyRepository struct {
-	client *ent.Client
+	client *record.Client
 }
 
 // NewSpecialtyRepository creates a specialty repository adapter.
-func NewSpecialtyRepository(client *ent.Client) usermodel.SpecialtyRepository {
+func NewSpecialtyRepository(client *record.Client) usermodel.SpecialtyRepository {
 	return &specialtyRepository{client: client}
 }
 
 func (r *specialtyRepository) ListByClinic(ctx context.Context, clinicID ident.ClinicID) ([]usermodel.Specialty, error) {
 	specialties, err := r.client.Specialty.Query().
 		Where(specialty.ClinicIDEQ(clinicID)).
-		Order(ent.Asc(specialty.FieldName)).
+		Order(record.Asc(specialty.FieldName)).
 		All(ctx)
 	if err != nil {
 		return nil, errors.Wrap(err, "specialty repository: list")
@@ -40,7 +40,7 @@ func (r *specialtyRepository) ListByClinic(ctx context.Context, clinicID ident.C
 func (r *specialtyRepository) ListPageByClinic(ctx context.Context, clinicID ident.ClinicID, limit, offset int) ([]usermodel.Specialty, int64, error) {
 	specialties, err := r.client.Specialty.Query().
 		Where(specialty.ClinicIDEQ(clinicID)).
-		Order(ent.Asc(specialty.FieldName)).
+		Order(record.Asc(specialty.FieldName)).
 		Limit(limit).
 		Offset(offset).
 		All(ctx)
@@ -80,7 +80,7 @@ func (r *specialtyRepository) Create(ctx context.Context, sp *usermodel.Specialt
 		SetName(sp.Name).
 		Save(ctx)
 	if err != nil {
-		if ent.IsConstraintError(err) {
+		if record.IsConstraintError(err) {
 			return nil, errors.WithSecondaryError(usermodel.ErrDuplicateSpecialty, err)
 		}
 		return nil, errors.Wrap(err, "specialty repository: create")
@@ -104,12 +104,12 @@ func (r *specialtyRepository) Delete(ctx context.Context, clinicID ident.ClinicI
 func (r *specialtyRepository) ListByUser(ctx context.Context, userID ident.UserID) ([]usermodel.Specialty, error) {
 	u, err := r.client.User.Query().
 		Where(user.IDEQ(userID)).
-		WithSpecialties(func(sq *ent.SpecialtyQuery) {
-			sq.Order(ent.Asc(specialty.FieldName))
+		WithSpecialties(func(sq *record.SpecialtyQuery) {
+			sq.Order(record.Asc(specialty.FieldName))
 		}).
 		Only(ctx)
 	if err != nil {
-		if ent.IsNotFound(err) {
+		if record.IsNotFound(err) {
 			return nil, usermodel.ErrUserNotFound
 		}
 		return nil, errors.Wrap(err, "specialty repository: list by user")
@@ -135,7 +135,7 @@ func (r *specialtyRepository) CheckClinicScope(ctx context.Context, clinicID ide
 	return count == len(specialtyIDs), nil
 }
 
-func toSpecialtyDomain(sp *ent.Specialty) *usermodel.Specialty {
+func toSpecialtyDomain(sp *record.Specialty) *usermodel.Specialty {
 	if sp == nil {
 		return nil
 	}

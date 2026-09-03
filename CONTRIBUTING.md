@@ -80,7 +80,7 @@ and applied at process start). To add a change:
 2. Generate migrations: `task db-diff -- name=add_patient_model`
 3. Run `task gen` so the Ent client, ident codecs, and templ views match
 
-Do not hand-edit generated `ent/` output. There is no sqlc path.
+Do not hand-edit generated `internal/database/record/` output. There is no sqlc path.
 
 ## Submitting a pull request
 

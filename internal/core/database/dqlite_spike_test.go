@@ -13,10 +13,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"librevita.org/ent"
-	"librevita.org/ent/clinic"
 	"librevita.org/internal/core/crypto"
 	"librevita.org/internal/core/keystore"
+	"librevita.org/internal/database/record"
+	"librevita.org/internal/database/record/clinic"
 	identifiermodel "librevita.org/internal/domain/identifier/model"
 	identifierrepo "librevita.org/internal/domain/identifier/repository"
 	identifierusecase "librevita.org/internal/domain/identifier/usecase"
@@ -45,7 +45,7 @@ func TestDqliteSpike(t *testing.T) {
 	}
 
 	drv := entsql.OpenDB(dialect.SQLite, db)
-	client := ent.NewClient(ent.Driver(drv))
+	client := record.NewClient(record.Driver(drv))
 	defer client.Close()
 
 	// A real transaction: BEGIN/COMMIT through Ent.

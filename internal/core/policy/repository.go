@@ -6,19 +6,19 @@ import (
 
 	"github.com/cockroachdb/errors"
 
-	"librevita.org/ent"
-	"librevita.org/ent/accesspolicy"
-	"librevita.org/ent/accesspolicyversion"
 	"librevita.org/internal/core/clinicctx"
+	"librevita.org/internal/database/record"
+	"librevita.org/internal/database/record/accesspolicy"
+	"librevita.org/internal/database/record/accesspolicyversion"
 	"librevita.org/pkg/ident"
 )
 
 type policyRepository struct {
-	client *ent.Client
+	client *record.Client
 }
 
 // NewPolicyRepository creates a policy repository adapter.
-func NewPolicyRepository(client *ent.Client) Repository {
+func NewPolicyRepository(client *record.Client) Repository {
 	return &policyRepository{client: client}
 }
 
@@ -75,7 +75,7 @@ func (r *policyRepository) SeedDefaults(ctx context.Context, defaults map[string
 
 func (r *policyRepository) List(ctx context.Context) ([]PolicyRow, error) {
 	rows, err := r.client.AccessPolicy.Query().
-		Order(ent.Asc(accesspolicy.FieldName)).
+		Order(record.Asc(accesspolicy.FieldName)).
 		All(ctx)
 	if err != nil {
 		return nil, errors.Wrap(err, "policy repository: list")
@@ -102,13 +102,13 @@ func (r *policyRepository) Set(ctx context.Context, name, expression string, act
 	existing, err := tx.AccessPolicy.Query().
 		Where(accesspolicy.NameEQ(name)).
 		Only(ctx)
-	if err != nil && !ent.IsNotFound(err) {
+	if err != nil && !record.IsNotFound(err) {
 		_ = tx.Rollback()
 		return errors.Wrap(err, "policy repository: lookup")
 	}
 
 	var polID ident.PolicyID
-	if ent.IsNotFound(err) {
+	if record.IsNotFound(err) {
 		pID := ident.New[ident.PolicyID]()
 		create := tx.AccessPolicy.Create().
 			SetID(pID).
@@ -163,7 +163,7 @@ func (r *policyRepository) History(ctx context.Context, name string, limit int) 
 	pol, err := r.client.AccessPolicy.Query().
 		Where(accesspolicy.NameEQ(name)).
 		Only(ctx)
-	if ent.IsNotFound(err) {
+	if record.IsNotFound(err) {
 		return nil, ErrPolicyNotFound
 	}
 	if err != nil {
@@ -172,7 +172,7 @@ func (r *policyRepository) History(ctx context.Context, name string, limit int) 
 
 	versions, err := r.client.AccessPolicyVersion.Query().
 		Where(accesspolicyversion.PolicyIDEQ(pol.ID)).
-		Order(ent.Desc(accesspolicyversion.FieldCreatedAt)).
+		Order(record.Desc(accesspolicyversion.FieldCreatedAt)).
 		Limit(limit).
 		All(ctx)
 	if err != nil {

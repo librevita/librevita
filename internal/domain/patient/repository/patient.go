@@ -8,28 +8,28 @@ import (
 	"entgo.io/ent/dialect/sql/sqljson"
 	"github.com/cockroachdb/errors"
 
-	"librevita.org/ent"
-	"librevita.org/ent/appointment"
-	"librevita.org/ent/episode"
-	"librevita.org/ent/finding"
-	"librevita.org/ent/patient"
-	"librevita.org/ent/patientidentifier"
-	"librevita.org/ent/planitem"
-	"librevita.org/ent/problem"
 	"librevita.org/internal/core/crypto"
 	"librevita.org/internal/core/database"
+	"librevita.org/internal/database/record"
+	"librevita.org/internal/database/record/appointment"
+	"librevita.org/internal/database/record/episode"
+	"librevita.org/internal/database/record/finding"
+	"librevita.org/internal/database/record/patient"
+	"librevita.org/internal/database/record/patientidentifier"
+	"librevita.org/internal/database/record/planitem"
+	"librevita.org/internal/database/record/problem"
 	patientmodel "librevita.org/internal/domain/patient/model"
 	"librevita.org/pkg/flow"
 	"librevita.org/pkg/ident"
 )
 
 type patientRepository struct {
-	client *ent.Client
+	client *record.Client
 	engine *crypto.Engine
 }
 
 // NewPatientRepository creates a pure patient repository adapter.
-func NewPatientRepository(client *ent.Client) patientmodel.PatientRepository {
+func NewPatientRepository(client *record.Client) patientmodel.PatientRepository {
 	return &patientRepository{
 		client: client,
 	}
@@ -37,7 +37,7 @@ func NewPatientRepository(client *ent.Client) patientmodel.PatientRepository {
 
 // NewPatientRepositoryWithEngine creates the production repository with
 // access to the request-scoped Patient DEK prefetcher.
-func NewPatientRepositoryWithEngine(client *ent.Client, engine *crypto.Engine) patientmodel.PatientRepository {
+func NewPatientRepositoryWithEngine(client *record.Client, engine *crypto.Engine) patientmodel.PatientRepository {
 	return &patientRepository{
 		client: client,
 		engine: engine,
@@ -67,7 +67,7 @@ func (r *patientRepository) Get(ctx context.Context, clinicID ident.ClinicID, pa
 		).
 		Only(ctx)
 	if err != nil {
-		if ent.IsNotFound(err) {
+		if record.IsNotFound(err) {
 			return nil, errors.WithSecondaryError(patientmodel.ErrNotFound, err)
 		}
 		return nil, errors.Wrap(err, "patient repository: get")
@@ -83,7 +83,7 @@ func (r *patientRepository) GetWithCreator(ctx context.Context, clinicID ident.C
 		).
 		Only(ctx)
 	if err != nil {
-		if ent.IsNotFound(err) {
+		if record.IsNotFound(err) {
 			return nil, errors.WithSecondaryError(patientmodel.ErrNotFound, err)
 		}
 		return nil, errors.Wrap(err, "patient repository: get with creator")
@@ -130,7 +130,7 @@ func (r *patientRepository) Update(ctx context.Context, p patientmodel.Patient) 
 
 	updated, err := update.Save(ctx)
 	if err != nil {
-		if ent.IsNotFound(err) {
+		if record.IsNotFound(err) {
 			return nil, errors.WithSecondaryError(patientmodel.ErrNotFound, err)
 		}
 		return nil, errors.Wrap(err, "patient repository: update")
@@ -138,7 +138,7 @@ func (r *patientRepository) Update(ctx context.Context, p patientmodel.Patient) 
 	return toDomainPatient(updated), nil
 }
 
-func applyOptionalCreate(create *ent.PatientCreate, p patientmodel.Patient) {
+func applyOptionalCreate(create *record.PatientCreate, p patientmodel.Patient) {
 	setPtr(p.BirthDate, create.SetBirthDate)
 	if p.Sex != "" {
 		create.SetSex(string(p.Sex))
@@ -155,7 +155,7 @@ func applyOptionalCreate(create *ent.PatientCreate, p patientmodel.Patient) {
 	}
 }
 
-func applyOptionalUpdate(update *ent.PatientUpdateOne, p patientmodel.Patient) {
+func applyOptionalUpdate(update *record.PatientUpdateOne, p patientmodel.Patient) {
 	setOrClear(p.BirthDate, update.SetBirthDate, update.ClearBirthDate)
 	if p.Sex != "" {
 		update.SetSex(string(p.Sex))
@@ -205,7 +205,7 @@ func (r *patientRepository) ListByClinicAndStatus(ctx context.Context, clinicID 
 	if status != nil {
 		query = query.Where(patient.StatusEQ(patient.Status(*status)))
 	}
-	rows, err := query.Order(ent.Desc(patient.FieldCreatedAt)).All(ctx)
+	rows, err := query.Order(record.Desc(patient.FieldCreatedAt)).All(ctx)
 	if err != nil {
 		return nil, errors.Wrap(err, "patient repository: list")
 	}
@@ -243,7 +243,7 @@ func (r *patientRepository) ListCandidates(ctx context.Context, clinicID ident.C
 	}
 	rows, err := query.
 		Select(patient.FieldID, patient.FieldClinicID, patient.FieldStatus, patient.FieldCreatedAt).
-		Order(ent.Desc(patient.FieldCreatedAt)).
+		Order(record.Desc(patient.FieldCreatedAt)).
 		Limit(limit).
 		Offset(offset).
 		All(ctx)
@@ -298,7 +298,7 @@ func (r *patientRepository) GetMany(ctx context.Context, clinicID ident.ClinicID
 // operation is idempotent so cleanup can be retried after a key has already
 // been shredded.
 func (r *patientRepository) DeleteAggregate(ctx context.Context, clinicID ident.ClinicID, patientID ident.PatientID) error {
-	return database.WithTx(ctx, r.client, func(tx *ent.Tx) error {
+	return database.WithTx(ctx, r.client, func(tx *record.Tx) error {
 		return flow.Exec(
 			func() error {
 				_, err := tx.PatientIdentifier.Delete().
@@ -382,7 +382,7 @@ func stringPtr(s string) *string {
 	return &s
 }
 
-func toDomainPatient(p *ent.Patient) *patientmodel.Patient {
+func toDomainPatient(p *record.Patient) *patientmodel.Patient {
 	if p == nil {
 		return nil
 	}

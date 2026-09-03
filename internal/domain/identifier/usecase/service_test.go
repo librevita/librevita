@@ -17,9 +17,9 @@ import (
 	"librevita.org/internal/core/crypto"
 	identifiermodel "librevita.org/internal/domain/identifier/model"
 	"librevita.org/internal/domain/identifier/usecase"
+	cryptomocks "librevita.org/internal/test/mock/core/crypto"
+	identifiermocks "librevita.org/internal/test/mock/domain/identifier/model"
 	"librevita.org/pkg/urn"
-	cryptomocks "librevita.org/tests/mocks/core/crypto"
-	identifiermocks "librevita.org/tests/mocks/domain/identifier/model"
 )
 
 var (

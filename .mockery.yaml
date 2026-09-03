@@ -2,63 +2,64 @@ with-expecter: true
 issue-845-fix: true
 resolve-type-alias: false
 disable-version-string: true
+note: "Regenerate with 'task gen-mocks' (or 'task gen')."
 mockname: "Mock{{.InterfaceName}}"
 outpkg: "{{.PackageName}}mocks"
-filename: "mock_{{.InterfaceName}}.go"
+filename: "mock_{{.InterfaceNameSnake}}.go"
 packages:
   librevita.org/internal/core/audit:
     config:
       all: false
-      dir: "tests/mocks/core/audit"
+      dir: "internal/test/mock/core/audit"
     interfaces:
       Repository:
   librevita.org/internal/core/auth:
     config:
       all: false
-      dir: "tests/mocks/core/auth"
+      dir: "internal/test/mock/core/auth"
     interfaces:
       SessionRepository:
   librevita.org/internal/core/crypto:
     config:
       all: false
-      dir: "tests/mocks/core/crypto"
+      dir: "internal/test/mock/core/crypto"
     interfaces:
       KeyStore:
   librevita.org/internal/core/policy:
     config:
       all: false
-      dir: "tests/mocks/core/policy"
+      dir: "internal/test/mock/core/policy"
     interfaces:
       Repository:
   librevita.org/internal/core/storage:
     config:
       all: false
-      dir: "tests/mocks/core/storage"
+      dir: "internal/test/mock/core/storage"
     interfaces:
       Store:
       IndexRepository:
   librevita.org/internal/domain/clinic/model:
     config:
       all: true
-      dir: "tests/mocks/domain/clinic/model"
+      dir: "internal/test/mock/domain/clinic/model"
   librevita.org/internal/domain/identifier/model:
     config:
       all: true
-      dir: "tests/mocks/domain/identifier/model"
+      dir: "internal/test/mock/domain/identifier/model"
   librevita.org/internal/domain/identifier/usecase:
     config:
       all: true
-      dir: "tests/mocks/domain/identifier/usecase"
+      dir: "internal/test/mock/domain/identifier/usecase"
   librevita.org/internal/domain/episode/model:
     config:
       all: true
-      dir: "tests/mocks/domain/episode/model"
+      dir: "internal/test/mock/domain/episode/model"
   librevita.org/internal/domain/patient/model:
     config:
       all: true
-      dir: "tests/mocks/domain/patient/model"
+      dir: "internal/test/mock/domain/patient/model"
   librevita.org/internal/domain/user/model:
     config:
       all: true
-      dir: "tests/mocks/domain/user/model"
+      dir: "internal/test/mock/domain/user/model"
 

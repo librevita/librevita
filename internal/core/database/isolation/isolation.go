@@ -8,27 +8,27 @@ import (
 	"entgo.io/ent/dialect/sql"
 	"github.com/cockroachdb/errors"
 
-	entgen "librevita.org/ent"
-	"librevita.org/ent/intercept"
 	"librevita.org/internal/core/clinicctx"
+	"librevita.org/internal/database/record"
+	"librevita.org/internal/database/record/intercept"
 	"librevita.org/pkg/ident"
 )
 
 var clinicScopedTypes = map[string]struct{}{
-	entgen.TypeUser:                   {},
-	entgen.TypeRole:                   {},
-	entgen.TypeAccessPolicy:           {},
-	entgen.TypePatient:                {},
-	entgen.TypeSpecialty:              {},
-	entgen.TypeAppointment:            {},
-	entgen.TypeEpisode:                {},
-	entgen.TypeFinding:                {},
-	entgen.TypeProblem:                {},
-	entgen.TypePlanItem:               {},
-	entgen.TypePatientIdentifier:      {},
-	entgen.TypeStaffChangeRequest:     {},
-	entgen.TypeStorageObject:          {},
-	entgen.TypeClinicIdentifierSystem: {},
+	record.TypeUser:                   {},
+	record.TypeRole:                   {},
+	record.TypeAccessPolicy:           {},
+	record.TypePatient:                {},
+	record.TypeSpecialty:              {},
+	record.TypeAppointment:            {},
+	record.TypeEpisode:                {},
+	record.TypeFinding:                {},
+	record.TypeProblem:                {},
+	record.TypePlanItem:               {},
+	record.TypePatientIdentifier:      {},
+	record.TypeStaffChangeRequest:     {},
+	record.TypeStorageObject:          {},
+	record.TypeClinicIdentifierSystem: {},
 }
 
 type clinicIDMutation interface {

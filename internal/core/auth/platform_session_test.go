@@ -14,10 +14,10 @@ import (
 	"github.com/stretchr/testify/require"
 	_ "modernc.org/sqlite"
 
-	"librevita.org/ent"
 	"librevita.org/internal/core/auth"
 	"librevita.org/internal/core/database"
 	"librevita.org/internal/core/kv"
+	"librevita.org/internal/database/record"
 	"librevita.org/pkg/ident"
 	"librevita.org/pkg/log"
 )
@@ -31,7 +31,7 @@ func TestPlatformSessionRepository(t *testing.T) {
 	require.NoError(t, database.Migrate(context.Background(), db, log.Nop()))
 
 	drv := entsql.OpenDB(dialect.SQLite, db)
-	client := ent.NewClient(ent.Driver(drv))
+	client := record.NewClient(record.Driver(drv))
 	t.Cleanup(func() { _ = client.Close() })
 
 	sessKV, err := kv.OpenBBolt(filepath.Join(t.TempDir(), "sessions.db"))

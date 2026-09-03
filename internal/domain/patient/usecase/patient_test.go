@@ -14,9 +14,9 @@ import (
 	"librevita.org/internal/core/policy"
 	patientmodel "librevita.org/internal/domain/patient/model"
 	"librevita.org/internal/domain/patient/usecase"
+	policymocks "librevita.org/internal/test/mock/core/policy"
+	patientmocks "librevita.org/internal/test/mock/domain/patient/model"
 	"librevita.org/pkg/ident"
-	policymocks "librevita.org/tests/mocks/core/policy"
-	patientmocks "librevita.org/tests/mocks/domain/patient/model"
 )
 
 var (

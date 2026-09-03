@@ -14,8 +14,6 @@ import (
 	"github.com/cockroachdb/errors"
 	"github.com/labstack/echo/v4"
 
-	"librevita.org/ent"
-	"librevita.org/ent/patientidentifier"
 	"librevita.org/internal/core/audit"
 	"librevita.org/internal/core/auth"
 	"librevita.org/internal/core/clinicctx"
@@ -27,11 +25,13 @@ import (
 	"librevita.org/internal/core/policy"
 	"librevita.org/internal/core/server"
 	"librevita.org/internal/core/storage"
+	"librevita.org/internal/database/record"
+	"librevita.org/internal/database/record/patientidentifier"
 	clinicrepo "librevita.org/internal/domain/clinic/repository"
 	clinicusecase "librevita.org/internal/domain/clinic/usecase"
 	patientrepo "librevita.org/internal/domain/patient/repository"
 	"librevita.org/internal/domain/patient/usecase"
-	"librevita.org/internal/testutil"
+	"librevita.org/internal/test"
 	"librevita.org/pkg/ident"
 	"librevita.org/pkg/urn"
 )
@@ -64,7 +64,7 @@ func attachSeededClinic(engine *crypto.Engine, enc crypto.Encryptor, hasher cryp
 
 // newIdentEnv mounts the identifier routes with real middlewares and a
 // migrated database.
-func newIdentEnv(t *testing.T) (*echo.Echo, *auth.SessionManager, *usecase.Service, *audit.Logger, *ent.Client) {
+func newIdentEnv(t *testing.T) (*echo.Echo, *auth.SessionManager, *usecase.Service, *audit.Logger, *record.Client) {
 	t.Helper()
 	client := openDocDB(t)
 	log := log.Nop()
@@ -100,10 +100,10 @@ func newIdentEnv(t *testing.T) (*echo.Echo, *auth.SessionManager, *usecase.Servi
 		t.Fatal(err)
 	}
 	csrf := auth.NewCSRF(&config.Config{Mode: "development"})
-	if err := testutil.Clinic(context.Background(), client, "01990000-0000-7000-8000-0000000000d0", "Test Clinic", "000.000.000-00"); err != nil {
+	if err := test.Clinic(context.Background(), client, "01990000-0000-7000-8000-0000000000d0", "Test Clinic", "000.000.000-00"); err != nil {
 		t.Fatalf("seed clinic: %v", err)
 	}
-	if err := testutil.User(context.Background(), client, "01990000-0000-7000-8000-00000000000a", "admin@example.org", "admin", "x"); err != nil {
+	if err := test.User(context.Background(), client, "01990000-0000-7000-8000-00000000000a", "admin@example.org", "admin", "x"); err != nil {
 		t.Fatalf("seed admin: %v", err)
 	}
 	masterKey, err := crypto.NewMasterKey("nAmIvOXVc0vb6M9G7P9q2j2yK1WxP3sJ8q5dR4tU6wA=", v) // gitleaks:allow
@@ -124,8 +124,8 @@ func newIdentEnv(t *testing.T) (*echo.Echo, *auth.SessionManager, *usecase.Servi
 	if err != nil {
 		t.Fatal(err)
 	}
-	client.Use(ent.FLEMutationHook(hasher, enc, masterKey))
-	client.Intercept(ent.FLEDecryptionInterceptor(enc, masterKey))
+	client.Use(record.FLEMutationHook(hasher, enc, masterKey))
+	client.Intercept(record.FLEDecryptionInterceptor(enc, masterKey))
 	svc := usecase.NewService(patientrepo.NewPatientRepositoryWithEngine(client, masterKey), policies, masterKey)
 	ids, systems := newIdentifierServices(t, client, masterKey, log)
 	h := NewHandler(svc, clinicusecase.NewClockProvider(clinicrepo.NewClinicRepository(client)), csrf, auditLogger, files, ids, systems, masterKey, log)
@@ -274,7 +274,7 @@ func TestIdentifierAddRejectsCrossClinicPatient(t *testing.T) {
 
 	// A patient in another clinic.
 	otherClinic := "01990000-0000-7000-8000-0000000000d1"
-	if err := testutil.Clinic(context.Background(), db, otherClinic, "Other", "111.111.111-11"); err != nil {
+	if err := test.Clinic(context.Background(), db, otherClinic, "Other", "111.111.111-11"); err != nil {
 		t.Fatal(err)
 	}
 	otherPt, err := svc.Create(context.Background(), otherClinic, testAdminID.String(), usecase.PatientInput{

@@ -6,25 +6,25 @@ import (
 
 	"github.com/cockroachdb/errors"
 
-	"librevita.org/ent"
-	"librevita.org/ent/clinic"
+	"librevita.org/internal/database/record"
+	"librevita.org/internal/database/record/clinic"
 	"librevita.org/internal/domain/clinic/model"
 	"librevita.org/pkg/ident"
 )
 
 type clinicRepository struct {
-	client *ent.Client
+	client *record.Client
 }
 
 // NewClinicRepository creates a clinic repository adapter.
-func NewClinicRepository(client *ent.Client) model.Repository {
+func NewClinicRepository(client *record.Client) model.Repository {
 	return &clinicRepository{client: client}
 }
 
 func (r *clinicRepository) GetByID(ctx context.Context, id ident.ClinicID) (*model.Clinic, error) {
 	row, err := r.client.Clinic.Get(ctx, id)
 	if err != nil {
-		if ent.IsNotFound(err) {
+		if record.IsNotFound(err) {
 			return nil, nil
 		}
 		return nil, errors.Wrap(err, "clinic repository: get by id")
@@ -35,7 +35,7 @@ func (r *clinicRepository) GetByID(ctx context.Context, id ident.ClinicID) (*mod
 func (r *clinicRepository) GetBySlug(ctx context.Context, slug string) (*model.Clinic, error) {
 	row, err := r.client.Clinic.Query().Where(clinic.SlugEQ(slug)).Only(ctx)
 	if err != nil {
-		if ent.IsNotFound(err) {
+		if record.IsNotFound(err) {
 			return nil, nil
 		}
 		return nil, errors.Wrap(err, "clinic repository: get by slug")
@@ -73,7 +73,7 @@ func (r *clinicRepository) CreateShell(ctx context.Context, c *model.Clinic) (*m
 	}
 	row, err := create.Save(ctx)
 	if err != nil {
-		if ent.IsConstraintError(err) {
+		if record.IsConstraintError(err) {
 			return nil, errors.WithSecondaryError(errors.New("clinic repository: slug taken"), err)
 		}
 		return nil, errors.Wrap(err, "clinic repository: create shell")
@@ -90,7 +90,7 @@ func (r *clinicRepository) MarkOnboarded(ctx context.Context, id ident.ClinicID,
 }
 
 func (r *clinicRepository) List(ctx context.Context) ([]*model.Clinic, error) {
-	rows, err := r.client.Clinic.Query().Order(ent.Asc(clinic.FieldName)).All(ctx)
+	rows, err := r.client.Clinic.Query().Order(record.Asc(clinic.FieldName)).All(ctx)
 	if err != nil {
 		return nil, errors.Wrap(err, "clinic repository: list")
 	}
@@ -101,7 +101,7 @@ func (r *clinicRepository) List(ctx context.Context) ([]*model.Clinic, error) {
 	return out, nil
 }
 
-func toClinicDomain(row *ent.Clinic) *model.Clinic {
+func toClinicDomain(row *record.Clinic) *model.Clinic {
 	if row == nil {
 		return nil
 	}

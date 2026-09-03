@@ -12,7 +12,7 @@ import (
 	"librevita.org/internal/core/clinicctx"
 	"librevita.org/internal/domain/clinic/model"
 	"librevita.org/internal/domain/clinic/usecase"
-	mocks "librevita.org/tests/mocks/domain/clinic/model"
+	mocks "librevita.org/internal/test/mock/domain/clinic/model"
 )
 
 func TestClockProviderReadsClinicZone(t *testing.T) {

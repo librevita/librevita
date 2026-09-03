@@ -6,21 +6,21 @@ import (
 
 	"github.com/cockroachdb/errors"
 
-	"librevita.org/ent"
-	"librevita.org/ent/accesspolicyversion"
-	"librevita.org/ent/identifiersystem"
 	"librevita.org/internal/core/clinicctx"
 	"librevita.org/internal/core/policy"
+	"librevita.org/internal/database/record"
+	"librevita.org/internal/database/record/accesspolicyversion"
+	"librevita.org/internal/database/record/identifiersystem"
 	usermodel "librevita.org/internal/domain/user/model"
 	"librevita.org/pkg/ident"
 )
 
 type setupRepository struct {
-	client *ent.Client
+	client *record.Client
 }
 
 // NewSetupRepository creates a setup/onboarding repository adapter.
-func NewSetupRepository(client *ent.Client) usermodel.SetupRepository {
+func NewSetupRepository(client *record.Client) usermodel.SetupRepository {
 	return &setupRepository{client: client}
 }
 
@@ -34,7 +34,7 @@ func (r *setupRepository) IsOnboarded(ctx context.Context) (bool, error) {
 	}
 	row, err := r.client.Clinic.Get(ctx, c.ID)
 	if err != nil {
-		if ent.IsNotFound(err) {
+		if record.IsNotFound(err) {
 			return false, nil
 		}
 		return false, errors.Wrap(err, "setup repository: load clinic")
@@ -70,7 +70,7 @@ func (r *setupRepository) Onboard(ctx context.Context, admin *usermodel.User, sy
 	return user, nil
 }
 
-func (r *setupRepository) onboardTx(ctx context.Context, tx *ent.Tx, clinicID ident.ClinicID, admin *usermodel.User, systemIDs []ident.IdentifierSystemID) (*usermodel.User, error) {
+func (r *setupRepository) onboardTx(ctx context.Context, tx *record.Tx, clinicID ident.ClinicID, admin *usermodel.User, systemIDs []ident.IdentifierSystemID) (*usermodel.User, error) {
 	row, err := tx.Clinic.Get(ctx, clinicID)
 	if err != nil {
 		return nil, errors.Wrap(err, "setup repository: load clinic")
@@ -100,7 +100,7 @@ func (r *setupRepository) onboardTx(ctx context.Context, tx *ent.Tx, clinicID id
 		SetActive(admin.Active).
 		Save(ctx)
 	if err != nil {
-		if ent.IsConstraintError(err) {
+		if record.IsConstraintError(err) {
 			return nil, usermodel.ErrEmailTaken
 		}
 		return nil, errors.Wrap(err, "setup repository: create admin")
@@ -113,7 +113,7 @@ func (r *setupRepository) onboardTx(ctx context.Context, tx *ent.Tx, clinicID id
 	return toUserDomain(createdUser, "admin"), nil
 }
 
-func seedRoles(ctx context.Context, tx *ent.Tx, clinicID ident.ClinicID) (ident.RoleID, error) {
+func seedRoles(ctx context.Context, tx *record.Tx, clinicID ident.ClinicID) (ident.RoleID, error) {
 	roles := []struct {
 		name     string
 		clinical bool
@@ -143,7 +143,7 @@ func seedRoles(ctx context.Context, tx *ent.Tx, clinicID ident.ClinicID) (ident.
 	return adminRoleID, nil
 }
 
-func seedPolicies(ctx context.Context, tx *ent.Tx, clinicID ident.ClinicID) error {
+func seedPolicies(ctx context.Context, tx *record.Tx, clinicID ident.ClinicID) error {
 	for name, expr := range policy.DefaultPolicies {
 		pID := ident.New[ident.PolicyID]()
 		pol, err := tx.AccessPolicy.Create().
@@ -166,7 +166,7 @@ func seedPolicies(ctx context.Context, tx *ent.Tx, clinicID ident.ClinicID) erro
 	return nil
 }
 
-func optInIdentifierSystems(ctx context.Context, tx *ent.Tx, clinicID ident.ClinicID, systemIDs []ident.IdentifierSystemID) error {
+func optInIdentifierSystems(ctx context.Context, tx *record.Tx, clinicID ident.ClinicID, systemIDs []ident.IdentifierSystemID) error {
 	if len(systemIDs) == 0 {
 		active, err := tx.IdentifierSystem.Query().Where(identifiersystem.ActiveEQ(true)).All(ctx)
 		if err != nil {
@@ -182,7 +182,7 @@ func optInIdentifierSystems(ctx context.Context, tx *ent.Tx, clinicID ident.Clin
 			SetID(optID).
 			SetClinicID(clinicID).
 			SetIdentifierSystemID(sysID).
-			Exec(ctx); err != nil && !ent.IsConstraintError(err) {
+			Exec(ctx); err != nil && !record.IsConstraintError(err) {
 			return errors.Wrap(err, "setup repository: identifier opt-in")
 		}
 	}

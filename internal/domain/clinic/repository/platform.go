@@ -5,8 +5,8 @@ import (
 
 	"github.com/cockroachdb/errors"
 
-	"librevita.org/ent"
-	"librevita.org/ent/platformuser"
+	"librevita.org/internal/database/record"
+	"librevita.org/internal/database/record/platformuser"
 	"librevita.org/pkg/ident"
 )
 
@@ -28,11 +28,11 @@ type PlatformUserRepository interface {
 }
 
 type platformUserRepository struct {
-	client *ent.Client
+	client *record.Client
 }
 
 // NewPlatformUserRepository creates a platform user repository adapter.
-func NewPlatformUserRepository(client *ent.Client) PlatformUserRepository {
+func NewPlatformUserRepository(client *record.Client) PlatformUserRepository {
 	return &platformUserRepository{client: client}
 }
 
@@ -53,7 +53,7 @@ func (r *platformUserRepository) Create(ctx context.Context, u *PlatformUser) (*
 		SetActive(u.Active).
 		Save(ctx)
 	if err != nil {
-		if ent.IsConstraintError(err) {
+		if record.IsConstraintError(err) {
 			return nil, errors.New("platform user: email taken")
 		}
 		return nil, errors.Wrap(err, "platform user: create")
@@ -64,7 +64,7 @@ func (r *platformUserRepository) Create(ctx context.Context, u *PlatformUser) (*
 func (r *platformUserRepository) GetByEmail(ctx context.Context, email string) (*PlatformUser, error) {
 	row, err := r.client.PlatformUser.Query().Where(platformuser.EmailEQ(email)).Only(ctx)
 	if err != nil {
-		if ent.IsNotFound(err) {
+		if record.IsNotFound(err) {
 			return nil, nil
 		}
 		return nil, errors.Wrap(err, "platform user: get by email")
@@ -75,7 +75,7 @@ func (r *platformUserRepository) GetByEmail(ctx context.Context, email string) (
 func (r *platformUserRepository) GetByID(ctx context.Context, id ident.PlatformUserID) (*PlatformUser, error) {
 	row, err := r.client.PlatformUser.Get(ctx, id)
 	if err != nil {
-		if ent.IsNotFound(err) {
+		if record.IsNotFound(err) {
 			return nil, nil
 		}
 		return nil, errors.Wrap(err, "platform user: get by id")
@@ -83,7 +83,7 @@ func (r *platformUserRepository) GetByID(ctx context.Context, id ident.PlatformU
 	return toPlatformUser(row), nil
 }
 
-func toPlatformUser(row *ent.PlatformUser) *PlatformUser {
+func toPlatformUser(row *record.PlatformUser) *PlatformUser {
 	if row == nil {
 		return nil
 	}

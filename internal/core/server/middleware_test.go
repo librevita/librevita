@@ -18,11 +18,11 @@ import (
 	"librevita.org/internal/core/auth"
 	"librevita.org/internal/core/config"
 	"librevita.org/internal/core/policy"
+	auditmocks "librevita.org/internal/test/mock/core/audit"
+	authmocks "librevita.org/internal/test/mock/core/auth"
+	policymocks "librevita.org/internal/test/mock/core/policy"
 	"librevita.org/internal/ui"
 	"librevita.org/pkg/log"
-	auditmocks "librevita.org/tests/mocks/core/audit"
-	authmocks "librevita.org/tests/mocks/core/auth"
-	policymocks "librevita.org/tests/mocks/core/policy"
 )
 
 func testLogger() log.Logger { return log.Nop() }

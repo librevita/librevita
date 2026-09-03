@@ -12,11 +12,11 @@ import (
 	"go.uber.org/fx/fxtest"
 	"librevita.org/pkg/ident"
 
-	"librevita.org/ent"
-	"librevita.org/ent/clinic"
-	"librevita.org/ent/patient"
 	"librevita.org/internal/core/config"
 	"librevita.org/internal/core/crypto"
+	"librevita.org/internal/database/record"
+	"librevita.org/internal/database/record/clinic"
+	"librevita.org/internal/database/record/patient"
 	"librevita.org/pkg/log"
 )
 
@@ -167,7 +167,7 @@ func TestWithTxCommitAndRollback(t *testing.T) {
 	clinicID := ident.New[ident.ClinicID]()
 
 	// 1. Commit on success
-	err = WithTx(ctx, store.Ent(), func(tx *ent.Tx) error {
+	err = WithTx(ctx, store.Ent(), func(tx *record.Tx) error {
 		return tx.Clinic.Create().
 			SetID(clinicID).
 			SetSlug("clinic-tx-commit").
@@ -184,7 +184,7 @@ func TestWithTxCommitAndRollback(t *testing.T) {
 
 	// 2. Rollback on error
 	clinicIDRollback := ident.New[ident.ClinicID]()
-	err = WithTx(ctx, store.Ent(), func(tx *ent.Tx) error {
+	err = WithTx(ctx, store.Ent(), func(tx *record.Tx) error {
 		_ = tx.Clinic.Create().
 			SetID(clinicIDRollback).
 			SetSlug("clinic-tx-rollback").
@@ -270,14 +270,14 @@ func TestWithTxRollbackOnErrorAndPanic(t *testing.T) {
 	require.NoError(t, store.Ent().Schema.Create(ctx))
 
 	// 1. WithTx returns error and rolls back
-	err = WithTx(ctx, store.Ent(), func(tx *ent.Tx) error {
+	err = WithTx(ctx, store.Ent(), func(tx *record.Tx) error {
 		return errors.New("deliberate tx failure")
 	})
 	assert.Error(t, err)
 
 	// 2. WithTx rolls back on panic
 	assert.Panics(t, func() {
-		_ = WithTx(ctx, store.Ent(), func(tx *ent.Tx) error {
+		_ = WithTx(ctx, store.Ent(), func(tx *record.Tx) error {
 			panic("deliberate tx panic")
 		})
 	})

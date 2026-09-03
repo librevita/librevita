@@ -5,21 +5,21 @@ import (
 
 	"github.com/cockroachdb/errors"
 
-	"librevita.org/ent"
-	"librevita.org/ent/clinicidentifiersystem"
-	"librevita.org/ent/identifiersystem"
-	"librevita.org/ent/patient"
-	"librevita.org/ent/patientidentifier"
+	"librevita.org/internal/database/record"
+	"librevita.org/internal/database/record/clinicidentifiersystem"
+	"librevita.org/internal/database/record/identifiersystem"
+	"librevita.org/internal/database/record/patient"
+	"librevita.org/internal/database/record/patientidentifier"
 	identifiermodel "librevita.org/internal/domain/identifier/model"
 	"librevita.org/pkg/ident"
 )
 
 type identifierRepository struct {
-	client *ent.Client
+	client *record.Client
 }
 
 // NewIdentifierRepository creates an identifier repository adapter.
-func NewIdentifierRepository(client *ent.Client) identifiermodel.IdentifierRepository {
+func NewIdentifierRepository(client *record.Client) identifiermodel.IdentifierRepository {
 	return &identifierRepository{client: client}
 }
 
@@ -37,7 +37,7 @@ func (r *identifierRepository) Add(ctx context.Context, rec identifiermodel.Iden
 
 	saved, err := create.Save(ctx)
 	if err != nil {
-		if ent.IsConstraintError(err) {
+		if record.IsConstraintError(err) {
 			return nil, errors.WithSecondaryError(identifiermodel.ErrDuplicate, err)
 		}
 		return nil, errors.Wrap(err, "identifier repository: add")
@@ -66,7 +66,7 @@ func (r *identifierRepository) FindByBlindIndex(ctx context.Context, clinicID id
 		).
 		Only(ctx)
 	if err != nil {
-		if ent.IsNotFound(err) {
+		if record.IsNotFound(err) {
 			return nil, errors.WithSecondaryError(identifiermodel.ErrNotFound, err)
 		}
 		return nil, errors.Wrap(err, "identifier repository: find by blind index")
@@ -77,7 +77,7 @@ func (r *identifierRepository) FindByBlindIndex(ctx context.Context, clinicID id
 func (r *identifierRepository) ListByPatient(ctx context.Context, patientID ident.PatientID) ([]identifiermodel.IdentifierRecord, error) {
 	rows, err := r.client.PatientIdentifier.Query().
 		Where(patientidentifier.PatientIDEQ(patientID)).
-		Order(ent.Asc(patientidentifier.FieldCreatedAt)).
+		Order(record.Asc(patientidentifier.FieldCreatedAt)).
 		All(ctx)
 	if err != nil {
 		return nil, errors.Wrap(err, "identifier repository: list by patient")
@@ -131,7 +131,7 @@ func (r *identifierRepository) PatientExists(ctx context.Context, clinicID ident
 		Exist(ctx)
 }
 
-func toIdentifierRecordDomain(row *ent.PatientIdentifier) *identifiermodel.IdentifierRecord {
+func toIdentifierRecordDomain(row *record.PatientIdentifier) *identifiermodel.IdentifierRecord {
 	if row == nil {
 		return nil
 	}
