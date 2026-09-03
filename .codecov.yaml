@@ -29,12 +29,12 @@ comment:
 
 ignore:
   # Generated ORM code (Ent / record)
-  - 'internal/database/record/**/*'
-  - '.entc/**/*'
+  - 'internal/database/record/**'
+  - '.entc/**'
 
   # Generated Mocks (Mockery)
-  - 'internal/test/mock/**/*'
-  - 'test/mock/**/*'
+  - 'internal/test/mock/**'
+  - 'test/mock/**'
 
   # Generated Templ templates
   - '**/*_templ.go'
@@ -46,14 +46,14 @@ ignore:
   - '**/*_test.go'
 
   # Migrations
-  - 'internal/database/migrations/**/*'
+  - 'internal/database/migrations/**'
 
   # Application entrypoints
-  - 'cmd/**/*'
+  - 'cmd/**'
 
   # Frontend build and dependencies
-  - 'node_modules/**/*'
-  - 'internal/ui/static/**/*'
+  - 'node_modules/**'
+  - 'internal/ui/static/**'
   - 'internal/ui/assets.go'
   - '**/*.config.ts'
   - '**/*.config.js'
