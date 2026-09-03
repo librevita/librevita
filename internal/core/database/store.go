@@ -8,8 +8,8 @@ import (
 	entsql "entgo.io/ent/dialect/sql"
 	"github.com/cockroachdb/errors"
 
-	"librevita.org/ent"
 	"librevita.org/internal/core/config"
+	"librevita.org/internal/database/record"
 )
 
 // Store is the persistence handle produced by the factory.
@@ -19,7 +19,7 @@ import (
 type Store struct {
 	driver string
 	db     *sql.DB
-	ent    *ent.Client
+	ent    *record.Client
 }
 
 // NewStore is the Fx provider for the configured backend.
@@ -31,7 +31,7 @@ func NewStore(cfg *config.Config, logger log.Logger) (*Store, error) {
 			return nil, err
 		}
 		drv := entsql.OpenDB(dialect.Postgres, db)
-		entClient := ent.NewClient(ent.Driver(drv))
+		entClient := record.NewClient(record.Driver(drv))
 		logger.Info("using PostgreSQL persistence",
 			log.String("host", cfg.Database.Postgres.Host),
 			log.String("database", cfg.Database.Postgres.Database),
@@ -44,7 +44,7 @@ func NewStore(cfg *config.Config, logger log.Logger) (*Store, error) {
 			return nil, err
 		}
 		drv := entsql.OpenDB(dialect.SQLite, db)
-		entClient := ent.NewClient(ent.Driver(drv))
+		entClient := record.NewClient(record.Driver(drv))
 		logger.Info("using dqlite persistence",
 			log.String("addrs", cfg.Database.Dqlite.Addrs),
 			log.String("discovery_srv", cfg.Database.Dqlite.DiscoverySRV),
@@ -58,7 +58,7 @@ func NewStore(cfg *config.Config, logger log.Logger) (*Store, error) {
 			return nil, err
 		}
 		drv := entsql.OpenDB(dialect.SQLite, db)
-		entClient := ent.NewClient(ent.Driver(drv))
+		entClient := record.NewClient(record.Driver(drv))
 		logger.Info("using SQLite/WAL persistence",
 			log.String("path", cfg.Database.SQLite.Path),
 		)
@@ -78,7 +78,7 @@ func (s *Store) Driver() string { return s.driver }
 func (s *Store) SQL() *sql.DB { return s.db }
 
 // Ent returns the Ent ORM client configured for the active persistence backend.
-func (s *Store) Ent() *ent.Client { return s.ent }
+func (s *Store) Ent() *record.Client { return s.ent }
 
 // Close releases resources for the active backend.
 func (s *Store) Close() error {

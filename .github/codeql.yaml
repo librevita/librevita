@@ -6,6 +6,10 @@ queries:
 
 # Filter out generated test mocks, built frontend static assets, and migration schemas from scanning.
 paths-ignore:
-  - 'tests/mocks/**'
+  - 'internal/test/mock/**'
+  - 'test/mock/**'
+  - 'internal/database/record/**'
+  - 'internal/database/migrations/**'
   - 'internal/ui/static/**'
-  - 'ent/migrate/migrations/**'
+  - '**/*_templ.go'
+  - 'pkg/ident/codec_gen.go'

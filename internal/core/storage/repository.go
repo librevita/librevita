@@ -6,18 +6,18 @@ import (
 	"github.com/cockroachdb/errors"
 	"github.com/google/uuid"
 
-	"librevita.org/ent"
-	"librevita.org/ent/storageobject"
 	"librevita.org/internal/core/clinicctx"
+	"librevita.org/internal/database/record"
+	"librevita.org/internal/database/record/storageobject"
 	"librevita.org/pkg/ident"
 )
 
 type indexRepository struct {
-	client *ent.Client
+	client *record.Client
 }
 
 // NewIndexRepository creates a storage master index repository adapter.
-func NewIndexRepository(client *ent.Client) IndexRepository {
+func NewIndexRepository(client *record.Client) IndexRepository {
 	return &indexRepository{client: client}
 }
 
@@ -48,7 +48,7 @@ func (r *indexRepository) Insert(ctx context.Context, f StoredFile) (*StoredFile
 func (r *indexRepository) Get(ctx context.Context, objectID uuid.UUID) (*StoredFile, error) {
 	obj, err := r.client.StorageObject.Get(ctx, ident.StorageObjectID(objectID))
 	if err != nil {
-		if ent.IsNotFound(err) {
+		if record.IsNotFound(err) {
 			return nil, ErrNotFound
 		}
 		return nil, errors.Wrap(err, "storage repository: get")
@@ -65,7 +65,7 @@ func (r *indexRepository) GetForResource(ctx context.Context, domain string, res
 		).
 		Only(ctx)
 	if err != nil {
-		if ent.IsNotFound(err) {
+		if record.IsNotFound(err) {
 			return nil, ErrNotFound
 		}
 		return nil, errors.Wrap(err, "storage repository: get for resource")
@@ -79,7 +79,7 @@ func (r *indexRepository) List(ctx context.Context, domain string, resourceID uu
 			storageobject.DomainEQ(domain),
 			storageobject.ResourceIDEQ(resourceID.String()),
 		).
-		Order(ent.Desc(storageobject.FieldCreatedAt)).
+		Order(record.Desc(storageobject.FieldCreatedAt)).
 		All(ctx)
 	if err != nil {
 		return nil, errors.Wrap(err, "storage repository: list")
@@ -94,7 +94,7 @@ func (r *indexRepository) List(ctx context.Context, domain string, resourceID uu
 func (r *indexRepository) Delete(ctx context.Context, objectID uuid.UUID) (string, error) {
 	obj, err := r.client.StorageObject.Get(ctx, ident.StorageObjectID(objectID))
 	if err != nil {
-		if ent.IsNotFound(err) {
+		if record.IsNotFound(err) {
 			return "", ErrNotFound
 		}
 		return "", errors.Wrap(err, "storage repository: get for delete")
@@ -109,7 +109,7 @@ func (r *indexRepository) KeyExists(ctx context.Context, key string) (bool, erro
 	return r.client.StorageObject.Query().Where(storageobject.KeyEQ(key)).Exist(ctx)
 }
 
-func storedFileFromEnt(obj *ent.StorageObject) *StoredFile {
+func storedFileFromEnt(obj *record.StorageObject) *StoredFile {
 	resID, _ := uuid.Parse(obj.ResourceID)
 	return &StoredFile{
 		ID:           obj.ID.UUID(),

@@ -12,10 +12,10 @@ import (
 	"librevita.org/internal/core/config"
 	"librevita.org/internal/core/policy"
 	httphandler "librevita.org/internal/domain/calendar/delivery/http"
+	auditmocks "librevita.org/internal/test/mock/core/audit"
+	authmocks "librevita.org/internal/test/mock/core/auth"
+	policymocks "librevita.org/internal/test/mock/core/policy"
 	"librevita.org/pkg/log"
-	auditmocks "librevita.org/tests/mocks/core/audit"
-	authmocks "librevita.org/tests/mocks/core/auth"
-	policymocks "librevita.org/tests/mocks/core/policy"
 )
 
 func TestRegisterCalendarRoutes(t *testing.T) {

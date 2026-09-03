@@ -17,7 +17,7 @@ import (
 	"github.com/jackc/pgx/v5/stdlib"
 	"modernc.org/sqlite"
 
-	"librevita.org/ent/migrate"
+	"librevita.org/internal/database/record/migrate"
 )
 
 func init() {

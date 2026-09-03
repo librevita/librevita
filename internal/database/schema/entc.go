@@ -15,10 +15,10 @@ import (
 
 func main() {
 	schemaDir := "."
-	targetDir := "../../../ent"
+	targetDir := "../record"
 	if _, err := os.Stat("internal/database/schema"); err == nil {
 		schemaDir = "./internal/database/schema"
-		targetDir = "./ent"
+		targetDir = "./internal/database/record"
 	}
 
 	if err := runCodegen(schemaDir, targetDir); err != nil {
@@ -34,7 +34,7 @@ func runCodegen(schemaDir, targetDir string) error {
 
 	cfg := &gen.Config{
 		Storage: driver,
-		Package: "librevita.org/ent",
+		Package: "librevita.org/internal/database/record",
 		Target:  targetDir,
 		Templates: []*gen.Template{
 			fle.Template,

@@ -11,9 +11,9 @@ import (
 	"github.com/stretchr/testify/require"
 	_ "modernc.org/sqlite"
 
-	"librevita.org/ent"
 	"librevita.org/internal/core/audit"
 	"librevita.org/internal/core/database"
+	"librevita.org/internal/database/record"
 	"librevita.org/pkg/log"
 )
 
@@ -28,7 +28,7 @@ func openAuditTest(t *testing.T) (*sql.DB, audit.Repository) {
 	require.NoError(t, err)
 
 	drv := entsql.OpenDB(dialect.SQLite, db)
-	client := ent.NewClient(ent.Driver(drv))
+	client := record.NewClient(record.Driver(drv))
 	t.Cleanup(func() { _ = client.Close() })
 
 	repo := audit.NewAuditRepository(client)

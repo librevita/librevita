@@ -48,6 +48,8 @@ jobs:
           key: go-tools-${{ hashFiles('taskfile.yaml') }}
       - name: Regenerate sources
         run: task gen
+      - name: Verify generated sources are up to date
+        run: git diff --exit-code
       # Go-only gate: the npm consumers (node-test, node-audit) run on
       # the node job with the pinned Node 24 (LTS); OSV-Scanner,
       # gitleaks, hadolint, actionlint, and zizmor run on the scanners

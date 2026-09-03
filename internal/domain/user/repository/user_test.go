@@ -11,22 +11,22 @@ import (
 	"github.com/stretchr/testify/require"
 	_ "modernc.org/sqlite"
 
-	"librevita.org/ent"
-	"librevita.org/ent/enttest"
 	"librevita.org/internal/core/clinicctx"
+	"librevita.org/internal/database/record"
+	"librevita.org/internal/database/record/enttest"
 	usermodel "librevita.org/internal/domain/user/model"
 	"librevita.org/internal/domain/user/repository"
 	"librevita.org/pkg/ident"
 )
 
-func setupTestDB(t *testing.T) (*ent.Client, ident.ClinicID, context.Context) {
+func setupTestDB(t *testing.T) (*record.Client, ident.ClinicID, context.Context) {
 	t.Helper()
 
 	db, err := sql.Open("sqlite", "file:ent_user_test?mode=memory&cache=shared&_pragma=foreign_keys(1)")
 	require.NoError(t, err)
 
 	drv := entsql.OpenDB(dialect.SQLite, db)
-	client := enttest.NewClient(t, enttest.WithOptions(ent.Driver(drv)))
+	client := enttest.NewClient(t, enttest.WithOptions(record.Driver(drv)))
 	t.Cleanup(func() {
 		_ = client.Close()
 		_ = db.Close()

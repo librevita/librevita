@@ -17,7 +17,7 @@ func Generate(schemaDir, targetDir string) error {
 
 	cfg := &gen.Config{
 		Storage: driver,
-		Package: "librevita.org/ent",
+		Package: "librevita.org/internal/database/record",
 		Target:  targetDir,
 		Features: []gen.Feature{
 			{Name: "sql/versioned-migration"},

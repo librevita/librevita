@@ -4,12 +4,12 @@ import (
 	"context"
 
 	"github.com/cockroachdb/errors"
-	"librevita.org/ent"
+	"librevita.org/internal/database/record"
 )
 
 // WithTx executes the given operation inside an ent database transaction.
 // Automatically commits on success, and safely rolls back if an error occurs or a panic is raised.
-func WithTx(ctx context.Context, client *ent.Client, fn func(tx *ent.Tx) error) error {
+func WithTx(ctx context.Context, client *record.Client, fn func(tx *record.Tx) error) error {
 	tx, err := client.Tx(ctx)
 	if err != nil {
 		return errors.Wrap(err, "database: begin transaction")

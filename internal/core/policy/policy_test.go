@@ -15,10 +15,10 @@ import (
 	"librevita.org/pkg/ident"
 	_ "modernc.org/sqlite"
 
-	"librevita.org/ent"
 	"librevita.org/internal/core/auth"
 	"librevita.org/internal/core/clinicctx"
 	"librevita.org/internal/core/database"
+	"librevita.org/internal/database/record"
 	"librevita.org/pkg/log"
 )
 
@@ -47,7 +47,7 @@ func openPolicyDB(t *testing.T) Repository {
 	require.NoError(t, err)
 
 	drv := entsql.OpenDB(dialect.SQLite, db)
-	client := ent.NewClient(ent.Driver(drv))
+	client := record.NewClient(record.Driver(drv))
 	t.Cleanup(func() { _ = client.Close() })
 
 	_, err = client.Clinic.Create().

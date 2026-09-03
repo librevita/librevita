@@ -30,9 +30,9 @@ import (
 	"librevita.org/internal/domain/episode/usecase"
 	patientmodel "librevita.org/internal/domain/patient/model"
 	patientusecase "librevita.org/internal/domain/patient/usecase"
-	auditmocks "librevita.org/tests/mocks/core/audit"
-	policymocks "librevita.org/tests/mocks/core/policy"
-	modelmocks "librevita.org/tests/mocks/domain/patient/model"
+	auditmocks "librevita.org/internal/test/mock/core/audit"
+	policymocks "librevita.org/internal/test/mock/core/policy"
+	modelmocks "librevita.org/internal/test/mock/domain/patient/model"
 )
 
 type memRepo struct {

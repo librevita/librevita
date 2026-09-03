@@ -28,12 +28,13 @@ comment:
   require_changes: false
 
 ignore:
-  # Generated ORM code (Ent)
-  - 'ent/**/*'
+  # Generated ORM code (Ent / record)
+  - 'internal/database/record/**/*'
   - '.entc/**/*'
 
   # Generated Mocks (Mockery)
-  - 'tests/mocks/**/*'
+  - 'internal/test/mock/**/*'
+  - 'test/mock/**/*'
 
   # Generated Templ templates
   - '**/*_templ.go'

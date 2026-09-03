@@ -19,14 +19,14 @@ import (
 	clinicusecase "librevita.org/internal/domain/clinic/usecase"
 	httphandler "librevita.org/internal/domain/user/delivery/http"
 	"librevita.org/internal/domain/user/usecase"
+	auditmocks "librevita.org/internal/test/mock/core/audit"
+	authmocks "librevita.org/internal/test/mock/core/auth"
+	policymocks "librevita.org/internal/test/mock/core/policy"
+	storagemocks "librevita.org/internal/test/mock/core/storage"
+	clinicmocks "librevita.org/internal/test/mock/domain/clinic/model"
+	patientmocks "librevita.org/internal/test/mock/domain/patient/model"
+	usermocks "librevita.org/internal/test/mock/domain/user/model"
 	"librevita.org/pkg/log"
-	auditmocks "librevita.org/tests/mocks/core/audit"
-	authmocks "librevita.org/tests/mocks/core/auth"
-	policymocks "librevita.org/tests/mocks/core/policy"
-	storagemocks "librevita.org/tests/mocks/core/storage"
-	clinicmocks "librevita.org/tests/mocks/domain/clinic/model"
-	patientmocks "librevita.org/tests/mocks/domain/patient/model"
-	usermocks "librevita.org/tests/mocks/domain/user/model"
 )
 
 type userHandlerTestEnv struct {

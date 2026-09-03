@@ -1,20 +1,20 @@
-// Package testutil provides shared test seeds built on Ent ORM.
-package testutil
+// Package test provides shared test helpers and seeds built on Ent ORM.
+package test
 
 import (
 	"context"
 	"strings"
 	"unicode"
 
-	"librevita.org/ent"
-	"librevita.org/ent/role"
 	"librevita.org/internal/core/clinicctx"
 	"librevita.org/internal/core/database"
+	"librevita.org/internal/database/record"
+	"librevita.org/internal/database/record/role"
 	"librevita.org/pkg/ident"
 )
 
 // SeedInitialData seeds default identifier systems using Ent ORM.
-func SeedInitialData(ctx context.Context, client *ent.Client) error {
+func SeedInitialData(ctx context.Context, client *record.Client) error {
 	return database.SeedInitialData(ctx, client)
 }
 
@@ -45,7 +45,7 @@ func slugify(name string) string {
 
 // Clinic seeds a clinic row with the onboarding defaults (BR,
 // America/Sao_Paulo) so callers only provide the identifying fields.
-func Clinic(ctx context.Context, client *ent.Client, clinicID, name, taxID string) error {
+func Clinic(ctx context.Context, client *record.Client, clinicID, name, taxID string) error {
 	ctx = clinicctx.WithSkipIsolation(ctx)
 	create := client.Clinic.Create().
 		SetID(ident.MustParseClinic(clinicID)).
@@ -72,7 +72,7 @@ func Clinic(ctx context.Context, client *ent.Client, clinicID, name, taxID strin
 		if _, err := client.ClinicIdentifierSystem.Create().
 			SetClinicID(clinicUUID).
 			SetIdentifierSystemID(sys.ID).
-			Save(ctx); err != nil && !ent.IsConstraintError(err) {
+			Save(ctx); err != nil && !record.IsConstraintError(err) {
 			return err
 		}
 	}
@@ -81,13 +81,13 @@ func Clinic(ctx context.Context, client *ent.Client, clinicID, name, taxID strin
 
 // User seeds an account with the given role name in the first clinic
 // (creating a test clinic and role when missing).
-func User(ctx context.Context, client *ent.Client, userID, email, roleName, passwordHash string) error {
+func User(ctx context.Context, client *record.Client, userID, email, roleName, passwordHash string) error {
 	ctx = clinicctx.WithSkipIsolation(ctx)
 	_ = database.SeedInitialData(ctx, client)
 
 	row, err := client.Clinic.Query().First(ctx)
 	if err != nil {
-		if !ent.IsNotFound(err) {
+		if !record.IsNotFound(err) {
 			return err
 		}
 		if err := Clinic(ctx, client, clinicctx.TestClinicID.String(), "Test Clinic", ""); err != nil {
@@ -101,7 +101,7 @@ func User(ctx context.Context, client *ent.Client, userID, email, roleName, pass
 
 	roleRow, err := client.Role.Query().Where(role.NameEQ(roleName), role.ClinicIDEQ(row.ID)).Only(ctx)
 	if err != nil {
-		if !ent.IsNotFound(err) {
+		if !record.IsNotFound(err) {
 			return err
 		}
 		roleRow, err = client.Role.Create().

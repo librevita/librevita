@@ -8,23 +8,23 @@ import (
 	entsql "entgo.io/ent/dialect/sql"
 	"github.com/cockroachdb/errors"
 
-	"librevita.org/ent"
-	"librevita.org/ent/patient"
-	"librevita.org/ent/role"
-	"librevita.org/ent/specialty"
-	"librevita.org/ent/staffchangerequest"
-	"librevita.org/ent/user"
 	"librevita.org/internal/core/clinicctx"
+	"librevita.org/internal/database/record"
+	"librevita.org/internal/database/record/patient"
+	"librevita.org/internal/database/record/role"
+	"librevita.org/internal/database/record/specialty"
+	"librevita.org/internal/database/record/staffchangerequest"
+	"librevita.org/internal/database/record/user"
 	usermodel "librevita.org/internal/domain/user/model"
 	"librevita.org/pkg/ident"
 )
 
 type userRepository struct {
-	client *ent.Client
+	client *record.Client
 }
 
 // NewUserRepository creates a user repository adapter.
-func NewUserRepository(client *ent.Client) usermodel.UserRepository {
+func NewUserRepository(client *record.Client) usermodel.UserRepository {
 	return &userRepository{client: client}
 }
 
@@ -48,7 +48,7 @@ func (r *userRepository) Create(ctx context.Context, u *usermodel.User) (*usermo
 
 	saved, err := create.Save(ctx)
 	if err != nil {
-		if ent.IsConstraintError(err) {
+		if record.IsConstraintError(err) {
 			return nil, errors.WithSecondaryError(usermodel.ErrEmailTaken, err)
 		}
 		return nil, errors.Wrap(err, "user repository: create")
@@ -70,7 +70,7 @@ func (r *userRepository) BindPortalPatient(ctx context.Context, userID ident.Use
 		SetUserID(userID).
 		Save(ctx)
 	if err != nil {
-		if ent.IsConstraintError(err) {
+		if record.IsConstraintError(err) {
 			return errors.WithSecondaryError(usermodel.ErrEmailTaken, err)
 		}
 		return errors.Wrap(err, "user repository: bind portal patient")
@@ -87,7 +87,7 @@ func (r *userRepository) GetByID(ctx context.Context, id ident.UserID) (*usermod
 		WithRole().
 		Only(ctx)
 	if err != nil {
-		if ent.IsNotFound(err) {
+		if record.IsNotFound(err) {
 			return nil, errors.WithSecondaryError(usermodel.ErrUserNotFound, err)
 		}
 		return nil, errors.Wrap(err, "user repository: get by id")
@@ -122,7 +122,7 @@ func (r *userRepository) GetByEmail(ctx context.Context, email string) (*usermod
 		WithRole().
 		Only(ctx)
 	if err != nil {
-		if ent.IsNotFound(err) {
+		if record.IsNotFound(err) {
 			return nil, errors.WithSecondaryError(usermodel.ErrUserNotFound, err)
 		}
 		return nil, errors.Wrap(err, "user repository: get by email")
@@ -161,10 +161,10 @@ func (r *userRepository) Update(ctx context.Context, u *usermodel.User) (*usermo
 
 	saved, err := update.Save(ctx)
 	if err != nil {
-		if ent.IsNotFound(err) {
+		if record.IsNotFound(err) {
 			return nil, errors.WithSecondaryError(usermodel.ErrUserNotFound, err)
 		}
-		if ent.IsConstraintError(err) {
+		if record.IsConstraintError(err) {
 			return nil, errors.WithSecondaryError(usermodel.ErrEmailTaken, err)
 		}
 		return nil, errors.Wrap(err, "user repository: update")
@@ -180,7 +180,7 @@ func (r *userRepository) UpdatePreferences(ctx context.Context, id ident.UserID,
 		SetUpdatedAt(time.Now()).
 		Exec(ctx)
 	if err != nil {
-		if ent.IsNotFound(err) {
+		if record.IsNotFound(err) {
 			return errors.WithSecondaryError(usermodel.ErrUserNotFound, err)
 		}
 		return errors.Wrap(err, "user repository: update preferences")
@@ -232,7 +232,7 @@ func (r *userRepository) CountActiveAdmins(ctx context.Context) (int, error) {
 func (r *userRepository) ListRecent(ctx context.Context, limit int) ([]usermodel.ListRecentUsersRow, error) {
 	users, err := r.client.User.Query().
 		WithRole().
-		Order(ent.Desc(user.FieldCreatedAt)).
+		Order(record.Desc(user.FieldCreatedAt)).
 		Limit(limit).
 		All(ctx)
 	if err != nil {
@@ -257,7 +257,7 @@ func (r *userRepository) ListRecent(ctx context.Context, limit int) ([]usermodel
 }
 
 func (r *userRepository) ListPage(ctx context.Context, q string, limit, offset int) ([]usermodel.ListUsersRow, int64, error) {
-	query := r.client.User.Query().WithRole().Order(ent.Desc(user.FieldCreatedAt))
+	query := r.client.User.Query().WithRole().Order(record.Desc(user.FieldCreatedAt))
 	countQuery := r.client.User.Query()
 
 	trimmed := strings.TrimSpace(q)
@@ -301,10 +301,10 @@ func (r *userRepository) ListPage(ctx context.Context, q string, limit, offset i
 func (r *userRepository) ListPhysiciansPage(ctx context.Context, limit, offset int) ([]usermodel.ListPhysiciansPageRow, int64, error) {
 	query := r.client.User.Query().
 		Where(user.HasRoleWith(role.IsClinical(true))).
-		WithSpecialties(func(sq *ent.SpecialtyQuery) {
-			sq.Order(ent.Asc(specialty.FieldName))
+		WithSpecialties(func(sq *record.SpecialtyQuery) {
+			sq.Order(record.Asc(specialty.FieldName))
 		}).
-		Order(ent.Asc(user.FieldDisplayName)).
+		Order(record.Asc(user.FieldDisplayName)).
 		Limit(limit).
 		Offset(offset)
 
@@ -371,7 +371,7 @@ func (r *userRepository) ApplyApprovedStaffChange(ctx context.Context, reqID ide
 	}
 	if err := uUpdate.Exec(ctx); err != nil {
 		_ = tx.Rollback()
-		if ent.IsConstraintError(err) {
+		if record.IsConstraintError(err) {
 			return usermodel.ErrEmailInUse
 		}
 		return errors.Wrap(err, "user repository: apply staff change")
@@ -393,7 +393,7 @@ func (r *userRepository) ApplyApprovedStaffChange(ctx context.Context, reqID ide
 	return nil
 }
 
-func toUserDomain(u *ent.User, roleName string) *usermodel.User {
+func toUserDomain(u *record.User, roleName string) *usermodel.User {
 	if u == nil {
 		return nil
 	}

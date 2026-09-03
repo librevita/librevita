@@ -8,9 +8,9 @@ import (
 	"github.com/cockroachdb/errors"
 	"go.uber.org/fx"
 
-	"librevita.org/ent"
 	"librevita.org/internal/core/config"
 	"librevita.org/internal/core/kv"
+	"librevita.org/internal/database/record"
 	"librevita.org/pkg/log"
 )
 
@@ -52,11 +52,11 @@ func provideSessionStore(cfg *config.Config, lc fx.Lifecycle, logger log.Logger)
 	return sessionStore{Store: store}, nil
 }
 
-func provideSessionRepository(store sessionStore, client *ent.Client) SessionRepository {
+func provideSessionRepository(store sessionStore, client *record.Client) SessionRepository {
 	return NewSessionRepository(store.Store, client)
 }
 
-func providePlatformSessionRepository(store sessionStore, client *ent.Client) PlatformSessionRepository {
+func providePlatformSessionRepository(store sessionStore, client *record.Client) PlatformSessionRepository {
 	return NewPlatformSessionRepository(store.Store, client)
 }
 

@@ -23,12 +23,12 @@ import (
 	deliveryhttp "librevita.org/internal/domain/identifier/delivery/http"
 	identifiermodel "librevita.org/internal/domain/identifier/model"
 	"librevita.org/internal/domain/identifier/usecase"
+	auditmocks "librevita.org/internal/test/mock/core/audit"
+	authmocks "librevita.org/internal/test/mock/core/auth"
+	policymocks "librevita.org/internal/test/mock/core/policy"
+	usecasemocks "librevita.org/internal/test/mock/domain/identifier/usecase"
 	"librevita.org/pkg/log"
 	"librevita.org/pkg/urn"
-	auditmocks "librevita.org/tests/mocks/core/audit"
-	authmocks "librevita.org/tests/mocks/core/auth"
-	policymocks "librevita.org/tests/mocks/core/policy"
-	usecasemocks "librevita.org/tests/mocks/domain/identifier/usecase"
 )
 
 var testAdminID = ident.MustParseUser("01990000-0000-7000-8000-00000000000a")

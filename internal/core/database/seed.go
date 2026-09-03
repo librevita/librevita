@@ -4,17 +4,17 @@ import (
 	"context"
 	"database/sql"
 
-	"librevita.org/ent"
-	"librevita.org/ent/identifiersystem"
 	"librevita.org/internal/core/clinicctx"
 	"librevita.org/internal/core/config"
+	"librevita.org/internal/database/record"
+	"librevita.org/internal/database/record/identifiersystem"
 	"librevita.org/pkg/ident"
 	"librevita.org/pkg/urn"
 )
 
 // SeedInitialData seeds global identifier systems using Ent ORM.
 // Roles and CEL policies are copied per clinic at onboard, not at process boot.
-func SeedInitialData(ctx context.Context, client *ent.Client) error {
+func SeedInitialData(ctx context.Context, client *record.Client) error {
 	if client == nil {
 		return nil
 	}

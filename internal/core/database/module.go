@@ -6,10 +6,10 @@ import (
 
 	"go.uber.org/fx"
 
-	"librevita.org/ent"
 	"librevita.org/internal/core/clinicctx"
 	"librevita.org/internal/core/crypto"
 	"librevita.org/internal/core/database/isolation"
+	"librevita.org/internal/database/record"
 	"librevita.org/pkg/log"
 )
 
@@ -28,12 +28,12 @@ func sqlDB(store *Store) *sql.DB { return store.SQL() }
 
 // entClient exposes the Ent ORM client configured for the active persistence backend
 // with compile-time typed blind indexing hooks and context-aware decryption interceptors.
-func entClient(store *Store, hasher crypto.Hasher, encryptor crypto.Encryptor, engine *crypto.Engine) *ent.Client {
+func entClient(store *Store, hasher crypto.Hasher, encryptor crypto.Encryptor, engine *crypto.Engine) *record.Client {
 	client := store.Ent()
 	client.Use(isolation.MutationHook())
-	client.Use(ent.FLEMutationHook(hasher, encryptor, engine))
+	client.Use(record.FLEMutationHook(hasher, encryptor, engine))
 	client.Intercept(isolation.QueryInterceptor())
-	client.Intercept(ent.FLEDecryptionInterceptor(encryptor, engine))
+	client.Intercept(record.FLEDecryptionInterceptor(encryptor, engine))
 	return client
 }
 

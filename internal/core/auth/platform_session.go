@@ -7,9 +7,9 @@ import (
 	"github.com/cockroachdb/errors"
 	"github.com/google/uuid"
 
-	"librevita.org/ent"
-	"librevita.org/ent/platformuser"
 	"librevita.org/internal/core/kv"
+	"librevita.org/internal/database/record"
+	"librevita.org/internal/database/record/platformuser"
 	"librevita.org/pkg/ident"
 	"librevita.org/pkg/urn"
 )
@@ -27,7 +27,7 @@ type platformSessionRepository struct {
 }
 
 // NewPlatformSessionRepository stores apex sessions in the same kv store as clinic sessions.
-func NewPlatformSessionRepository(store kv.Store, client *ent.Client) PlatformSessionRepository {
+func NewPlatformSessionRepository(store kv.Store, client *record.Client) PlatformSessionRepository {
 	return &platformSessionRepository{sessionKV: sessionKV{store: store, client: client}}
 }
 
@@ -50,7 +50,7 @@ func (r *platformSessionRepository) GetActive(ctx context.Context, sessionID str
 		Where(platformuser.IDEQ(ident.PlatformUserID(p.UserID))).
 		Only(ctx)
 	if err != nil {
-		if ent.IsNotFound(err) {
+		if record.IsNotFound(err) {
 			return nil, nil
 		}
 		return nil, errors.Wrap(err, "platform session repository: load user")

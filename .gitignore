@@ -51,18 +51,7 @@ internal/ui/static/css/*.css
 internal/ui/static/js/*.js
 internal/ui/static/fonts/*.woff
 internal/ui/static/fonts/*.woff2
-internal/ui/assets.go
 
-# Generated templ views
-**/*_templ.go
-
-# Generated Ent ORM code (source of truth: internal/database/schema/)
-ent/
+# Temp directories
 .entc/
 **/.entc/
-
-# Generated mocks
-tests/mocks
-
-# Generated ident UUID codecs (source of truth: pkg/ident/types.go)
-pkg/ident/codec_gen.go

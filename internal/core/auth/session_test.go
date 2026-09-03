@@ -21,19 +21,19 @@ import (
 	"librevita.org/pkg/ident"
 	_ "modernc.org/sqlite"
 
-	"librevita.org/ent"
 	"librevita.org/internal/core/clinicctx"
 	"librevita.org/internal/core/config"
 	"librevita.org/internal/core/crypto"
 	"librevita.org/internal/core/database"
 	"librevita.org/internal/core/kv"
-	"librevita.org/internal/testutil"
+	"librevita.org/internal/database/record"
+	"librevita.org/internal/test"
 	"librevita.org/pkg/log"
 )
 
 const testUserID = "01990000-0000-7000-8000-000000000001"
 
-func openSessionTest(t *testing.T) *ent.Client {
+func openSessionTest(t *testing.T) *record.Client {
 	t.Helper()
 	db, err := sql.Open("sqlite", "file:session-test-"+uuid.NewString()+"?mode=memory&cache=shared")
 	require.NoError(t, err)
@@ -45,17 +45,17 @@ func openSessionTest(t *testing.T) *ent.Client {
 	require.NoError(t, err)
 
 	drv := entsql.OpenDB(dialect.SQLite, db)
-	client := ent.NewClient(ent.Driver(drv))
+	client := record.NewClient(record.Driver(drv))
 	t.Cleanup(func() { _ = client.Close() })
 
 	return client
 }
 
-func seedUser(t *testing.T, client *ent.Client, id string) {
+func seedUser(t *testing.T, client *record.Client, id string) {
 	t.Helper()
 	hash, err := HashPassword("test-password")
 	require.NoError(t, err)
-	err = testutil.User(context.Background(), client, id, "user@example.org", "admin", hash)
+	err = test.User(context.Background(), client, id, "user@example.org", "admin", hash)
 	require.NoError(t, err)
 }
 
@@ -63,7 +63,7 @@ func testCtx() context.Context {
 	return clinicctx.WithTestClinic(context.Background())
 }
 
-func testSessionRepo(t *testing.T, client *ent.Client) SessionRepository {
+func testSessionRepo(t *testing.T, client *record.Client) SessionRepository {
 	t.Helper()
 	store, err := kv.OpenBBolt(filepath.Join(t.TempDir(), "sessions.db"))
 	require.NoError(t, err)
@@ -71,7 +71,7 @@ func testSessionRepo(t *testing.T, client *ent.Client) SessionRepository {
 	return NewSessionRepository(store, client)
 }
 
-func newManager(t *testing.T, client *ent.Client, ttl time.Duration) *SessionManager {
+func newManager(t *testing.T, client *record.Client, ttl time.Duration) *SessionManager {
 	t.Helper()
 	raw, err := crypto.RandomBytes(32)
 	require.NoError(t, err)

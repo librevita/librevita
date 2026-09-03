@@ -5,26 +5,26 @@ import (
 
 	"github.com/cockroachdb/errors"
 
-	"librevita.org/ent"
-	"librevita.org/ent/role"
-	"librevita.org/ent/user"
 	"librevita.org/internal/core/clinicctx"
+	"librevita.org/internal/database/record"
+	"librevita.org/internal/database/record/role"
+	"librevita.org/internal/database/record/user"
 	usermodel "librevita.org/internal/domain/user/model"
 	"librevita.org/pkg/ident"
 )
 
 type roleRepository struct {
-	client *ent.Client
+	client *record.Client
 }
 
 // NewRoleRepository creates a role repository adapter.
-func NewRoleRepository(client *ent.Client) usermodel.RoleRepository {
+func NewRoleRepository(client *record.Client) usermodel.RoleRepository {
 	return &roleRepository{client: client}
 }
 
 func (r *roleRepository) List(ctx context.Context) ([]usermodel.Role, error) {
 	roles, err := r.client.Role.Query().
-		Order(ent.Desc(role.FieldSystem), ent.Asc(role.FieldName)).
+		Order(record.Desc(role.FieldSystem), record.Asc(role.FieldName)).
 		All(ctx)
 	if err != nil {
 		return nil, errors.Wrap(err, "role repository: list")
@@ -40,7 +40,7 @@ func (r *roleRepository) List(ctx context.Context) ([]usermodel.Role, error) {
 func (r *roleRepository) GetByID(ctx context.Context, id ident.RoleID) (*usermodel.Role, error) {
 	rl, err := r.client.Role.Get(ctx, id)
 	if err != nil {
-		if ent.IsNotFound(err) {
+		if record.IsNotFound(err) {
 			return nil, errors.New("role repository: role not found")
 		}
 		return nil, errors.Wrap(err, "role repository: get by id")
@@ -51,7 +51,7 @@ func (r *roleRepository) GetByID(ctx context.Context, id ident.RoleID) (*usermod
 func (r *roleRepository) GetByName(ctx context.Context, name string) (*usermodel.Role, error) {
 	rl, err := r.client.Role.Query().Where(role.NameEQ(name)).Only(ctx)
 	if err != nil {
-		if ent.IsNotFound(err) {
+		if record.IsNotFound(err) {
 			return nil, errors.Newf("role repository: role not found: %s", name)
 		}
 		return nil, errors.Wrap(err, "role repository: get by name")
@@ -70,7 +70,7 @@ func (r *roleRepository) Create(ctx context.Context, roleModel *usermodel.Role) 
 
 	saved, err := create.Save(ctx)
 	if err != nil {
-		if ent.IsConstraintError(err) {
+		if record.IsConstraintError(err) {
 			return nil, errors.WithSecondaryError(usermodel.ErrDuplicateRole, err)
 		}
 		return nil, errors.Wrap(err, "role repository: create")
@@ -85,7 +85,7 @@ func (r *roleRepository) Update(ctx context.Context, roleModel *usermodel.Role) 
 
 	saved, err := update.Save(ctx)
 	if err != nil {
-		if ent.IsConstraintError(err) {
+		if record.IsConstraintError(err) {
 			return nil, errors.WithSecondaryError(usermodel.ErrDuplicateRole, err)
 		}
 		return nil, errors.Wrap(err, "role repository: update")
@@ -139,14 +139,14 @@ func (r *roleRepository) SeedDefaults(ctx context.Context) error {
 			SetName(dr.name).
 			SetSystem(true).
 			SetIsClinical(dr.isClinical).
-			Exec(ctx); err != nil && !ent.IsConstraintError(err) {
+			Exec(ctx); err != nil && !record.IsConstraintError(err) {
 			return errors.Wrapf(err, "role repository: seed insert %q", dr.name)
 		}
 	}
 	return nil
 }
 
-func toRoleDomain(rl *ent.Role) *usermodel.Role {
+func toRoleDomain(rl *record.Role) *usermodel.Role {
 	if rl == nil {
 		return nil
 	}

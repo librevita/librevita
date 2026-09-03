@@ -6,20 +6,20 @@ import (
 
 	"github.com/cockroachdb/errors"
 
-	"librevita.org/ent"
-	"librevita.org/ent/staffchangerequest"
-	"librevita.org/ent/user"
 	"librevita.org/internal/core/clinicctx"
+	"librevita.org/internal/database/record"
+	"librevita.org/internal/database/record/staffchangerequest"
+	"librevita.org/internal/database/record/user"
 	usermodel "librevita.org/internal/domain/user/model"
 	"librevita.org/pkg/ident"
 )
 
 type staffRequestRepository struct {
-	client *ent.Client
+	client *record.Client
 }
 
 // NewStaffRequestRepository creates a staff change request repository adapter.
-func NewStaffRequestRepository(client *ent.Client) usermodel.StaffRequestRepository {
+func NewStaffRequestRepository(client *record.Client) usermodel.StaffRequestRepository {
 	return &staffRequestRepository{client: client}
 }
 
@@ -43,7 +43,7 @@ func (r *staffRequestRepository) Create(ctx context.Context, req *usermodel.Staf
 func (r *staffRequestRepository) GetByID(ctx context.Context, id ident.StaffChangeRequestID) (*usermodel.StaffChangeRequest, error) {
 	req, err := r.client.StaffChangeRequest.Get(ctx, id)
 	if err != nil {
-		if ent.IsNotFound(err) {
+		if record.IsNotFound(err) {
 			return nil, usermodel.ErrRequestNotFound
 		}
 		return nil, errors.Wrap(err, "staff request repository: get by id")
@@ -55,7 +55,7 @@ func (r *staffRequestRepository) ListByRequester(ctx context.Context, requesterI
 	requests, err := r.client.StaffChangeRequest.Query().
 		Where(staffchangerequest.RequestedByEQ(requesterID)).
 		WithUser().
-		Order(ent.Desc(staffchangerequest.FieldCreatedAt)).
+		Order(record.Desc(staffchangerequest.FieldCreatedAt)).
 		Limit(limit).
 		All(ctx)
 	if err != nil {
@@ -90,7 +90,7 @@ func (r *staffRequestRepository) ListFiltered(ctx context.Context, status, q str
 		WithUser().
 		WithRequester().
 		WithDecider().
-		Order(ent.Desc(staffchangerequest.FieldCreatedAt))
+		Order(record.Desc(staffchangerequest.FieldCreatedAt))
 
 	if status != "" {
 		query = query.Where(staffchangerequest.StatusEQ(staffchangerequest.Status(status)))
@@ -173,7 +173,7 @@ func (r *staffRequestRepository) Reject(ctx context.Context, id ident.StaffChang
 		update.SetDecisionNote(note)
 	}
 	if err := update.Exec(ctx); err != nil {
-		if ent.IsNotFound(err) {
+		if record.IsNotFound(err) {
 			return usermodel.ErrRequestNotFound
 		}
 		return errors.Wrap(err, "staff request repository: reject")
@@ -181,7 +181,7 @@ func (r *staffRequestRepository) Reject(ctx context.Context, id ident.StaffChang
 	return nil
 }
 
-func toStaffChangeRequestDomain(req *ent.StaffChangeRequest) *usermodel.StaffChangeRequest {
+func toStaffChangeRequestDomain(req *record.StaffChangeRequest) *usermodel.StaffChangeRequest {
 	if req == nil {
 		return nil
 	}

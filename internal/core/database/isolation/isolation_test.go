@@ -13,13 +13,13 @@ import (
 	"librevita.org/pkg/ident"
 	_ "modernc.org/sqlite"
 
-	"librevita.org/ent"
-	"librevita.org/ent/enttest"
-	"librevita.org/ent/user"
 	"librevita.org/internal/core/clinicctx"
 	"librevita.org/internal/core/crypto"
 	"librevita.org/internal/core/database/fle"
 	"librevita.org/internal/core/database/isolation"
+	"librevita.org/internal/database/record"
+	"librevita.org/internal/database/record/enttest"
+	"librevita.org/internal/database/record/user"
 )
 
 func TestCrossClinicUsersAndFLE(t *testing.T) {
@@ -28,7 +28,7 @@ func TestCrossClinicUsersAndFLE(t *testing.T) {
 	t.Cleanup(func() { _ = db.Close() })
 
 	drv := entsql.OpenDB(dialect.SQLite, db)
-	client := enttest.NewClient(t, enttest.WithOptions(ent.Driver(drv)))
+	client := enttest.NewClient(t, enttest.WithOptions(record.Driver(drv)))
 	t.Cleanup(func() { _ = client.Close() })
 
 	master := make([]byte, 32)
@@ -40,9 +40,9 @@ func TestCrossClinicUsersAndFLE(t *testing.T) {
 	require.NoError(t, err)
 
 	client.Use(isolation.MutationHook())
-	client.Use(ent.FLEMutationHook(hasher, encDefault))
+	client.Use(record.FLEMutationHook(hasher, encDefault))
 	client.Intercept(isolation.QueryInterceptor())
-	client.Intercept(ent.FLEDecryptionInterceptor(encDefault))
+	client.Intercept(record.FLEDecryptionInterceptor(encDefault))
 
 	seed := clinicctx.WithSkipIsolation(context.Background())
 	norteID := ident.MustParseClinic("01990000-0000-7000-8000-0000000000a1")
@@ -124,7 +124,7 @@ func TestCrossClinicUsersAndFLE(t *testing.T) {
 	assert.Equal(t, name, gotA.DisplayName)
 
 	_, err = client.Patient.Get(ctxB, pA.ID)
-	assert.True(t, ent.IsNotFound(err), "clinic B must not see clinic A's patient")
+	assert.True(t, record.IsNotFound(err), "clinic B must not see clinic A's patient")
 
 	wrongCtx := clinicctx.WithSkipIsolation(context.Background())
 	wrongCtx = fle.WithEncryptor(wrongCtx, encB)
@@ -140,7 +140,7 @@ func TestIsolationEdgeCases(t *testing.T) {
 	t.Cleanup(func() { _ = db.Close() })
 
 	drv := entsql.OpenDB(dialect.SQLite, db)
-	client := enttest.NewClient(t, enttest.WithOptions(ent.Driver(drv)))
+	client := enttest.NewClient(t, enttest.WithOptions(record.Driver(drv)))
 	t.Cleanup(func() { _ = client.Close() })
 
 	client.Use(isolation.MutationHook())

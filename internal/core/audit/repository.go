@@ -6,18 +6,18 @@ import (
 
 	"github.com/cockroachdb/errors"
 
-	"librevita.org/ent"
-	"librevita.org/ent/auditlog"
 	"librevita.org/internal/core/clinicctx"
+	"librevita.org/internal/database/record"
+	"librevita.org/internal/database/record/auditlog"
 	"librevita.org/pkg/ident"
 )
 
 type auditRepository struct {
-	client *ent.Client
+	client *record.Client
 }
 
 // NewAuditRepository creates an audit repository adapter.
-func NewAuditRepository(client *ent.Client) Repository {
+func NewAuditRepository(client *record.Client) Repository {
 	return &auditRepository{client: client}
 }
 
@@ -30,7 +30,7 @@ func (r *auditRepository) Recent(ctx context.Context, limit int, before int64) (
 		query = query.Where(auditlog.IDLT(int(before)))
 	}
 	rows, err := query.
-		Order(ent.Desc(auditlog.FieldID)).
+		Order(record.Desc(auditlog.FieldID)).
 		Limit(limit).
 		All(ctx)
 	if err != nil {
@@ -59,7 +59,7 @@ func (r *auditRepository) ForResource(ctx context.Context, resource string, limi
 		query = query.Where(auditlog.ClinicIDEQ(id))
 	}
 	rows, err := query.
-		Order(ent.Desc(auditlog.FieldID)).
+		Order(record.Desc(auditlog.FieldID)).
 		Limit(limit).
 		All(ctx)
 	if err != nil {
@@ -85,9 +85,9 @@ func (r *auditRepository) ForResource(ctx context.Context, resource string, limi
 func (r *auditRepository) LastSignature(ctx context.Context) (string, error) {
 	ctx = clinicctx.WithSkipIsolation(ctx)
 	last, err := r.client.AuditLog.Query().
-		Order(ent.Desc(auditlog.FieldID)).
+		Order(record.Desc(auditlog.FieldID)).
 		First(ctx)
-	if ent.IsNotFound(err) {
+	if record.IsNotFound(err) {
 		return "", nil
 	}
 	if err != nil {
@@ -141,7 +141,7 @@ func (r *auditRepository) Record(ctx context.Context, ev Event, createdAt time.T
 func (r *auditRepository) All(ctx context.Context) ([]StoredEntry, error) {
 	ctx = clinicctx.WithSkipIsolation(ctx)
 	rows, err := r.client.AuditLog.Query().
-		Order(ent.Asc(auditlog.FieldID)).
+		Order(record.Asc(auditlog.FieldID)).
 		All(ctx)
 	if err != nil {
 		return nil, errors.Wrap(err, "audit: all")

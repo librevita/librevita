@@ -6,25 +6,25 @@ import (
 
 	"github.com/cockroachdb/errors"
 
-	"librevita.org/ent"
-	"librevita.org/ent/identifiersystem"
+	"librevita.org/internal/database/record"
+	"librevita.org/internal/database/record/identifiersystem"
 	identifiermodel "librevita.org/internal/domain/identifier/model"
 	"librevita.org/pkg/ident"
 	"librevita.org/pkg/urn"
 )
 
 type systemRepository struct {
-	client *ent.Client
+	client *record.Client
 }
 
 // NewSystemRepository creates an identifier system repository adapter.
-func NewSystemRepository(client *ent.Client) identifiermodel.SystemRepository {
+func NewSystemRepository(client *record.Client) identifiermodel.SystemRepository {
 	return &systemRepository{client: client}
 }
 
 func (r *systemRepository) ListAll(ctx context.Context) ([]*identifiermodel.IdentifierSystem, error) {
 	rows, err := r.client.IdentifierSystem.Query().
-		Order(ent.Asc(identifiersystem.FieldDisplayName)).
+		Order(record.Asc(identifiersystem.FieldDisplayName)).
 		All(ctx)
 	if err != nil {
 		return nil, errors.Wrap(err, "system repository: list all")
@@ -53,7 +53,7 @@ func (r *systemRepository) ListActive(ctx context.Context) ([]*identifiermodel.I
 func (r *systemRepository) GetByID(ctx context.Context, id ident.IdentifierSystemID) (*identifiermodel.IdentifierSystem, error) {
 	row, err := r.client.IdentifierSystem.Get(ctx, id)
 	if err != nil {
-		if ent.IsNotFound(err) {
+		if record.IsNotFound(err) {
 			return nil, errors.WithSecondaryError(identifiermodel.ErrSystemNotFound, err)
 		}
 		return nil, errors.Wrap(err, "system repository: get by id")
@@ -66,7 +66,7 @@ func (r *systemRepository) GetBySystem(ctx context.Context, system string) (*ide
 		Where(identifiersystem.SystemEQ(system)).
 		Only(ctx)
 	if err != nil {
-		if ent.IsNotFound(err) {
+		if record.IsNotFound(err) {
 			return nil, errors.WithSecondaryError(identifiermodel.ErrSystemNotFound, err)
 		}
 		return nil, errors.Wrap(err, "system repository: get by system")
@@ -93,7 +93,7 @@ func (r *systemRepository) Create(ctx context.Context, s *identifiermodel.Identi
 
 	saved, err := create.Save(ctx)
 	if err != nil {
-		if ent.IsConstraintError(err) {
+		if record.IsConstraintError(err) {
 			return nil, errors.WithSecondaryError(identifiermodel.ErrDuplicate, err)
 		}
 		return nil, errors.Wrap(err, "system repository: create")
@@ -119,10 +119,10 @@ func (r *systemRepository) Update(ctx context.Context, s *identifiermodel.Identi
 
 	updated, err := update.Save(ctx)
 	if err != nil {
-		if ent.IsNotFound(err) {
+		if record.IsNotFound(err) {
 			return nil, errors.WithSecondaryError(identifiermodel.ErrSystemNotFound, err)
 		}
-		if ent.IsConstraintError(err) {
+		if record.IsConstraintError(err) {
 			return nil, errors.WithSecondaryError(identifiermodel.ErrDuplicate, err)
 		}
 		return nil, errors.Wrap(err, "system repository: update")
@@ -136,7 +136,7 @@ func (r *systemRepository) SetActive(ctx context.Context, id ident.IdentifierSys
 		SetUpdatedAt(time.Now()).
 		Exec(ctx)
 	if err != nil {
-		if ent.IsNotFound(err) {
+		if record.IsNotFound(err) {
 			return errors.WithSecondaryError(identifiermodel.ErrSystemNotFound, err)
 		}
 		return errors.Wrap(err, "system repository: set active")
@@ -216,14 +216,14 @@ func (r *systemRepository) SeedDefaults(ctx context.Context) error {
 			SetCheckStartWeight(sys.CheckStartWeight).
 			SetActive(sys.Active).
 			SetMask(sys.Mask).
-			Exec(ctx); err != nil && !ent.IsConstraintError(err) {
+			Exec(ctx); err != nil && !record.IsConstraintError(err) {
 			return errors.Wrapf(err, "system repository: seed insert %q", sys.System)
 		}
 	}
 	return nil
 }
 
-func toSystemDomain(row *ent.IdentifierSystem) *identifiermodel.IdentifierSystem {
+func toSystemDomain(row *record.IdentifierSystem) *identifiermodel.IdentifierSystem {
 	if row == nil {
 		return nil
 	}

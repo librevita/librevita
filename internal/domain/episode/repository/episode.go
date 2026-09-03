@@ -7,32 +7,32 @@ import (
 
 	"github.com/cockroachdb/errors"
 
-	"librevita.org/ent"
-	"librevita.org/ent/episode"
-	"librevita.org/ent/finding"
-	"librevita.org/ent/patient"
-	"librevita.org/ent/planitem"
-	"librevita.org/ent/problem"
 	"librevita.org/internal/core/database"
 	"librevita.org/internal/core/database/fle"
+	"librevita.org/internal/database/record"
+	"librevita.org/internal/database/record/episode"
+	"librevita.org/internal/database/record/finding"
+	"librevita.org/internal/database/record/patient"
+	"librevita.org/internal/database/record/planitem"
+	"librevita.org/internal/database/record/problem"
 	episodemodel "librevita.org/internal/domain/episode/model"
 	"librevita.org/pkg/ident"
 )
 
 type episodeRepository struct {
-	client *ent.Client
+	client *record.Client
 }
 
 // NewEpisodeRepository creates the Ent adapter for the SOAP aggregate.
-func NewEpisodeRepository(client *ent.Client) episodemodel.EpisodeRepository {
+func NewEpisodeRepository(client *record.Client) episodemodel.EpisodeRepository {
 	return &episodeRepository{client: client}
 }
 
 func (r *episodeRepository) Create(ctx context.Context, ep episodemodel.Episode) (*episodemodel.Episode, error) {
 	ctx = fle.WithPatientID(ctx, ep.PatientID)
 	ctx = fle.WithClinicID(ctx, ep.ClinicID)
-	var saved *ent.Episode
-	err := database.WithTx(ctx, r.client, func(tx *ent.Tx) error {
+	var saved *record.Episode
+	err := database.WithTx(ctx, r.client, func(tx *record.Tx) error {
 		create := tx.Episode.Create().
 			SetID(ep.ID).
 			SetClinicID(ep.ClinicID).
@@ -54,7 +54,7 @@ func (r *episodeRepository) Create(ctx context.Context, ep episodemodel.Episode)
 		setSOAP(create, ep.SOAP)
 		row, err := create.Save(ctx)
 		if err != nil {
-			if ent.IsConstraintError(err) && ep.PredecessorID != nil {
+			if record.IsConstraintError(err) && ep.PredecessorID != nil {
 				return errors.WithSecondaryError(episodemodel.ErrAlreadyAmended, err)
 			}
 			return errors.Wrap(err, "episode repository: create")
@@ -71,12 +71,12 @@ func (r *episodeRepository) Create(ctx context.Context, ep episodemodel.Episode)
 func (r *episodeRepository) UpdateDraft(ctx context.Context, ep episodemodel.Episode) (*episodemodel.Episode, error) {
 	ctx = fle.WithPatientID(ctx, ep.PatientID)
 	ctx = fle.WithClinicID(ctx, ep.ClinicID)
-	err := database.WithTx(ctx, r.client, func(tx *ent.Tx) error {
+	err := database.WithTx(ctx, r.client, func(tx *record.Tx) error {
 		row, err := tx.Episode.Query().
 			Where(episode.IDEQ(ep.ID), episode.ClinicIDEQ(ep.ClinicID)).
 			Only(ctx)
 		if err != nil {
-			if ent.IsNotFound(err) {
+			if record.IsNotFound(err) {
 				return errors.WithSecondaryError(episodemodel.ErrNotFound, err)
 			}
 			return errors.Wrap(err, "episode repository: get for update")
@@ -125,7 +125,7 @@ func (r *episodeRepository) Get(ctx context.Context, clinicID ident.ClinicID, ep
 		WithPlanItems().
 		Only(ctx)
 	if err != nil {
-		if ent.IsNotFound(err) {
+		if record.IsNotFound(err) {
 			return nil, errors.WithSecondaryError(episodemodel.ErrNotFound, err)
 		}
 		return nil, errors.Wrap(err, "episode repository: get")
@@ -145,7 +145,7 @@ func (r *episodeRepository) GetByPredecessor(ctx context.Context, clinicID ident
 		WithPlanItems().
 		Only(ctx)
 	if err != nil {
-		if ent.IsNotFound(err) {
+		if record.IsNotFound(err) {
 			return nil, errors.WithSecondaryError(episodemodel.ErrNotFound, err)
 		}
 		return nil, errors.Wrap(err, "episode repository: get by predecessor")
@@ -160,7 +160,7 @@ func (r *episodeRepository) GetByPredecessor(ctx context.Context, clinicID ident
 func (r *episodeRepository) ListByPatient(ctx context.Context, clinicID ident.ClinicID, patientID ident.PatientID, status *episodemodel.EpisodeStatus) ([]episodemodel.Episode, error) {
 	q := r.client.Episode.Query().
 		Where(episode.ClinicIDEQ(clinicID), episode.PatientIDEQ(patientID)).
-		Order(ent.Desc(episode.FieldOccurredAt))
+		Order(record.Desc(episode.FieldOccurredAt))
 	if status != nil {
 		q = q.Where(episode.StatusEQ(episode.Status(*status)))
 	}
@@ -181,7 +181,7 @@ func (r *episodeRepository) attachSuccessor(ctx context.Context, ep *episodemode
 		Where(episode.PredecessorIDEQ(ep.ID), episode.ClinicIDEQ(ep.ClinicID)).
 		OnlyID(ctx)
 	if err != nil {
-		if ent.IsNotFound(err) {
+		if record.IsNotFound(err) {
 			return nil
 		}
 		return errors.Wrap(err, "episode repository: successor")
@@ -229,7 +229,7 @@ func (r *episodeRepository) PatientExists(ctx context.Context, clinicID ident.Cl
 	return ok, nil
 }
 
-func setSOAP(create *ent.EpisodeCreate, soap episodemodel.SOAP) {
+func setSOAP(create *record.EpisodeCreate, soap episodemodel.SOAP) {
 	if soap.Subjective != "" {
 		create.SetSubjective(soap.Subjective)
 	}
@@ -244,7 +244,7 @@ func setSOAP(create *ent.EpisodeCreate, soap episodemodel.SOAP) {
 	}
 }
 
-func setSOAPUpdate(upd *ent.EpisodeUpdateOne, soap episodemodel.SOAP) {
+func setSOAPUpdate(upd *record.EpisodeUpdateOne, soap episodemodel.SOAP) {
 	if soap.Subjective != "" {
 		upd.SetSubjective(soap.Subjective)
 	} else {
@@ -267,7 +267,7 @@ func setSOAPUpdate(upd *ent.EpisodeUpdateOne, soap episodemodel.SOAP) {
 	}
 }
 
-func replaceChildren(ctx context.Context, tx *ent.Tx, ep episodemodel.Episode) error {
+func replaceChildren(ctx context.Context, tx *record.Tx, ep episodemodel.Episode) error {
 	if _, err := tx.Finding.Delete().Where(finding.EpisodeIDEQ(ep.ID)).Exec(ctx); err != nil {
 		return errors.Wrap(err, "episode repository: clear findings")
 	}
@@ -295,7 +295,7 @@ func replaceChildren(ctx context.Context, tx *ent.Tx, ep episodemodel.Episode) e
 	return nil
 }
 
-func insertFinding(ctx context.Context, tx *ent.Tx, ep episodemodel.Episode, f episodemodel.Finding) error {
+func insertFinding(ctx context.Context, tx *record.Tx, ep episodemodel.Episode, f episodemodel.Finding) error {
 	c := tx.Finding.Create().
 		SetID(f.ID).
 		SetClinicID(ep.ClinicID).
@@ -314,7 +314,7 @@ func insertFinding(ctx context.Context, tx *ent.Tx, ep episodemodel.Episode, f e
 	return nil
 }
 
-func applyFindingValue(c *ent.FindingCreate, f episodemodel.Finding) {
+func applyFindingValue(c *record.FindingCreate, f episodemodel.Finding) {
 	switch f.Value.Kind {
 	case episodemodel.FindingValueQuantity:
 		if f.Value.Quantity != nil {
@@ -339,7 +339,7 @@ func applyFindingValue(c *ent.FindingCreate, f episodemodel.Finding) {
 	}
 }
 
-func insertProblem(ctx context.Context, tx *ent.Tx, ep episodemodel.Episode, p episodemodel.Problem) error {
+func insertProblem(ctx context.Context, tx *record.Tx, ep episodemodel.Episode, p episodemodel.Problem) error {
 	c := tx.Problem.Create().
 		SetID(p.ID).
 		SetClinicID(ep.ClinicID).
@@ -361,7 +361,7 @@ func insertProblem(ctx context.Context, tx *ent.Tx, ep episodemodel.Episode, p e
 	return nil
 }
 
-func insertPlanItem(ctx context.Context, tx *ent.Tx, ep episodemodel.Episode, item episodemodel.PlanItem) error {
+func insertPlanItem(ctx context.Context, tx *record.Tx, ep episodemodel.Episode, item episodemodel.PlanItem) error {
 	c := tx.PlanItem.Create().
 		SetID(item.ID).
 		SetClinicID(ep.ClinicID).
@@ -384,7 +384,7 @@ func insertPlanItem(ctx context.Context, tx *ent.Tx, ep episodemodel.Episode, it
 	return nil
 }
 
-func toDomainEpisode(row *ent.Episode) *episodemodel.Episode {
+func toDomainEpisode(row *record.Episode) *episodemodel.Episode {
 	ep := &episodemodel.Episode{
 		ID:            row.ID,
 		ClinicID:      row.ClinicID,
@@ -418,7 +418,7 @@ func toDomainEpisode(row *ent.Episode) *episodemodel.Episode {
 	return ep
 }
 
-func toDomainFinding(f *ent.Finding) episodemodel.Finding {
+func toDomainFinding(f *record.Finding) episodemodel.Finding {
 	val := episodemodel.FindingValue{Kind: episodemodel.FindingValueKind(f.ValueKind)}
 	switch val.Kind {
 	case episodemodel.FindingValueQuantity:
@@ -455,7 +455,7 @@ func toDomainFinding(f *ent.Finding) episodemodel.Finding {
 	}
 }
 
-func toDomainProblem(p *ent.Problem) episodemodel.Problem {
+func toDomainProblem(p *record.Problem) episodemodel.Problem {
 	return episodemodel.Problem{
 		ID:                 p.ID,
 		ClinicID:           p.ClinicID,
@@ -472,7 +472,7 @@ func toDomainProblem(p *ent.Problem) episodemodel.Problem {
 	}
 }
 
-func toDomainPlanItem(item *ent.PlanItem) episodemodel.PlanItem {
+func toDomainPlanItem(item *record.PlanItem) episodemodel.PlanItem {
 	return episodemodel.PlanItem{
 		ID:          item.ID,
 		ClinicID:    item.ClinicID,

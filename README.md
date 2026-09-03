@@ -78,7 +78,7 @@ flowchart LR
 
 Each domain (`clinic`, `user`, `patient`, `identifier`, `calendar`, `episode`) uses the same layers:
 
-- **`model/`** — structs, value types, domain errors, repository interfaces. No `usecase/`, `repository/`, or `ent/`.
+- **`model/`** — structs, value types, domain errors, repository interfaces. No `usecase/`, `repository/`, or `record/`.
 - **`repository/`** — Ent adapters implementing `model/` ports.
 - **`usecase/`** — application services on `model/` types.
 - **`delivery/http/`** — Echo handlers. Episode HTML is nested under the patient record; FHIR R4 lives in `internal/interop/fhir`, not in the episode package.
@@ -514,7 +514,7 @@ Clinical attachments are managed via `storage.Manager`, which streams authentica
 
 ## Database and migrations
 
-Persistence uses Ent (`entgo.io/ent`). Schemas live in `internal/database/schema`; the generator writes the typed client to `ent/` (not committed; `task gen`). `task gen` also writes `pkg/ident` SQL/text codecs from `types.go`.
+Persistence uses Ent (`entgo.io/ent`). Schemas live in `internal/database/schema`; the generator writes the typed client to `internal/database/record/` (`task gen`). `task gen` also writes `pkg/ident` SQL/text codecs from `types.go`.
 
 SQLite uses `modernc.org/sqlite` (no CGO). PostgreSQL uses `github.com/jackc/pgx/v5`. The factory enables WAL (SQLite), foreign keys, and per-backend pools.
 

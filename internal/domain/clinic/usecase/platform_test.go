@@ -12,16 +12,16 @@ import (
 	"github.com/stretchr/testify/require"
 	_ "modernc.org/sqlite"
 
-	"librevita.org/ent"
 	"librevita.org/internal/core/crypto"
 	"librevita.org/internal/core/database"
 	"librevita.org/internal/core/keystore"
+	"librevita.org/internal/database/record"
 	clinicrepo "librevita.org/internal/domain/clinic/repository"
 	"librevita.org/internal/domain/clinic/usecase"
 	"librevita.org/pkg/log"
 )
 
-func setupPlatformEnv(t *testing.T) (*usecase.PlatformService, *ent.Client) {
+func setupPlatformEnv(t *testing.T) (*usecase.PlatformService, *record.Client) {
 	t.Helper()
 	db, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "platform.db"))
 	require.NoError(t, err)
@@ -31,7 +31,7 @@ func setupPlatformEnv(t *testing.T) (*usecase.PlatformService, *ent.Client) {
 	require.NoError(t, database.Migrate(context.Background(), db, log.Nop()))
 
 	drv := entsql.OpenDB(dialect.SQLite, db)
-	client := ent.NewClient(ent.Driver(drv))
+	client := record.NewClient(record.Driver(drv))
 	t.Cleanup(func() { _ = client.Close() })
 
 	v, err := keystore.OpenBBolt(filepath.Join(t.TempDir(), "keystore.db"))

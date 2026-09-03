@@ -15,7 +15,7 @@ import (
 	"librevita.org/internal/core/policy"
 	episodemodel "librevita.org/internal/domain/episode/model"
 	"librevita.org/internal/domain/episode/usecase"
-	policymocks "librevita.org/tests/mocks/core/policy"
+	policymocks "librevita.org/internal/test/mock/core/policy"
 )
 
 type memRepo struct {
