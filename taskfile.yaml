@@ -300,7 +300,7 @@ tasks:
   node-assets:
     desc: Compile the CSS and JS assets into internal/ui/static
     deps:
-      - node-deps
+      - node-check
     cmds:
       - npm run assets
     sources:
@@ -319,7 +319,6 @@ tasks:
   frontend:
     desc: Compile the CSS and JS assets into internal/ui/static
     deps:
-      - node-check
       - node-assets
 
   # Debug build: unminified bundle with an inline source map, so the
@@ -406,18 +405,15 @@ tasks:
       - node-deps
     cmds:
       - npm audit --audit-level=low
-  # Lockfile scan against OSV.dev (Go + npm). Go call analysis is on by
-  # default and needs generated sources the same way govulncheck source
-  # mode does; npm has no call graph, so every advisory in
-  # package-lock.json is reported. --all-vulns is the progressive cap
-  # (uncalled and unimportant advisories fail too); scan still has no
-  # CVSS fail floor, so remaining exceptions stay in osv-scanner.toml.
+  # Lockfile scan against OSV.dev (Go + npm). npm has no call graph, so
+  # every advisory in package-lock.json is reported. --all-vulns is the
+  # progressive cap (uncalled and unimportant advisories fail too); scan
+  # still has no CVSS fail floor, so remaining exceptions stay in
+  # osv-scanner.toml.
   osv-scan:
     desc: Scan go.mod and package-lock.json against the OSV database
     deps:
       - tools-osv
-      - gen
-      - frontend
     cmds:
       - 'PATH={{.ROOT_DIR}}/.tools/bin:$PATH osv-scanner scan source --all-vulns --lockfile=go.mod --lockfile=package-lock.json'
   # Dockerfile linter. --failure-threshold matches cyclop: findings
