@@ -21,6 +21,8 @@ jobs:
     name: Analyze (${{ matrix.language }})
     runs-on: ubuntu-24.04
     timeout-minutes: 360
+    env:
+      CGO_ENABLED: '0'
     permissions:
       security-events: write # Upload SARIF security analysis results to the Security tab.
       packages: read         # Fetch CodeQL packages.
@@ -64,6 +66,13 @@ jobs:
         with:
           version: 3.52.0
 
+      - name: Cache pinned Go tools
+        if: matrix.language == 'go'
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .tools/bin
+          key: go-tools-${{ hashFiles('taskfile.yaml') }}
+
       - name: Generate Go sources and assets
         if: matrix.language == 'go'
         run: task gen node-assets
@@ -73,7 +82,7 @@ jobs:
         with:
           languages: ${{ matrix.language }}
           build-mode: ${{ matrix.build-mode }}
-          queries: security-extended
+          config-file: .github/codeql.yaml
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9

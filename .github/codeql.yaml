@@ -1,0 +1,11 @@
+name: "LibreVita CodeQL Configuration"
+
+# Use the extended security query suite for deep SAST analysis.
+queries:
+  - uses: security-extended
+
+# Filter out generated test mocks, built frontend static assets, and migration schemas from scanning.
+paths-ignore:
+  - 'tests/mocks/**'
+  - 'internal/ui/static/**'
+  - 'ent/migrate/migrations/**'
