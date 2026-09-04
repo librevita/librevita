@@ -56,4 +56,3 @@ ignore:
   - 'internal/ui/static/**'
   - 'internal/ui/assets.go'
   - '**/*.config.ts'
-  - '**/*.config.js'
