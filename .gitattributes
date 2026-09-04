@@ -1,10 +1,25 @@
-# Collapse generated Go code in GitHub Pull Requests and exclude from repository statistics
-internal/database/record/** linguist-generated=true
-**/*_templ.go linguist-generated=true
-internal/test/mock/** linguist-generated=true
-test/mock/** linguist-generated=true
-internal/ui/assets.go linguist-generated=true
-internal/ui/static/css/*.css linguist-generated=true
-internal/ui/static/js/*.js linguist-generated=true
-internal/ui/static/fonts/* binary linguist-generated=true
-pkg/ident/codec_gen.go linguist-generated=true
+# ==============================================================================
+# Git Hooks & Tooling Scripts
+# ==============================================================================
+# Enforce Unix line endings and exclude from repository language statistics
+.githooks/**                       text eol=lf linguist-vendored
+
+# ==============================================================================
+# Generated Backend Go Code
+# ==============================================================================
+# Collapse machine-generated code in PRs and exclude from repository statistics
+internal/database/record/**        linguist-generated=true
+internal/test/mock/**              linguist-generated=true
+pkg/ident/codec_gen.go             linguist-generated=true
+test/mock/**                       linguist-generated=true
+**/*_templ.go                      linguist-generated=true
+
+# ==============================================================================
+# Compiled Frontend Assets & Static Media
+# ==============================================================================
+# Pre-compiled bundles and static files tracked for deterministic builds
+internal/ui/assets.go              linguist-generated=true
+internal/ui/static/css/*.css       linguist-generated=true
+internal/ui/static/js/*.js         linguist-generated=true
+internal/ui/static/fonts/*         binary linguist-generated=true
+internal/ui/static/illustrations/* binary

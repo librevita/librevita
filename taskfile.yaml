@@ -58,6 +58,11 @@ tasks:
   # Tools and generated sources
   # ------------------------------------------------------------------------
 
+  # Configure repository git hooks to use .githooks.
+  hooks:
+    desc: Configure git to use project pre-commit hooks
+    cmds:
+      - git config core.hooksPath .githooks
   # Build-time tools (generators and analyzers), pinned by version and
   # installed from the bare toolchain: `go install pkg@version` resolves
   # the tool's own module graph, so neither the application go.mod nor
@@ -330,6 +335,17 @@ tasks:
       - node-deps
     cmds:
       - npm run assets -- --dev
+  # Verify that the tracked frontend assets are production-ready (not built
+  # with --dev).
+  frontend-check-prod:
+    desc: Verify that static assets are production-ready (not dev mode)
+    cmds:
+      - |
+        if grep -rq "DEV_MODE" internal/ui/static/js internal/ui/assets.go 2>/dev/null; then
+          echo "ERROR: Development frontend assets detected (built with --dev)!" >&2
+          echo "Run 'task frontend' to compile production assets before committing." >&2
+          exit 1
+        fi
   # ------------------------------------------------------------------------
   # Go consumers
   # ------------------------------------------------------------------------
@@ -458,12 +474,13 @@ tasks:
     deps:
       - go-vet
   lint:
-    desc: Run golangci-lint, hadolint, actionlint, and zizmor
+    desc: Run golangci-lint, hadolint, actionlint, zizmor, and asset checks
     deps:
       - go-lint
       - hadolint
       - actionlint
       - zizmor
+      - frontend-check-prod
   # Security audits: the Go module scan (govulncheck), the binary scan,
   # npm audit, OSV-Scanner, and gitleaks.
   audit:

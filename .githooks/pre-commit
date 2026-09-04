@@ -1,0 +1,15 @@
+#!/bin/sh
+# Pre-commit hook: prevent committing development frontend assets.
+
+# Check if any staged file contains DEV_MODE marker
+if git diff --cached -S"DEV_MODE" --name-only | grep -qE 'internal/ui/(static|assets\.go)'; then
+  echo "======================================================================" >&2
+  echo "COMMIT REJECTED: Development frontend assets detected in staged files!" >&2
+  echo "" >&2
+  echo "It appears 'task dev' or 'npm run assets -- --dev' was executed." >&2
+  echo "To build production assets before committing, run:" >&2
+  echo "    task frontend" >&2
+  echo "    git add internal/ui/static internal/ui/assets.go" >&2
+  echo "======================================================================" >&2
+  exit 1
+fi

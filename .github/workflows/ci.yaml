@@ -92,6 +92,8 @@ jobs:
       - run: npm ci
       - run: npm run check
       - run: npm run assets
+      - name: Verify production assets match repository
+        run: git diff --exit-code internal/ui/static internal/ui/assets.go
       - run: npm test
       - run: npm audit --audit-level=low
   scanners:
