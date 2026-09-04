@@ -267,11 +267,11 @@ tasks:
       - 'internal/test/mock/**/*.go'
   gen:
     desc: Regenerate Ent models, schema, mocks, templ views, and ident codecs
-    deps:
-      - gen-ident
-      - gen-ent
-      - gen-mocks
-      - gen-templ
+    cmds:
+      - task: gen-ident
+      - task: gen-ent
+      - task: gen-mocks
+      - task: gen-templ
   # ------------------------------------------------------------------------
   # Frontend (Node)
   # ------------------------------------------------------------------------
