@@ -1,8 +1,16 @@
+# ==============================================================================
+# Gitleaks configuration for LibreVita
+# Docs: https://github.com/zricethezav/gitleaks
+# ==============================================================================
+
 title = "LibreVita"
 
 [extend]
 useDefault = true
 
+# ==============================================================================
+# Known Test Fixtures (Non-production keys)
+# ==============================================================================
 # The same 32-byte base64 fixture is used across crypto unit tests. It is
 # not a production master key. Call sites also have `gitleaks:allow`.
 [[allowlists]]
@@ -11,21 +19,27 @@ regexes = [
     '''nAmIvOXVc0vb6M9G7P9q2j2yK1WxP3sJ8q5dR4tU6wA=''',
 ]
 
-# Working-tree scan (`gitleaks detect --no-git`) does not honor
-# .gitignore; skip generated sources, caches, and install trees.
-# `task gitleaks` uses git mode, so a local .env is already skipped.
+# ==============================================================================
+# Generated Code, Mocks, Caches, and Build Artifacts
+# ==============================================================================
+# Working-tree scan (`gitleaks detect --no-git`) does not honor .gitignore;
+# skip generated sources, caches, install trees, and compiled bundles.
+# `task gitleaks` uses git mode, so local .env files are already skipped.
 [[allowlists]]
 description = "Generated sources, caches, and install trees"
 paths = [
-    '''(^|/)internal/database/record/''',
-    '''_templ\.go$''',
-    '''(^|/)internal/test/mock/''',
-    '''(^|/)test/mock/''',
-    '''(^|/)node_modules/''',
-    '''(^|/)internal/ui/static/''',
+    '''(^|/)\.entc/''',
     '''(^|/)\.git/''',
-    '''(^|/)\.tools/''',
     '''(^|/)\.task/''',
+    '''(^|/)\.tools/''',
     '''(^|/)bin/''',
     '''(^|/)data/''',
+    '''(^|/)node_modules/''',
+    '''(^|/)internal/database/record/''',
+    '''(^|/)internal/test/mock/''',
+    '''(^|/)internal/ui/assets\.go$''',
+    '''(^|/)internal/ui/static/''',
+    '''(^|/)test/mock/''',
+    '''_templ\.go$''',
+    '''codec_gen\.go$''',
 ]
