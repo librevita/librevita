@@ -1,0 +1,102 @@
+# ==============================================================================
+# Qlty configuration for LibreVita
+# Project: https://qlty.sh/gh/librevita/projects/librevita
+# Docs: https://docs.qlty.sh/cli/qlty-toml
+# ==============================================================================
+
+config_version = "0"
+
+# ==============================================================================
+# Analysis Exclusions (Generated code, mocks, build artifacts, tooling)
+# ==============================================================================
+exclude_patterns = [
+  ".entc/**",
+  ".githooks/**",
+  ".task/**",
+  ".tools/**",
+  "bin/**",
+  "data/**",
+  "internal/database/migrations/**",
+  "internal/database/record/**",
+  "internal/test/mock/**",
+  "internal/ui/assets.go",
+  "internal/ui/static/**",
+  "node_modules/**",
+  "pkg/ident/codec_gen.go",
+  "test/mock/**",
+  "**/*_templ.go",
+  "**/*.d.ts",
+  "*.min.*",
+  "*-min.*",
+  "*_min.*",
+]
+
+# ==============================================================================
+# Test Patterns
+# ==============================================================================
+test_patterns = [
+  "**/*_test.go",
+  "**/*_test.ts",
+]
+
+# ==============================================================================
+# Coverage Exclusions (Entrypoints and config files - aligns with Codecov)
+# ==============================================================================
+[coverage]
+ignores = [
+  "cmd/**",
+  "**/*.config.ts",
+]
+
+# ==============================================================================
+# Maintainability Checks
+# ==============================================================================
+[smells]
+mode = "comment"
+
+# ==============================================================================
+# Sources
+# ==============================================================================
+[[source]]
+name = "default"
+default = true
+
+# ==============================================================================
+# Plugins
+# ==============================================================================
+[[plugin]]
+name = "actionlint"
+
+[[plugin]]
+name = "gitleaks"
+
+[[plugin]]
+name = "gofmt"
+
+[[plugin]]
+name = "golangci-lint"
+mode = "comment"
+
+[[plugin]]
+name = "hadolint"
+
+[[plugin]]
+name = "osv-scanner"
+
+[[plugin]]
+name = "radarlint-go"
+mode = "monitor"
+
+[[plugin]]
+name = "radarlint-iac"
+mode = "monitor"
+
+[[plugin]]
+name = "ripgrep"
+mode = "comment"
+
+[[plugin]]
+name = "trufflehog"
+
+[[plugin]]
+name = "zizmor"
