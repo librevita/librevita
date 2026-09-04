@@ -4,4 +4,7 @@ internal/database/record/** linguist-generated=true
 internal/test/mock/** linguist-generated=true
 test/mock/** linguist-generated=true
 internal/ui/assets.go linguist-generated=true
+internal/ui/static/css/*.css linguist-generated=true
+internal/ui/static/js/*.js linguist-generated=true
+internal/ui/static/fonts/* binary linguist-generated=true
 pkg/ident/codec_gen.go linguist-generated=true

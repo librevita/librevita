@@ -46,12 +46,6 @@ data/
 # npm dependencies
 node_modules/
 
-# Generated frontend assets (build-time, see Taskfile frontend)
-internal/ui/static/css/*.css
-internal/ui/static/js/*.js
-internal/ui/static/fonts/*.woff
-internal/ui/static/fonts/*.woff2
-
 # Temp directories
 .entc/
 **/.entc/

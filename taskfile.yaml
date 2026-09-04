@@ -361,14 +361,9 @@ tasks:
     desc: Scan the module for known vulnerabilities (source analysis)
     deps:
       - tools
-      - gen
-      - frontend
     cmds:
       - 'PATH={{.ROOT_DIR}}/.tools/bin:$PATH govulncheck ./...'
-  # Scan the application binary for known vulnerabilities. The scanned
-  # artifact is compiled here with placeholder assets: govulncheck
-  # analyzes the Go code, not the embedded files, so the whole frontend
-  # pipeline is skipped (the scanned binary is never run). The build is
+  # Scan the application binary for known vulnerabilities. The build is
   # unsymbolized: with -s -w the call graph is unavailable and
   # govulncheck reports every vulnerability in the module graph -
   # including GO-2026-5932, the deprecated-by-design x/crypto/openpgp
@@ -379,10 +374,7 @@ tasks:
     desc: Scan the application binary for known vulnerabilities
     deps:
       - tools
-      - gen
     cmds:
-      - mkdir -p internal/ui/static/css internal/ui/static/js
-      - touch internal/ui/static/css/app.css internal/ui/static/js/placeholder.js
       - go build -o bin/{{.NAME}}-scan ./cmd/web
       - 'PATH={{.ROOT_DIR}}/.tools/bin:$PATH govulncheck -mode=binary bin/{{.NAME}}-scan'
     sources:
