@@ -32,9 +32,9 @@ ignore:
   - 'internal/database/record/**'
   - '.entc/**'
 
-  # Generated Mocks (Mockery)
-  - 'internal/test/mock/**'
-  - 'test/mock/**'
+  # Test helpers and mocks
+  - 'internal/test/**'
+  - 'test/**'
 
   # Generated Templ templates
   - '**/*_templ.go'

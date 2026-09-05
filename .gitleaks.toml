@@ -36,10 +36,10 @@ paths = [
     '''(^|/)data/''',
     '''(^|/)node_modules/''',
     '''(^|/)internal/database/record/''',
-    '''(^|/)internal/test/mock/''',
+    '''(^|/)internal/test/''',
     '''(^|/)internal/ui/assets\.go$''',
     '''(^|/)internal/ui/static/''',
-    '''(^|/)test/mock/''',
+    '''(^|/)test/''',
     '''_templ\.go$''',
     '''codec_gen\.go$''',
 ]
