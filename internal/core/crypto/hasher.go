@@ -7,9 +7,10 @@ import (
 	"hash"
 	"strings"
 
-	"github.com/cockroachdb/errors"
 	"golang.org/x/crypto/blake2b"
 	"golang.org/x/crypto/blake2s"
+
+	"librevita.org/pkg/errors"
 )
 
 // Supported hash algorithms in the allowlist.

@@ -5,8 +5,10 @@ package components
 
 //lint:file-ignore SA4006 This context is only used if a nested component is present.
 
-import "github.com/a-h/templ"
-import templruntime "github.com/a-h/templ/runtime"
+import (
+	"github.com/a-h/templ"
+	templruntime "github.com/a-h/templ/runtime"
+)
 
 // Icon renders a Material Symbols outlined glyph (24px grid, scaled by
 // the class) with the fill inherited via currentColor. The paths are the

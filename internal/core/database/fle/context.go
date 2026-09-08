@@ -5,9 +5,8 @@ import (
 	"encoding/json"
 	"sync"
 
-	"github.com/cockroachdb/errors"
-
 	"librevita.org/internal/core/crypto"
+	"librevita.org/pkg/errors"
 	"librevita.org/pkg/ident"
 	"librevita.org/pkg/urn"
 )

@@ -2,7 +2,6 @@ package http_test
 
 import (
 	"context"
-	"librevita.org/pkg/log"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -16,7 +15,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"librevita.org/pkg/ident"
 
 	"librevita.org/internal/core/audit"
 	"librevita.org/internal/core/auth"
@@ -33,6 +31,8 @@ import (
 	auditmocks "librevita.org/internal/test/mock/core/audit"
 	policymocks "librevita.org/internal/test/mock/core/policy"
 	modelmocks "librevita.org/internal/test/mock/domain/patient/model"
+	"librevita.org/pkg/ident"
+	"librevita.org/pkg/log"
 )
 
 type memRepo struct {

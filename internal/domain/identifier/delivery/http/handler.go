@@ -6,7 +6,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/cockroachdb/errors"
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 
@@ -16,6 +15,7 @@ import (
 	"librevita.org/internal/domain/identifier/delivery/views"
 	identifiermodel "librevita.org/internal/domain/identifier/model"
 	"librevita.org/internal/domain/identifier/usecase"
+	"librevita.org/pkg/errors"
 )
 
 // Handler serves HTTP endpoints for administering identifier systems.

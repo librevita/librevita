@@ -1,3 +1,5 @@
+//go:build !no_postgres && (!sqlite || postgres)
+
 // Package database provides the LibreVita connection factory.
 package database
 
@@ -6,10 +8,10 @@ import (
 	"database/sql"
 	"time"
 
-	"github.com/cockroachdb/errors"
 	_ "github.com/jackc/pgx/v5/stdlib" // registers "pgx" driver (pure Go, CGO-free)
 
 	"librevita.org/internal/core/config"
+	"librevita.org/pkg/errors"
 )
 
 const pgxDriver = "pgx"

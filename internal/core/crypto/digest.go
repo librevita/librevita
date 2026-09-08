@@ -8,7 +8,7 @@ import (
 	"hash"
 	"io"
 
-	"github.com/cockroachdb/errors"
+	"librevita.org/pkg/errors"
 )
 
 // NewDigest creates an unkeyed 256-bit hash engine using the specified or

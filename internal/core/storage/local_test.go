@@ -9,11 +9,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/cockroachdb/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"librevita.org/internal/core/crypto"
+	"librevita.org/pkg/errors"
 )
 
 // TestValidKey covers the key layout rules that both backends enforce.

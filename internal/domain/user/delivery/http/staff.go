@@ -7,7 +7,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/cockroachdb/errors"
 	"github.com/labstack/echo/v4"
 
 	"librevita.org/internal/core/audit"
@@ -16,6 +15,7 @@ import (
 	"librevita.org/internal/domain/user/delivery/views"
 	"librevita.org/internal/domain/user/usecase"
 	"librevita.org/internal/ui/components"
+	"librevita.org/pkg/errors"
 )
 
 // StaffPage lists the physician directory with their specialties,

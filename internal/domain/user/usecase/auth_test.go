@@ -10,7 +10,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"librevita.org/pkg/ident"
 
 	"librevita.org/internal/core/audit"
 	"librevita.org/internal/core/auth"
@@ -21,6 +20,7 @@ import (
 	auditmocks "librevita.org/internal/test/mock/core/audit"
 	authmocks "librevita.org/internal/test/mock/core/auth"
 	usermocks "librevita.org/internal/test/mock/domain/user/model"
+	"librevita.org/pkg/ident"
 	"librevita.org/pkg/log"
 )
 

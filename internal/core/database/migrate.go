@@ -7,11 +7,11 @@ import (
 	"io/fs"
 	"strings"
 
-	"github.com/cockroachdb/errors"
 	"github.com/pressly/goose/v3"
 
 	"librevita.org/internal/core/config"
 	"librevita.org/internal/database/migrations"
+	"librevita.org/pkg/errors"
 	"librevita.org/pkg/log"
 )
 

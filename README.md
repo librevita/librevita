@@ -52,7 +52,7 @@ Most clinical software treats privacy as a deployment checkbox: TLS in transit, 
 
 **SOAP is the chart; FHIR is a wire.** Clinicians reason about an `Episode` (narrative SOAP plus findings, problems, and plan items), encrypted with the Patient DEK. FHIR R4 is a **replaceable interop module** that maps that aggregate to a document Bundle. LibreVita is not a general-purpose FHIR server and does not persist FHIR JSON as the source of truth — a future R5 is another adapter, not a rewrite of the chart. See [ADR 0003](docs/adr/0003-hybrid-fhir-soap.md).
 
-**Authorization you can read and change.** Permissions are **CEL** expressions stored in the database, compiled, versioned, and edited at `/policies`. A broken expression is rejected; renaming a role that policies mention by name is rejected; `admin.view` cannot lock the last administrator out of the editor. The rules are bounded (no loops, no side effects) and auditable.
+**Authorization you can read and change.** Permissions are dynamic expressions (`expr-lang/expr`) stored in the database, compiled, versioned, and edited at `/policies`. A broken expression is rejected; renaming a role that policies mention by name is rejected; `admin.view` cannot lock the last administrator out of the editor. The rules are bounded (no loops, no side effects) and auditable.
 
 **Tamper-evident history, honestly scoped.** Clinical and security events append to a hash-chained `audit_log`. Triggers make the table append-only; `GET /audit/integrity` reports the first break. That is **tamper-evidence**, not a transparency log: someone with raw database write access can recompute the chain. Detection requires actually verifying.
 
@@ -60,14 +60,14 @@ Most clinical software treats privacy as a deployment checkbox: TLS in transit, 
 
 ## Architecture
 
-A request is classified by Host, authorized with CEL, then handled in a Clean Architecture domain. PHI never crosses into SQL or object storage in plaintext.
+A request is classified by Host, authorized by dynamic policies, then handled in a Clean Architecture domain. PHI never crosses into SQL or object storage in plaintext.
 
 ```mermaid
 flowchart LR
   Browser --> Echo
   Echo --> Host["Host slug / clinic_id"]
-  Host --> CEL["CEL policies"]
-  CEL --> Domain["Clean domain"]
+  Host --> Policy["Policy engine (Expr)"]
+  Policy --> Domain["Clean domain"]
   Domain --> FLE["Ent AL-FLE"]
   FLE --> DB["SQLite / Postgres / dqlite"]
   Domain --> KeyStore["KeyStore DEKs"]
@@ -146,7 +146,7 @@ flowchart TD
   - **`etcd`** — etcd v3 (`--keystore-etcd-endpoints`, `--keystore-etcd-prefix`).
   - **`vault`** — HashiCorp Vault / OpenBao KV v2 (`--keystore-vault-address`, `--keystore-vault-token`, `--keystore-vault-mount`, `--keystore-vault-prefix`). Hard-delete metadata purges support physical shredding. OpenBao uses the same adapter with `keystore.vault.address` pointed at it.
   - All backends implement `ConditionalKeyStore` (`PutIfAbsent`) and `BatchKeyStore` (`GetDEKs`).
-  Meta (`internal/core/meta`) and sessions (clinic + apex revocation) are **separate** KV stores (`meta.*`, `sessions.*`): bbolt, NATS, or etcd only — not Vault. Logical keys are `urn:librevita:meta:<key>`, `urn:librevita:clinic:<id>:session:<token_hash>`, and `urn:librevita:platform:session:<token_hash>`. See [ADR 0004](docs/adr/0004-partitioned-kv.md).
+    Meta (`internal/core/meta`) and sessions (clinic + apex revocation) are **separate** KV stores (`meta.*`, `sessions.*`): bbolt, NATS, or etcd only — not Vault. Logical keys are `urn:librevita:meta:<key>`, `urn:librevita:clinic:<id>:session:<token_hash>`, and `urn:librevita:platform:session:<token_hash>`. See [ADR 0004](docs/adr/0004-partitioned-kv.md).
 - **Crypto-shredding** — deleting a Patient DEK makes that patient's ciphertext unrecoverable. `POST /patients/:id/shred` also removes relational rows, blind indexes, encrypted attachments, and records a tombstone (`ErrKeyDestroyed`) so the key cannot be resurrected. `DeleteClinicDEK` shreds a clinic by invalidating child Patient DEKs wrapped by it.
 
 ### Transport, sessions, and abuse controls
@@ -159,14 +159,14 @@ Passwords are Argon2id. Sessions are **PASETO v4.local** (payload encrypted with
 
 LibreVita assumes the **application process** may see plaintext for the duration of an authorized request, then zeroizes keys and buffers. It does **not** assume that the database, object store, or a replica is confidential on its own.
 
-| Who / what | What they can do |
-| --- | --- |
+| Who / what                                                                    | What they can do                                                                                                                                        |
+| ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Database, SQL replica, or stolen `.db` / dump without keystore and master key | Read ciphertext, blind indexes, and metadata. Cannot decrypt PHI. Blind indexes allow equality (and token) queries, not recovery of names or documents. |
-| Object storage without Patient DEK | Read encrypted blobs. Cannot authenticate or decrypt attachments. |
-| Operator with `master_key` **and** the KeyStore | Unwrap Clinic DEKs and thus Patient DEKs. This is the installation owner. Protect the master key and keystore like a root of trust. |
-| Operator with the database **or** the keystore, but not both | Incomplete: wrapped DEKs without KEK, or KEK without wrapped DEKs. |
-| Clinic staff via the UI | Whatever CEL allows for that clinic host. Policies are data; keep `admin.view` and `patient.erase` tight. |
-| Attacker with Host + stolen host-only cookie | Acts as that user on that host until expiry or revocation — not on another clinic subdomain. |
+| Object storage without Patient DEK                                            | Read encrypted blobs. Cannot authenticate or decrypt attachments.                                                                                       |
+| Operator with `master_key` **and** the KeyStore                               | Unwrap Clinic DEKs and thus Patient DEKs. This is the installation owner. Protect the master key and keystore like a root of trust.                     |
+| Operator with the database **or** the keystore, but not both                  | Incomplete: wrapped DEKs without KEK, or KEK without wrapped DEKs.                                                                                      |
+| Clinic staff via the UI                                                       | Whatever policies allow for that clinic host. Policies are data; keep `admin.view` and `patient.erase` tight.                                           |
+| Attacker with Host + stolen host-only cookie                                  | Acts as that user on that host until expiry or revocation — not on another clinic subdomain.                                                            |
 
 Backups must keep the **clinical database**, the **KeyStore**, **meta** and **sessions** KV files, **`master_key`**, and **encrypted attachments** together. Restoring a dump without the matching keystore (or the reverse) leaves ciphertext that cannot be unwrapped, or wrapped DEKs with no rows. The master key is not stored in the keystore; treat it as the same root of trust.
 
@@ -176,7 +176,7 @@ How to generate those keys, terminate TLS, and put a reverse proxy in front: [Pr
 
 Security-relevant and clinical events (register, login, logout, policy denials, patient mutations, staff approvals, preference changes, chart views/writes) go to `audit_log` via `internal/core/audit`. The row records actor, action, resource, result, IP, request id, and a detail message. Passwords, tokens, and CSRF values are never stored. Each row carries a keyed digest chained to the previous entry (`crypto.NewDigestWithKey`); modifying or reordering a row breaks every following signature. Database triggers make the table append-only. `GET /audit/integrity` recomputes the chain and reports the first break. Rows are self-contained snapshots (actor name, role, user agent, resource name denormalized). Recording is best-effort and never fails the audited operation; per-resource history powers the patient detail page.
 
-**Threat model of the chain:** tamper-*evidence*, not tamper-proof. Anyone with write access to the database files can recompute the chain. The guarantee is that alteration is **detectable** if someone runs `/audit/integrity`. Stronger deployments should verify on a schedule and may later anchor the chain head in an external append-only store.
+**Threat model of the chain:** tamper-_evidence_, not tamper-proof. Anyone with write access to the database files can recompute the chain. The guarantee is that alteration is **detectable** if someone runs `/audit/integrity`. Stronger deployments should verify on a schedule and may later anchor the chain head in an external append-only store.
 
 ## Quick start
 
@@ -213,7 +213,9 @@ Full flags, production keys, TLS/DNS, and database drivers: [Production: keys, T
 ```sh
 task gen                    # regenerate Ent models, ident codecs, schema helpers, and templ views
 task dev                    # fast unoptimized binary (bin/librevita-dev)
-task build                  # optimized production binary (bin/librevita)
+task build                  # optimized production binary with both SQLite and Postgres (bin/librevita)
+task build-postgres         # PostgreSQL-only binary (bin/librevita-postgres, tags postgres, excludes SQLite)
+task build-sqlite           # SQLite-only binary (bin/librevita-sqlite, tags sqlite, excludes PostgreSQL)
 task image                  # OCI image (podman by default; task image -- IMG=docker)
 task test                   # Go test suite + frontend unit tests
 task vet                    # go vet
@@ -225,7 +227,7 @@ task cross -- os=linux arch=loong64
 task cross -- os=linux arch=mips64
 ```
 
-`task build` writes `bin/librevita`; `task dev` writes `bin/librevita-dev`. Cross builds write names such as `bin/librevita-linux-riscv64`. Every Go command uses the pinned toolchain with `CGO_ENABLED=0` (static binaries). `task gen` is a dependency of build, test, and vet; it also writes generated sources for the editor. Incremental work comes from the Go cache, the npm cache, and Taskfile `sources`/`generates` gates.
+`task build` writes `bin/librevita`; `task dev` writes `bin/librevita-dev`. Targeted database builds `task build-postgres` and `task build-sqlite` strip unused drivers via Go build tags, reducing binary size by up to ~18 MB (~31% vs baseline). Cross builds write names such as `bin/librevita-linux-riscv64`. Every Go command uses the pinned toolchain with `CGO_ENABLED=0` (static binaries). `task gen` is a dependency of build, test, and vet; it also writes generated sources for the editor. Incremental work comes from the Go cache, the npm cache, and Taskfile `sources`/`generates` gates.
 
 Pinned tools (templ, golangci-lint, govulncheck, osv-scanner, gitleaks, actionlint) install into `.tools/bin` from the bare Go toolchain (`task tools` / `task tools-osv` / `task tools-gitleaks` / `task tools-actionlint`), independent of application modules. hadolint and zizmor are pinned GitHub release binaries (`task tools-hadolint`, `task tools-zizmor`) with SHA-256 checks. `task frontend` runs `npm ci`, type-check, Tailwind, and esbuild, each gated on its own inputs.
 
@@ -542,7 +544,7 @@ task db-diff-sqlite -- name=changes      # SQLite only
 task db-diff-postgres -- name=changes    # PostgreSQL only
 ```
 
-`cmd/migrate` compares the Ent schema to existing migrations (`ModeReplay`) and writes a formatted Goose file.
+`cmd/migrate` compares the Ent schema to existing migrations (`ModeReplay`) and writes a formatted Goose file. Atlas (`ariga.io/atlas`) is strictly confined to `cmd/migrate` (build-time tooling) and is completely excluded from the runtime binary.
 
 ## HTTP surface
 
@@ -634,13 +636,13 @@ Base URL: `/fhir/r4`. Content-Type: `application/fhir+json`. Auth is the clinic 
 
 This is not a general-purpose FHIR server: no `$everything`, history, PATCH, SMART-on-FHIR, or MedicationRequest/ServiceRequest in this slice. A future R5 is a sibling module, not a rewrite of Episode.
 
-| Method | Route                                    | Purpose                                                      |
-| ------ | ---------------------------------------- | ------------------------------------------------------------ |
-| GET    | `/fhir/r4/metadata`                      | CapabilityStatement (`fhirVersion` 4.0.1)                    |
-| POST   | `/fhir/r4/Bundle`                        | SOAP document write (201 create / 200 update; 2 MiB limit)   |
-| GET    | `/fhir/r4/Composition/:id/$document`     | SOAP document Bundle (Encounter, Composition, children)      |
-| GET    | `/fhir/r4/Encounter/:id`                 | Encounter for one episode                                    |
-| GET    | `/fhir/r4/Encounter`                     | Search encounters by `patient`                               |
+| Method | Route                                | Purpose                                                    |
+| ------ | ------------------------------------ | ---------------------------------------------------------- |
+| GET    | `/fhir/r4/metadata`                  | CapabilityStatement (`fhirVersion` 4.0.1)                  |
+| POST   | `/fhir/r4/Bundle`                    | SOAP document write (201 create / 200 update; 2 MiB limit) |
+| GET    | `/fhir/r4/Composition/:id/$document` | SOAP document Bundle (Encounter, Composition, children)    |
+| GET    | `/fhir/r4/Encounter/:id`             | Encounter for one episode                                  |
+| GET    | `/fhir/r4/Encounter`                 | Search encounters by `patient`                             |
 
 ## Onboarding
 
@@ -650,7 +652,7 @@ LibreVita uses a two-phase onboarding workflow for multi-clinic shared-schema de
    When the installation is uninitialized, the apex redirects to `/setup`. That creates the first platform operator in `platform_users`. Operators then use `/clinics/new` to provision a clinic shell (slug, `clinic_id`, wrapped Clinic DEK `urn:librevita:clinic:<id>` in the KeyStore).
 
 2. **Clinic subdomain onboarding (`GET /setup` on `{slug}.{base_domain}`)**  
-   Until `clinic.onboarded_at` is set, clinic routes redirect to `/setup`. That creates the clinic administrator, seeds system roles, registers default CEL policies, activates opted-in identifier systems, and sets `onboarded_at`. Afterwards, `/setup` redirects to login. Setup is rate-limited to 5 attempts per minute per IP.
+   Until `clinic.onboarded_at` is set, clinic routes redirect to `/setup`. That creates the clinic administrator, seeds system roles, registers default policies, activates opted-in identifier systems, and sets `onboarded_at`. Afterwards, `/setup` redirects to login. Setup is rate-limited to 5 attempts per minute per IP.
 
 After onboarding, account creation is never public: `RequireAuth` plus `users.register`. The default restricts registration to `admin`; an operator can tighten it (`principal.email == 'hr@example.org'`) or close it (`false`). New accounts default to role `patient`; role assignment is an admin task.
 
@@ -664,9 +666,9 @@ Authentication lives in `internal/core/auth` (transport-agnostic) with HTTP adap
 - `LIBREVITA_PASETO_KEY` (base64, 32 bytes) is required outside `development`. Only `development` may use an ephemeral key (sessions reset on restart). Labels such as `staging` or `prod` are treated as persistent
 - Concurrent Argon2id operations are bounded by `--auth-max-concurrent-hashes` (default 4, ~64 MiB each)
 - CSRF uses double-submit. Forms post `_csrf`; HTMX and fetch send `X-CSRF-Token`
-- Authorization is CEL in `internal/core/policy`. Roles are rows in `roles`: system roles `admin`, `physician`, `receptionist`, `patient` are seeded at onboarding; administrators add custom roles or mark roles as clinical. Expressions are compiled at startup and evaluated per request. `RequireAuth` redirects anonymous browsers to login; `RequirePolicy(name)` returns RFC 7807 `403` on deny. Resource-level policies receive `resource` and are enforced in use cases (`patient.edit`, `patient.view`, `chart.view`, `calendar.view`, `patient.document.read`)
+- Authorization uses dynamic expressions (`github.com/expr-lang/expr`) in `internal/core/policy`. Roles are rows in `roles`: system roles `admin`, `physician`, `receptionist`, `patient` are seeded at onboarding; administrators add custom roles or mark roles as clinical. Expressions are compiled at startup and evaluated per request. `RequireAuth` redirects anonymous browsers to login; `RequirePolicy(name)` returns RFC 7807 `403` on deny. Resource-level policies receive `resource` and are enforced in use cases (`patient.edit`, `patient.view`, `chart.view`, `calendar.view`, `patient.document.read`)
 
-CEL (`github.com/google/cel-go`) is non-Turing-complete: no loops, recursion, or side effects. Policy variables:
+The expression language (`github.com/expr-lang/expr`) is non-Turing-complete: no loops, recursion, or side effects. Policy variables:
 
 - `principal` — `id`, `email`, `name`, `role`, `clinic_id`, `patient_id`
 - `request` — `method`, `path`
@@ -705,7 +707,7 @@ Abuse controls:
 
 ### Typed entity IDs (`pkg/ident`)
 
-Entity primary keys and foreign keys are defined types over UUIDv7 (`ident.PatientID`, `ident.ClinicID`, and the rest). SQL columns stay UUID. HTTP and FHIR parse path/form strings at the edge; CEL, views, and `auth.Principal` stay strings. Resource URNs in `pkg/urn` take these types.
+Entity primary keys and foreign keys are defined types over UUIDv7 (`ident.PatientID`, `ident.ClinicID`, and the rest). SQL columns stay UUID. HTTP and FHIR parse path/form strings at the edge; policies, views, and `auth.Principal` stay strings. Resource URNs in `pkg/urn` take these types.
 
 - **`types.go`** — source of truth; every declaration is `type NameID uuid.UUID` (defined type, not alias)
 - **`task gen`** — writes `codec_gen.go` (SQL `Scan`/`Value`, text marshal, `ParseClinic` / `MustParsePatient`, …; not committed)
@@ -720,8 +722,9 @@ Input validation is a standalone, zero-dependency package, decoupled from infras
 - **i18n** — codes such as `validation.required`, `validation.max_runes`, `validation.invalid_email`, catalogs for `en` and `pt-BR`, locale from `validator.FromContext(ctx)`. That is field-error copy only; page chrome stays English
 - **`Validatable`** — domain enums (`patientmodel.Sex`, `auth.UITheme`) via `Valid() bool`
 
-### Error handling (`github.com/cockroachdb/errors`)
+### Error handling (`librevita.org/pkg/errors`)
 
+- **Zero external dependencies**: native Go 1.13+ error wrapping (`errors.Is`, `errors.As`, `errors.Unwrap`, `errors.Join`) without protobuf or gRPC serialization baggage
 - Stack traces captured at origin, preserved through `Wrap` / `Wrapf`, available in `%+v` server logs without leaking internals to clients
 - `errors.WithSecondaryError` keeps driver traces while `errors.Is` still matches domain sentinels (`ErrNotFound`)
 - `errors.WithHint` feeds the `hint` field of RFC 7807 JSON and HTML error pages (`ProblemErrorHandler`)
@@ -777,7 +780,7 @@ LibreVita was founded with an ethical mission: to defend clinical privacy, ensur
 2. **No "Bait-and-Switch" or Relicensing**:
    - We will **never** relicense this codebase under proprietary, closed-source, or restrictive "source-available" licenses (such as BSL, SSPL, or commercial dual-licensing traps).
 3. **No "Open-Core" Trap**:
-   - There is not and will never be an artificial "Enterprise Edition" with paywalled security or clinical features. 100% of our codebase — including application-layer field encryption, Blind Indexing, the CEL policy engine, and audit verification — is completely free and available to all.
+   - There is not and will never be an artificial "Enterprise Edition" with paywalled security or clinical features. 100% of our codebase — including application-layer field encryption, Blind Indexing, the dynamic policy engine, and audit verification — is completely free and available to all.
 4. **Inbound = Outbound Community Integrity**:
    - All contributions from the community are accepted under the same AGPL-3.0-or-later terms for the perpetual benefit of the global commons. We will never require predatory Contributor License Agreements (CLAs) that transfer copyright ownership to enable closed-source commercial forks.
 

@@ -12,10 +12,11 @@ import (
 	"io"
 	"sort"
 
-	"github.com/cockroachdb/errors"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
+
 	"librevita.org/internal/core/crypto"
+	"librevita.org/pkg/errors"
 )
 
 // S3Config selects and authenticates the S3-compatible endpoint.

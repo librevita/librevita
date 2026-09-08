@@ -3,15 +3,14 @@ package usecase
 
 import (
 	"context"
-	"librevita.org/pkg/log"
 	"strings"
-
-	"github.com/cockroachdb/errors"
 
 	"librevita.org/internal/core/audit"
 	"librevita.org/internal/core/auth"
 	"librevita.org/internal/core/clinicctx"
+	"librevita.org/pkg/errors"
 	"librevita.org/pkg/ident"
+	"librevita.org/pkg/log"
 	"librevita.org/pkg/validator"
 )
 

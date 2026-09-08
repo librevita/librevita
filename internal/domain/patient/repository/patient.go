@@ -6,7 +6,6 @@ import (
 
 	entsql "entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqljson"
-	"github.com/cockroachdb/errors"
 
 	"librevita.org/internal/core/crypto"
 	"librevita.org/internal/core/database"
@@ -19,6 +18,7 @@ import (
 	"librevita.org/internal/database/record/planitem"
 	"librevita.org/internal/database/record/problem"
 	patientmodel "librevita.org/internal/domain/patient/model"
+	"librevita.org/pkg/errors"
 	"librevita.org/pkg/flow"
 	"librevita.org/pkg/ident"
 )

@@ -21,9 +21,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cockroachdb/errors"
-
 	"librevita.org/internal/core/crypto"
+	"librevita.org/pkg/errors"
 )
 
 const metaDir = ".meta"

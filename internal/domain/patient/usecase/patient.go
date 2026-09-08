@@ -6,14 +6,13 @@ import (
 	"context"
 	"strings"
 
-	"github.com/cockroachdb/errors"
-
 	"librevita.org/internal/core/auth"
 	"librevita.org/internal/core/crypto"
 	"librevita.org/internal/core/database/fle"
 	normalizer "librevita.org/internal/core/normalize"
 	"librevita.org/internal/core/policy"
 	patientmodel "librevita.org/internal/domain/patient/model"
+	"librevita.org/pkg/errors"
 	"librevita.org/pkg/flow"
 	"librevita.org/pkg/ident"
 	"librevita.org/pkg/validator"

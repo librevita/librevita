@@ -9,10 +9,10 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
-	"librevita.org/pkg/ident"
 
 	"librevita.org/internal/core/crypto"
 	"librevita.org/internal/core/keystore"
+	"librevita.org/pkg/ident"
 )
 
 func BenchmarkBatchPatientDEKResolution(b *testing.B) {

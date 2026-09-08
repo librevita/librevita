@@ -18,7 +18,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cockroachdb/errors"
+	"librevita.org/pkg/errors"
 )
 
 // ErrNotFound is returned when the object does not exist. Use

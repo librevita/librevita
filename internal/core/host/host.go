@@ -5,9 +5,8 @@ import (
 	"net"
 	"strings"
 
-	"github.com/cockroachdb/errors"
-
 	"librevita.org/internal/core/clinicctx"
+	"librevita.org/pkg/errors"
 )
 
 var (

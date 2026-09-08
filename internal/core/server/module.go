@@ -7,12 +7,12 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/cockroachdb/errors"
 	"github.com/labstack/echo/v4"
 	"go.uber.org/fx"
 
 	"librevita.org/internal/core/auth"
 	"librevita.org/internal/core/config"
+	"librevita.org/pkg/errors"
 	"librevita.org/pkg/log"
 )
 

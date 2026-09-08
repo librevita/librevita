@@ -10,7 +10,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"librevita.org/pkg/ident"
 
 	"librevita.org/internal/core/clinicctx"
 	"librevita.org/internal/core/config"
@@ -20,6 +19,7 @@ import (
 	clinichttp "librevita.org/internal/domain/clinic/delivery/http"
 	"librevita.org/internal/domain/clinic/model"
 	modelmocks "librevita.org/internal/test/mock/domain/clinic/model"
+	"librevita.org/pkg/ident"
 	"librevita.org/pkg/log"
 )
 

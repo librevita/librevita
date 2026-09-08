@@ -5,6 +5,7 @@ import (
 	"text/template"
 
 	"entgo.io/ent/entc/gen"
+
 	"librevita.org/internal/core/database/fle"
 )
 
@@ -142,7 +143,7 @@ const fleTemplate = `
 import (
 	"context"
 
-	"github.com/cockroachdb/errors"
+	"librevita.org/pkg/errors"
 
 	"librevita.org/internal/core/crypto"
 	"librevita.org/internal/core/database/fle"

@@ -7,7 +7,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/cockroachdb/errors"
 	"github.com/labstack/echo/v4"
 
 	"librevita.org/internal/core/audit"
@@ -15,6 +14,7 @@ import (
 	"librevita.org/internal/core/server"
 	episodemodel "librevita.org/internal/domain/episode/model"
 	"librevita.org/internal/domain/episode/usecase"
+	"librevita.org/pkg/errors"
 	"librevita.org/pkg/ident"
 	"librevita.org/pkg/log"
 )

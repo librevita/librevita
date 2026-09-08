@@ -10,7 +10,6 @@ import (
 	entsql "entgo.io/ent/dialect/sql"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"librevita.org/pkg/ident"
 	_ "modernc.org/sqlite"
 
 	"librevita.org/internal/core/clinicctx"
@@ -20,6 +19,7 @@ import (
 	"librevita.org/internal/database/record"
 	"librevita.org/internal/database/record/enttest"
 	"librevita.org/internal/database/record/user"
+	"librevita.org/pkg/ident"
 )
 
 func TestCrossClinicUsersAndFLE(t *testing.T) {

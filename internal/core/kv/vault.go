@@ -6,8 +6,9 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/cockroachdb/errors"
 	"github.com/hashicorp/vault/api"
+
+	"librevita.org/pkg/errors"
 )
 
 // VaultStore is a Store backed by HashiCorp Vault / OpenBao KV v2.

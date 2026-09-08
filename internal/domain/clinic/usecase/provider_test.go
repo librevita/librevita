@@ -7,12 +7,12 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"librevita.org/pkg/ident"
 
 	"librevita.org/internal/core/clinicctx"
 	"librevita.org/internal/domain/clinic/model"
 	"librevita.org/internal/domain/clinic/usecase"
 	mocks "librevita.org/internal/test/mock/domain/clinic/model"
+	"librevita.org/pkg/ident"
 )
 
 func TestClockProviderReadsClinicZone(t *testing.T) {

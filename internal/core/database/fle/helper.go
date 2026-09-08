@@ -6,8 +6,9 @@ import (
 	"encoding/json"
 
 	"entgo.io/ent/schema/field"
-	"github.com/cockroachdb/errors"
+
 	"librevita.org/internal/core/crypto"
+	"librevita.org/pkg/errors"
 )
 
 // EncryptedValueScanner implements field.TypeValueScanner[string] for transparent field encryption.

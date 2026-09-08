@@ -2,14 +2,14 @@ package database
 
 import (
 	"database/sql"
-	"librevita.org/pkg/log"
 
 	"entgo.io/ent/dialect"
 	entsql "entgo.io/ent/dialect/sql"
-	"github.com/cockroachdb/errors"
 
 	"librevita.org/internal/core/config"
 	"librevita.org/internal/database/record"
+	"librevita.org/pkg/errors"
+	"librevita.org/pkg/log"
 )
 
 // Store is the persistence handle produced by the factory.

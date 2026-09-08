@@ -6,21 +6,21 @@ import (
 	"html"
 	"image"
 	"image/color"
-	"image/draw"
+	_ "image/gif"
+	"image/jpeg"
+	_ "image/png"
 	"io"
 	"net/http"
 	"strconv"
 	"strings"
 
-	"github.com/cockroachdb/errors"
-	"github.com/disintegration/imaging"
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
-	// The standard library registers png, jpeg and gif (through
-	// imaging); the extra sniffed formats need their supplementary
-	// decoders registered here or processAvatar would reject bmp, tiff
-	// and webp uploads as undecodable.
+	// The standard library registers png, jpeg and gif; the extra sniffed
+	// formats need their supplementary decoders registered here or
+	// processAvatar would reject bmp, tiff and webp uploads as undecodable.
 	_ "golang.org/x/image/bmp"
+	"golang.org/x/image/draw"
 	_ "golang.org/x/image/tiff"
 	_ "golang.org/x/image/webp"
 
@@ -30,6 +30,7 @@ import (
 	"librevita.org/internal/core/storage"
 	"librevita.org/internal/domain/user/usecase"
 	"librevita.org/internal/ui/shared"
+	"librevita.org/pkg/errors"
 	"librevita.org/pkg/log"
 )
 
@@ -330,23 +331,38 @@ func processAvatar(payload []byte) ([]byte, error) {
 		return nil, errors.New("the image dimensions exceed the limit")
 	}
 
-	src, err := imaging.Decode(bytes.NewReader(payload))
+	src, _, err := image.Decode(bytes.NewReader(payload))
 	if err != nil {
 		return nil, errors.New("the file is not a decodable image")
 	}
-	var img image.Image = imaging.Thumbnail(src, avatarSize, avatarSize, imaging.Lanczos)
 
+	bounds := src.Bounds()
+	w := bounds.Dx()
+	h := bounds.Dy()
+	var cropRect image.Rectangle
+	if w > h {
+		offset := (w - h) / 2
+		cropRect = image.Rect(bounds.Min.X+offset, bounds.Min.Y, bounds.Min.X+offset+h, bounds.Max.Y)
+	} else {
+		offset := (h - w) / 2
+		cropRect = image.Rect(bounds.Min.X, bounds.Min.Y+offset, bounds.Max.X, bounds.Min.Y+offset+w)
+	}
+
+	dst := image.NewRGBA(image.Rect(0, 0, avatarSize, avatarSize))
+	draw.CatmullRom.Scale(dst, dst.Bounds(), src, cropRect, draw.Over, nil)
+
+	var img image.Image = dst
 	// JPEG has no alpha channel: opaque sources encode as-is, sources
 	// with transparency are composed over white first.
-	if opaque, ok := img.(interface{ Opaque() bool }); !ok || !opaque.Opaque() {
+	if opaque, ok := src.(interface{ Opaque() bool }); !ok || !opaque.Opaque() {
 		bg := image.NewRGBA(image.Rect(0, 0, avatarSize, avatarSize))
 		draw.Draw(bg, bg.Bounds(), image.NewUniform(color.White), image.Point{}, draw.Src)
-		draw.Draw(bg, bg.Bounds(), img, image.Point{}, draw.Over)
+		draw.Draw(bg, bg.Bounds(), dst, image.Point{}, draw.Over)
 		img = bg
 	}
 
 	var out bytes.Buffer
-	if err := imaging.Encode(&out, img, imaging.JPEG, imaging.JPEGQuality(avatarJPEGQuality)); err != nil {
+	if err := jpeg.Encode(&out, img, &jpeg.Options{Quality: avatarJPEGQuality}); err != nil {
 		return nil, errors.New("the image could not be processed")
 	}
 	return out.Bytes(), nil

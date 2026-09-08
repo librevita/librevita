@@ -4,9 +4,8 @@ package meta
 import (
 	"context"
 
-	"github.com/cockroachdb/errors"
-
 	"librevita.org/internal/core/kv"
+	"librevita.org/pkg/errors"
 	"librevita.org/pkg/urn"
 )
 

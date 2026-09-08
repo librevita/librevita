@@ -1,6 +1,6 @@
 package model
 
-import "github.com/cockroachdb/errors"
+import "librevita.org/pkg/errors"
 
 // Domain errors.
 var (

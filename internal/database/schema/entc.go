@@ -8,9 +8,11 @@ import (
 
 	"entgo.io/ent/entc/gen"
 	"entgo.io/ent/entc/load"
-	"github.com/cockroachdb/errors"
+
 	"librevita.org/internal/database/codegen/check"
+	clientcodegen "librevita.org/internal/database/codegen/client"
 	"librevita.org/internal/database/codegen/fle"
+	"librevita.org/pkg/errors"
 )
 
 func main() {
@@ -38,6 +40,7 @@ func runCodegen(schemaDir, targetDir string) error {
 		Target:  targetDir,
 		Templates: []*gen.Template{
 			fle.Template,
+			clientcodegen.Template,
 		},
 		Features: []gen.Feature{
 			{Name: "sql/versioned-migration"},

@@ -1,7 +1,7 @@
 package crypto
 
 import (
-	"github.com/cockroachdb/errors"
+	"librevita.org/pkg/errors"
 )
 
 // KeyEnvelopeVersion identifies the envelope format used for wrapped DEKs.

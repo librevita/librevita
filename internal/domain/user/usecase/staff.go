@@ -5,8 +5,7 @@ import (
 	"encoding/json"
 	"strings"
 
-	"github.com/cockroachdb/errors"
-
+	"librevita.org/pkg/errors"
 	"librevita.org/pkg/ident"
 )
 

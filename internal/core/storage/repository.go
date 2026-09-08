@@ -3,12 +3,12 @@ package storage
 import (
 	"context"
 
-	"github.com/cockroachdb/errors"
 	"github.com/google/uuid"
 
 	"librevita.org/internal/core/clinicctx"
 	"librevita.org/internal/database/record"
 	"librevita.org/internal/database/record/storageobject"
+	"librevita.org/pkg/errors"
 	"librevita.org/pkg/ident"
 )
 

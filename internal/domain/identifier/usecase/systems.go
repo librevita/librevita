@@ -4,9 +4,8 @@ import (
 	"context"
 	"strings"
 
-	"github.com/cockroachdb/errors"
-
 	identifiermodel "librevita.org/internal/domain/identifier/model"
+	"librevita.org/pkg/errors"
 	"librevita.org/pkg/ident"
 	"librevita.org/pkg/urn"
 )

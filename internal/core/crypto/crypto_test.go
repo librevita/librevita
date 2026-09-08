@@ -12,11 +12,11 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/fx"
 	"go.uber.org/fx/fxtest"
-	"librevita.org/pkg/ident"
 
 	"librevita.org/internal/core/config"
 	"librevita.org/internal/core/crypto"
 	"librevita.org/internal/core/keystore"
+	"librevita.org/pkg/ident"
 	"librevita.org/pkg/log"
 	"librevita.org/pkg/urn"
 )

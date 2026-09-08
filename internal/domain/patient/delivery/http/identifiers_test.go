@@ -2,7 +2,6 @@ package http
 
 import (
 	"context"
-	"librevita.org/pkg/log"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -11,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cockroachdb/errors"
 	"github.com/labstack/echo/v4"
 
 	"librevita.org/internal/core/audit"
@@ -32,7 +30,9 @@ import (
 	patientrepo "librevita.org/internal/domain/patient/repository"
 	"librevita.org/internal/domain/patient/usecase"
 	"librevita.org/internal/test"
+	"librevita.org/pkg/errors"
 	"librevita.org/pkg/ident"
+	"librevita.org/pkg/log"
 	"librevita.org/pkg/urn"
 )
 

@@ -22,9 +22,9 @@ import (
 	"hash"
 	"io"
 
-	"github.com/cockroachdb/errors"
 	"golang.org/x/crypto/hkdf"
 
+	"librevita.org/pkg/errors"
 	"librevita.org/pkg/urn"
 )
 

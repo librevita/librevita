@@ -4,8 +4,9 @@ import (
 	"crypto/cipher"
 	"strings"
 
-	"github.com/cockroachdb/errors"
 	"golang.org/x/crypto/chacha20poly1305"
+
+	"librevita.org/pkg/errors"
 )
 
 // Supported encryption ciphers and magic byte identifiers.

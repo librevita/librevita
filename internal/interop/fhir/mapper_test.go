@@ -7,9 +7,9 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"librevita.org/pkg/ident"
 
 	episodemodel "librevita.org/internal/domain/episode/model"
+	"librevita.org/pkg/ident"
 )
 
 func TestSOAPBundleRoundTrip(t *testing.T) {

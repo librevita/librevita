@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/cockroachdb/errors"
+	"librevita.org/pkg/errors"
 )
 
 func (c *Config) normalize() {

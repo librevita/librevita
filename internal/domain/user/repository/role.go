@@ -3,13 +3,12 @@ package repository
 import (
 	"context"
 
-	"github.com/cockroachdb/errors"
-
 	"librevita.org/internal/core/clinicctx"
 	"librevita.org/internal/database/record"
 	"librevita.org/internal/database/record/role"
 	"librevita.org/internal/database/record/user"
 	usermodel "librevita.org/internal/domain/user/model"
+	"librevita.org/pkg/errors"
 	"librevita.org/pkg/ident"
 )
 

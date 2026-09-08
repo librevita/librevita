@@ -9,9 +9,6 @@ import (
 	"log"
 	"reflect"
 
-	"librevita.org/internal/database/record/migrate"
-	"librevita.org/pkg/ident"
-
 	"entgo.io/ent"
 	"entgo.io/ent/dialect"
 	"entgo.io/ent/dialect/sql"
@@ -35,13 +32,12 @@ import (
 	"librevita.org/internal/database/record/staffchangerequest"
 	"librevita.org/internal/database/record/storageobject"
 	"librevita.org/internal/database/record/user"
+	"librevita.org/pkg/ident"
 )
 
 // Client is the client that holds all ent builders.
 type Client struct {
 	config
-	// Schema is the client for creating, migrating and dropping schema.
-	Schema *migrate.Schema
 	// AccessPolicy is the client for interacting with the AccessPolicy builders.
 	AccessPolicy *AccessPolicyClient
 	// AccessPolicyVersion is the client for interacting with the AccessPolicyVersion builders.
@@ -90,7 +86,6 @@ func NewClient(opts ...Option) *Client {
 }
 
 func (c *Client) init() {
-	c.Schema = migrate.NewSchema(c.driver)
 	c.AccessPolicy = NewAccessPolicyClient(c.config)
 	c.AccessPolicyVersion = NewAccessPolicyVersionClient(c.config)
 	c.Appointment = NewAppointmentClient(c.config)
@@ -4066,3 +4061,8 @@ type (
 		StaffChangeRequest, StorageObject, User []ent.Interceptor
 	}
 )
+
+// Driver returns the underlying ent driver.
+func (c *Client) Driver() dialect.Driver {
+	return c.driver
+}

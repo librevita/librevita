@@ -5,10 +5,9 @@ package keystore
 import (
 	"context"
 
-	"github.com/cockroachdb/errors"
-
 	"librevita.org/internal/core/crypto"
 	"librevita.org/internal/core/kv"
+	"librevita.org/pkg/errors"
 )
 
 type store struct {

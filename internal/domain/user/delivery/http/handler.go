@@ -3,12 +3,10 @@ package http
 
 import (
 	"context"
-	"librevita.org/pkg/log"
 	"net/http"
 	"strconv"
 	"strings"
 
-	"github.com/cockroachdb/errors"
 	"github.com/labstack/echo/v4"
 
 	"librevita.org/internal/core/audit"
@@ -25,7 +23,9 @@ import (
 	"librevita.org/internal/domain/user/delivery/views"
 	"librevita.org/internal/domain/user/usecase"
 	"librevita.org/internal/ui/components"
+	"librevita.org/pkg/errors"
 	"librevita.org/pkg/ident"
+	"librevita.org/pkg/log"
 )
 
 // Handler renders the auth pages and processes form submissions.

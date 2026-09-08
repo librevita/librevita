@@ -6,19 +6,18 @@ import (
 	"testing"
 	"time"
 
-	"librevita.org/pkg/log"
-
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"librevita.org/pkg/ident"
 
 	"librevita.org/internal/core/crypto"
 	identifiermodel "librevita.org/internal/domain/identifier/model"
 	"librevita.org/internal/domain/identifier/usecase"
 	cryptomocks "librevita.org/internal/test/mock/core/crypto"
 	identifiermocks "librevita.org/internal/test/mock/domain/identifier/model"
+	"librevita.org/pkg/ident"
+	"librevita.org/pkg/log"
 	"librevita.org/pkg/urn"
 )
 

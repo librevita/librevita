@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/cockroachdb/errors"
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 
@@ -18,6 +17,7 @@ import (
 	"librevita.org/internal/core/storage"
 	"librevita.org/internal/domain/patient/delivery/views"
 	"librevita.org/internal/domain/patient/usecase"
+	"librevita.org/pkg/errors"
 	"librevita.org/pkg/urn"
 )
 

@@ -4,11 +4,10 @@ import (
 	"context"
 	"time"
 
-	"github.com/cockroachdb/errors"
-
 	"librevita.org/internal/database/record"
 	"librevita.org/internal/database/record/clinic"
 	"librevita.org/internal/domain/clinic/model"
+	"librevita.org/pkg/errors"
 	"librevita.org/pkg/ident"
 )
 

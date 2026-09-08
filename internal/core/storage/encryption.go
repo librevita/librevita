@@ -4,8 +4,8 @@ import (
 	"encoding/binary"
 	"io"
 
-	"github.com/cockroachdb/errors"
 	"librevita.org/internal/core/crypto"
+	"librevita.org/pkg/errors"
 )
 
 const (

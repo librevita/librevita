@@ -6,10 +6,10 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/cockroachdb/errors"
 	"golang.org/x/crypto/argon2"
 
 	"librevita.org/internal/core/crypto"
+	"librevita.org/pkg/errors"
 )
 
 // Argon2id parameters. The memory cost must stay a power of two.

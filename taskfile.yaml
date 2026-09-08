@@ -521,6 +521,26 @@ tasks:
       - upx --best --lzma bin/{{.NAME}}
     generates:
       - bin/{{.NAME}}
+  # Build PostgreSQL-only binary (excludes SQLite).
+  build-postgres:
+    desc: Build the optimized production binary with PostgreSQL only (bin/{{.NAME}}-postgres)
+    deps:
+      - gen
+      - frontend
+    cmds:
+      - go build -tags postgres -trimpath -ldflags="-s -w -buildid=" -o bin/{{.NAME}}-postgres ./cmd/web
+    generates:
+      - bin/{{.NAME}}-postgres
+  # Build SQLite-only binary (excludes PostgreSQL).
+  build-sqlite:
+    desc: Build the optimized production binary with SQLite only (bin/{{.NAME}}-sqlite)
+    deps:
+      - gen
+      - frontend
+    cmds:
+      - go build -tags sqlite -trimpath -ldflags="-s -w -buildid=" -o bin/{{.NAME}}-sqlite ./cmd/web
+    generates:
+      - bin/{{.NAME}}-sqlite
   # Fast, unoptimized binary for the development loop: bin/NAME-dev.
   # Uses the unminified dev assets (source map) instead of the
   # production frontend, which would clobber them.

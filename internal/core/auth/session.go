@@ -9,12 +9,12 @@ import (
 	"time"
 
 	"aidanwoods.dev/go-paseto"
-	"github.com/cockroachdb/errors"
 	"github.com/google/uuid"
 
 	"librevita.org/internal/core/clinicctx"
 	"librevita.org/internal/core/config"
 	"librevita.org/internal/core/crypto"
+	"librevita.org/pkg/errors"
 	"librevita.org/pkg/ident"
 	"librevita.org/pkg/log"
 )

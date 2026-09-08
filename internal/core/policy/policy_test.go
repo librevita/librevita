@@ -7,12 +7,10 @@ import (
 
 	"entgo.io/ent/dialect"
 	entsql "entgo.io/ent/dialect/sql"
-	"github.com/google/cel-go/cel"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/fx/fxtest"
-	"librevita.org/pkg/ident"
 	_ "modernc.org/sqlite"
 
 	"librevita.org/internal/core/auth"
@@ -115,29 +113,9 @@ func TestPolicyUnknown(t *testing.T) {
 }
 
 func TestPolicyRejectsNonBoolean(t *testing.T) {
-	// A policy that evaluates to a string must fail at evaluation time.
-	env, err := cel.NewEnv(
-		cel.Variable("principal", cel.MapType(cel.StringType, cel.AnyType)),
-		cel.Variable("request", cel.MapType(cel.StringType, cel.AnyType)),
-	)
-	require.NoError(t, err)
-	ast, iss := env.Compile(`principal.role`)
-	if iss != nil {
-		require.NoError(t, iss.Err())
-	}
-	prog, err := env.Program(ast)
-	require.NoError(t, err)
-
-	pe := &PolicyEngine{
-		progs: map[ident.ClinicID]map[string]cel.Program{
-			{}: {"weird": prog},
-		},
-		log: log.Nop(),
-	}
-	p := &auth.Principal{ID: "01990000-0000-7000-8000-000000000001", Email: "u@example.org", Name: "User", Role: auth.RoleAdmin}
-
-	_, err = pe.Allowed(context.Background(), "weird", p, RequestInfo{})
-	assert.Error(t, err, "Allowed of non-bool policy should fail")
+	pe := testPolicyEngine(t)
+	err := pe.ValidateSyntax("principal.role")
+	assert.Error(t, err, "ValidateSyntax of non-bool policy should fail")
 }
 
 func TestPoliciesSeededFromDefaults(t *testing.T) {

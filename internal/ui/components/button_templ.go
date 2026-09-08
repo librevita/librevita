@@ -5,10 +5,12 @@ package components
 
 //lint:file-ignore SA4006 This context is only used if a nested component is present.
 
-import "github.com/a-h/templ"
-import templruntime "github.com/a-h/templ/runtime"
+import (
+	"github.com/a-h/templ"
+	templruntime "github.com/a-h/templ/runtime"
 
-import "librevita.org/internal/ui/shared"
+	"librevita.org/internal/ui/shared"
+)
 
 // Button renders a styled button. kind selects the style class
 // ("primary", "secondary" or "danger"). Pass type ("submit" for form

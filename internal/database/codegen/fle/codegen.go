@@ -4,8 +4,9 @@ import (
 	"entgo.io/ent/entc/gen"
 	"entgo.io/ent/entc/load"
 	"entgo.io/ent/schema/field"
-	"github.com/cockroachdb/errors"
+
 	"librevita.org/internal/core/database/fle"
+	"librevita.org/pkg/errors"
 )
 
 // Generate runs the Ent code generation pipeline with automatic Field-Level Encryption blind index injection.

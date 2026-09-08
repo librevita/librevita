@@ -77,7 +77,8 @@ func migrateSchema(t TestingT, c *record.Client, o *options) {
 		t.Error(err)
 		t.FailNow()
 	}
-	if err := migrate.Create(context.Background(), c.Schema, tables, o.migrateOpts...); err != nil {
+	s := migrate.NewSchema(c.Driver())
+	if err := migrate.Create(context.Background(), s, tables, o.migrateOpts...); err != nil {
 		t.Error(err)
 		t.FailNow()
 	}

@@ -6,7 +6,7 @@ package kv
 import (
 	"context"
 
-	"github.com/cockroachdb/errors"
+	"librevita.org/pkg/errors"
 )
 
 var (

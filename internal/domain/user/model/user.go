@@ -3,8 +3,7 @@ package model
 import (
 	"time"
 
-	"github.com/cockroachdb/errors"
-
+	"librevita.org/pkg/errors"
 	"librevita.org/pkg/ident"
 )
 

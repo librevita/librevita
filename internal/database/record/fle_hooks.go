@@ -5,7 +5,7 @@ package record
 import (
 	"context"
 
-	"github.com/cockroachdb/errors"
+	"librevita.org/pkg/errors"
 
 	"librevita.org/internal/core/crypto"
 	"librevita.org/internal/core/database/fle"

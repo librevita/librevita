@@ -4,11 +4,11 @@ import (
 	"context"
 	"path/filepath"
 
-	"github.com/cockroachdb/errors"
 	"go.uber.org/fx"
 
 	"librevita.org/internal/core/config"
 	"librevita.org/internal/core/kv"
+	"librevita.org/pkg/errors"
 	"librevita.org/pkg/log"
 )
 

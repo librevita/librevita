@@ -5,10 +5,10 @@ import (
 	"regexp"
 	"testing"
 
-	"github.com/cockroachdb/errors"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"librevita.org/pkg/errors"
 	"librevita.org/pkg/validator"
 )
 

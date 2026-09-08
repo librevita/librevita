@@ -3,8 +3,7 @@ package crypto
 import (
 	"context"
 
-	"github.com/cockroachdb/errors"
-
+	"librevita.org/pkg/errors"
 	"librevita.org/pkg/ident"
 	"librevita.org/pkg/urn"
 )

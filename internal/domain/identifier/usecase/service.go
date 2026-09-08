@@ -4,12 +4,11 @@ import (
 	"context"
 	"strings"
 
-	"github.com/cockroachdb/errors"
-
 	"librevita.org/internal/core/clinicctx"
 	"librevita.org/internal/core/crypto"
 	"librevita.org/internal/core/database/fle"
 	identifiermodel "librevita.org/internal/domain/identifier/model"
+	"librevita.org/pkg/errors"
 	"librevita.org/pkg/flow"
 	"librevita.org/pkg/ident"
 	"librevita.org/pkg/log"

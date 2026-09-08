@@ -15,7 +15,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"librevita.org/pkg/ident"
 	_ "modernc.org/sqlite"
 
 	"librevita.org/internal/core/crypto"
@@ -23,6 +22,7 @@ import (
 	"librevita.org/internal/core/keystore"
 	"librevita.org/internal/database/record"
 	"librevita.org/internal/database/record/enttest"
+	"librevita.org/pkg/ident"
 )
 
 func generateTestKey(t *testing.T) []byte {
@@ -220,7 +220,6 @@ func TestFLE_UsesPatientDEKPerEntity(t *testing.T) {
 	client := enttest.NewClient(t, enttest.WithOptions(record.Driver(drv)))
 	t.Cleanup(func() { _ = client.Close() })
 
-	require.NoError(t, client.Schema.Create(context.Background()))
 	v, err := keystore.OpenBBolt(filepath.Join(t.TempDir(), "keystore.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = v.Close() })

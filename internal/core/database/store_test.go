@@ -10,13 +10,13 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/fx/fxtest"
-	"librevita.org/pkg/ident"
 
 	"librevita.org/internal/core/config"
 	"librevita.org/internal/core/crypto"
 	"librevita.org/internal/database/record"
 	"librevita.org/internal/database/record/clinic"
 	"librevita.org/internal/database/record/patient"
+	"librevita.org/pkg/ident"
 	"librevita.org/pkg/log"
 )
 
@@ -45,10 +45,6 @@ func TestStoreSQLiteAndEntClient(t *testing.T) {
 	// Apply migrations to test schema
 	ctx := context.Background()
 	err = Migrate(ctx, store.SQL(), logger)
-	require.NoError(t, err)
-
-	// Also create Ent schema resources in the database
-	err = store.Ent().Schema.Create(ctx)
 	require.NoError(t, err)
 
 	// Test Ent Patient entity operations (AL-FLE)
@@ -267,7 +263,6 @@ func TestWithTxRollbackOnErrorAndPanic(t *testing.T) {
 
 	ctx := context.Background()
 	require.NoError(t, Migrate(ctx, store.SQL(), log.Nop()))
-	require.NoError(t, store.Ent().Schema.Create(ctx))
 
 	// 1. WithTx returns error and rolls back
 	err = WithTx(ctx, store.Ent(), func(tx *record.Tx) error {

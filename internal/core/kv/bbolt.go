@@ -6,8 +6,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/cockroachdb/errors"
 	"go.etcd.io/bbolt"
+
+	"librevita.org/pkg/errors"
 )
 
 var bucketName = []byte("data")

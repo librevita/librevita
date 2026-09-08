@@ -6,7 +6,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/cockroachdb/errors"
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 
@@ -18,6 +17,7 @@ import (
 	patientmodel "librevita.org/internal/domain/patient/model"
 	"librevita.org/internal/domain/patient/usecase"
 	"librevita.org/internal/ui/components"
+	"librevita.org/pkg/errors"
 )
 
 // minLookupLen bounds the exact-document search: shorter values can

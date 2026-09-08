@@ -7,12 +7,12 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/cockroachdb/errors"
 	"github.com/hashicorp/vault/api"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"librevita.org/internal/core/config"
+	"librevita.org/pkg/errors"
 )
 
 func TestBBoltStoreCRUDAndPrefix(t *testing.T) {

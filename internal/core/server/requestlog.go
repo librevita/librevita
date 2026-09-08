@@ -4,9 +4,9 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/cockroachdb/errors"
 	"github.com/labstack/echo/v4"
 
+	"librevita.org/pkg/errors"
 	"librevita.org/pkg/log"
 )
 

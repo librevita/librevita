@@ -11,9 +11,10 @@ import (
 	"io"
 	"time"
 
-	"github.com/cockroachdb/errors"
 	"github.com/google/uuid"
+
 	"librevita.org/internal/core/crypto"
+	"librevita.org/pkg/errors"
 	"librevita.org/pkg/flow"
 	"librevita.org/pkg/log"
 )

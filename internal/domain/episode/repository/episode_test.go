@@ -12,7 +12,6 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"librevita.org/pkg/ident"
 	_ "modernc.org/sqlite"
 
 	"librevita.org/internal/core/crypto"
@@ -20,6 +19,7 @@ import (
 	"librevita.org/internal/database/record/enttest"
 	episodemodel "librevita.org/internal/domain/episode/model"
 	"librevita.org/internal/domain/episode/repository"
+	"librevita.org/pkg/ident"
 )
 
 const testKeyB64 = "nAmIvOXVc0vb6M9G7P9q2j2yK1WxP3sJ8q5dR4tU6wA=" // gitleaks:allow

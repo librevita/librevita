@@ -5,9 +5,10 @@ import (
 	"encoding/base64"
 	"strings"
 
-	"github.com/cockroachdb/errors"
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
+
+	"librevita.org/pkg/errors"
 )
 
 // NATSStore is a Store backed by a JetStream KeyValue bucket.

@@ -4,7 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 
-	"github.com/cockroachdb/errors"
+	"librevita.org/pkg/errors"
 )
 
 // Encryptor provides symmetric AEAD encryption and decryption with cryptographic agility.

@@ -1,6 +1,6 @@
 package crypto
 
-import "github.com/cockroachdb/errors"
+import "librevita.org/pkg/errors"
 
 var (
 	// ErrWeakKey is returned when a provided cryptographic key is empty or below the required length (32 bytes).

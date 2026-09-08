@@ -10,7 +10,8 @@ import (
 
 	"github.com/canonical/go-dqlite/v3/client"
 	dqlitedriver "github.com/canonical/go-dqlite/v3/driver"
-	"github.com/cockroachdb/errors"
+
+	"librevita.org/pkg/errors"
 )
 
 // dqliteSrvResolver isolates the DNS lookup (net.Resolver's SRV

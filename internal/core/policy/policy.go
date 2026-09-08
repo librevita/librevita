@@ -16,12 +16,12 @@ import (
 	"sync"
 	"time"
 
-	"github.com/cockroachdb/errors"
-	"github.com/google/cel-go/cel"
-	"github.com/google/cel-go/common/types"
+	"github.com/expr-lang/expr"
+	"github.com/expr-lang/expr/vm"
 
 	"librevita.org/internal/core/auth"
 	"librevita.org/internal/core/clinicctx"
+	"librevita.org/pkg/errors"
 	"librevita.org/pkg/ident"
 	"librevita.org/pkg/log"
 )
@@ -142,10 +142,41 @@ type Repository interface {
 // PolicyEngine compiles policies once and keeps them in memory. Writes
 // (startup seeding and admin updates) validate the expression first, so a
 // broken policy is never activated.
+type PrincipalEnv struct {
+	ID        string `expr:"id"`
+	Email     string `expr:"email"`
+	Name      string `expr:"name"`
+	Role      string `expr:"role"`
+	ClinicID  string `expr:"clinic_id"`
+	PatientID string `expr:"patient_id"`
+}
+
+type RequestEnv struct {
+	Method string `expr:"method"`
+	Path   string `expr:"path"`
+}
+
+type PolicyEnv struct {
+	Principal PrincipalEnv   `expr:"principal"`
+	Request   RequestEnv     `expr:"request"`
+	Resource  map[string]any `expr:"resource"`
+	Context   map[string]any `expr:"context"`
+}
+
+var defaultEnv = PolicyEnv{
+	Resource: map[string]any{
+		"id":         "",
+		"patient_id": "",
+		"created_by": "",
+	},
+	Context: map[string]any{
+		"clinic_id": "",
+	},
+}
+
 type PolicyEngine struct {
-	env   *cel.Env
 	mu    sync.RWMutex
-	progs map[ident.ClinicID]map[string]cel.Program
+	progs map[ident.ClinicID]map[string]*vm.Program
 	repo  Repository
 	log   log.Logger
 
@@ -174,19 +205,8 @@ func NewPolicyEngine(repo Repository, logger log.Logger) (*PolicyEngine, error) 
 		return nil, errors.New("policy: requires the policy repository")
 	}
 
-	env, err := cel.NewEnv(
-		cel.Variable("principal", cel.MapType(cel.StringType, cel.AnyType)),
-		cel.Variable("request", cel.MapType(cel.StringType, cel.AnyType)),
-		cel.Variable("resource", cel.MapType(cel.StringType, cel.AnyType)),
-		cel.Variable("context", cel.MapType(cel.StringType, cel.AnyType)),
-	)
-	if err != nil {
-		return nil, errors.Wrap(err, "policy: cel environment")
-	}
-
 	return &PolicyEngine{
-		env:   env,
-		progs: make(map[ident.ClinicID]map[string]cel.Program),
+		progs: make(map[ident.ClinicID]map[string]*vm.Program),
 		repo:  repo,
 		log:   logger,
 	}, nil
@@ -211,7 +231,7 @@ func (pe *PolicyEngine) loadClinic(ctx context.Context, clinicID ident.ClinicID)
 	if err != nil {
 		return errors.Wrap(err, "policy: list")
 	}
-	compiled := make(map[string]cel.Program, len(rows))
+	compiled := make(map[string]*vm.Program, len(rows))
 	for _, row := range rows {
 		prog, err := pe.compile(row.Name, row.Expression)
 		if err != nil {
@@ -247,7 +267,7 @@ func (pe *PolicyEngine) ensureLoaded(ctx context.Context) (ident.ClinicID, error
 }
 
 func (pe *PolicyEngine) compileDefaults(clinicID ident.ClinicID) error {
-	compiled := make(map[string]cel.Program, len(DefaultPolicies))
+	compiled := make(map[string]*vm.Program, len(DefaultPolicies))
 	for name, expr := range DefaultPolicies {
 		prog, err := pe.compile(name, expr)
 		if err != nil {
@@ -294,7 +314,7 @@ func (pe *PolicyEngine) Set(ctx context.Context, name, expression string, actor 
 	clinicID, _ := clinicctx.ClinicID(ctx)
 	pe.mu.Lock()
 	if pe.progs[clinicID] == nil {
-		pe.progs[clinicID] = make(map[string]cel.Program)
+		pe.progs[clinicID] = make(map[string]*vm.Program)
 	}
 	pe.progs[clinicID][name] = prog
 	pe.mu.Unlock()
@@ -335,7 +355,7 @@ func (pe *PolicyEngine) AllowedResource(ctx context.Context, name string, p *aut
 	return evaluate(prog, p, req, resource, ctxMap)
 }
 
-func (pe *PolicyEngine) program(ctx context.Context, name string) (cel.Program, error) {
+func (pe *PolicyEngine) program(ctx context.Context, name string) (*vm.Program, error) {
 	id, err := pe.ensureLoaded(ctx)
 	if err != nil {
 		return nil, err
@@ -365,17 +385,10 @@ func (pe *PolicyEngine) contextMap(ctx context.Context) map[string]any {
 	return out
 }
 
-func (pe *PolicyEngine) compile(name, expression string) (cel.Program, error) {
-	ast, issues := pe.env.Compile(expression)
-	if issues != nil && issues.Err() != nil {
-		return nil, errors.Wrapf(issues.Err(), "policy: %q compile error", name)
-	}
-	if ast.OutputType() != cel.BoolType {
-		return nil, errors.Newf("policy: %q expression must evaluate to a boolean, got %s", name, ast.OutputType().TypeName())
-	}
-	prog, err := pe.env.Program(ast)
+func (pe *PolicyEngine) compile(name, expression string) (*vm.Program, error) {
+	prog, err := expr.Compile(expression, expr.Env(defaultEnv), expr.AsBool(), expr.AllowUndefinedVariables())
 	if err != nil {
-		return nil, errors.Wrapf(err, "policy: %q program error", name)
+		return nil, errors.Wrapf(err, "policy: %q compile error", name)
 	}
 	return prog, nil
 }
@@ -388,27 +401,17 @@ func (pe *PolicyEngine) ValidateSyntax(expression string) error {
 	return err
 }
 
-func evaluate(prog cel.Program, p *auth.Principal, req RequestInfo, resource, ctx map[string]any) (bool, error) {
-	principalMap := map[string]any{
-		"id":         "",
-		"email":      "",
-		"name":       "",
-		"role":       "",
-		"clinic_id":  "",
-		"patient_id": "",
-	}
+func evaluate(prog *vm.Program, p *auth.Principal, req RequestInfo, resource, ctx map[string]any) (bool, error) {
+	var princ PrincipalEnv
 	if p != nil {
-		principalMap["id"] = p.ID
-		principalMap["email"] = p.Email
-		principalMap["name"] = p.Name
-		principalMap["role"] = string(p.Role)
-		principalMap["clinic_id"] = p.ClinicID
-		principalMap["patient_id"] = p.PatientID
-	}
-
-	requestMap := map[string]any{
-		"method": req.Method,
-		"path":   req.Path,
+		princ = PrincipalEnv{
+			ID:        p.ID,
+			Email:     p.Email,
+			Name:      p.Name,
+			Role:      string(p.Role),
+			ClinicID:  p.ClinicID,
+			PatientID: p.PatientID,
+		}
 	}
 
 	if resource == nil {
@@ -428,20 +431,22 @@ func evaluate(prog cel.Program, p *auth.Principal, req RequestInfo, resource, ct
 		ctx = map[string]any{}
 	}
 
-	out, _, err := prog.Eval(map[string]any{
-		"principal": principalMap,
-		"request":   requestMap,
-		"resource":  resource,
-		"context":   ctx,
-	})
+	env := PolicyEnv{
+		Principal: princ,
+		Request:   RequestEnv(req),
+		Resource:  resource,
+		Context:   ctx,
+	}
+
+	out, err := expr.Run(prog, env)
 	if err != nil {
 		return false, errors.Wrap(err, "eval")
 	}
-	b, ok := out.(types.Bool)
+	b, ok := out.(bool)
 	if !ok {
 		return false, errors.Newf("policy evaluated to non-bool %T", out)
 	}
-	return bool(b), nil
+	return b, nil
 }
 
 var adminFixture = auth.Principal{

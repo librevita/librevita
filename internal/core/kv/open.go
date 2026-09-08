@@ -3,9 +3,8 @@ package kv
 import (
 	"strings"
 
-	"github.com/cockroachdb/errors"
-
 	"librevita.org/internal/core/config"
+	"librevita.org/pkg/errors"
 )
 
 type openOptions struct {

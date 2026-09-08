@@ -3,8 +3,8 @@ package database
 import (
 	"context"
 
-	"github.com/cockroachdb/errors"
 	"librevita.org/internal/database/record"
+	"librevita.org/pkg/errors"
 )
 
 // WithTx executes the given operation inside an ent database transaction.

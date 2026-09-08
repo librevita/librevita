@@ -5,12 +5,12 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/cockroachdb/errors"
 	"go.uber.org/fx"
 
 	"librevita.org/internal/core/config"
 	"librevita.org/internal/core/kv"
 	"librevita.org/internal/database/record"
+	"librevita.org/pkg/errors"
 	"librevita.org/pkg/log"
 )
 

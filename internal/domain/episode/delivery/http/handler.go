@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/cockroachdb/errors"
 	"github.com/labstack/echo/v4"
 
 	"librevita.org/internal/core/audit"
@@ -18,6 +17,7 @@ import (
 	episodemodel "librevita.org/internal/domain/episode/model"
 	"librevita.org/internal/domain/episode/usecase"
 	patientusecase "librevita.org/internal/domain/patient/usecase"
+	"librevita.org/pkg/errors"
 	"librevita.org/pkg/ident"
 )
 

@@ -1,8 +1,7 @@
 package model
 
 import (
-	"github.com/cockroachdb/errors"
-
+	"librevita.org/pkg/errors"
 	"librevita.org/pkg/validator"
 )
 

@@ -1,7 +1,7 @@
 package flow
 
 import (
-	"github.com/cockroachdb/errors"
+	"librevita.org/pkg/errors"
 )
 
 // StepFunc is a unit of execution in a pipeline.

@@ -3,10 +3,10 @@ package crypto
 import (
 	"encoding/base64"
 
-	"github.com/cockroachdb/errors"
 	"go.uber.org/fx"
 
 	"librevita.org/internal/core/config"
+	"librevita.org/pkg/errors"
 	"librevita.org/pkg/log"
 )
 

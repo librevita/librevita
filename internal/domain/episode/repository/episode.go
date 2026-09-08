@@ -5,8 +5,6 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/cockroachdb/errors"
-
 	"librevita.org/internal/core/database"
 	"librevita.org/internal/core/database/fle"
 	"librevita.org/internal/database/record"
@@ -16,6 +14,7 @@ import (
 	"librevita.org/internal/database/record/planitem"
 	"librevita.org/internal/database/record/problem"
 	episodemodel "librevita.org/internal/domain/episode/model"
+	"librevita.org/pkg/errors"
 	"librevita.org/pkg/ident"
 )
 

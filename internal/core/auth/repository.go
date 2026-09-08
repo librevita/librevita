@@ -5,13 +5,13 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/cockroachdb/errors"
 	"github.com/google/uuid"
 
 	"librevita.org/internal/core/clinicctx"
 	"librevita.org/internal/core/kv"
 	"librevita.org/internal/database/record"
 	"librevita.org/internal/database/record/user"
+	"librevita.org/pkg/errors"
 	"librevita.org/pkg/ident"
 	"librevita.org/pkg/urn"
 )

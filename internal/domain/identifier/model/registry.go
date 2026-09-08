@@ -7,7 +7,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/cockroachdb/errors"
+	"librevita.org/pkg/errors"
 )
 
 // Registry is the runtime view of identifier_systems: a thread-safe

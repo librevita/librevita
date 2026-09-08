@@ -2,7 +2,7 @@
 package auth
 
 import (
-	"github.com/cockroachdb/errors"
+	"librevita.org/pkg/errors"
 )
 
 // Role is an authorization level assigned to a user account.

@@ -1,3 +1,5 @@
+//go:build !no_sqlite && (!postgres || sqlite)
+
 // Package database provides the LibreVita connection factory.
 //
 // modernc.org/sqlite is pure Go, so this package remains statically
@@ -11,8 +13,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/cockroachdb/errors"
 	_ "modernc.org/sqlite" // registers the "sqlite" driver (pure Go, no CGO)
+
+	"librevita.org/pkg/errors"
 )
 
 // sqliteDriver is the driver name registered by modernc.org/sqlite.

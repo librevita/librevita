@@ -5,7 +5,6 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/cockroachdb/errors"
 	"github.com/labstack/echo/v4"
 
 	"librevita.org/internal/core/clinicctx"
@@ -14,6 +13,7 @@ import (
 	"librevita.org/internal/core/database/fle"
 	"librevita.org/internal/core/host"
 	"librevita.org/internal/domain/clinic/model"
+	"librevita.org/pkg/errors"
 	"librevita.org/pkg/ident"
 	"librevita.org/pkg/log"
 )

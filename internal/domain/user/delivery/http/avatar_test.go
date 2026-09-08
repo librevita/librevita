@@ -15,7 +15,6 @@ import (
 	"entgo.io/ent/dialect"
 	entsql "entgo.io/ent/dialect/sql"
 	"github.com/labstack/echo/v4"
-	"librevita.org/pkg/ident"
 	_ "modernc.org/sqlite"
 
 	"librevita.org/internal/core/audit"
@@ -34,6 +33,7 @@ import (
 	userrepo "librevita.org/internal/domain/user/repository"
 	"librevita.org/internal/domain/user/usecase"
 	"librevita.org/internal/test"
+	"librevita.org/pkg/ident"
 	"librevita.org/pkg/log"
 )
 

@@ -4,7 +4,6 @@ package database
 
 import (
 	"context"
-	"librevita.org/pkg/log"
 	"path/filepath"
 	"testing"
 
@@ -23,6 +22,7 @@ import (
 	patientrepo "librevita.org/internal/domain/patient/repository"
 	"librevita.org/internal/domain/patient/usecase"
 	"librevita.org/pkg/ident"
+	"librevita.org/pkg/log"
 )
 
 // TestDqliteSpike connects to the local dqlite cluster (see

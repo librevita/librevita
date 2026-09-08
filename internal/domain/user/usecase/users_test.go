@@ -11,11 +11,11 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"librevita.org/pkg/ident"
 
 	"librevita.org/internal/core/auth"
 	usermodel "librevita.org/internal/domain/user/model"
 	"librevita.org/internal/domain/user/usecase"
+	"librevita.org/pkg/ident"
 )
 
 var (

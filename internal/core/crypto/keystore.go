@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"context"
 
-	"github.com/cockroachdb/errors"
+	"librevita.org/pkg/errors"
 )
 
 var (

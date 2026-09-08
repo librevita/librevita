@@ -6,11 +6,11 @@ import (
 
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
-	"github.com/cockroachdb/errors"
 
 	"librevita.org/internal/core/clinicctx"
 	"librevita.org/internal/database/record"
 	"librevita.org/internal/database/record/intercept"
+	"librevita.org/pkg/errors"
 	"librevita.org/pkg/ident"
 )
 

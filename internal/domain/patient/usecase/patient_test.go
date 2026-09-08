@@ -2,7 +2,6 @@ package usecase_test
 
 import (
 	"context"
-	"librevita.org/pkg/log"
 	"testing"
 	"time"
 
@@ -17,6 +16,7 @@ import (
 	policymocks "librevita.org/internal/test/mock/core/policy"
 	patientmocks "librevita.org/internal/test/mock/domain/patient/model"
 	"librevita.org/pkg/ident"
+	"librevita.org/pkg/log"
 )
 
 var (

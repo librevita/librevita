@@ -3,10 +3,9 @@ package repository
 import (
 	"context"
 
-	"github.com/cockroachdb/errors"
-
 	"librevita.org/internal/database/record"
 	"librevita.org/internal/database/record/platformuser"
+	"librevita.org/pkg/errors"
 	"librevita.org/pkg/ident"
 )
 

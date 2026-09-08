@@ -5,10 +5,10 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/cockroachdb/errors"
 	"github.com/labstack/echo/v4"
 
 	"librevita.org/internal/ui/pages"
+	"librevita.org/pkg/errors"
 	"librevita.org/pkg/log"
 )
 

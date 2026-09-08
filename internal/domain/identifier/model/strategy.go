@@ -4,8 +4,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/cockroachdb/errors"
-
+	"librevita.org/pkg/errors"
 	"librevita.org/pkg/urn"
 )
 

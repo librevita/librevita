@@ -6,7 +6,6 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/cockroachdb/errors"
 	"github.com/labstack/echo/v4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -26,6 +25,7 @@ import (
 	clinicmocks "librevita.org/internal/test/mock/domain/clinic/model"
 	patientmocks "librevita.org/internal/test/mock/domain/patient/model"
 	usermocks "librevita.org/internal/test/mock/domain/user/model"
+	"librevita.org/pkg/errors"
 	"librevita.org/pkg/log"
 )
 

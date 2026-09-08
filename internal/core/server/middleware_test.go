@@ -12,7 +12,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"librevita.org/pkg/ident"
 
 	"librevita.org/internal/core/audit"
 	"librevita.org/internal/core/auth"
@@ -22,6 +21,7 @@ import (
 	authmocks "librevita.org/internal/test/mock/core/auth"
 	policymocks "librevita.org/internal/test/mock/core/policy"
 	"librevita.org/internal/ui"
+	"librevita.org/pkg/ident"
 	"librevita.org/pkg/log"
 )
 

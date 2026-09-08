@@ -18,7 +18,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/fx/fxtest"
-	"librevita.org/pkg/ident"
 	_ "modernc.org/sqlite"
 
 	"librevita.org/internal/core/clinicctx"
@@ -28,6 +27,7 @@ import (
 	"librevita.org/internal/core/kv"
 	"librevita.org/internal/database/record"
 	"librevita.org/internal/test"
+	"librevita.org/pkg/ident"
 	"librevita.org/pkg/log"
 )
 
