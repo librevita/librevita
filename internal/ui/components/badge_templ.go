@@ -5,12 +5,10 @@ package components
 
 //lint:file-ignore SA4006 This context is only used if a nested component is present.
 
-import (
-	"github.com/a-h/templ"
-	templruntime "github.com/a-h/templ/runtime"
+import "github.com/a-h/templ"
+import templruntime "github.com/a-h/templ/runtime"
 
-	"librevita.org/internal/ui/shared"
-)
+import "librevita.org/internal/ui/shared"
 
 // Avatar renders a circular initials avatar. Pass the sizing and color
 // classes, e.g. "h-8 w-8 bg-indigo-600 text-white".

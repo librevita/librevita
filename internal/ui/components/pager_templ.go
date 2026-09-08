@@ -5,12 +5,10 @@ package components
 
 //lint:file-ignore SA4006 This context is only used if a nested component is present.
 
-import (
-	"strconv"
+import "github.com/a-h/templ"
+import templruntime "github.com/a-h/templ/runtime"
 
-	"github.com/a-h/templ"
-	templruntime "github.com/a-h/templ/runtime"
-)
+import "strconv"
 
 // PagerData carries the state for the number pagination shared by the
 // list pages. Href builds the no-JS link for a page; HxVals the htmx
