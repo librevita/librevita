@@ -471,6 +471,7 @@ func TestACMEConfigAndValidation(t *testing.T) {
 
 func TestACMEFlagsAndEnvMappings(t *testing.T) {
 	assert.Equal(t, "acme.enabled", mapFlagKey("acme-enabled"))
+	assert.Equal(t, "acme.on_demand", mapFlagKey("acme-on-demand"))
 	assert.Equal(t, "acme.email", mapFlagKey("acme-email"))
 	assert.Equal(t, "acme.challenge", mapFlagKey("acme-challenge"))
 	assert.Equal(t, "acme.dns.provider", mapFlagKey("acme-dns-provider"))
@@ -479,6 +480,7 @@ func TestACMEFlagsAndEnvMappings(t *testing.T) {
 	assert.Equal(t, "acme.dns.exec_script", mapFlagKey("acme-dns-exec-script"))
 
 	assert.Equal(t, "acme.enabled", mapEnvironmentKey("acme_enabled"))
+	assert.Equal(t, "acme.on_demand", mapEnvironmentKey("acme_on_demand"))
 	assert.Equal(t, "acme.email", mapEnvironmentKey("acme_email"))
 	assert.Equal(t, "acme.dns.cloudflare_api_token", mapEnvironmentKey("acme_dns_cloudflare_api_token"))
 }

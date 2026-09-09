@@ -102,6 +102,7 @@ var configKeys = []string{
 	"acme.challenge",
 	"acme.domains",
 	"acme.renew_before_days",
+	"acme.on_demand",
 	"acme.storage.backend",
 	"acme.storage.dir",
 	"acme.dns.provider",

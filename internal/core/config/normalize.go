@@ -338,6 +338,11 @@ func (c *Config) normalizeACME() {
 		c.ACME.RenewBeforeDays = defaultACMERenewBeforeDays
 	}
 
+	if c.ACME.OnDemand == nil {
+		onDemand := true
+		c.ACME.OnDemand = &onDemand
+	}
+
 	c.ACME.Storage.Backend = strings.ToLower(strings.TrimSpace(c.ACME.Storage.Backend))
 	if c.ACME.Storage.Backend == "" {
 		c.ACME.Storage.Backend = "file"

@@ -194,6 +194,9 @@ type ACMEConfig struct {
 	// RenewBeforeDays is the renewal threshold in days (default 30).
 	RenewBeforeDays int `koanf:"renew_before_days"`
 
+	// OnDemand enables on-demand certificate issuance for authorized custom clinic domains (default true).
+	OnDemand *bool `koanf:"on_demand"`
+
 	// Storage controls where account keys and certificates are persisted.
 	Storage ACMEStorageConfig `koanf:"storage"`
 
@@ -476,4 +479,12 @@ func (c *Config) IsProduction() bool {
 // back to ephemeral keys or insecure cookies.
 func (c *Config) IsDevelopment() bool {
 	return strings.EqualFold(c.Mode, "development")
+}
+
+// IsACMEOnDemand reports whether ACME on-demand certificate procurement is enabled.
+func (c *Config) IsACMEOnDemand() bool {
+	if c.ACME.OnDemand == nil {
+		return true
+	}
+	return *c.ACME.OnDemand
 }

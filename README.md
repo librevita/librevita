@@ -281,7 +281,7 @@ LibreVita includes a built-in ACME client supporting both **HTTP-01** and **DNS-
   - **Cloudflare**: Native REST API v4 integration using an API token.
   - **RFC 2136**: Dynamic DNS update protocol with TSIG authentication (BIND, PowerDNS, Knot, Windows Server).
   - **Exec Hook**: Executes an external script/command (`present`/`cleanup`), allowing integration with any DNS provider without heavy cloud SDKs.
-- **HTTP-01 (On-Demand TLS for Clinic Custom Domains)**: Validates control via `http://<domain>/.well-known/acme-challenge/<token>`. LibreVita automatically obtains and renews TLS certificates on-demand via HTTP-01 whenever an incoming TLS handshake targets an authorized clinic custom domain (e.g. `clinicasaojose.com.br`). Strict database authorization ensures only registered clinics can trigger certificate issuance, preventing denial-of-service or certificate exhaustion. Also ideal for standalone apex deployments without DNS API credentials.
+- **HTTP-01 (On-Demand TLS for Clinic Custom Domains)**: Validates control via `http://<domain>/.well-known/acme-challenge/<token>`. LibreVita automatically obtains and renews TLS certificates on-demand via HTTP-01 whenever an incoming TLS handshake targets an authorized clinic custom domain (e.g. `clinicasaojose.com.br`). Strict database authorization ensures only registered clinics can trigger certificate issuance, preventing denial-of-service or certificate exhaustion. Also ideal for standalone apex deployments without DNS API credentials. On-demand issuance can be disabled via `acme.on_demand: false` (or `LIBREVITA_ACME_ON_DEMAND=false` / `--acme-on-demand=false`) when relying exclusively on pre-provisioned multi-domain certificates or static keypairs.
 
 Example configuration for Let's Encrypt with Cloudflare DNS-01:
 
@@ -533,6 +533,7 @@ All configuration flags:
 | `--sessions-nats-bucket`       | `LIBREVITA_SESSIONS_NATS_BUCKET`             | NATS JetStream KeyValue bucket (default `sessions`)                                                                                                          |
 | `--sessions-etcd-endpoints`    | `LIBREVITA_SESSIONS_ETCD_ENDPOINTS`          | Comma-separated etcd v3 endpoints                                                                                                                            |
 | `--sessions-etcd-prefix`       | `LIBREVITA_SESSIONS_ETCD_PREFIX`             | etcd key prefix (default `/librevita/sessions/`)                                                                                                             |
+| `--acme-on-demand`             | `LIBREVITA_ACME_ON_DEMAND`                   | Enable on-demand TLS certificate issuance for clinic domains (default `true`)                                                                                |
 
 Environment variables are the config keys with `_` separators, always in the full section form (`LIBREVITA_CRYPTO_*`, `LIBREVITA_DATABASE_*`, `LIBREVITA_LOGGING_*`, `LIBREVITA_STORAGE_*`, `LIBREVITA_KEYSTORE_*`, `LIBREVITA_META_*`, `LIBREVITA_SESSIONS_*`); no short aliases are accepted.
 

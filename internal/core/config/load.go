@@ -83,6 +83,7 @@ func RegisterFlags(fs *pflag.FlagSet) {
 	stringFlag(fs, "acme-challenge", "dns-01", "ACME challenge type: dns-01 or http-01")
 	stringSliceFlag(fs, "acme-domains", nil, "comma-separated list of domains to certify")
 	intFlag(fs, "acme-renew-before-days", defaultACMERenewBeforeDays, "days before certificate expiry to renew")
+	boolFlag(fs, "acme-on-demand", true, "enable on-demand TLS certificate issuance for clinic domains")
 	stringFlag(fs, "acme-storage-backend", "file", "ACME persistence backend: file or kv")
 	stringFlag(fs, "acme-storage-dir", "", "ACME directory for keys and certificates (default <data-dir>/acme)")
 	stringFlag(fs, "acme-dns-provider", "cloudflare", "DNS-01 provider: cloudflare, rfc2136, exec, or mock")

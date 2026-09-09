@@ -100,6 +100,13 @@ func (m *Manager) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certificate, 
 		return nil, errors.Newf("acme: unauthorized domain %s", domain)
 	}
 
+	if !m.cfg.IsACMEOnDemand() {
+		m.logger.WarnContext(hello.Context(), "acme: on-demand issuance is disabled and no certificate matches domain",
+			log.String("domain", domain),
+		)
+		return nil, errors.Newf("acme: on-demand issuance is disabled and no certificate matches domain %s", domain)
+	}
+
 	return m.obtainOnDemand(domain)
 }
 
@@ -584,6 +591,10 @@ func (m *Manager) renewExpiringCerts() {
 			m.logger.ErrorContext(ctx, "acme: certificate renewal failed", log.Error(err))
 		}
 		cancel()
+	}
+
+	if !m.cfg.IsACMEOnDemand() {
+		return
 	}
 
 	m.certCache.Range(func(key, value any) bool {

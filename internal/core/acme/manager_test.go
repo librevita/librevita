@@ -210,3 +210,39 @@ func TestGenerateSelfSignedCert(t *testing.T) {
 	require.NotNil(t, ipCert)
 	assert.NoError(t, ipCert.Leaf.VerifyHostname("127.0.0.1"))
 }
+
+func TestManager_GetCertificate_OnDemandDisabled(t *testing.T) {
+	dir := t.TempDir()
+	onDemandFalse := false
+	cfg := &config.Config{
+		BaseDomain: "example.org",
+		ACME: config.ACMEConfig{
+			Enabled:  true,
+			Email:    "admin@example.org",
+			OnDemand: &onDemandFalse,
+			Storage: config.ACMEStorageConfig{
+				Backend: "file",
+				Dir:     dir,
+			},
+		},
+	}
+
+	store, err := NewFileCertStore(dir)
+	require.NoError(t, err)
+
+	mgr, err := NewManager(cfg, store, nil, log.Nop())
+	require.NoError(t, err)
+	defer mgr.Stop()
+
+	// Configure authorizer for custom domain
+	customDomain := "clinica.org"
+	mgr.SetDomainAuthorizer(func(_ context.Context, domain string) (bool, error) {
+		return domain == customDomain, nil
+	})
+
+	// GetCertificate with on-demand disabled should fail and not attempt issuance
+	hello := &tls.ClientHelloInfo{ServerName: customDomain}
+	_, err = mgr.GetCertificate(hello)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "on-demand issuance is disabled")
+}
