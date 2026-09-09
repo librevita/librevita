@@ -412,3 +412,14 @@ func TestDocumentsUploadRequiresAuth(t *testing.T) {
 		t.Errorf("anonymous upload status = %d, want redirect to login", rec.Code)
 	}
 }
+
+func TestSanitizeFileNameAndContentType(t *testing.T) {
+	assert.Equal(t, "file", sanitizeFileName("."))
+	assert.Equal(t, "file", sanitizeFileName(""))
+	assert.Equal(t, "file", sanitizeFileName("/"))
+	assert.Equal(t, "doc.pdf", sanitizeFileName("/path/to/doc.pdf"))
+	assert.Equal(t, 200, len(sanitizeFileName(strings.Repeat("a", 250))))
+
+	assert.Equal(t, "text/plain", contentTypeOr("", "text/plain"))
+	assert.Equal(t, "application/pdf", contentTypeOr("application/pdf", "text/plain"))
+}

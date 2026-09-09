@@ -467,3 +467,19 @@ func TestPolicyModuleLifecycle(t *testing.T) {
 	require.NoError(t, lc.Stop(pctx()))
 	assert.NotNil(t, Module)
 }
+
+func TestPolicyEngine_DefaultsWithoutClinic(t *testing.T) {
+	pe, err := NewPolicyEngine(openPolicyDB(t), log.Nop())
+	require.NoError(t, err)
+
+	ctx := context.Background()
+	principal := &auth.Principal{Role: auth.RoleAdmin}
+	allowed, err := pe.Allowed(ctx, "dashboard.view", principal, RequestInfo{})
+	require.NoError(t, err)
+	assert.True(t, allowed)
+}
+
+func TestNewPolicyEngine_Validation(t *testing.T) {
+	_, err := NewPolicyEngine(nil, log.Nop())
+	assert.Error(t, err)
+}

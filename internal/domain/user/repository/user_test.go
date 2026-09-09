@@ -702,6 +702,35 @@ func TestUserRepositoryQueriesAndStaffChanges(t *testing.T) {
 	err = staffRepo.Reject(ctx, ident.New[ident.StaffChangeRequestID](), uID, "note")
 	assert.ErrorIs(t, err, usermodel.ErrRequestNotFound)
 
+	// 8b. ApplyApprovedStaffChange success and conflict
+	staffReq2ID := ident.New[ident.StaffChangeRequestID]()
+	_, err = staffRepo.Create(ctx, &usermodel.StaffChangeRequest{
+		ID:          staffReq2ID,
+		UserID:      uID,
+		RequestedBy: uID,
+		Changes:     `{"name":"Approved Name"}`,
+	})
+	require.NoError(t, err)
+
+	err = userRepo.ApplyApprovedStaffChange(ctx, staffReq2ID, uID, uID, "Approved Name", "approved@example.org", []ident.SpecialtyID{sID})
+	require.NoError(t, err)
+
+	// Conflict when using existing second user email
+	u2ID := ident.New[ident.UserID]()
+	_, err = userRepo.Create(ctx, &usermodel.User{
+		ID:           u2ID,
+		ClinicID:     clinicID,
+		Email:        "second_user@example.org",
+		PasswordHash: "hash",
+		DisplayName:  "Second User",
+		RoleID:       adminRole.ID,
+		Active:       true,
+	})
+	require.NoError(t, err)
+
+	err = userRepo.ApplyApprovedStaffChange(ctx, staffReq2ID, uID, uID, "Name", "second_user@example.org", nil)
+	assert.ErrorIs(t, err, usermodel.ErrEmailInUse)
+
 	// 9. BindPortalPatient
 	patID := ident.New[ident.PatientID]()
 	_, err = client.Patient.Create().
@@ -761,4 +790,50 @@ func TestUserRepositoryQueriesAndStaffChanges(t *testing.T) {
 	roleRepo = repository.NewRoleRepository(client)
 	_, err = roleRepo.Update(ctx, dupRole)
 	assert.ErrorIs(t, err, usermodel.ErrDuplicateRole)
+
+	// 14. RoleRepository GetByName not found and CountUsersWithRole
+	_, err = roleRepo.GetByName(ctx, "nonexistent-role-name")
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "role not found")
+
+	cntUsers, err := roleRepo.CountUsersWithRole(ctx, adminRole.ID)
+	require.NoError(t, err)
+	assert.GreaterOrEqual(t, cntUsers, 1)
+
+	// 15. Specialty CheckClinicScope empty slice
+	emptyScope, err := specRepo.CheckClinicScope(ctx, clinicID, nil)
+	require.NoError(t, err)
+	assert.True(t, emptyScope)
+
+	// 16. SetupRepository IsOnboarded edge cases
+	setupRepo := repository.NewSetupRepository(client)
+	onboarded, err := setupRepo.IsOnboarded(context.Background())
+	require.NoError(t, err)
+	assert.False(t, onboarded)
+
+	onboarded, err = setupRepo.IsOnboarded(ctx)
+	require.NoError(t, err)
+	assert.False(t, onboarded)
+
+	// 17. Specialty duplicate create returns ErrDuplicateSpecialty
+	_, err = specRepo.Create(ctx, &usermodel.Specialty{
+		ID:       ident.New[ident.SpecialtyID](),
+		ClinicID: clinicID,
+		Name:     "Cardiologia Geral",
+	})
+	assert.ErrorIs(t, err, usermodel.ErrDuplicateSpecialty)
+
+	// 18. User Update with taken email returns ErrEmailTaken
+	_, err = userRepo.Update(ctx, &usermodel.User{
+		ID:          uID,
+		Email:       "second_user@example.org",
+		DisplayName: "Updated Name",
+		RoleID:      adminRole.ID,
+		RoleName:    "admin",
+	})
+	assert.ErrorIs(t, err, usermodel.ErrEmailTaken)
+
+	// 19. SetSpecialties empty slice (clearing) and missing user error
+	require.NoError(t, userRepo.SetSpecialties(ctx, uID, nil))
+	assert.Error(t, userRepo.SetSpecialties(ctx, ident.New[ident.UserID](), nil))
 }

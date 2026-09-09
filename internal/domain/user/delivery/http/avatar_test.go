@@ -5,9 +5,11 @@ import (
 	"context"
 	"database/sql"
 	"image"
+	"image/png"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -109,6 +111,8 @@ func newAvatarEnv(t *testing.T) (*echo.Echo, *auth.SessionManager, *storage.File
 	e.POST("/profile/avatar/remove", h.AvatarRemove,
 		server.RequireAuth(sessions, logger),
 		server.RequirePolicy(policies, auditLogger, logger, "profile.update"))
+	e.GET("/users/:id/avatar", h.UserAvatar, server.RequireAuth(sessions, logger))
+	e.POST("/profile", h.ProfileUpdate, server.RequireAuth(sessions, logger))
 	return e, sessions, files, client
 }
 
@@ -531,5 +535,219 @@ func TestAvatarRejectsHugeDimensions(t *testing.T) {
 	e.ServeHTTP(rec, req)
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("huge image status = %d, want 400", rec.Code)
+	}
+}
+
+func TestAvatarUpload_ValidationAndNoPrincipal(t *testing.T) {
+	e, sessions, _, _ := newAvatarEnv(t)
+	token, err := sessions.Create(clinicctx.WithTestClinic(context.Background()), auth.Principal{
+		ID: testAdminID.String(), Email: "admin@example.org", Name: "Admin", Role: auth.RoleAdmin,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cookie := sessions.Cookie(token)
+
+	// 1. Without session -> redirects to login
+	noAuthReq := httptest.NewRequest(http.MethodPost, "/profile/avatar", nil)
+	noAuthRec := httptest.NewRecorder()
+	e.ServeHTTP(noAuthRec, noAuthReq)
+	if noAuthRec.Code != http.StatusFound {
+		t.Errorf("no-auth upload status = %d, want 302", noAuthRec.Code)
+	}
+
+	// 2. Missing form file "avatar"
+	var emptyBuf bytes.Buffer
+	w := multipart.NewWriter(&emptyBuf)
+	_ = w.Close()
+	req := httptest.NewRequest(http.MethodPost, "/profile/avatar", &emptyBuf)
+	req.Header.Set("Content-Type", w.FormDataContentType())
+	req.AddCookie(cookie)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("missing file upload status = %d, want 400", rec.Code)
+	}
+
+	// 3. Empty file (0 bytes)
+	emptyFileBuf, ctype := avatarMultipart(t, "avatar", "empty.png", []byte{}, "image/png")
+	req = httptest.NewRequest(http.MethodPost, "/profile/avatar", emptyFileBuf)
+	req.Header.Set("Content-Type", ctype)
+	req.AddCookie(cookie)
+	rec = httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("empty file upload status = %d, want 400", rec.Code)
+	}
+
+	// 4. File exceeding max size (maxAvatarSize is 2 MiB)
+	hugeFileBuf, ctypeHuge := avatarMultipart(t, "avatar", "huge.png", make([]byte, maxAvatarSize+10), "image/png")
+	req = httptest.NewRequest(http.MethodPost, "/profile/avatar", hugeFileBuf)
+	req.Header.Set("Content-Type", ctypeHuge)
+	req.AddCookie(cookie)
+	rec = httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("oversized upload status = %d, want 400", rec.Code)
+	}
+}
+
+func TestAvatar_NoPrincipal(t *testing.T) {
+	e, _, _, _ := newAvatarEnv(t)
+
+	// GET /profile/avatar without session -> 302
+	req := httptest.NewRequest(http.MethodGet, "/profile/avatar", nil)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+	if rec.Code != http.StatusFound {
+		t.Errorf("avatar no-auth status = %d, want 302", rec.Code)
+	}
+
+	// POST /profile/avatar/remove without session -> 302
+	reqRemove := httptest.NewRequest(http.MethodPost, "/profile/avatar/remove", nil)
+	recRemove := httptest.NewRecorder()
+	e.ServeHTTP(recRemove, reqRemove)
+	if recRemove.Code != http.StatusFound {
+		t.Errorf("avatar remove no-auth status = %d, want 302", recRemove.Code)
+	}
+}
+
+func TestUserAvatar_Endpoints(t *testing.T) {
+	e, sessions, _, _ := newAvatarEnv(t)
+	token, err := sessions.Create(clinicctx.WithTestClinic(context.Background()), auth.Principal{
+		ID: testAdminID.String(), Email: "admin@example.org", Name: "Admin", Role: auth.RoleAdmin,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cookie := sessions.Cookie(token)
+
+	// 1. Existing user -> 200 SVG placeholder
+	req := httptest.NewRequest(http.MethodGet, "/users/"+testAdminID.String()+"/avatar", nil)
+	req.AddCookie(cookie)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Errorf("existing user avatar status = %d, want 200", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "<svg") {
+		t.Errorf("expected placeholder svg, got: %s", rec.Body.String())
+	}
+
+	// 2. Non-existent user -> 404
+	reqNotFound := httptest.NewRequest(http.MethodGet, "/users/01990000-0000-7000-8000-000000000099/avatar", nil)
+	reqNotFound.AddCookie(cookie)
+	recNotFound := httptest.NewRecorder()
+	e.ServeHTTP(recNotFound, reqNotFound)
+	if recNotFound.Code != http.StatusNotFound {
+		t.Errorf("non-existent user avatar status = %d, want 404", recNotFound.Code)
+	}
+}
+
+func TestSanitizeAvatarName(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{"normal.png", "normal.png"},
+		{"/path/to/my_pic.jpeg", "my_pic.jpeg"},
+		{"c:\\windows\\system32\\pic.gif", "pic.gif"},
+		{"   ", "avatar"},
+		{"", "avatar"},
+		{strings.Repeat("a", 150), strings.Repeat("a", 100)},
+	}
+	for _, tc := range tests {
+		got := sanitizeAvatarName(tc.input)
+		if got != tc.want {
+			t.Errorf("sanitizeAvatarName(%q) = %q, want %q", tc.input, got, tc.want)
+		}
+	}
+}
+
+func TestProcessAvatar_DimensionsAndAlpha(t *testing.T) {
+	// Landscape (w > h): 30x10
+	landscape := image.NewRGBA(image.Rect(0, 0, 30, 10))
+	var landBuf bytes.Buffer
+	if err := png.Encode(&landBuf, landscape); err != nil {
+		t.Fatal(err)
+	}
+	outLand, err := processAvatar(landBuf.Bytes())
+	if err != nil {
+		t.Fatalf("process landscape avatar: %v", err)
+	}
+	if len(outLand) == 0 {
+		t.Error("expected non-empty output for landscape")
+	}
+
+	// Portrait (h > w): 10x30
+	portrait := image.NewRGBA(image.Rect(0, 0, 10, 30))
+	var portBuf bytes.Buffer
+	if err := png.Encode(&portBuf, portrait); err != nil {
+		t.Fatal(err)
+	}
+	outPort, err := processAvatar(portBuf.Bytes())
+	if err != nil {
+		t.Fatalf("process portrait avatar: %v", err)
+	}
+	if len(outPort) == 0 {
+		t.Error("expected non-empty output for portrait")
+	}
+
+	// Invalid bytes
+	_, err = processAvatar([]byte("not an image"))
+	if err == nil {
+		t.Error("expected error for invalid bytes")
+	}
+}
+
+func TestProfileUpdatePreferences(t *testing.T) {
+	e, sessions, _, _ := newAvatarEnv(t)
+	token, err := sessions.Create(clinicctx.WithTestClinic(context.Background()), auth.Principal{
+		ID: testAdminID.String(), Email: "admin@example.org", Name: "Admin", Role: auth.RoleAdmin, Timezone: "UTC",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	cookie := sessions.Cookie(token)
+
+	// 1. Without session -> redirects to login
+	noAuthReq := httptest.NewRequest(http.MethodPost, "/profile", nil)
+	noAuthRec := httptest.NewRecorder()
+	e.ServeHTTP(noAuthRec, noAuthReq)
+	if noAuthRec.Code != http.StatusFound {
+		t.Errorf("expected 302, got %d", noAuthRec.Code)
+	}
+
+	// 2. Valid update with timezone and theme
+	form := url.Values{"timezone": {"America/New_York"}, "ui_theme": {"dark"}}
+	req := httptest.NewRequest(http.MethodPost, "/profile", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(cookie)
+	rec := httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK && rec.Code != http.StatusFound {
+		t.Errorf("expected 200 or 302, got %d", rec.Code)
+	}
+
+	// 3. Valid update with empty timezone (fallback to clinic default)
+	form2 := url.Values{"timezone": {""}, "ui_theme": {"light"}}
+	req2 := httptest.NewRequest(http.MethodPost, "/profile", strings.NewReader(form2.Encode()))
+	req2.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req2.AddCookie(cookie)
+	rec2 := httptest.NewRecorder()
+	e.ServeHTTP(rec2, req2)
+	if rec2.Code != http.StatusOK && rec2.Code != http.StatusFound {
+		t.Errorf("expected 200 or 302, got %d", rec2.Code)
+	}
+
+	// 4. Invalid timezone (validation error -> 400)
+	formBad := url.Values{"timezone": {"Invalid/Timezone_Not_Real"}, "ui_theme": {"light"}}
+	reqBad := httptest.NewRequest(http.MethodPost, "/profile", strings.NewReader(formBad.Encode()))
+	reqBad.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	reqBad.AddCookie(cookie)
+	recBad := httptest.NewRecorder()
+	e.ServeHTTP(recBad, reqBad)
+	if recBad.Code != http.StatusBadRequest {
+		t.Errorf("expected 400 for bad timezone, got %d", recBad.Code)
 	}
 }

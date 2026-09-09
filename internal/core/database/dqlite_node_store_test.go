@@ -104,3 +104,8 @@ func TestSplitSRV(t *testing.T) {
 func TestSplitAddresses(t *testing.T) {
 	assert.Equal(t, []string{"node1:9001", "node2:9001"}, splitAddresses(" node1:9001,,node2:9001 , "))
 }
+
+func TestNodeStore_Set(t *testing.T) {
+	ns := newNodeStore("node1:9001", "", nil)
+	assert.NoError(t, ns.Set(context.Background(), nil))
+}

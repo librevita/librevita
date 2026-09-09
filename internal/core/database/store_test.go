@@ -2,6 +2,7 @@ package database
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"path/filepath"
 	"testing"
@@ -289,6 +290,14 @@ func TestGooseLoggerAndEnsureAuditTriggers(t *testing.T) {
 	err := EnsureAuditTriggers(context.Background(), nil, "unknown_driver")
 	assert.NoError(t, err)
 
+	// EnsureAuditTriggers on SQLite with table
+	dbMem, err := sql.Open("sqlite", "file:audit_trig_test?mode=memory&cache=shared")
+	require.NoError(t, err)
+	defer dbMem.Close()
+	_, err = dbMem.Exec("CREATE TABLE audit_log (id TEXT);")
+	require.NoError(t, err)
+	assert.NoError(t, EnsureAuditTriggers(context.Background(), dbMem, config.DriverSQLite))
+
 	// Store.Close with nil db and ent returns nil
 	emptyStore := &Store{}
 	assert.NoError(t, emptyStore.Close())
@@ -297,4 +306,31 @@ func TestGooseLoggerAndEnsureAuditTriggers(t *testing.T) {
 	tmpDir := t.TempDir()
 	nestedPath := filepath.Join(tmpDir, "nested", "sub", "db.sqlite")
 	assert.NoError(t, ensureParentDir(nestedPath))
+}
+
+func TestNewStore_Errors(t *testing.T) {
+	logger := log.Nop()
+
+	// Unknown driver
+	cfg := &config.Config{
+		Database: config.DatabaseConfig{
+			Driver: "invalid_driver",
+		},
+	}
+	_, err := NewStore(cfg, logger)
+	assert.Error(t, err)
+
+	// Dqlite error: empty addrs and srv
+	cfgDqlite := &config.Config{
+		Database: config.DatabaseConfig{
+			Driver: config.DriverDqlite,
+			Dqlite: config.DqliteConfig{
+				Addrs:    "",
+				Database: "test",
+			},
+		},
+	}
+	_, err = NewStore(cfgDqlite, logger)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "no node addresses")
 }

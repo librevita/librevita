@@ -27,6 +27,8 @@ import (
 	"librevita.org/internal/database/record/patientidentifier"
 	clinicrepo "librevita.org/internal/domain/clinic/repository"
 	clinicusecase "librevita.org/internal/domain/clinic/usecase"
+	identifiermodel "librevita.org/internal/domain/identifier/model"
+	identifierusecase "librevita.org/internal/domain/identifier/usecase"
 	patientrepo "librevita.org/internal/domain/patient/repository"
 	"librevita.org/internal/domain/patient/usecase"
 	"librevita.org/internal/test"
@@ -65,6 +67,10 @@ func attachSeededClinic(engine *crypto.Engine, enc crypto.Encryptor, hasher cryp
 // newIdentEnv mounts the identifier routes with real middlewares and a
 // migrated database.
 func newIdentEnv(t *testing.T) (*echo.Echo, *auth.SessionManager, *usecase.Service, *audit.Logger, *record.Client) {
+	return newIdentEnvWithWrapper(t, nil)
+}
+
+func newIdentEnvWithWrapper(t *testing.T, wrapIDs func(identifierusecase.Service) identifierusecase.Service) (*echo.Echo, *auth.SessionManager, *usecase.Service, *audit.Logger, *record.Client) {
 	t.Helper()
 	client := openDocDB(t)
 	log := log.Nop()
@@ -128,6 +134,9 @@ func newIdentEnv(t *testing.T) (*echo.Echo, *auth.SessionManager, *usecase.Servi
 	client.Intercept(record.FLEDecryptionInterceptor(enc, masterKey))
 	svc := usecase.NewService(patientrepo.NewPatientRepositoryWithEngine(client, masterKey), policies, masterKey)
 	ids, systems := newIdentifierServices(t, client, masterKey, log)
+	if wrapIDs != nil {
+		ids = wrapIDs(ids)
+	}
 	h := NewHandler(svc, clinicusecase.NewClockProvider(clinicrepo.NewClinicRepository(client)), csrf, auditLogger, files, ids, systems, masterKey, log)
 
 	e := echo.New()
@@ -686,5 +695,90 @@ func TestPatientStatusCookieFilter(t *testing.T) {
 	}
 	if !strings.Contains(rec2.Body.String(), `data-status="inactive"`) {
 		t.Fatalf("response body does not carry saved status inactive: %q", rec2.Body.String())
+	}
+}
+
+func TestIdentifierLookupValidationAndCases(t *testing.T) {
+	e, sessions, _, _, _ := newIdentEnv(t)
+	cookie := adminSession(t, sessions)
+
+	// Value < 4 characters (minLookupLen)
+	shortRec := getWithCookie(t, e, "/patients/lookup?value=12", cookie, true)
+	if shortRec.Code != http.StatusOK || !strings.Contains(shortRec.Body.String(), "Type at least 4 characters") {
+		t.Fatalf("expected short value empty prompt, got %d: %s", shortRec.Code, shortRec.Body.String())
+	}
+
+	// Value with 0 hits
+	noneRec := getWithCookie(t, e, "/patients/lookup?value=99999999999", cookie, true)
+	if noneRec.Code != http.StatusOK || !strings.Contains(noneRec.Body.String(), "No patient holds this document") {
+		t.Fatalf("expected 0 hits empty prompt, got %d: %s", noneRec.Code, noneRec.Body.String())
+	}
+}
+
+func TestIdentifierRemoveInvalidID(t *testing.T) {
+	e, sessions, svc, _, _ := newIdentEnv(t)
+	cookie := adminSession(t, sessions)
+	patientID := newPatient(t, svc, testClinic)
+
+	rec := postForm(t, e, "/patients/"+patientID.String()+"/identifiers/not-a-uuid/remove", cookie, url.Values{})
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("remove status = %d, want 404", rec.Code)
+	}
+}
+
+type mockIdentifierFinder struct {
+	identifierusecase.Service
+	findFunc func(ctx context.Context, clinicID, raw string) ([]*identifiermodel.Identifier, error)
+}
+
+func (m *mockIdentifierFinder) FindByValue(ctx context.Context, clinicID, raw string) ([]*identifiermodel.Identifier, error) {
+	if m.findFunc != nil {
+		return m.findFunc(ctx, clinicID, raw)
+	}
+	return m.Service.FindByValue(ctx, clinicID, raw)
+}
+
+func TestIdentifierLookupMultipleHits(t *testing.T) {
+	var p1ID, p2ID string
+	e, sessions, svc, _, _ := newIdentEnvWithWrapper(t, func(base identifierusecase.Service) identifierusecase.Service {
+		return &mockIdentifierFinder{
+			Service: base,
+			findFunc: func(ctx context.Context, clinicID, raw string) ([]*identifiermodel.Identifier, error) {
+				return []*identifiermodel.Identifier{
+					{PatientID: p1ID, System: urn.Identifier("br", "cpf")},
+					{PatientID: p2ID, System: urn.Identifier("br", "cpf")},
+					{PatientID: p1ID, System: urn.Identifier("br", "cpf")}, // duplicate hit to test the seen set
+				}, nil
+			},
+		}
+	})
+	cookie := adminSession(t, sessions)
+
+	pt1, err := svc.Create(context.Background(), testClinic, testAdminID.String(), usecase.PatientInput{
+		DisplayName: "Paciente Um",
+		Phone:       "+55 11 99999-0001",
+		Email:       "p1@example.org",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p1ID = pt1.ID.String()
+
+	pt2, err := svc.Create(context.Background(), testClinic, testAdminID.String(), usecase.PatientInput{
+		DisplayName: "Paciente Dois",
+		Phone:       "+55 11 99999-0002",
+		Email:       "p2@example.org",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	p2ID = pt2.ID.String()
+
+	rec := getWithCookie(t, e, "/patients/lookup?value=52998224725", cookie, true)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "Paciente Um") || !strings.Contains(rec.Body.String(), "Paciente Dois") {
+		t.Fatalf("expected hits containing both patients, got: %s", rec.Body.String())
 	}
 }

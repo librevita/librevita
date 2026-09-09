@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 
 	"librevita.org/internal/core/audit"
@@ -223,4 +224,80 @@ func TestPatientDetailShredAndSearchFields(t *testing.T) {
 	rec = httptest.NewRecorder()
 	e.ServeHTTP(rec, req)
 	assert.True(t, rec.Code == http.StatusOK || rec.Code == http.StatusFound || rec.Code == http.StatusSeeOther)
+
+	// 5. POST /patients/bulk-archive with real "ids" (and missing id for skip test)
+	bulkWithIDsForm := url.Values{
+		"ids": {patID.String(), uuid.NewString(), "invalid-uuid"},
+	}
+	req = httptest.NewRequest(http.MethodPost, "/patients/bulk-archive?page=bad", strings.NewReader(bulkWithIDsForm.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	_ = req.ParseForm()
+	req.AddCookie(cookie)
+	rec = httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+	assert.Equal(t, http.StatusOK, rec.Code)
+
+	// 6. GET /patients with invalid page
+	req = httptest.NewRequest(http.MethodGet, "/patients?page=-1", nil)
+	req.AddCookie(cookie)
+	rec = httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+	assert.Equal(t, http.StatusOK, rec.Code)
+
+	// 7. GET /patients/:id not found
+	req = httptest.NewRequest(http.MethodGet, "/patients/"+uuid.NewString(), nil)
+	req.AddCookie(cookie)
+	rec = httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+
+	// 8. GET /patients/:id/edit not found
+	req = httptest.NewRequest(http.MethodGet, "/patients/"+uuid.NewString()+"/edit", nil)
+	req.AddCookie(cookie)
+	rec = httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+
+	// 9. POST /patients/:id archive via HTMX
+	activePat := newPatient(t, svc, testClinic)
+	req = httptest.NewRequest(http.MethodPost, "/patients/"+activePat.String()+"/archive", nil)
+	req.Header.Set("HX-Request", "true")
+	req.AddCookie(cookie)
+	rec = httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+	assert.Equal(t, http.StatusOK, rec.Code)
+
+	// 10. POST /patients/:id restore via HTMX
+	req = httptest.NewRequest(http.MethodPost, "/patients/"+activePat.String()+"/restore", nil)
+	req.Header.Set("HX-Request", "true")
+	req.AddCookie(cookie)
+	rec = httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+	assert.Equal(t, http.StatusOK, rec.Code)
+
+	// 11. POST /patients non-HTMX validation error
+	badForm := url.Values{"display_name": {""}, "email": {"invalid"}}
+	req = httptest.NewRequest(http.MethodPost, "/patients", strings.NewReader(badForm.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(cookie)
+	rec = httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+
+	// 12. POST /patients/:id non-HTMX validation error
+	req = httptest.NewRequest(http.MethodPost, "/patients/"+activePat.String(), strings.NewReader(badForm.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(cookie)
+	rec = httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+
+	// 13. POST /patients/:id with bad identifier check digit
+	badDocForm := url.Values{"display_name": {"Ana Valida"}, "identifier_value": {"12345678901"}}
+	req = httptest.NewRequest(http.MethodPost, "/patients/"+activePat.String(), strings.NewReader(badDocForm.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(cookie)
+	rec = httptest.NewRecorder()
+	e.ServeHTTP(rec, req)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
 }

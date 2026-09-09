@@ -1,7 +1,9 @@
 package usecase_test
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -10,6 +12,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"librevita.org/internal/core/auth"
+	"librevita.org/internal/core/crypto"
+	"librevita.org/internal/core/database/fle"
 	"librevita.org/internal/core/policy"
 	patientmodel "librevita.org/internal/domain/patient/model"
 	"librevita.org/internal/domain/patient/usecase"
@@ -550,4 +554,166 @@ func TestPatientSetStatusAndCount(t *testing.T) {
 
 func strPtr(s string) *string {
 	return &s
+}
+
+func setupPatientQueryTest(t *testing.T) (*patientmocks.MockPatientQueryRepository, *usecase.Service) {
+	t.Helper()
+
+	policyRepoMock := policymocks.NewMockRepository(t)
+	policyRepoMock.EXPECT().SeedDefaults(mock.Anything, mock.Anything).Return(nil).Maybe()
+	var defaultRows []policy.PolicyRow
+	for name, expr := range policy.DefaultPolicies {
+		defaultRows = append(defaultRows, policy.PolicyRow{
+			Name:       name,
+			Expression: expr,
+		})
+	}
+	policyRepoMock.EXPECT().List(mock.Anything).Return(defaultRows, nil).Maybe()
+
+	policies, err := policy.NewPolicyEngine(policyRepoMock, log.Nop())
+	require.NoError(t, err)
+	require.NoError(t, policies.Load(context.Background()))
+
+	repoMock := patientmocks.NewMockPatientQueryRepository(t)
+	svc := usecase.NewService(repoMock, policies, nil)
+
+	return repoMock, svc
+}
+
+func TestListOptimized(t *testing.T) {
+	repoMock, svc := setupPatientQueryTest(t)
+	hasher, err := crypto.NewClinicIndexHasher(bytes.Repeat([]byte{42}, 32))
+	require.NoError(t, err)
+	ctx := fle.WithHasher(context.Background(), hasher)
+
+	pID1 := ident.New[ident.PatientID]()
+	pID2 := ident.New[ident.PatientID]()
+	st := patientmodel.PatientStatusActive
+
+	// 1. Empty query (q == "")
+	repoMock.EXPECT().ListCandidates(ctx, testClinicID, &st, []string(nil), "", 10, 0).
+		Return([]patientmodel.PatientCandidate{
+			{ID: pID1, ClinicID: testClinicID, Status: st},
+			{ID: pID2, ClinicID: testClinicID, Status: st},
+		}, 2, nil).Once()
+
+	repoMock.EXPECT().GetMany(ctx, testClinicID, []ident.PatientID{pID1, pID2}).
+		Return([]patientmodel.Patient{
+			{ID: pID1, DisplayName: "Carlos Silva"},
+			{ID: pID2, DisplayName: "Beatriz Costa"},
+		}, nil).Once()
+
+	pts, total, err := svc.List(ctx, testClinicID.String(), "", string(st), "", 10, 0)
+	require.NoError(t, err)
+	assert.Equal(t, int64(2), total)
+	assert.Len(t, pts, 2)
+	assert.Equal(t, "Carlos Silva", pts[0].DisplayName)
+
+	// 2. Name search query (q == "Carlos")
+	repoMock.EXPECT().ListCandidates(ctx, testClinicID, &st, mock.MatchedBy(func(tokens []string) bool {
+		return len(tokens) > 0
+	}), "", 10, 0).
+		Return([]patientmodel.PatientCandidate{
+			{ID: pID1, ClinicID: testClinicID, Status: st},
+		}, 1, nil).Once()
+
+	repoMock.EXPECT().GetMany(ctx, testClinicID, []ident.PatientID{pID1}).
+		Return([]patientmodel.Patient{
+			{ID: pID1, DisplayName: "Carlos Silva"},
+		}, nil).Once()
+
+	pts, total, err = svc.List(ctx, testClinicID.String(), "Carlos", string(st), "", 10, 0)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), total)
+	assert.Len(t, pts, 1)
+
+	// 3. Email search query (field == "email")
+	repoMock.EXPECT().ListCandidates(ctx, testClinicID, &st, []string(nil), mock.MatchedBy(func(bIndex string) bool {
+		return bIndex != ""
+	}), 10, 0).
+		Return([]patientmodel.PatientCandidate{
+			{ID: pID2, ClinicID: testClinicID, Status: st},
+		}, 1, nil).Once()
+
+	repoMock.EXPECT().GetMany(ctx, testClinicID, []ident.PatientID{pID2}).
+		Return([]patientmodel.Patient{
+			{ID: pID2, DisplayName: "Beatriz Costa", Email: strPtr("beatriz@example.com")},
+		}, nil).Once()
+
+	pts, total, err = svc.List(ctx, testClinicID.String(), "beatriz@example.com", string(st), "email", 10, 0)
+	require.NoError(t, err)
+	assert.Equal(t, int64(1), total)
+	assert.Len(t, pts, 1)
+
+	// 4. Missing hasher when q != ""
+	_, _, err = svc.List(context.Background(), testClinicID.String(), "Carlos", string(st), "", 10, 0)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "clinic hasher is required")
+
+	// 5. ListCandidates error
+	repoMock.EXPECT().ListCandidates(ctx, testClinicID, &st, mock.Anything, "", 10, 0).
+		Return(nil, 0, errors.New("candidate error")).Once()
+	_, _, err = svc.List(ctx, testClinicID.String(), "Carlos", string(st), "", 10, 0)
+	assert.Error(t, err)
+
+	// 6. GetMany error
+	repoMock.EXPECT().ListCandidates(ctx, testClinicID, &st, mock.Anything, "", 10, 0).
+		Return([]patientmodel.PatientCandidate{{ID: pID1}}, 1, nil).Once()
+	repoMock.EXPECT().GetMany(ctx, testClinicID, []ident.PatientID{pID1}).
+		Return(nil, errors.New("hydrate error")).Once()
+	_, _, err = svc.List(ctx, testClinicID.String(), "Carlos", string(st), "", 10, 0)
+	assert.Error(t, err)
+}
+
+func TestDeleteAggregate(t *testing.T) {
+	policyRepoMock := policymocks.NewMockRepository(t)
+	policyRepoMock.EXPECT().SeedDefaults(mock.Anything, mock.Anything).Return(nil).Maybe()
+	var defaultRows []policy.PolicyRow
+	for name, expr := range policy.DefaultPolicies {
+		defaultRows = append(defaultRows, policy.PolicyRow{
+			Name:       name,
+			Expression: expr,
+		})
+	}
+	policyRepoMock.EXPECT().List(mock.Anything).Return(defaultRows, nil).Maybe()
+
+	policies, err := policy.NewPolicyEngine(policyRepoMock, log.Nop())
+	require.NoError(t, err)
+	require.NoError(t, policies.Load(context.Background()))
+
+	delRepoMock := patientmocks.NewMockPatientDeletionRepository(t)
+	svc := usecase.NewService(delRepoMock, policies, nil)
+
+	pID := ident.New[ident.PatientID]()
+	delRepoMock.EXPECT().DeleteAggregate(mock.Anything, testClinicID, pID).Return(nil).Once()
+	require.NoError(t, svc.Delete(context.Background(), testClinicID.String(), pID.String()))
+}
+
+func TestGetMany(t *testing.T) {
+	repoMock, svc := setupPatientQueryTest(t)
+	ctx := context.Background()
+
+	// Invalid clinic ID
+	_, err := svc.GetMany(ctx, "invalid-clinic", []string{ident.New[ident.PatientID]().String()})
+	assert.Error(t, err)
+
+	// Empty IDs
+	repoMock.EXPECT().GetMany(ctx, testClinicID, []ident.PatientID{}).Return([]patientmodel.Patient{}, nil).Once()
+	res, err := svc.GetMany(ctx, testClinicID.String(), nil)
+	require.NoError(t, err)
+	assert.Empty(t, res)
+
+	// Invalid patient ID in slice
+	_, err = svc.GetMany(ctx, testClinicID.String(), []string{"bad-id"})
+	assert.Error(t, err)
+
+	// Valid GetMany
+	pID := ident.New[ident.PatientID]()
+	repoMock.EXPECT().GetMany(ctx, testClinicID, []ident.PatientID{pID}).Return([]patientmodel.Patient{
+		{ID: pID, DisplayName: "Patient One"},
+	}, nil).Once()
+
+	res, err = svc.GetMany(ctx, testClinicID.String(), []string{pID.String()})
+	require.NoError(t, err)
+	assert.Len(t, res, 1)
 }

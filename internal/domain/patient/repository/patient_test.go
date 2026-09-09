@@ -204,4 +204,14 @@ func TestPatientRepository_CRUD(t *testing.T) {
 	require.NoError(t, deleter.DeleteAggregate(ctx, clinicID, patientID))
 	_, err = repo.Get(ctx, clinicID, patientID)
 	assert.ErrorIs(t, err, patientmodel.ErrNotFound)
+
+	// 8. NewPatientRepositoryWithEngine and GetMany empty
+	queryRepo, ok := repo.(patientmodel.PatientQueryRepository)
+	require.True(t, ok)
+	emptyHydrated, err := queryRepo.GetMany(ctx, clinicID, nil)
+	require.NoError(t, err)
+	assert.Nil(t, emptyHydrated)
+
+	repoWithEngine := repository.NewPatientRepositoryWithEngine(client, nil)
+	require.NotNil(t, repoWithEngine)
 }

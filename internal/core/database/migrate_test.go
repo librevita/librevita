@@ -93,3 +93,13 @@ func TestMigratePostgres(t *testing.T) {
 		assert.False(t, tables[name], "postgres table %q should have been dropped", name)
 	}
 }
+
+func TestNewProvider_Postgres(t *testing.T) {
+	db, err := sql.Open("sqlite", "file:dummy?mode=memory&cache=shared")
+	require.NoError(t, err)
+	defer db.Close()
+
+	provider, err := newProvider(db, config.DriverPostgres, nil)
+	require.NoError(t, err)
+	assert.NotNil(t, provider)
+}

@@ -115,7 +115,7 @@ func fillSuccessor(byID map[ident.EpisodeID]episodemodel.Episode, ep *episodemod
 	}
 }
 
-func setupEpisodeSvc(t *testing.T, repo *memRepo) *usecase.Service {
+func setupEpisodeSvc(t *testing.T, repo episodemodel.EpisodeRepository) *usecase.Service {
 	t.Helper()
 	policyRepoMock := policymocks.NewMockRepository(t)
 	policyRepoMock.EXPECT().SeedDefaults(mock.Anything, mock.Anything).Return(nil).Maybe()
@@ -459,4 +459,134 @@ func TestEpisodeChildItemsAndAuthCornerCases(t *testing.T) {
 	// 7. Amend on draft episode returns ErrNotFinalized
 	_, err = svc.Amend(ctx, phys, clinicID, amended.ID)
 	assert.ErrorIs(t, err, episodemodel.ErrNotFinalized)
+}
+
+func TestUpdateDraft_Success(t *testing.T) {
+	clinicID := ident.MustParseClinic("00000000-0000-0000-0000-000000000001")
+	userID := ident.MustParseUser("00000000-0000-0000-0000-000000000002")
+	patientID := ident.MustParsePatient("00000000-0000-0000-0000-000000000003")
+	repo := newMemRepo()
+	repo.patients[patientID] = true
+	svc := setupEpisodeSvc(t, repo)
+	ctx := context.Background()
+	phys := &auth.Principal{ID: userID.String(), Role: auth.RolePhysician, ClinicID: clinicID.String()}
+
+	// 1. Create a draft
+	draft, err := svc.Create(ctx, phys, episodemodel.Episode{
+		ClinicID:   clinicID,
+		PatientID:  patientID,
+		AuthorID:   userID,
+		Type:       episodemodel.EpisodeTypeConsultation,
+		Class:      episodemodel.CareSettingAmbulatory,
+		OccurredAt: time.Now().UTC(),
+		SOAP:       episodemodel.SOAP{Subjective: "Dor inicial"},
+	})
+	require.NoError(t, err)
+
+	// 2. UpdateDraft with modified fields and zeroed defaults (testing prepareUpdate fallback)
+	toUpdate := *draft
+	toUpdate.SOAP.Subjective = "Dor atualizada e melhorada"
+	toUpdate.AuthorID = ident.UserID{} // should fallback to existing
+	toUpdate.Type = ""                 // should fallback to existing
+	toUpdate.Class = ""                // should fallback to existing
+	toUpdate.OccurredAt = time.Time{}  // should fallback to existing
+	toUpdate.Findings = []episodemodel.Finding{
+		{
+			Code:  episodemodel.Coding{System: "snomed", Code: "123", Display: "Test"},
+			Value: episodemodel.FindingValue{Kind: episodemodel.FindingValueString, String: "Normal"},
+		},
+	}
+	toUpdate.Problems = []episodemodel.Problem{
+		{
+			Rank:           1,
+			Category:       episodemodel.ProblemCategoryEncounter,
+			ClinicalStatus: episodemodel.ProblemClinicalActive,
+			Code:           episodemodel.Coding{System: "icd10", Code: "R50", Display: "Fever"},
+		},
+	}
+	toUpdate.PlanItems = []episodemodel.PlanItem{
+		{
+			Kind:        episodemodel.PlanItemKindInstruction,
+			Status:      episodemodel.PlanItemStatusDraft,
+			Description: "Drink liquids",
+		},
+	}
+
+	updated, err := svc.UpdateDraft(ctx, phys, toUpdate)
+	require.NoError(t, err)
+	assert.Equal(t, "Dor atualizada e melhorada", updated.SOAP.Subjective)
+	assert.Equal(t, userID, updated.AuthorID)
+	assert.Equal(t, episodemodel.EpisodeTypeConsultation, updated.Type)
+	assert.Equal(t, episodemodel.CareSettingAmbulatory, updated.Class)
+	assert.Len(t, updated.Findings, 1)
+	assert.False(t, updated.Findings[0].ID.IsZero())
+	assert.Len(t, updated.Problems, 1)
+	assert.False(t, updated.Problems[0].ID.IsZero())
+	assert.Len(t, updated.PlanItems, 1)
+	assert.False(t, updated.PlanItems[0].ID.IsZero())
+
+	// 3. Update non-existent draft
+	ghostID := ident.New[ident.EpisodeID]()
+	toUpdate.ID = ghostID
+	_, err = svc.UpdateDraft(ctx, phys, toUpdate)
+	assert.ErrorIs(t, err, episodemodel.ErrNotFound)
+}
+
+type conflictMemRepo struct {
+	*memRepo
+	failCreateWith error
+}
+
+func (c *conflictMemRepo) Create(ctx context.Context, ep episodemodel.Episode) (*episodemodel.Episode, error) {
+	if c.failCreateWith != nil {
+		return nil, c.failCreateWith
+	}
+	return c.memRepo.Create(ctx, ep)
+}
+
+func TestAmend_ConflictHandling(t *testing.T) {
+	clinicID := ident.MustParseClinic("00000000-0000-0000-0000-000000000001")
+	userID := ident.MustParseUser("00000000-0000-0000-0000-000000000002")
+	patientID := ident.MustParsePatient("00000000-0000-0000-0000-000000000003")
+	baseRepo := newMemRepo()
+	baseRepo.patients[patientID] = true
+	cRepo := &conflictMemRepo{memRepo: baseRepo}
+	svc := setupEpisodeSvc(t, cRepo)
+	ctx := context.Background()
+	phys := &auth.Principal{ID: userID.String(), Role: auth.RolePhysician, ClinicID: clinicID.String()}
+
+	// Create and finalize initial episode
+	ep, err := svc.Create(ctx, phys, episodemodel.Episode{
+		ClinicID:   clinicID,
+		PatientID:  patientID,
+		AuthorID:   userID,
+		OccurredAt: time.Now().UTC(),
+		SOAP:       episodemodel.SOAP{Subjective: "Nota original"},
+	})
+	require.NoError(t, err)
+	final, err := svc.Finalize(ctx, phys, clinicID, ep.ID)
+	require.NoError(t, err)
+
+	// Case 1: Create fails with generic error (not ErrAlreadyAmended)
+	cRepo.failCreateWith = episodemodel.ErrForbidden
+	_, err = svc.Amend(ctx, phys, clinicID, final.ID)
+	assert.ErrorIs(t, err, episodemodel.ErrForbidden)
+
+	// Case 2: Create fails with ErrAlreadyAmended but successorDraft exists
+	// First amend normally
+	cRepo.failCreateWith = nil
+	amended, err := svc.Amend(ctx, phys, clinicID, final.ID)
+	require.NoError(t, err)
+
+	// Now simulate conflict when second caller tries to Create
+	cRepo.failCreateWith = episodemodel.ErrAlreadyAmended
+	recovered, err := svc.Amend(ctx, phys, clinicID, final.ID)
+	require.NoError(t, err)
+	assert.Equal(t, amended.ID, recovered.ID)
+
+	// Case 3: Create fails with ErrAlreadyAmended and successor was already finalized
+	_, err = svc.Finalize(ctx, phys, clinicID, amended.ID)
+	require.NoError(t, err)
+	_, err = svc.Amend(ctx, phys, clinicID, final.ID)
+	assert.ErrorIs(t, err, episodemodel.ErrAlreadyAmended)
 }

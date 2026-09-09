@@ -227,6 +227,36 @@ func TestRoleAndSpecialtiesHandlers(t *testing.T) {
 	c = env.newContext(req, rec)
 	err = env.handler.SpecialtyCreate(c)
 	require.NoError(t, err)
+
+	// RoleCreate with duplicate name
+	badRole := url.Values{"name": {"admin"}}
+	req = httptest.NewRequest(http.MethodPost, "/admin/roles", strings.NewReader(badRole.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(env.adminCookie)
+	rec = httptest.NewRecorder()
+	c = env.newContext(req, rec)
+	require.NoError(t, env.handler.RoleCreate(c))
+	assert.Contains(t, rec.Body.String(), "already exists")
+
+	// RoleCreate with empty name (validation error)
+	emptyRole := url.Values{"name": {""}}
+	req = httptest.NewRequest(http.MethodPost, "/admin/roles", strings.NewReader(emptyRole.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(env.adminCookie)
+	rec = httptest.NewRecorder()
+	c = env.newContext(req, rec)
+	require.NoError(t, env.handler.RoleCreate(c))
+	assert.Equal(t, http.StatusOK, rec.Code)
+
+	// SpecialtyCreate with duplicate name
+	dupSpec := url.Values{"name": {"Ortopedia"}}
+	req = httptest.NewRequest(http.MethodPost, "/admin/specialties", strings.NewReader(dupSpec.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(env.adminCookie)
+	rec = httptest.NewRecorder()
+	c = env.newContext(req, rec)
+	require.NoError(t, env.handler.SpecialtyCreate(c))
+	assert.Contains(t, rec.Body.String(), "already exists")
 }
 
 func TestStaffHTMXAndErrorBranches(t *testing.T) {
@@ -284,4 +314,93 @@ func TestStaffHTMXAndErrorBranches(t *testing.T) {
 	c.SetParamValues(physID)
 	require.NoError(t, env.handler.StaffRequestChange(c))
 	assert.Equal(t, http.StatusBadRequest, rec.Code)
+
+	// 6. StaffEditPage for non-clinical user returns 404
+	req = httptest.NewRequest(http.MethodGet, "/staff/"+env.adminUser.ID.String()+"/edit", nil)
+	rec = httptest.NewRecorder()
+	c = env.newContext(req, rec)
+	c.SetParamNames("id")
+	c.SetParamValues(env.adminUser.ID.String())
+	assert.Error(t, env.handler.StaffEditPage(c))
+
+	// 7. StaffCreate with duplicate email
+	dupCreateForm := url.Values{
+		"name":     {"Another Physician"},
+		"email":    {"dr.htmx@example.org"},
+		"password": {"StrongPass123!"},
+	}
+	req = httptest.NewRequest(http.MethodPost, "/staff/create", strings.NewReader(dupCreateForm.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec = httptest.NewRecorder()
+	c = env.newContext(req, rec)
+	require.NoError(t, env.handler.StaffCreate(c))
+	assert.Contains(t, rec.Body.String(), "That email is already registered")
+
+	// 8. StaffRequest on already decided request returns alert
+	chReq, err := env.client.StaffChangeRequest.Create().
+		SetID(ident.New[ident.StaffChangeRequestID]()).
+		SetClinicID(env.clinicID).
+		SetUserID(ident.MustParseUser(physID)).
+		SetRequestedBy(env.adminUser.ID).
+		SetChanges(`{"name": "Dr. Once", "email": "dr.once@example.org"}`).
+		Save(ctx)
+	require.NoError(t, err)
+
+	// Approve it once
+	req = httptest.NewRequest(http.MethodPost, "/staff/requests/"+chReq.ID.String()+"/approve", nil)
+	rec = httptest.NewRecorder()
+	c = env.newContext(req, rec)
+	c.SetParamNames("id")
+	c.SetParamValues(chReq.ID.String())
+	require.NoError(t, env.handler.StaffRequestApprove(c))
+
+	// Approve it again -> triggers requestError / ErrRequestNotPending
+	reqAgain := httptest.NewRequest(http.MethodPost, "/staff/requests/"+chReq.ID.String()+"/approve", nil)
+	recAgain := httptest.NewRecorder()
+	cAgain := env.newContext(reqAgain, recAgain)
+	cAgain.SetParamNames("id")
+	cAgain.SetParamValues(chReq.ID.String())
+	require.NoError(t, env.handler.StaffRequestApprove(cAgain))
+	assert.Contains(t, recAgain.Body.String(), "This request was already decided")
+
+	// Reject it -> triggers requestError / ErrRequestNotPending
+	reqReject := httptest.NewRequest(http.MethodPost, "/staff/requests/"+chReq.ID.String()+"/reject", nil)
+	recReject := httptest.NewRecorder()
+	cReject := env.newContext(reqReject, recReject)
+	cReject.SetParamNames("id")
+	cReject.SetParamValues(chReq.ID.String())
+	require.NoError(t, env.handler.StaffRequestReject(cReject))
+	assert.Contains(t, recReject.Body.String(), "This request was already decided")
+
+	// 9. StaffRequestsPage lists decided rows with decision notes/deciders
+	reqList := httptest.NewRequest(http.MethodGet, "/staff/requests", nil)
+	recList := httptest.NewRecorder()
+	cList := env.newContext(reqList, recList)
+	require.NoError(t, env.handler.StaffRequestsPage(cList))
+	assert.Equal(t, http.StatusOK, recList.Code)
+
+	// 10. StaffUpdate email conflict (409 Conflict)
+	dupUpdateForm := url.Values{"name": {"Dr. Phys Dup"}, "email": {env.adminUser.Email}}
+	req = httptest.NewRequest(http.MethodPost, "/staff/"+physID, strings.NewReader(dupUpdateForm.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec = httptest.NewRecorder()
+	c = env.newContext(req, rec)
+	c.SetParamNames("id")
+	c.SetParamValues(physID)
+	require.NoError(t, env.handler.StaffUpdate(c))
+	assert.Equal(t, http.StatusConflict, rec.Code)
+
+	// 11. StaffRequestChange email conflict (409 Conflict)
+	reqFormConflict := url.Values{"name": {"Dr. Phys InUse"}, "email": {env.adminUser.Email}}
+	req = httptest.NewRequest(http.MethodPost, "/staff/"+physID+"/request", strings.NewReader(reqFormConflict.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec = httptest.NewRecorder()
+	c = env.newContext(req, rec)
+	c.SetParamNames("id")
+	c.SetParamValues(physID)
+	c.Set("server.principal", &auth.Principal{
+		ID: env.adminUser.ID.String(), Email: env.adminUser.Email, Name: env.adminUser.DisplayName, Role: auth.RoleReceptionist,
+	})
+	require.NoError(t, env.handler.StaffRequestChange(c))
+	assert.Equal(t, http.StatusConflict, rec.Code)
 }
