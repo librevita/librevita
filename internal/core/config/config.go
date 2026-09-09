@@ -52,6 +52,23 @@ const (
 	BackendNATS  = "nats"
 	BackendEtcd  = "etcd"
 	BackendVault = "vault"
+
+	// ACME directories and challenges.
+	ACMEDirectoryProduction = "https://acme-v02.api.letsencrypt.org/directory"
+	ACMEDirectoryStaging    = "https://acme-staging-v02.api.letsencrypt.org/directory"
+
+	ACMEChallengeHTTP01 = "http-01"
+	ACMEChallengeDNS01  = "dns-01"
+
+	ACMEDNSProviderCloudflare = "cloudflare"
+	ACMEDNSProviderRFC2136    = "rfc2136"
+	ACMEDNSProviderExec       = "exec"
+	ACMEDNSProviderMock       = "mock"
+
+	defaultHTTPSBind                    = "0.0.0.0"
+	defaultHTTPSPort                    = 8443
+	defaultACMERenewBeforeDays          = 30
+	defaultACMEDNSPropagationTimeoutSec = 60
 )
 
 // Config is the application configuration root.
@@ -128,6 +145,92 @@ type Config struct {
 
 	// Crypto configures cryptographic agility defaults (hashing algorithm and encryption version).
 	Crypto CryptoConfig `koanf:"crypto"`
+
+	// TLS configures HTTPS listener and static certificates.
+	TLS TLSConfig `koanf:"tls"`
+
+	// ACME configures automatic certificate management via Let's Encrypt.
+	ACME ACMEConfig `koanf:"acme"`
+}
+
+// TLSConfig controls HTTPS server settings.
+type TLSConfig struct {
+	// Enabled turns on HTTPS listener.
+	Enabled bool `koanf:"enabled"`
+
+	// HTTPSBind is the bind address for HTTPS (default "0.0.0.0").
+	HTTPSBind string `koanf:"https_bind"`
+
+	// HTTPSPort is the TCP port for HTTPS (default 8443).
+	HTTPSPort int `koanf:"https_port"`
+
+	// RedirectHTTP redirects all non-ACME HTTP traffic to HTTPS (default true).
+	RedirectHTTP bool `koanf:"redirect_http"`
+
+	// CertFile optionally points to a static TLS certificate file.
+	CertFile string `koanf:"cert_file"`
+
+	// KeyFile optionally points to a static TLS private key file.
+	KeyFile string `koanf:"key_file"`
+}
+
+// ACMEConfig controls Let's Encrypt / ACME automatic certificate procurement.
+type ACMEConfig struct {
+	// Enabled activates automatic certificate procurement.
+	Enabled bool `koanf:"enabled"`
+
+	// Directory is the ACME directory URL, or "production" / "staging".
+	Directory string `koanf:"directory"`
+
+	// Email is the account registration contact email.
+	Email string `koanf:"email"`
+
+	// Challenge is "http-01" or "dns-01".
+	Challenge string `koanf:"challenge"`
+
+	// Domains is the list of SANs. If empty, derived from BaseDomain.
+	Domains []string `koanf:"domains"`
+
+	// RenewBeforeDays is the renewal threshold in days (default 30).
+	RenewBeforeDays int `koanf:"renew_before_days"`
+
+	// Storage controls where account keys and certificates are persisted.
+	Storage ACMEStorageConfig `koanf:"storage"`
+
+	// DNS configures DNS-01 challenge parameters.
+	DNS ACMEDNSConfig `koanf:"dns"`
+}
+
+// ACMEStorageConfig controls certificate and account persistence.
+type ACMEStorageConfig struct {
+	// Backend is "file" (default) or "kv".
+	Backend string `koanf:"backend"`
+
+	// Dir is the directory for file storage (default <data_dir>/acme).
+	Dir string `koanf:"dir"`
+}
+
+// ACMEDNSConfig configures DNS-01 providers and propagation.
+type ACMEDNSConfig struct {
+	// Provider is "cloudflare", "rfc2136", "exec", or "mock".
+	Provider string `koanf:"provider"`
+
+	// Cloudflare settings
+	CloudflareAPIToken string `koanf:"cloudflare_api_token"`
+	CloudflareZoneID   string `koanf:"cloudflare_zone_id"`
+
+	// RFC 2136 settings
+	RFC2136Nameserver    string `koanf:"rfc2136_nameserver"`
+	RFC2136Zone          string `koanf:"rfc2136_zone"`
+	RFC2136TSIGKeyName   string `koanf:"rfc2136_tsig_key_name"`
+	RFC2136TSIGSecret    string `koanf:"rfc2136_tsig_secret"`
+	RFC2136TSIGAlgorithm string `koanf:"rfc2136_tsig_algorithm"`
+
+	// Exec script hook
+	ExecScript string `koanf:"exec_script"`
+
+	// PropagationTimeoutSec is the wait time for DNS propagation in seconds (default 60).
+	PropagationTimeoutSec int `koanf:"propagation_timeout_sec"`
 }
 
 // CryptoConfig defines defaults for cryptographic hashing and symmetric AEAD encryption.

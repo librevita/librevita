@@ -271,7 +271,36 @@ Replace `podman` with `docker` when using Docker. Production still requires `LIB
 
 ## Production: keys, TLS, DNS, and proxy
 
-LibreVita listens on plain HTTP (`http_bind` / `http_port`). It does not terminate TLS. Every mode other than `development` requires durable keys and sets the `Secure` flag on session and CSRF cookies, so browsers only send them over HTTPS. `staging`, `prod`, and any other label are treated as persistent — there is no halfway mode with ephemeral keys.
+LibreVita supports native TLS termination with automated certificates from **Let's Encrypt (ACME)**, as well as running behind an external reverse proxy (Caddy, nginx). Every mode other than `development` requires durable keys and sets the `Secure` flag on session and CSRF cookies, so browsers only send them over HTTPS.
+
+### Automated TLS with Let's Encrypt (ACME)
+
+LibreVita includes a built-in ACME client supporting both **HTTP-01** and **DNS-01** challenge types:
+
+- **DNS-01 (Recommended for multi-clinic wildcard)**: Let's Encrypt validates control via `_acme-challenge.<base_domain>` DNS TXT records. This enables a single wildcard certificate (`*.{base_domain}` and `{base_domain}`) covering every tenant clinic slug (`{slug}.{base_domain}`) and the apex domain.
+  - **Cloudflare**: Native REST API v4 integration using an API token.
+  - **RFC 2136**: Dynamic DNS update protocol with TSIG authentication (BIND, PowerDNS, Knot, Windows Server).
+  - **Exec Hook**: Executes an external script/command (`present`/`cleanup`), allowing integration with any DNS provider without heavy cloud SDKs.
+- **HTTP-01**: Validates control via `http://<domain>/.well-known/acme-challenge/<token>`. Ideal for standalone single-domain deployments without DNS API credentials. Does not support wildcard domains.
+
+Example configuration for Let's Encrypt with Cloudflare DNS-01:
+
+```sh
+export LIBREVITA_MODE=production
+export LIBREVITA_BASE_DOMAIN=example.org
+export LIBREVITA_TLS_ENABLED=true
+export LIBREVITA_TLS_HTTPS_PORT=443
+export LIBREVITA_HTTP_PORT=80
+export LIBREVITA_ACME_ENABLED=true
+export LIBREVITA_ACME_EMAIL=admin@example.org
+export LIBREVITA_ACME_CHALLENGE=dns-01
+export LIBREVITA_ACME_DNS_PROVIDER=cloudflare
+export LIBREVITA_ACME_DNS_CLOUDFLARE_API_TOKEN=cf_token_here
+export LIBREVITA_PASETO_KEY=...
+export LIBREVITA_MASTER_KEY=...
+```
+
+When native TLS is enabled, LibreVita listens on `tls_https_port` (e.g. 443) with dynamic certificate reloading via `tls.Config.GetCertificate`, runs an automatic renewal worker in the background, and redirects plain HTTP traffic on `http_port` (e.g. 80) to HTTPS while answering in-flight HTTP-01 challenges.
 
 ### Keys
 
@@ -294,9 +323,9 @@ Keep them out of the database: environment, a secret manager, or `config.yaml` w
 
 Publish A/AAAA (or CNAME) for the apex, `www`, and either a wildcard `*.{base_domain}` or a record per clinic slug.
 
-### TLS and reverse proxy
+### External reverse proxy (Optional)
 
-Put Caddy, nginx, or another reverse proxy in front of the binary (or the OCI image). The proxy must:
+If running behind Caddy, nginx, or an external cloud load balancer instead of native ACME:
 
 1. Terminate TLS with a certificate that covers the apex **and** `*.{base_domain}` (or each slug)
 2. Forward the original `Host` — clinic routing uses `Request.Host`, not the backend’s name

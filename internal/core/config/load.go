@@ -67,6 +67,34 @@ func RegisterFlags(fs *pflag.FlagSet) {
 	registerKVFlags(fs, "sessions", false)
 	stringFlag(fs, "crypto-hash-algorithm", "blake2s", "Default cryptographic hash engine (blake2s, blake2b)")
 	stringFlag(fs, "crypto-encryption-cipher", "xchacha20-poly1305", "Default symmetric encryption cipher (xchacha20-poly1305)")
+
+	// TLS
+	boolFlag(fs, "tls-enabled", false, "enable native HTTPS listener")
+	stringFlag(fs, "tls-https-bind", defaultHTTPSBind, "HTTPS bind address (0.0.0.0, 127.0.0.1, ...)")
+	intFlag(fs, "tls-https-port", defaultHTTPSPort, "HTTPS listen port")
+	boolFlag(fs, "tls-redirect-http", true, "redirect plain HTTP traffic to HTTPS")
+	stringFlag(fs, "tls-cert-file", "", "path to static TLS certificate file")
+	stringFlag(fs, "tls-key-file", "", "path to static TLS private key file")
+
+	// ACME
+	boolFlag(fs, "acme-enabled", false, "enable Let's Encrypt / ACME automatic TLS certificate")
+	stringFlag(fs, "acme-directory", "production", "ACME directory: production, staging, or custom URL")
+	stringFlag(fs, "acme-email", "", "ACME account contact email")
+	stringFlag(fs, "acme-challenge", "dns-01", "ACME challenge type: dns-01 or http-01")
+	stringSliceFlag(fs, "acme-domains", nil, "comma-separated list of domains to certify")
+	intFlag(fs, "acme-renew-before-days", defaultACMERenewBeforeDays, "days before certificate expiry to renew")
+	stringFlag(fs, "acme-storage-backend", "file", "ACME persistence backend: file or kv")
+	stringFlag(fs, "acme-storage-dir", "", "ACME directory for keys and certificates (default <data-dir>/acme)")
+	stringFlag(fs, "acme-dns-provider", "cloudflare", "DNS-01 provider: cloudflare, rfc2136, exec, or mock")
+	stringFlag(fs, "acme-dns-cloudflare-api-token", "", "Cloudflare API token with Zone:DNS edit permission")
+	stringFlag(fs, "acme-dns-cloudflare-zone-id", "", "Cloudflare Zone ID (optional, auto-discovered if empty)")
+	stringFlag(fs, "acme-dns-rfc2136-nameserver", "", "RFC 2136 nameserver address (e.g. 192.168.1.1:53)")
+	stringFlag(fs, "acme-dns-rfc2136-zone", "", "RFC 2136 DNS zone (e.g. example.org.)")
+	stringFlag(fs, "acme-dns-rfc2136-tsig-key-name", "", "RFC 2136 TSIG key name")
+	stringFlag(fs, "acme-dns-rfc2136-tsig-secret", "", "RFC 2136 TSIG secret")
+	stringFlag(fs, "acme-dns-rfc2136-tsig-algorithm", "hmac-sha256", "RFC 2136 TSIG algorithm")
+	stringFlag(fs, "acme-dns-exec-script", "", "path to external script for DNS-01 present/cleanup")
+	intFlag(fs, "acme-dns-propagation-timeout-sec", defaultACMEDNSPropagationTimeoutSec, "seconds to wait for DNS propagation")
 }
 
 func registerKVFlags(fs *pflag.FlagSet, prefix string, includeVault bool) {
@@ -181,6 +209,12 @@ func intFlag(fs *pflag.FlagSet, name string, value int, usage string) {
 func boolFlag(fs *pflag.FlagSet, name string, value bool, usage string) {
 	if fs.Lookup(name) == nil {
 		fs.Bool(name, value, usage)
+	}
+}
+
+func stringSliceFlag(fs *pflag.FlagSet, name string, value []string, usage string) {
+	if fs.Lookup(name) == nil {
+		fs.StringSlice(name, value, usage)
 	}
 }
 

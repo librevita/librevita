@@ -13,4 +13,6 @@ func TestWebMainFlags(t *testing.T) {
 	fs := pflag.NewFlagSet("test", pflag.ContinueOnError)
 	config.RegisterFlags(fs)
 	assert.NotNil(t, fs.Lookup("config"))
+	assert.NotNil(t, fs.Lookup("acme-enabled"))
+	assert.NotNil(t, fs.Lookup("tls-enabled"))
 }

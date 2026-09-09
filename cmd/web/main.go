@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/pflag"
 	"go.uber.org/fx"
 
+	"librevita.org/internal/core/acme"
 	"librevita.org/internal/core/audit"
 	"librevita.org/internal/core/auth"
 	"librevita.org/internal/core/config"
@@ -49,6 +50,7 @@ func main() {
 		auth.Module,
 		clinic.Module,
 		policy.Module,
+		acme.Module,
 		server.Module,
 		ui.Module,
 		components.Module,

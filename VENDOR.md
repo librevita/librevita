@@ -17,7 +17,7 @@ Goose at startup.
 | `github.com/a-h/templ`                     | v0.3.1020 | MIT          | Type-safe server-rendered templates (SSR)                          |
 | `github.com/labstack/echo/v4`              | v4.15.4   | MIT          | HTTP router and middleware                                         |
 | `aidanwoods.dev/go-paseto`                 | v1.6.0    | MIT          | PASETO v4.local session tokens                                     |
-| `golang.org/x/crypto`                      | v0.56.0   | BSD-3-Clause | Argon2id password hashing (PHC format)                             |
+| `golang.org/x/crypto`                      | v0.56.0   | BSD-3-Clause | Argon2id password hashing (PHC format) and ACME / Let's Encrypt client |
 | `github.com/expr-lang/expr`                | v1.17.8   | MIT          | Dynamic policy engine (ABAC/RBAC rules at runtime)                 |
 | `github.com/pressly/goose/v3`              | v3.27.3   | MIT          | SQL migrations (embedded)                                          |
 | `modernc.org/sqlite`                       | v1.57.0   | BSD-3-Clause | Pure-Go SQLite driver (no CGO; optional via build tag)             |
@@ -47,6 +47,7 @@ Goose at startup.
 > [!NOTE]
 >
 > - **etcd v3**: Integrated natively via the standard HTTP v3 JSON API (`/v3/kv/*`) using Go's `net/http` client, eliminating transitive gRPC and Protobuf dependencies.
+> - **ACME / Let's Encrypt**: Leverages `golang.org/x/crypto/acme` with pure `net/http` for Cloudflare, standard RFC 2136 DNS update wire protocol, and external exec hooks without heavyweight cloud provider SDKs.
 > - **Database Build Tags**: `modernc.org/sqlite` and `github.com/jackc/pgx/v5` can be conditionally compiled with `-tags sqlite` or `-tags postgres` to produce stripped production binaries (`task build-sqlite`, `task build-postgres`).
 
 ### Build-time Go tools

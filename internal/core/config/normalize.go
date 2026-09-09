@@ -15,6 +15,8 @@ func (c *Config) normalize() {
 	c.normalizeLogging()
 	c.normalizeKV()
 	c.normalizeCrypto()
+	c.normalizeTLS()
+	c.normalizeACME()
 }
 
 func (c *Config) normalizeHTTP() {
@@ -147,6 +149,34 @@ func (c *Config) validate() error {
 		err := errors.New("config: base_domain is required in production (LIBREVITA_BASE_DOMAIN)")
 		return errors.WithHint(err, "Configure a variável de ambiente LIBREVITA_BASE_DOMAIN com o domínio público da instalação (ex: app.librevita.org).")
 	}
+	if err := c.validateRequiredKeys(); err != nil {
+		return err
+	}
+	if err := c.validateCrypto(); err != nil {
+		return err
+	}
+	if err := c.validateKV(); err != nil {
+		return err
+	}
+	if err := c.validateDatabase(); err != nil {
+		return err
+	}
+	if c.HTTPPort > 65535 {
+		return errors.Newf("config: invalid http_port %d (max 65535)", c.HTTPPort)
+	}
+	if err := c.validateTrustedProxies(); err != nil {
+		return err
+	}
+	if err := c.validateTLS(); err != nil {
+		return err
+	}
+	if err := c.validateACME(); err != nil {
+		return err
+	}
+	return c.validateLogging()
+}
+
+func (c *Config) validateRequiredKeys() error {
 	if !c.IsDevelopment() {
 		if strings.TrimSpace(c.PasetoKey) == "" {
 			err := errors.New("config: paseto_key is required outside development (LIBREVITA_PASETO_KEY)")
@@ -169,22 +199,7 @@ func (c *Config) validate() error {
 			return errors.New("config: master_key must be a valid base64 32-byte string")
 		}
 	}
-	if err := c.validateCrypto(); err != nil {
-		return err
-	}
-	if err := c.validateKV(); err != nil {
-		return err
-	}
-	if err := c.validateDatabase(); err != nil {
-		return err
-	}
-	if c.HTTPPort > 65535 {
-		return errors.Newf("config: invalid http_port %d (max 65535)", c.HTTPPort)
-	}
-	if err := c.validateTrustedProxies(); err != nil {
-		return err
-	}
-	return c.validateLogging()
+	return nil
 }
 
 func (c *Config) validateCrypto() error {
@@ -288,4 +303,137 @@ func (c *Config) validateLogging() error {
 		return errors.Newf("config: invalid logging.level %q (use %q, %q, %q, or %q)",
 			c.Logging.Level, LogLevelDebug, LogLevelInfo, LogLevelWarn, LogLevelError)
 	}
+}
+
+func (c *Config) normalizeTLS() {
+	c.TLS.HTTPSBind = strings.TrimSpace(c.TLS.HTTPSBind)
+	if c.TLS.HTTPSBind == "" {
+		c.TLS.HTTPSBind = defaultHTTPSBind
+	}
+	if c.TLS.HTTPSPort <= 0 {
+		c.TLS.HTTPSPort = defaultHTTPSPort
+	}
+}
+
+func (c *Config) normalizeACME() {
+	if !c.ACME.Enabled {
+		return
+	}
+	c.TLS.Enabled = true
+
+	c.ACME.Directory = strings.TrimSpace(c.ACME.Directory)
+	if c.ACME.Directory == "" || strings.EqualFold(c.ACME.Directory, "production") {
+		c.ACME.Directory = ACMEDirectoryProduction
+	} else if strings.EqualFold(c.ACME.Directory, "staging") {
+		c.ACME.Directory = ACMEDirectoryStaging
+	}
+
+	c.ACME.Email = strings.TrimSpace(c.ACME.Email)
+	c.ACME.Challenge = strings.ToLower(strings.TrimSpace(c.ACME.Challenge))
+	if c.ACME.Challenge == "" {
+		c.ACME.Challenge = ACMEChallengeDNS01
+	}
+
+	if c.ACME.RenewBeforeDays <= 0 {
+		c.ACME.RenewBeforeDays = defaultACMERenewBeforeDays
+	}
+
+	c.ACME.Storage.Backend = strings.ToLower(strings.TrimSpace(c.ACME.Storage.Backend))
+	if c.ACME.Storage.Backend == "" {
+		c.ACME.Storage.Backend = "file"
+	}
+	c.ACME.Storage.Dir = strings.TrimSpace(c.ACME.Storage.Dir)
+	if c.ACME.Storage.Dir == "" {
+		c.ACME.Storage.Dir = filepath.Join(c.DataDir, "acme")
+	}
+
+	c.ACME.DNS.Provider = strings.ToLower(strings.TrimSpace(c.ACME.DNS.Provider))
+	if c.ACME.DNS.PropagationTimeoutSec <= 0 {
+		c.ACME.DNS.PropagationTimeoutSec = defaultACMEDNSPropagationTimeoutSec
+	}
+
+	c.normalizeACMEDomains()
+}
+
+func (c *Config) normalizeACMEDomains() {
+	if len(c.ACME.Domains) > 0 || c.BaseDomain == "" {
+		return
+	}
+	if c.ACME.Challenge == ACMEChallengeDNS01 {
+		c.ACME.Domains = []string{c.BaseDomain, "*." + c.BaseDomain}
+	} else {
+		c.ACME.Domains = []string{c.BaseDomain, "www." + c.BaseDomain}
+	}
+}
+
+func (c *Config) validateTLS() error {
+	if !c.TLS.Enabled {
+		return nil
+	}
+	if c.TLS.HTTPSPort > 65535 {
+		return errors.Newf("config: invalid tls.https_port %d (max 65535)", c.TLS.HTTPSPort)
+	}
+	if c.TLS.CertFile != "" && c.TLS.KeyFile == "" {
+		return errors.New("config: tls.key_file is required when tls.cert_file is specified")
+	}
+	if c.TLS.KeyFile != "" && c.TLS.CertFile == "" {
+		return errors.New("config: tls.cert_file is required when tls.key_file is specified")
+	}
+	return nil
+}
+
+func (c *Config) validateACME() error {
+	if !c.ACME.Enabled {
+		return nil
+	}
+	if c.ACME.Email == "" {
+		return errors.New("config: acme.email is required when acme is enabled")
+	}
+	if err := c.validateACMEChallenge(); err != nil {
+		return err
+	}
+	switch c.ACME.Storage.Backend {
+	case "file", "kv":
+	default:
+		return errors.Newf("config: invalid acme.storage.backend %q (must be \"file\" or \"kv\")", c.ACME.Storage.Backend)
+	}
+	return nil
+}
+
+func (c *Config) validateACMEChallenge() error {
+	switch c.ACME.Challenge {
+	case ACMEChallengeDNS01:
+		return c.validateACMEDNSProvider()
+	case ACMEChallengeHTTP01:
+		for _, domain := range c.ACME.Domains {
+			if strings.HasPrefix(domain, "*.") {
+				return errors.Newf("config: domain %q is a wildcard, which is not supported by acme http-01 challenge (use dns-01)", domain)
+			}
+		}
+		return nil
+	default:
+		return errors.Newf("config: invalid acme.challenge %q (must be \"http-01\" or \"dns-01\")", c.ACME.Challenge)
+	}
+}
+
+func (c *Config) validateACMEDNSProvider() error {
+	switch c.ACME.DNS.Provider {
+	case ACMEDNSProviderCloudflare:
+		if c.ACME.DNS.CloudflareAPIToken == "" {
+			return errors.New("config: acme.dns.cloudflare_api_token is required for cloudflare dns provider")
+		}
+	case ACMEDNSProviderRFC2136:
+		if c.ACME.DNS.RFC2136Nameserver == "" {
+			return errors.New("config: acme.dns.rfc2136_nameserver is required for rfc2136 dns provider")
+		}
+	case ACMEDNSProviderExec:
+		if c.ACME.DNS.ExecScript == "" {
+			return errors.New("config: acme.dns.exec_script is required for exec dns provider")
+		}
+	case ACMEDNSProviderMock:
+		// allowed for test
+	default:
+		return errors.Newf("config: invalid or missing acme.dns.provider %q (must be \"cloudflare\", \"rfc2136\", \"exec\", or \"mock\")", c.ACME.DNS.Provider)
+	}
+	return nil
 }

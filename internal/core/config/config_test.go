@@ -388,3 +388,97 @@ func TestTrustedProxiesAndHSTSMappings(t *testing.T) {
 	assert.Equal(t, "hsts_max_age", mapFlagKey("hsts-max-age"))
 	assert.Equal(t, "hsts_max_age", mapEnvironmentKey("hsts_max_age"))
 }
+
+func TestTLSConfigAndValidation(t *testing.T) {
+	cfg := &Config{Mode: "development"}
+	cfg.normalize()
+	assert.False(t, cfg.TLS.Enabled)
+	assert.Equal(t, "0.0.0.0", cfg.TLS.HTTPSBind)
+	assert.Equal(t, 8443, cfg.TLS.HTTPSPort)
+	assert.NoError(t, cfg.validate())
+
+	// Invalid port
+	cfg.TLS.Enabled = true
+	cfg.TLS.HTTPSPort = 70000
+	assert.Error(t, cfg.validate())
+
+	// Cert without key
+	cfg.TLS.HTTPSPort = 8443
+	cfg.TLS.CertFile = "cert.pem"
+	assert.Error(t, cfg.validate())
+
+	// Cert with key
+	cfg.TLS.KeyFile = "key.pem"
+	assert.NoError(t, cfg.validate())
+}
+
+func TestACMEConfigAndValidation(t *testing.T) {
+	cfg := &Config{
+		Mode:       "production",
+		BaseDomain: "example.org",
+		PasetoKey:  "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+		MasterKey:  "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+		ACME: ACMEConfig{
+			Enabled:   true,
+			Email:     "admin@example.org",
+			Challenge: "dns-01",
+			DNS: ACMEDNSConfig{
+				Provider:           "cloudflare",
+				CloudflareAPIToken: "test-token",
+			},
+		},
+	}
+	cfg.normalize()
+	assert.True(t, cfg.TLS.Enabled)
+	assert.Equal(t, ACMEDirectoryProduction, cfg.ACME.Directory)
+	assert.Equal(t, []string{"example.org", "*.example.org"}, cfg.ACME.Domains)
+	assert.Equal(t, 30, cfg.ACME.RenewBeforeDays)
+	assert.Equal(t, "file", cfg.ACME.Storage.Backend)
+	assert.Equal(t, filepath.Join(defaultDataDir, "acme"), cfg.ACME.Storage.Dir)
+	assert.NoError(t, cfg.validate())
+
+	// Missing email
+	badCfg := *cfg
+	badCfg.ACME.Email = ""
+	assert.Error(t, badCfg.validate())
+
+	// HTTP-01 with wildcard domain
+	http01Cfg := *cfg
+	http01Cfg.ACME.Challenge = "http-01"
+	http01Cfg.ACME.Domains = []string{"*.example.org"}
+	assert.Error(t, http01Cfg.validate())
+
+	// HTTP-01 normal
+	http01Cfg.ACME.Domains = []string{"example.org", "www.example.org"}
+	assert.NoError(t, http01Cfg.validate())
+
+	// RFC 2136 validation
+	rfcCfg := *cfg
+	rfcCfg.ACME.DNS.Provider = "rfc2136"
+	rfcCfg.ACME.DNS.RFC2136Nameserver = ""
+	assert.Error(t, rfcCfg.validate())
+	rfcCfg.ACME.DNS.RFC2136Nameserver = "127.0.0.1:53"
+	assert.NoError(t, rfcCfg.validate())
+
+	// Exec validation
+	execCfg := *cfg
+	execCfg.ACME.DNS.Provider = "exec"
+	execCfg.ACME.DNS.ExecScript = ""
+	assert.Error(t, execCfg.validate())
+	execCfg.ACME.DNS.ExecScript = "/usr/local/bin/hook.sh"
+	assert.NoError(t, execCfg.validate())
+}
+
+func TestACMEFlagsAndEnvMappings(t *testing.T) {
+	assert.Equal(t, "acme.enabled", mapFlagKey("acme-enabled"))
+	assert.Equal(t, "acme.email", mapFlagKey("acme-email"))
+	assert.Equal(t, "acme.challenge", mapFlagKey("acme-challenge"))
+	assert.Equal(t, "acme.dns.provider", mapFlagKey("acme-dns-provider"))
+	assert.Equal(t, "acme.dns.cloudflare_api_token", mapFlagKey("acme-dns-cloudflare-api-token"))
+	assert.Equal(t, "acme.dns.rfc2136_nameserver", mapFlagKey("acme-dns-rfc2136-nameserver"))
+	assert.Equal(t, "acme.dns.exec_script", mapFlagKey("acme-dns-exec-script"))
+
+	assert.Equal(t, "acme.enabled", mapEnvironmentKey("acme_enabled"))
+	assert.Equal(t, "acme.email", mapEnvironmentKey("acme_email"))
+	assert.Equal(t, "acme.dns.cloudflare_api_token", mapEnvironmentKey("acme_dns_cloudflare_api_token"))
+}

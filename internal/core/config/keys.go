@@ -86,6 +86,34 @@ var configKeys = []string{
 	// Crypto
 	"crypto.hash_algorithm",
 	"crypto.encryption_cipher",
+
+	// TLS
+	"tls.enabled",
+	"tls.https_bind",
+	"tls.https_port",
+	"tls.redirect_http",
+	"tls.cert_file",
+	"tls.key_file",
+
+	// ACME
+	"acme.enabled",
+	"acme.directory",
+	"acme.email",
+	"acme.challenge",
+	"acme.domains",
+	"acme.renew_before_days",
+	"acme.storage.backend",
+	"acme.storage.dir",
+	"acme.dns.provider",
+	"acme.dns.cloudflare_api_token",
+	"acme.dns.cloudflare_zone_id",
+	"acme.dns.rfc2136_nameserver",
+	"acme.dns.rfc2136_zone",
+	"acme.dns.rfc2136_tsig_key_name",
+	"acme.dns.rfc2136_tsig_secret",
+	"acme.dns.rfc2136_tsig_algorithm",
+	"acme.dns.exec_script",
+	"acme.dns.propagation_timeout_sec",
 }
 
 // Specific CLI flag aliases.
