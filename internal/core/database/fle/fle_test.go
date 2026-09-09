@@ -123,11 +123,11 @@ func TestFLE_MultiTenant_DynamicKey_Concurrency(t *testing.T) {
 
 	// Create 2 clinics (tenants)
 	clinic1ID := ident.ClinicID(uuid.New())
-	_, err = client.Clinic.Create().SetID(clinic1ID).SetSlug("tenant-a").SetName("Clínica Tenant A").Save(context.Background())
+	_, err = client.Clinic.Create().SetID(clinic1ID).SetDomain("tenant-a.local").SetName("Clínica Tenant A").Save(context.Background())
 	require.NoError(t, err)
 
 	clinic2ID := ident.ClinicID(uuid.New())
-	_, err = client.Clinic.Create().SetID(clinic2ID).SetSlug("tenant-b").SetName("Clínica Tenant B").Save(context.Background())
+	_, err = client.Clinic.Create().SetID(clinic2ID).SetDomain("tenant-b.local").SetName("Clínica Tenant B").Save(context.Background())
 	require.NoError(t, err)
 
 	// Distinct keys for each tenant
@@ -232,7 +232,7 @@ func TestFLE_UsesPatientDEKPerEntity(t *testing.T) {
 	patientB := ident.PatientID(uuid.New())
 	_, err = client.Clinic.Create().
 		SetID(clinicID).
-		SetSlug("patient-scoped").
+		SetDomain("patient-scoped.local").
 		SetName("Patient Scoped").
 		SetCountry("BR").
 		SetTimezone("America/Sao_Paulo").

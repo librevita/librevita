@@ -33,16 +33,16 @@ func TestHostMiddleware(t *testing.T) {
 		host   string
 		path   string
 		code   int
-		slug   string
+		domain string
 		apex   bool
 		lookup bool
 		found  bool
 	}{
 		{name: "apex", host: "lv.test", path: "/", code: http.StatusOK, apex: true},
 		{name: "www", host: "www.lv.test", path: "/", code: http.StatusOK, apex: true},
-		{name: "clinic", host: "norte.lv.test", path: "/", code: http.StatusOK, slug: "norte", lookup: true, found: true},
-		{name: "unknown slug", host: "ghost.lv.test", path: "/", code: http.StatusNotFound, slug: "ghost", lookup: true},
-		{name: "foreign host", host: "evil.com", path: "/", code: http.StatusBadRequest},
+		{name: "clinic", host: "clinica.com", path: "/", code: http.StatusOK, domain: "clinica.com", lookup: true, found: true},
+		{name: "unknown domain", host: "ghost.com", path: "/", code: http.StatusNotFound, domain: "ghost.com", lookup: true},
+		{name: "invalid host", host: "bad@domain.com", path: "/", code: http.StatusBadRequest},
 		{name: "healthz skips", host: "evil.com", path: "/healthz", code: http.StatusOK},
 		{name: "static skips", host: "evil.com", path: "/static/app.css", code: http.StatusOK},
 	}
@@ -53,9 +53,9 @@ func TestHostMiddleware(t *testing.T) {
 			if tc.lookup {
 				var row *model.Clinic
 				if tc.found {
-					row = &model.Clinic{ID: norteID, Slug: "norte", Name: "Norte", Timezone: "America/Sao_Paulo"}
+					row = &model.Clinic{ID: norteID, Domain: tc.domain, Slug: tc.domain, Name: "Norte", Timezone: "America/Sao_Paulo"}
 				}
-				clinics.EXPECT().GetBySlug(mock.Anything, tc.slug).Return(row, nil).Once()
+				clinics.EXPECT().GetByDomain(mock.Anything, tc.domain).Return(row, nil).Once()
 			}
 
 			e := echo.New()
@@ -71,7 +71,7 @@ func TestHostMiddleware(t *testing.T) {
 					got, ok := clinicctx.FromContext(ctx)
 					require.True(t, ok)
 					assert.Equal(t, norteID, got.ID)
-					assert.Equal(t, "norte", got.Slug)
+					assert.Equal(t, tc.domain, got.Domain)
 				}
 				return c.NoContent(http.StatusOK)
 			}
@@ -101,8 +101,8 @@ func TestHostMiddlewareWithCrypto(t *testing.T) {
 	require.NoError(t, err)
 
 	clinics := modelmocks.NewMockRepository(t)
-	clinics.EXPECT().GetBySlug(mock.Anything, "norte").Return(&model.Clinic{
-		ID: clinicID, Slug: "norte", Name: "Norte", Timezone: "America/Sao_Paulo",
+	clinics.EXPECT().GetByDomain(mock.Anything, "norte.com").Return(&model.Clinic{
+		ID: clinicID, Domain: "norte.com", Slug: "norte.com", Name: "Norte", Timezone: "America/Sao_Paulo",
 	}, nil).Once()
 
 	e := echo.New()
@@ -119,7 +119,7 @@ func TestHostMiddlewareWithCrypto(t *testing.T) {
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	req.Host = "norte.lv.test"
+	req.Host = "norte.com"
 	rec := httptest.NewRecorder()
 	e.ServeHTTP(rec, req)
 	assert.Equal(t, http.StatusOK, rec.Code)

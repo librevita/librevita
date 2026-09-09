@@ -45,7 +45,7 @@ func TestEpisodeRepository_SOAPAggregate(t *testing.T) {
 
 	ctx := context.Background()
 	clinicID := ident.ClinicID(uuid.New())
-	_, err = client.Clinic.Create().SetID(clinicID).SetSlug("soap").SetName("SOAP Clinic").Save(ctx)
+	_, err = client.Clinic.Create().SetID(clinicID).SetDomain("soap.local").SetName("SOAP Clinic").Save(ctx)
 	require.NoError(t, err)
 	roleID := ident.RoleID(uuid.New())
 	_, err = client.Role.Create().SetID(roleID).SetClinicID(clinicID).SetName("physician").SetSystem(true).Save(ctx)

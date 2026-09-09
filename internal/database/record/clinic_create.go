@@ -64,9 +64,9 @@ func (_c *ClinicCreate) SetNillableUpdatedAt(v *time.Time) *ClinicCreate {
 	return _c
 }
 
-// SetSlug sets the "slug" field.
-func (_c *ClinicCreate) SetSlug(v string) *ClinicCreate {
-	_c.mutation.SetSlug(v)
+// SetDomain sets the "domain" field.
+func (_c *ClinicCreate) SetDomain(v string) *ClinicCreate {
+	_c.mutation.SetDomain(v)
 	return _c
 }
 
@@ -520,12 +520,12 @@ func (_c *ClinicCreate) check() error {
 	if _, ok := _c.mutation.UpdatedAt(); !ok {
 		return &ValidationError{Name: "updated_at", err: errors.New(`record: missing required field "Clinic.updated_at"`)}
 	}
-	if _, ok := _c.mutation.Slug(); !ok {
-		return &ValidationError{Name: "slug", err: errors.New(`record: missing required field "Clinic.slug"`)}
+	if _, ok := _c.mutation.Domain(); !ok {
+		return &ValidationError{Name: "domain", err: errors.New(`record: missing required field "Clinic.domain"`)}
 	}
-	if v, ok := _c.mutation.Slug(); ok {
-		if err := clinic.SlugValidator(v); err != nil {
-			return &ValidationError{Name: "slug", err: fmt.Errorf(`record: validator failed for field "Clinic.slug": %w`, err)}
+	if v, ok := _c.mutation.Domain(); ok {
+		if err := clinic.DomainValidator(v); err != nil {
+			return &ValidationError{Name: "domain", err: fmt.Errorf(`record: validator failed for field "Clinic.domain": %w`, err)}
 		}
 	}
 	if _, ok := _c.mutation.Name(); !ok {
@@ -585,9 +585,9 @@ func (_c *ClinicCreate) createSpec() (*Clinic, *sqlgraph.CreateSpec) {
 		_spec.SetField(clinic.FieldUpdatedAt, field.TypeTime, value)
 		_node.UpdatedAt = value
 	}
-	if value, ok := _c.mutation.Slug(); ok {
-		_spec.SetField(clinic.FieldSlug, field.TypeString, value)
-		_node.Slug = value
+	if value, ok := _c.mutation.Domain(); ok {
+		_spec.SetField(clinic.FieldDomain, field.TypeString, value)
+		_node.Domain = value
 	}
 	if value, ok := _c.mutation.Name(); ok {
 		_spec.SetField(clinic.FieldName, field.TypeString, value)

@@ -35,7 +35,7 @@ func setupTestIdentifierDB(t *testing.T) (*record.Client, ident.ClinicID, ident.
 	clinicID := ident.New[ident.ClinicID]()
 	_, err = client.Clinic.Create().
 		SetID(clinicID).
-		SetSlug("clinica-ident").
+		SetDomain("clinica-ident.local").
 		SetName("Clínica Ident").
 		Save(ctx)
 	require.NoError(t, err)

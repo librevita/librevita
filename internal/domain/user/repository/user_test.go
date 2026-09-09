@@ -35,15 +35,15 @@ func setupTestDB(t *testing.T) (*record.Client, ident.ClinicID, context.Context)
 	clinicID := ident.New[ident.ClinicID]()
 	_, err = client.Clinic.Create().
 		SetID(clinicID).
-		SetSlug("test-clinic").
+		SetDomain("test-clinic.local").
 		SetName("Test Clinic").
 		Save(context.Background())
 	require.NoError(t, err)
 
 	ctx := clinicctx.WithClinic(context.Background(), &clinicctx.Clinic{
-		ID:   clinicID,
-		Slug: "test-clinic",
-		Name: "Test Clinic",
+		ID:     clinicID,
+		Domain: "test-clinic.local",
+		Name:   "Test Clinic",
 	})
 
 	return client, clinicID, ctx

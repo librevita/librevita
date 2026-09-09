@@ -49,7 +49,7 @@ func Clinic(ctx context.Context, client *record.Client, clinicID, name, taxID st
 	ctx = clinicctx.WithSkipIsolation(ctx)
 	create := client.Clinic.Create().
 		SetID(ident.MustParseClinic(clinicID)).
-		SetSlug(slugify(name)).
+		SetDomain(slugify(name) + ".local").
 		SetName(name).
 		SetCountry("BR").
 		SetTimezone("America/Sao_Paulo")

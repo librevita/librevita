@@ -131,7 +131,7 @@ func setupUserHttpEnv(t *testing.T) *userHttpTestEnv {
 	now := time.Now().UTC()
 	_, err = client.Clinic.Create().
 		SetID(clinicID).
-		SetSlug("test").
+		SetDomain("test.local").
 		SetName("Test Clinic").
 		SetOnboardedAt(now).
 		Save(context.Background())
@@ -1036,7 +1036,7 @@ func TestSetupPageAndSubmit(t *testing.T) {
 	clinicID := clinicctx.TestClinicID
 	_, err = client.Clinic.Create().
 		SetID(clinicID).
-		SetSlug("setup-test").
+		SetDomain("setup-test.local").
 		SetName("Setup Test Clinic").
 		Save(context.Background())
 	require.NoError(t, err)
@@ -1044,7 +1044,7 @@ func TestSetupPageAndSubmit(t *testing.T) {
 	e := echo.New()
 	unonboardedClinic := &clinicctx.Clinic{
 		ID:       clinicID,
-		Slug:     "setup-test",
+		Domain:   "setup-test.local",
 		Name:     "Setup Test Clinic",
 		Timezone: "America/Sao_Paulo",
 	}

@@ -42,7 +42,8 @@ func TestClinicRepository(t *testing.T) {
 	cid := ident.New[ident.ClinicID]()
 	c := &model.Clinic{
 		ID:         cid,
-		Slug:       "clinic-alpha",
+		Domain:     "clinic-alpha.org",
+		Slug:       "clinic-alpha.org",
 		Name:       "Clinic Alpha",
 		TaxID:      "12345678901",
 		Phone:      "+5511999990000",
@@ -59,9 +60,9 @@ func TestClinicRepository(t *testing.T) {
 	created, err := repo.CreateShell(ctx, c)
 	require.NoError(t, err)
 	assert.Equal(t, cid, created.ID)
-	assert.Equal(t, "clinic-alpha", created.Slug)
+	assert.Equal(t, "clinic-alpha.org", created.Domain)
 
-	// Duplicate slug create
+	// Duplicate domain create
 	_, err = repo.CreateShell(ctx, c)
 	assert.Error(t, err)
 
@@ -76,16 +77,16 @@ func TestClinicRepository(t *testing.T) {
 	require.NoError(t, err)
 	assert.Nil(t, notFound)
 
-	// 3. GetBySlug
-	bySlug, err := repo.GetBySlug(ctx, "clinic-alpha")
+	// 3. GetByDomain
+	byDomain, err := repo.GetByDomain(ctx, "clinic-alpha.org")
 	require.NoError(t, err)
-	require.NotNil(t, bySlug)
-	assert.Equal(t, cid, bySlug.ID)
+	require.NotNil(t, byDomain)
+	assert.Equal(t, cid, byDomain.ID)
 
-	// GetBySlug not found
-	bySlugNotFound, err := repo.GetBySlug(ctx, "unknown-slug")
+	// GetByDomain not found
+	byDomainNotFound, err := repo.GetByDomain(ctx, "unknown-domain.com")
 	require.NoError(t, err)
-	assert.Nil(t, bySlugNotFound)
+	assert.Nil(t, byDomainNotFound)
 
 	// 4. MarkOnboarded
 	now := time.Now().UTC()

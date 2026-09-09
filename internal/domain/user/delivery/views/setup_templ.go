@@ -282,7 +282,7 @@ func Provision(token string, errMsg string) templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "<main class=\"flex min-h-full items-center justify-center px-4 py-8\"><div class=\"card w-full max-w-lg\"><h1 class=\"text-2xl font-semibold text-gray-900 dark:text-white\">New clinic</h1><p class=\"mt-2 text-sm text-gray-600 dark:text-gray-400\">Creates the clinic shell and encryption keys. The clinic administrator finishes setup on the clinic subdomain.</p>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 19, "<main class=\"flex min-h-full items-center justify-center px-4 py-8\"><div class=\"card w-full max-w-lg\"><h1 class=\"text-2xl font-semibold text-gray-900 dark:text-white\">New clinic</h1><p class=\"mt-2 text-sm text-gray-600 dark:text-gray-400\">Creates the clinic shell and encryption keys. The clinic administrator finishes setup on the clinic domain.</p>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -318,7 +318,7 @@ func Provision(token string, errMsg string) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "\"><div><label class=\"label\" for=\"clinic_name\">Name</label> <input class=\"input\" id=\"clinic_name\" type=\"text\" name=\"clinic_name\" required autofocus></div><div><label class=\"label\" for=\"clinic_slug\">Subdomain</label> <input class=\"input\" id=\"clinic_slug\" type=\"text\" name=\"clinic_slug\" pattern=\"[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\" required><p class=\"mt-1 text-xs text-gray-500 dark:text-gray-400\">Letters, digits, and hyphens. Reserved labels such as www are not allowed.</p></div><div class=\"flex space-x-4\"><div class=\"flex-1\"><label class=\"label\" for=\"clinic_tax_id\">Tax ID</label> <input class=\"input\" id=\"clinic_tax_id\" type=\"text\" name=\"clinic_tax_id\"></div><div class=\"flex-1\"><label class=\"label\" for=\"clinic_phone\">Phone</label> <input class=\"input\" id=\"clinic_phone\" type=\"tel\" name=\"clinic_phone\"></div></div><div><label class=\"label\" for=\"clinic_email\">Email</label> <input class=\"input\" id=\"clinic_email\" type=\"email\" name=\"clinic_email\"></div><div><label class=\"label\" for=\"clinic_street\">Street</label> <input class=\"input\" id=\"clinic_street\" type=\"text\" name=\"clinic_street\"></div><div class=\"flex space-x-4\"><div class=\"flex-1\"><label class=\"label\" for=\"clinic_city\">City</label> <input class=\"input\" id=\"clinic_city\" type=\"text\" name=\"clinic_city\"></div><div class=\"flex-1\"><label class=\"label\" for=\"clinic_state\">State</label> <input class=\"input\" id=\"clinic_state\" type=\"text\" name=\"clinic_state\"></div><div class=\"flex-1\"><label class=\"label\" for=\"clinic_postal_code\">Postal code</label> <input class=\"input\" id=\"clinic_postal_code\" type=\"text\" name=\"clinic_postal_code\"></div></div><div><label class=\"label\" for=\"clinic_timezone\">Timezone</label> <select class=\"input\" id=\"clinic_timezone\" name=\"clinic_timezone\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 23, "\"><div><label class=\"label\" for=\"clinic_name\">Name</label> <input class=\"input\" id=\"clinic_name\" type=\"text\" name=\"clinic_name\" required autofocus></div><div><label class=\"label\" for=\"clinic_domain\">Domain</label> <input class=\"input\" id=\"clinic_domain\" type=\"text\" name=\"clinic_domain\" placeholder=\"clinica.com.br\" required><p class=\"mt-1 text-xs text-gray-500 dark:text-gray-400\">Clinic custom domain (e.g. clinica.com.br).</p></div><div class=\"flex space-x-4\"><div class=\"flex-1\"><label class=\"label\" for=\"clinic_tax_id\">Tax ID</label> <input class=\"input\" id=\"clinic_tax_id\" type=\"text\" name=\"clinic_tax_id\"></div><div class=\"flex-1\"><label class=\"label\" for=\"clinic_phone\">Phone</label> <input class=\"input\" id=\"clinic_phone\" type=\"tel\" name=\"clinic_phone\"></div></div><div><label class=\"label\" for=\"clinic_email\">Email</label> <input class=\"input\" id=\"clinic_email\" type=\"email\" name=\"clinic_email\"></div><div><label class=\"label\" for=\"clinic_street\">Street</label> <input class=\"input\" id=\"clinic_street\" type=\"text\" name=\"clinic_street\"></div><div class=\"flex space-x-4\"><div class=\"flex-1\"><label class=\"label\" for=\"clinic_city\">City</label> <input class=\"input\" id=\"clinic_city\" type=\"text\" name=\"clinic_city\"></div><div class=\"flex-1\"><label class=\"label\" for=\"clinic_state\">State</label> <input class=\"input\" id=\"clinic_state\" type=\"text\" name=\"clinic_state\"></div><div class=\"flex-1\"><label class=\"label\" for=\"clinic_postal_code\">Postal code</label> <input class=\"input\" id=\"clinic_postal_code\" type=\"text\" name=\"clinic_postal_code\"></div></div><div><label class=\"label\" for=\"clinic_timezone\">Timezone</label> <select class=\"input\" id=\"clinic_timezone\" name=\"clinic_timezone\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -457,7 +457,7 @@ func PlatformHome(token string, p *auth.Principal, clinics []*clinicmodel.Clinic
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 34, "<div class=\"mx-auto max-w-4xl p-4 lg:p-6\"><div class=\"mb-6 flex items-center justify-between\"><div><h2 class=\"text-xl font-semibold text-gray-900 dark:text-white\">Clinics</h2><p class=\"mt-1 text-sm text-gray-500 dark:text-gray-400\">Provision a shell, then finish setup on the clinic subdomain.</p></div><a href=\"/clinics/new\" class=\"btn\">New clinic</a></div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 34, "<div class=\"mx-auto max-w-4xl p-4 lg:p-6\"><div class=\"mb-6 flex items-center justify-between\"><div><h2 class=\"text-xl font-semibold text-gray-900 dark:text-white\">Clinics</h2><p class=\"mt-1 text-sm text-gray-500 dark:text-gray-400\">Provision a shell, then finish setup on the clinic domain.</p></div><a href=\"/clinics/new\" class=\"btn\">New clinic</a></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -491,54 +491,41 @@ func PlatformHome(token string, p *auth.Principal, clinics []*clinicmodel.Clinic
 							return templ_7745c5c3_Err
 						}
 						var templ_7745c5c3_Var24 string
-						templ_7745c5c3_Var24, templ_7745c5c3_Err = templ.JoinStringErrs(c.Slug)
+						templ_7745c5c3_Var24, templ_7745c5c3_Err = templ.JoinStringErrs(c.Domain)
 						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/domain/user/delivery/views/setup.templ`, Line: 189, Col: 69}
+							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/domain/user/delivery/views/setup.templ`, Line: 189, Col: 71}
 						}
 						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var24))
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
-						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 39, ".")
-						if templ_7745c5c3_Err != nil {
-							return templ_7745c5c3_Err
-						}
-						var templ_7745c5c3_Var25 string
-						templ_7745c5c3_Var25, templ_7745c5c3_Err = templ.JoinStringErrs(baseDomain)
-						if templ_7745c5c3_Err != nil {
-							return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/domain/user/delivery/views/setup.templ`, Line: 189, Col: 84}
-						}
-						_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var25))
-						if templ_7745c5c3_Err != nil {
-							return templ_7745c5c3_Err
-						}
-						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 40, "</p></div>")
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 39, "</p></div>")
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
 						if c.Onboarded() {
-							templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 41, "<span class=\"text-xs font-medium text-green-700 dark:text-green-400\">Ready</span>")
+							templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 40, "<span class=\"text-xs font-medium text-green-700 dark:text-green-400\">Ready</span>")
 							if templ_7745c5c3_Err != nil {
 								return templ_7745c5c3_Err
 							}
 						} else {
-							templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 42, "<span class=\"text-xs font-medium text-amber-700 dark:text-amber-400\">Awaiting setup</span>")
+							templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 41, "<span class=\"text-xs font-medium text-amber-700 dark:text-amber-400\">Awaiting setup</span>")
 							if templ_7745c5c3_Err != nil {
 								return templ_7745c5c3_Err
 							}
 						}
-						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 43, "</li>")
+						templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 42, "</li>")
 						if templ_7745c5c3_Err != nil {
 							return templ_7745c5c3_Err
 						}
 					}
 				}
-				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 44, "</ul>")
+				templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 43, "</ul>")
 				if templ_7745c5c3_Err != nil {
 					return templ_7745c5c3_Err
 				}
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 45, "</div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 44, "</div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}

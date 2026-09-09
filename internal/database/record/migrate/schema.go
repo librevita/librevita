@@ -197,7 +197,7 @@ var (
 		{Name: "id", Type: field.TypeUUID},
 		{Name: "created_at", Type: field.TypeTime},
 		{Name: "updated_at", Type: field.TypeTime},
-		{Name: "slug", Type: field.TypeString, Unique: true, Size: 63},
+		{Name: "domain", Type: field.TypeString, Unique: true, Size: 253},
 		{Name: "name", Type: field.TypeString},
 		{Name: "tax_id", Type: field.TypeString, Nullable: true},
 		{Name: "phone", Type: field.TypeString, Nullable: true},

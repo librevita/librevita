@@ -32,7 +32,7 @@ func TestClinicContext(t *testing.T) {
 	now := time.Now()
 	clinic := &clinicctx.Clinic{
 		ID:          testID,
-		Slug:        "clinica-teste",
+		Domain:      "clinica-teste.local",
 		Name:        "Clínica Teste",
 		Timezone:    "America/Sao_Paulo",
 		OnboardedAt: &now,
@@ -42,7 +42,7 @@ func TestClinicContext(t *testing.T) {
 	cGot, ok := clinicctx.FromContext(ctxWithClinic)
 	require.True(t, ok)
 	assert.Equal(t, testID, cGot.ID)
-	assert.Equal(t, "clinica-teste", cGot.Slug)
+	assert.Equal(t, "clinica-teste.local", cGot.Domain)
 
 	cidGot, ok := clinicctx.ClinicID(ctxWithClinic)
 	assert.True(t, ok)
@@ -75,5 +75,5 @@ func TestClinicContext(t *testing.T) {
 	cTest, ok := clinicctx.FromContext(ctxTest)
 	require.True(t, ok)
 	assert.Equal(t, clinicctx.TestClinicID, cTest.ID)
-	assert.Equal(t, "test", cTest.Slug)
+	assert.Equal(t, "test.local", cTest.Domain)
 }

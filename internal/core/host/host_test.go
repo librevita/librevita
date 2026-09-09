@@ -11,22 +11,21 @@ func TestClassify(t *testing.T) {
 	t.Parallel()
 
 	cases := []struct {
-		name string
-		host string
-		base string
-		kind Kind
-		slug string
-		err  bool
+		name   string
+		host   string
+		base   string
+		kind   Kind
+		domain string
+		err    bool
 	}{
 		{name: "apex", host: "lv.test", base: "lv.test", kind: KindApex},
 		{name: "www", host: "www.lv.test", base: "lv.test", kind: KindApex},
-		{name: "clinic", host: "norte.lv.test", base: "lv.test", kind: KindClinic, slug: "norte"},
-		{name: "port", host: "norte.lv.test:8080", base: "lv.test", kind: KindClinic, slug: "norte"},
-		{name: "case", host: "Norte.LV.TEST", base: "lv.test", kind: KindClinic, slug: "norte"},
-		{name: "foreign", host: "evil.com", base: "lv.test", err: true},
-		{name: "nested", host: "a.b.lv.test", base: "lv.test", err: true},
-		{name: "reserved api", host: "api.lv.test", base: "lv.test", err: true},
-		{name: "reserved admin", host: "admin.lv.test", base: "lv.test", err: true},
+		{name: "clinic custom domain", host: "clinicasaojose.com.br", base: "lv.test", kind: KindClinic, domain: "clinicasaojose.com.br"},
+		{name: "clinic subdomain of base", host: "norte.lv.test", base: "lv.test", kind: KindClinic, domain: "norte.lv.test"},
+		{name: "port", host: "clinica.med.br:8080", base: "lv.test", kind: KindClinic, domain: "clinica.med.br"},
+		{name: "case", host: "Clinica.Org", base: "lv.test", kind: KindClinic, domain: "clinica.org"},
+		{name: "invalid host chars", host: "bad@domain.com", base: "lv.test", err: true},
+		{name: "invalid dashes", host: "-bad.com", base: "lv.test", err: true},
 		{name: "empty", host: "", base: "lv.test", err: true},
 		{name: "empty base", host: "lv.test", base: "", err: true},
 	}
@@ -40,7 +39,7 @@ func TestClassify(t *testing.T) {
 			}
 			require.NoError(t, err)
 			assert.Equal(t, tc.kind, got.Kind)
-			assert.Equal(t, tc.slug, got.Slug)
+			assert.Equal(t, tc.domain, got.Domain)
 		})
 	}
 }

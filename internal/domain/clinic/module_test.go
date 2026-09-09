@@ -17,6 +17,12 @@ func TestRegisterHostMiddleware(t *testing.T) {
 	repo := clinicmocks.NewMockRepository(t)
 	logger := log.Nop()
 
-	registerHostMiddleware(e, cfg, repo, nil, logger)
+	registerHostMiddleware(hostParams{
+		Echo:    e,
+		Config:  cfg,
+		Clinics: repo,
+		Engine:  nil,
+		Logger:  logger,
+	})
 	assert.NotNil(t, Module)
 }

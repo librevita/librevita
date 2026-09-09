@@ -97,7 +97,7 @@ templ Provision(token string, errMsg string) {
 		<main class="flex min-h-full items-center justify-center px-4 py-8">
 			<div class="card w-full max-w-lg">
 				<h1 class="text-2xl font-semibold text-gray-900 dark:text-white">New clinic</h1>
-				<p class="mt-2 text-sm text-gray-600 dark:text-gray-400">Creates the clinic shell and encryption keys. The clinic administrator finishes setup on the clinic subdomain.</p>
+				<p class="mt-2 text-sm text-gray-600 dark:text-gray-400">Creates the clinic shell and encryption keys. The clinic administrator finishes setup on the clinic domain.</p>
 				if errMsg != "" {
 					<div class="alert mt-4" role="alert">{ errMsg }</div>
 				}
@@ -108,9 +108,9 @@ templ Provision(token string, errMsg string) {
 						<input class="input" id="clinic_name" type="text" name="clinic_name" required autofocus>
 					</div>
 					<div>
-						<label class="label" for="clinic_slug">Subdomain</label>
-						<input class="input" id="clinic_slug" type="text" name="clinic_slug" pattern="[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?" required>
-						<p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Letters, digits, and hyphens. Reserved labels such as www are not allowed.</p>
+						<label class="label" for="clinic_domain">Domain</label>
+						<input class="input" id="clinic_domain" type="text" name="clinic_domain" placeholder="clinica.com.br" required>
+						<p class="mt-1 text-xs text-gray-500 dark:text-gray-400">Clinic custom domain (e.g. clinica.com.br).</p>
 					</div>
 					<div class="flex space-x-4">
 						<div class="flex-1">
@@ -173,7 +173,7 @@ templ PlatformHome(token string, p *auth.Principal, clinics []*clinicmodel.Clini
 			<div class="mb-6 flex items-center justify-between">
 				<div>
 					<h2 class="text-xl font-semibold text-gray-900 dark:text-white">Clinics</h2>
-					<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Provision a shell, then finish setup on the clinic subdomain.</p>
+					<p class="mt-1 text-sm text-gray-500 dark:text-gray-400">Provision a shell, then finish setup on the clinic domain.</p>
 				</div>
 				<a href="/clinics/new" class="btn">New clinic</a>
 			</div>
@@ -186,7 +186,7 @@ templ PlatformHome(token string, p *auth.Principal, clinics []*clinicmodel.Clini
 							<li class="flex items-center justify-between px-4 py-3">
 								<div>
 									<p class="font-medium text-gray-900 dark:text-white">{ c.Name }</p>
-									<p class="text-sm text-gray-500 dark:text-gray-400">{ c.Slug }.{ baseDomain }</p>
+									<p class="text-sm text-gray-500 dark:text-gray-400">{ c.Domain }</p>
 								</div>
 								if c.Onboarded() {
 									<span class="text-xs font-medium text-green-700 dark:text-green-400">Ready</span>

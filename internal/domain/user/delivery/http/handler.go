@@ -237,9 +237,14 @@ func (h *Handler) Provision(c echo.Context) error {
 	if err := h.requireApexPlatform(c); err != nil {
 		return err
 	}
+	domain := c.FormValue("clinic_domain")
+	if domain == "" {
+		domain = c.FormValue("clinic_slug")
+	}
 	_, err := h.platform.Provision(c.Request().Context(), clinicusecase.ProvisionInput{
 		Name:     c.FormValue("clinic_name"),
-		Slug:     c.FormValue("clinic_slug"),
+		Domain:   domain,
+		Slug:     domain,
 		TaxID:    c.FormValue("clinic_tax_id"),
 		Phone:    c.FormValue("clinic_phone"),
 		Email:    c.FormValue("clinic_email"),
@@ -252,10 +257,10 @@ func (h *Handler) Provision(c echo.Context) error {
 	if err != nil {
 		msg := err.Error()
 		switch {
-		case errors.Is(err, clinicusecase.ErrInvalidSlug):
-			msg = "Enter a valid subdomain (letters, digits, hyphens)"
-		case errors.Is(err, clinicusecase.ErrSlugTaken):
-			msg = "That subdomain is already in use"
+		case errors.Is(err, clinicusecase.ErrInvalidDomain), errors.Is(err, clinicusecase.ErrInvalidSlug):
+			msg = "Enter a valid domain name (e.g. clinica.com.br)"
+		case errors.Is(err, clinicusecase.ErrDomainTaken), errors.Is(err, clinicusecase.ErrSlugTaken):
+			msg = "That domain is already in use"
 		}
 		return server.Render(c, http.StatusBadRequest, views.Provision(server.CSRFToken(c, h.csrf), msg))
 	}

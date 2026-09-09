@@ -52,7 +52,7 @@ func TestStoreSQLiteAndEntClient(t *testing.T) {
 	clinicID := ident.ClinicID(uuid.New())
 	_, err = store.Ent().Clinic.Create().
 		SetID(clinicID).
-		SetSlug("test-clinic").
+		SetDomain("test-clinic.local").
 		SetName("Test Clinic").
 		SetCountry("BR").
 		SetTimezone("UTC").
@@ -167,7 +167,7 @@ func TestWithTxCommitAndRollback(t *testing.T) {
 	err = WithTx(ctx, store.Ent(), func(tx *record.Tx) error {
 		return tx.Clinic.Create().
 			SetID(clinicID).
-			SetSlug("clinic-tx-commit").
+			SetDomain("clinic-tx-commit.local").
 			SetName("Tx Commit").
 			SetCountry("BR").
 			SetTimezone("UTC").
@@ -184,7 +184,7 @@ func TestWithTxCommitAndRollback(t *testing.T) {
 	err = WithTx(ctx, store.Ent(), func(tx *record.Tx) error {
 		_ = tx.Clinic.Create().
 			SetID(clinicIDRollback).
-			SetSlug("clinic-tx-rollback").
+			SetDomain("clinic-tx-rollback.local").
 			SetName("Tx Rollback").
 			SetCountry("BR").
 			SetTimezone("UTC").

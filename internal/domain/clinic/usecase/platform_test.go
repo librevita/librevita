@@ -98,25 +98,25 @@ func TestPlatformServiceLifecycle(t *testing.T) {
 	// 9. Provision clinic shell
 	clinic, err := svc.Provision(ctx, usecase.ProvisionInput{
 		Name:     "Clinica Alfa",
-		Slug:     "clinica-alfa",
+		Domain:   "clinica-alfa.org",
 		TaxID:    "12.345.678/0001-99",
 		Timezone: "America/Sao_Paulo",
 	})
 	require.NoError(t, err)
 	require.NotNil(t, clinic)
-	assert.Equal(t, "clinica-alfa", clinic.Slug)
+	assert.Equal(t, "clinica-alfa.org", clinic.Domain)
 	assert.Equal(t, "Clinica Alfa", clinic.Name)
 
-	// 10. Provision with invalid slug or empty name
+	// 10. Provision with invalid domain or empty name
 	_, err = svc.Provision(ctx, usecase.ProvisionInput{
-		Name: "Clinica Invalida",
-		Slug: "INVALID_SLUG_!",
+		Name:   "Clinica Invalida",
+		Domain: "INVALID_DOMAIN_!",
 	})
-	assert.ErrorIs(t, err, usecase.ErrInvalidSlug)
+	assert.ErrorIs(t, err, usecase.ErrInvalidDomain)
 
 	_, err = svc.Provision(ctx, usecase.ProvisionInput{
-		Name: "",
-		Slug: "valid-slug",
+		Name:   "",
+		Domain: "valid-domain.com",
 	})
 	assert.Error(t, err)
 

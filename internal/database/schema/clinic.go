@@ -11,8 +11,8 @@ import (
 	"librevita.org/pkg/ident"
 )
 
-// clinicSlugRE is the DNS-safe hostname label used as the clinic subdomain.
-var clinicSlugRE = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
+// clinicDomainRE is the DNS-safe hostname or domain name for the clinic.
+var clinicDomainRE = regexp.MustCompile(`^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)*[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
 
 // Clinic holds the schema definition for the Clinic / Tenant entity.
 type Clinic struct {
@@ -30,13 +30,12 @@ func (Clinic) Mixin() []ent.Mixin {
 // Fields of the Clinic.
 func (Clinic) Fields() []ent.Field {
 	return []ent.Field{
-		field.String("slug").
+		field.String("domain").
 			NotEmpty().
 			Unique().
-			Immutable().
-			MaxLen(63).
-			Match(clinicSlugRE).
-			Comment("DNS-safe subdomain label; immutable after creation"),
+			MaxLen(253).
+			Match(clinicDomainRE).
+			Comment("Clinic fully qualified domain name; unique across clinics"),
 		field.String("name").
 			NotEmpty().
 			Comment("Clinic legal or trade name"),

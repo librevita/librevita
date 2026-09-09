@@ -50,7 +50,7 @@ func openPolicyDB(t *testing.T) Repository {
 
 	_, err = client.Clinic.Create().
 		SetID(clinicctx.TestClinicID).
-		SetSlug("test").
+		SetDomain("test.local").
 		SetName("Test Clinic").
 		SetCountry("BR").
 		SetTimezone("America/Sao_Paulo").

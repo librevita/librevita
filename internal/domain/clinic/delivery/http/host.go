@@ -19,7 +19,7 @@ import (
 )
 
 // HostMiddleware resolves the clinic from Host, attaches clinicctx, and
-// wires FLE to the Clinic DEK. Unknown slugs are 404; Host values outside
+// wires FLE to the Clinic DEK. Unknown domains are 404; Host values outside
 // the allowlist are 400. /healthz and /static skip Host.
 func HostMiddleware(cfg *config.Config, clinics model.Repository, engine *crypto.Engine, logger log.Logger) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
@@ -46,10 +46,10 @@ func serveHost(c echo.Context, next echo.HandlerFunc, cfg *config.Config, clinic
 		return next(c)
 	}
 
-	row, err := clinics.GetBySlug(ctx, classified.Slug)
+	row, err := clinics.GetByDomain(ctx, classified.Domain)
 	if err != nil {
 		logger.ErrorContext(ctx, "clinic lookup failed",
-			log.String("slug", classified.Slug),
+			log.String("domain", classified.Domain),
 			log.Error(err),
 		)
 		return echo.NewHTTPError(http.StatusInternalServerError)
@@ -60,7 +60,7 @@ func serveHost(c echo.Context, next echo.HandlerFunc, cfg *config.Config, clinic
 
 	resolved := &clinicctx.Clinic{
 		ID:          row.ID,
-		Slug:        row.Slug,
+		Domain:      row.Domain,
 		Name:        row.Name,
 		Timezone:    row.Timezone,
 		OnboardedAt: row.OnboardedAt,

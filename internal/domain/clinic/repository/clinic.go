@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"librevita.org/internal/database/record"
@@ -31,21 +32,29 @@ func (r *clinicRepository) GetByID(ctx context.Context, id ident.ClinicID) (*mod
 	return toClinicDomain(row), nil
 }
 
-func (r *clinicRepository) GetBySlug(ctx context.Context, slug string) (*model.Clinic, error) {
-	row, err := r.client.Clinic.Query().Where(clinic.SlugEQ(slug)).Only(ctx)
+func (r *clinicRepository) GetByDomain(ctx context.Context, domain string) (*model.Clinic, error) {
+	row, err := r.client.Clinic.Query().Where(clinic.DomainEQ(strings.ToLower(strings.TrimSpace(domain)))).Only(ctx)
 	if err != nil {
 		if record.IsNotFound(err) {
 			return nil, nil
 		}
-		return nil, errors.Wrap(err, "clinic repository: get by slug")
+		return nil, errors.Wrap(err, "clinic repository: get by domain")
 	}
 	return toClinicDomain(row), nil
 }
 
+func (r *clinicRepository) GetBySlug(ctx context.Context, slug string) (*model.Clinic, error) {
+	return r.GetByDomain(ctx, slug)
+}
+
 func (r *clinicRepository) CreateShell(ctx context.Context, c *model.Clinic) (*model.Clinic, error) {
+	domain := strings.ToLower(strings.TrimSpace(c.Domain))
+	if domain == "" && c.Slug != "" {
+		domain = strings.ToLower(strings.TrimSpace(c.Slug))
+	}
 	create := r.client.Clinic.Create().
 		SetID(c.ID).
-		SetSlug(c.Slug).
+		SetDomain(domain).
 		SetName(c.Name).
 		SetCountry(c.Country).
 		SetTimezone(c.Timezone)
@@ -73,7 +82,7 @@ func (r *clinicRepository) CreateShell(ctx context.Context, c *model.Clinic) (*m
 	row, err := create.Save(ctx)
 	if err != nil {
 		if record.IsConstraintError(err) {
-			return nil, errors.WithSecondaryError(errors.New("clinic repository: slug taken"), err)
+			return nil, errors.WithSecondaryError(errors.New("clinic repository: domain taken"), err)
 		}
 		return nil, errors.Wrap(err, "clinic repository: create shell")
 	}
@@ -106,7 +115,8 @@ func toClinicDomain(row *record.Clinic) *model.Clinic {
 	}
 	return &model.Clinic{
 		ID:          row.ID,
-		Slug:        row.Slug,
+		Domain:      row.Domain,
+		Slug:        row.Domain,
 		Name:        row.Name,
 		TaxID:       row.TaxID,
 		Phone:       row.Phone,

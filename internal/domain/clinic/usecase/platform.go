@@ -16,8 +16,10 @@ import (
 var (
 	ErrPlatformExists      = errors.New("clinic: platform already bootstrapped")
 	ErrInvalidPlatformCred = errors.New("clinic: invalid email or password")
-	ErrSlugTaken           = errors.New("clinic: slug already in use")
-	ErrInvalidSlug         = errors.New("clinic: invalid slug")
+	ErrDomainTaken         = errors.New("clinic: domain already in use")
+	ErrInvalidDomain       = errors.New("clinic: invalid domain")
+	ErrSlugTaken           = ErrDomainTaken
+	ErrInvalidSlug         = ErrInvalidDomain
 )
 
 // PlatformService bootstraps platform operators and provisions clinic shells.
@@ -99,7 +101,8 @@ func (s *PlatformService) Login(ctx context.Context, email, password string) (*a
 // ProvisionInput is the clinic shell created on the apex.
 type ProvisionInput struct {
 	Name     string
-	Slug     string
+	Domain   string
+	Slug     string // deprecated: alias for Domain
 	TaxID    string
 	Phone    string
 	Email    string
@@ -113,7 +116,10 @@ type ProvisionInput struct {
 
 // Provision creates a clinic shell (onboarded_at null) and its Clinic DEK.
 func (s *PlatformService) Provision(ctx context.Context, in ProvisionInput) (*model.Clinic, error) {
-	slug := strings.ToLower(strings.TrimSpace(in.Slug))
+	domain := strings.ToLower(strings.TrimSpace(in.Domain))
+	if domain == "" && in.Slug != "" {
+		domain = strings.ToLower(strings.TrimSpace(in.Slug))
+	}
 	name := strings.TrimSpace(in.Name)
 	tz := strings.TrimSpace(in.Timezone)
 	if tz == "" {
@@ -128,9 +134,9 @@ func (s *PlatformService) Provision(ctx context.Context, in ProvisionInput) (*mo
 	var clinicID ident.ClinicID
 
 	err := flow.New().
-		Step("validate slug", func() error {
-			if !model.ValidSlug(slug) {
-				return ErrInvalidSlug
+		Step("validate domain", func() error {
+			if !model.ValidDomain(domain) {
+				return ErrInvalidDomain
 			}
 			return nil
 		}).
@@ -148,7 +154,8 @@ func (s *PlatformService) Provision(ctx context.Context, in ProvisionInput) (*mo
 			var cerr error
 			shell, cerr = s.clinics.CreateShell(ctx, &model.Clinic{
 				ID:         clinicID,
-				Slug:       slug,
+				Domain:     domain,
+				Slug:       domain,
 				Name:       name,
 				TaxID:      strings.TrimSpace(in.TaxID),
 				Phone:      strings.TrimSpace(in.Phone),
@@ -161,8 +168,8 @@ func (s *PlatformService) Provision(ctx context.Context, in ProvisionInput) (*mo
 				Timezone:   tz,
 			})
 			if cerr != nil {
-				if strings.Contains(cerr.Error(), "slug taken") {
-					return ErrSlugTaken
+				if strings.Contains(cerr.Error(), "domain taken") || strings.Contains(cerr.Error(), "slug taken") {
+					return ErrDomainTaken
 				}
 				return cerr
 			}

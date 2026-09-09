@@ -68,7 +68,7 @@ func TestCreateBundleRejectsInvalidJSON(t *testing.T) {
 	c := e.NewContext(req, rec)
 	clinicID := ident.MustParseClinic("01990000-0000-7000-8000-000000000001")
 	c.Set("server.principal", &auth.Principal{ID: clinicID.String(), Role: auth.RolePhysician})
-	c.SetRequest(req.WithContext(clinicctx.WithClinic(req.Context(), &clinicctx.Clinic{ID: clinicID, Slug: "t", Name: "T"})))
+	c.SetRequest(req.WithContext(clinicctx.WithClinic(req.Context(), &clinicctx.Clinic{ID: clinicID, Domain: "t.local", Name: "T"})))
 	require.NoError(t, h.CreateBundle(c))
 	assert.Equal(t, http.StatusBadRequest, rec.Code)
 	var oo OperationOutcome
@@ -218,7 +218,7 @@ func physicianContext(e *echo.Echo, method, path string, clinicID ident.ClinicID
 		ID:   uuid.MustParse("01990000-0000-7000-8000-0000000000cc").String(),
 		Role: auth.RolePhysician, Name: "Dr",
 	})
-	c.SetRequest(req.WithContext(clinicctx.WithClinic(req.Context(), &clinicctx.Clinic{ID: clinicID, Slug: "t", Name: "T"})))
+	c.SetRequest(req.WithContext(clinicctx.WithClinic(req.Context(), &clinicctx.Clinic{ID: clinicID, Domain: "t.local", Name: "T"})))
 	return c, rec
 }
 
@@ -247,7 +247,7 @@ func TestCreateBundleCreateReturns201(t *testing.T) {
 		ID:   uuid.MustParse("01990000-0000-7000-8000-0000000000cc").String(),
 		Role: auth.RolePhysician, Name: "Dr",
 	})
-	c.SetRequest(req.WithContext(clinicctx.WithClinic(req.Context(), &clinicctx.Clinic{ID: clinicID, Slug: "t", Name: "T"})))
+	c.SetRequest(req.WithContext(clinicctx.WithClinic(req.Context(), &clinicctx.Clinic{ID: clinicID, Domain: "t.local", Name: "T"})))
 	require.NoError(t, h.CreateBundle(c))
 	assert.Equal(t, http.StatusCreated, rec.Code)
 	assert.Contains(t, rec.Header().Get("Location"), "/fhir/r4/Composition/"+ep.ID.String()+"/$document")
@@ -276,7 +276,7 @@ func TestCreateBundleUpdateReturns200(t *testing.T) {
 	c.Set("server.principal", &auth.Principal{
 		ID: ep.AuthorID.String(), Role: auth.RolePhysician, Name: "Dr",
 	})
-	c.SetRequest(req.WithContext(clinicctx.WithClinic(req.Context(), &clinicctx.Clinic{ID: clinicID, Slug: "t", Name: "T"})))
+	c.SetRequest(req.WithContext(clinicctx.WithClinic(req.Context(), &clinicctx.Clinic{ID: clinicID, Domain: "t.local", Name: "T"})))
 	require.NoError(t, h.CreateBundle(c))
 	assert.Equal(t, http.StatusOK, rec.Code)
 }

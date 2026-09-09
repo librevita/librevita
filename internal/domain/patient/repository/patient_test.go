@@ -57,7 +57,7 @@ func setupTestRepository(t *testing.T) (patientmodel.PatientRepository, *record.
 	clinicID := ident.New[ident.ClinicID]()
 	_, err = client.Clinic.Create().
 		SetID(clinicID).
-		SetSlug("clinica-central").
+		SetDomain("clinica-central.local").
 		SetName("Clínica Central").
 		Save(context.Background())
 	require.NoError(t, err)

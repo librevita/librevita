@@ -10,13 +10,19 @@ import (
 	"librevita.org/pkg/ident"
 )
 
+func TestValidDomain(t *testing.T) {
+	assert.True(t, model.ValidDomain("clinicasaojose.com.br"))
+	assert.True(t, model.ValidDomain("clinic-alpha.org"))
+	assert.True(t, model.ValidDomain("clinica123.local"))
+	assert.True(t, model.ValidDomain("localhost"))
+	assert.False(t, model.ValidDomain("INVALID!"))
+	assert.False(t, model.ValidDomain("-invalid.com"))
+	assert.False(t, model.ValidDomain(""))
+}
+
 func TestValidSlug(t *testing.T) {
-	assert.True(t, model.ValidSlug("clinic-alpha"))
+	assert.True(t, model.ValidSlug("clinic-alpha.org"))
 	assert.True(t, model.ValidSlug("clinica123"))
-	assert.False(t, model.ValidSlug("api"))      // reserved
-	assert.False(t, model.ValidSlug("admin"))    // reserved
-	assert.False(t, model.ValidSlug("www"))      // reserved
-	assert.False(t, model.ValidSlug("app"))      // reserved
 	assert.False(t, model.ValidSlug("INVALID!")) // regex fail
 	assert.False(t, model.ValidSlug("-invalid")) // leading dash
 }

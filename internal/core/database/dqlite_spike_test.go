@@ -54,7 +54,7 @@ func TestDqliteSpike(t *testing.T) {
 
 	_, err = tx.Clinic.Create().
 		SetID(ident.MustParseClinic("00000000-0000-0000-0000-0000000000d1")).
-		SetSlug("dqlite").
+		SetDomain("dqlite.local").
 		SetName("Dqlite").
 		SetTaxID("1").
 		SetCountry("BR").
@@ -69,7 +69,7 @@ func TestDqliteSpike(t *testing.T) {
 
 	_, err = tx.Clinic.Create().
 		SetID(ident.MustParseClinic("00000000-0000-0000-0000-0000000000d2")).
-		SetSlug("rolled").
+		SetDomain("rolled.local").
 		SetName("Rolled").
 		SetTaxID("2").
 		SetCountry("BR").

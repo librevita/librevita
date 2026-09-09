@@ -48,7 +48,7 @@ Most clinical software treats privacy as a deployment checkbox: TLS in transit, 
 
 **Envelope keys and real erasure.** A process-memory **KEK** (HKDF from `master_key`) wraps a **Clinic DEK**, which wraps a **Patient DEK**. Patient fields and attachments are sealed under that patient key, authenticated with the patient URN. Deleting the Patient DEK (**crypto-shredding**) turns remaining ciphertext into unrecoverable noise — the GDPR/LGPD right to be forgotten as a cryptographic operation, not only a `DELETE`. An operator who holds **both** the master key and the keystore can still unwrap a clinic; that is stated in the [threat model](#product-threat-model), not hidden.
 
-**Clinic isolation that is cryptographic, not only a `WHERE` clause.** Many clinics share one schema and one process. The isolation boundary is the clinic, resolved from Host `{slug}.{base_domain}`, named only `clinic_id` (no `tenant_id` alias). Each clinic has its own DEK hierarchy, host-only cookies, and copied roles/policies. See [ADR 0002](docs/adr/0002-multi-clinic-shared-schema.md).
+**Clinic isolation that is cryptographic, not only a `WHERE` clause.** Many clinics share one schema and one process. The isolation boundary is the clinic, resolved from the Host custom domain, named only `clinic_id` (no `tenant_id` alias). Each clinic has its own custom domain, DEK hierarchy, host-only cookies, and copied roles/policies. See [ADR 0002](docs/adr/0002-multi-clinic-shared-schema.md).
 
 **SOAP is the chart; FHIR is a wire.** Clinicians reason about an `Episode` (narrative SOAP plus findings, problems, and plan items), encrypted with the Patient DEK. FHIR R4 is a **replaceable interop module** that maps that aggregate to a document Bundle. LibreVita is not a general-purpose FHIR server and does not persist FHIR JSON as the source of truth — a future R5 is another adapter, not a rewrite of the chart. See [ADR 0003](docs/adr/0003-hybrid-fhir-soap.md).
 
@@ -65,7 +65,7 @@ A request is classified by Host, authorized by dynamic policies, then handled in
 ```mermaid
 flowchart LR
   Browser --> Echo
-  Echo --> Host["Host slug / clinic_id"]
+  Echo --> Host["Host domain / clinic_id"]
   Host --> Policy["Policy engine (Expr)"]
   Policy --> Domain["Clean domain"]
   Domain --> FLE["Ent AL-FLE"]
@@ -74,7 +74,7 @@ flowchart LR
   Domain --> Files["AEAD storage"]
 ```
 
-`cmd/web` is the Fx composition root: config, telemetry, keystore, meta, crypto, database (Goose migrations before listen), storage, audit, auth, clinic, policy, HTTP, UI, domains, and the FHIR adapter. Apex hosts (`base_domain` / `www.`) serve platform operators. Clinic hosts (`{slug}.{base_domain}`) attach `clinic_id`, load the Clinic DEK, and scope FLE. Session and CSRF cookies are host-only.
+`cmd/web` is the Fx composition root: config, telemetry, keystore, meta, crypto, database (Goose migrations before listen), storage, audit, auth, clinic, policy, HTTP, UI, domains, and the FHIR adapter. Apex hosts (`base_domain` / `www.`) serve platform operators. Clinic hosts (custom domain per clinic) attach `clinic_id`, load the Clinic DEK, and scope FLE. Session and CSRF cookies are host-only.
 
 Each domain (`clinic`, `user`, `patient`, `identifier`, `calendar`, `episode`) uses the same layers:
 
@@ -192,13 +192,13 @@ Default mode is `production`. In production, `LIBREVITA_BASE_DOMAIN`, `LIBREVITA
 
 For local development and testing, pass `--mode=development` (or set `LIBREVITA_MODE=development`): listen on `0.0.0.0:8080`, `base_domain` defaults to `lv.test`, and **ephemeral** in-memory PASETO and master keys are generated if unset (note: data from an ephemeral run will not decrypt after restart).
 
-Clinic routing uses the `Host` header. Map the apex (and later each clinic slug) in `/etc/hosts`:
+Clinic routing uses the `Host` header. Map the apex and clinic domains in `/etc/hosts`:
 
 ```
-127.0.0.1 lv.test www.lv.test
+127.0.0.1 lv.test www.lv.test clinica.local
 ```
 
-Open `http://lv.test:8080/setup` to create the platform operator, provision a clinic shell (`/clinics/new`), add `{slug}.lv.test` to hosts, then finish `/setup` on that subdomain. `GET /healthz` is a liveness probe and skips Host classification.
+Open `http://lv.test:8080/setup` to create the platform operator, provision a clinic shell (`/clinics/new`) with its custom domain (e.g. `clinica.local`), add it to hosts, then finish `/setup` on that clinic domain. `GET /healthz` is a liveness probe and skips Host classification.
 
 Full flags, production keys, TLS/DNS, and database drivers: [Production: keys, TLS, DNS, and proxy](#production-keys-tls-dns-and-proxy), [Configuration](#configuration). Contributor loop: [CONTRIBUTING.md](CONTRIBUTING.md).
 
@@ -277,11 +277,11 @@ LibreVita supports native TLS termination with automated certificates from **Let
 
 LibreVita includes a built-in ACME client supporting both **HTTP-01** and **DNS-01** challenge types:
 
-- **DNS-01 (Recommended for multi-clinic wildcard)**: Let's Encrypt validates control via `_acme-challenge.<base_domain>` DNS TXT records. This enables a single wildcard certificate (`*.{base_domain}` and `{base_domain}`) covering every tenant clinic slug (`{slug}.{base_domain}`) and the apex domain.
+- **DNS-01**: Let's Encrypt validates control via `_acme-challenge.<base_domain>` DNS TXT records. Useful for securing the apex domain (`base_domain` and `www.<base_domain>`) or issuing wildcard certificates.
   - **Cloudflare**: Native REST API v4 integration using an API token.
   - **RFC 2136**: Dynamic DNS update protocol with TSIG authentication (BIND, PowerDNS, Knot, Windows Server).
   - **Exec Hook**: Executes an external script/command (`present`/`cleanup`), allowing integration with any DNS provider without heavy cloud SDKs.
-- **HTTP-01**: Validates control via `http://<domain>/.well-known/acme-challenge/<token>`. Ideal for standalone single-domain deployments without DNS API credentials. Does not support wildcard domains.
+- **HTTP-01 (On-Demand TLS for Clinic Custom Domains)**: Validates control via `http://<domain>/.well-known/acme-challenge/<token>`. LibreVita automatically obtains and renews TLS certificates on-demand via HTTP-01 whenever an incoming TLS handshake targets an authorized clinic custom domain (e.g. `clinicasaojose.com.br`). Strict database authorization ensures only registered clinics can trigger certificate issuance, preventing denial-of-service or certificate exhaustion. Also ideal for standalone apex deployments without DNS API credentials.
 
 Example configuration for Let's Encrypt with Cloudflare DNS-01:
 
@@ -313,21 +313,21 @@ openssl rand -base64 32   # LIBREVITA_MASTER_KEY — FLE KEK; never reuse the PA
 
 Keep them out of the database: environment, a secret manager, or `config.yaml` with mode `0600`. Do not commit them. Losing `master_key` crypto-shreds every clinic on that installation. Replacing it is not an in-place rotation: a new master key cannot unwrap Clinic DEKs sealed under the old KEK.
 
-### DNS
+### DNS & Custom Domains
 
 `base_domain` is required in production (development defaults to `lv.test`). The process classifies `Host` (port stripped) as:
 
-- **Apex** — `base_domain` or `www.{base_domain}` (platform operators)
-- **Clinic** — exactly one label: `{slug}.{base_domain}` (`norte.example.org` is valid; `a.b.example.org` is not)
-- **Rejected** — anything else, including reserved slugs `www`, `app`, `api`, `admin`, `mail`
+- **Apex** — `base_domain` or `www.{base_domain}` (platform operators and clinic provisioning)
+- **Clinic** — any registered custom domain pointing to the server (e.g. `clinicasaojose.com.br` or `app.clinicasaojose.com.br`)
+- **Rejected** — reserved names (`www`, `app`, `api`, `admin`, `mail`) on apex or invalid hostnames
 
-Publish A/AAAA (or CNAME) for the apex, `www`, and either a wildcard `*.{base_domain}` or a record per clinic slug.
+Publish A/AAAA (or CNAME) for the apex and `www`. Each tenant clinic configures its own custom domain with an A/AAAA or CNAME pointing to the LibreVita server. When a client connects to the clinic domain, LibreVita handles the request, verifies the domain in the database, and automatically provisions an on-demand TLS certificate via ACME HTTP-01.
 
 ### External reverse proxy (Optional)
 
 If running behind Caddy, nginx, or an external cloud load balancer instead of native ACME:
 
-1. Terminate TLS with a certificate that covers the apex **and** `*.{base_domain}` (or each slug)
+1. Terminate TLS with certificates covering the apex domain and each clinic's custom domain (or pass SNI directly to LibreVita)
 2. Forward the original `Host` — clinic routing uses `Request.Host`, not the backend’s name
 3. Send `X-Forwarded-For` so rate limits and the audit trail see the client
 4. Be the only peer that can reach LibreVita from addresses listed in `trusted_proxies` (comma-separated CIDR or IP). If that list is empty, `X-Forwarded-For` is ignored and the proxy’s address is used for limits and audit
@@ -397,7 +397,7 @@ auth:
   max_concurrent_hashes: 4
 paseto_key: ... # base64, 32 bytes; required outside development
 master_key: ... # base64, 32 bytes; required outside development
-base_domain: lv.test # clinic hosts are {slug}.{base_domain}; required in production
+base_domain: lv.test # platform apex host; required in production
 crypto:
   hash_algorithm: blake2s # blake2s (default) or blake2b
   encryption_cipher: xchacha20-poly1305 # xchacha20-poly1305 (default)
@@ -469,7 +469,7 @@ All configuration flags:
 | `--mode`                       | `LIBREVITA_MODE`                             | Runtime mode: `production` (default) or `development`                                                                                                        |
 | `--http-bind`                  | `LIBREVITA_HTTP_BIND`                        | HTTP bind address (`0.0.0.0`, `127.0.0.1`, ...)                                                                                                              |
 | `--http-port`                  | `LIBREVITA_HTTP_PORT`                        | HTTP listen port (default `8080`)                                                                                                                            |
-| `--base-domain`                | `LIBREVITA_BASE_DOMAIN`                      | DNS suffix for clinic hosts (`{slug}.{base_domain}`); default `lv.test` outside production; required in production                                           |
+| `--base-domain`                | `LIBREVITA_BASE_DOMAIN`                      | Platform apex domain (e.g. `example.org`); default `lv.test` outside production; required in production                                                     |
 | `--trusted-proxies`            | `LIBREVITA_TRUSTED_PROXIES`                  | Comma-separated proxy IPs allowed to set `X-Forwarded-For`                                                                                                   |
 | `--hsts-max-age`               | `LIBREVITA_HSTS_MAX_AGE`                     | `Strict-Transport-Security` max-age in seconds (0 disables; HTTPS only)                                                                                      |
 | `--data-dir`                   | `LIBREVITA_DATA_DIR`                         | Base directory for default database and logs                                                                                                                 |
@@ -678,9 +678,9 @@ This is not a general-purpose FHIR server: no `$everything`, history, PATCH, SMA
 LibreVita uses a two-phase onboarding workflow for multi-clinic shared-schema deployments:
 
 1. **Apex platform bootstrap (`GET /setup` on `base_domain` / `www.`)**  
-   When the installation is uninitialized, the apex redirects to `/setup`. That creates the first platform operator in `platform_users`. Operators then use `/clinics/new` to provision a clinic shell (slug, `clinic_id`, wrapped Clinic DEK `urn:librevita:clinic:<id>` in the KeyStore).
+   When the installation is uninitialized, the apex redirects to `/setup`. That creates the first platform operator in `platform_users`. Operators then use `/clinics/new` to provision a clinic shell (domain, `clinic_id`, wrapped Clinic DEK `urn:librevita:clinic:<id>` in the KeyStore).
 
-2. **Clinic subdomain onboarding (`GET /setup` on `{slug}.{base_domain}`)**  
+2. **Clinic custom domain onboarding (`GET /setup` on clinic custom domain)**  
    Until `clinic.onboarded_at` is set, clinic routes redirect to `/setup`. That creates the clinic administrator, seeds system roles, registers default policies, activates opted-in identifier systems, and sets `onboarded_at`. Afterwards, `/setup` redirects to login. Setup is rate-limited to 5 attempts per minute per IP.
 
 After onboarding, account creation is never public: `RequireAuth` plus `users.register`. The default restricts registration to `admin`; an operator can tighten it (`principal.email == 'hr@example.org'`) or close it (`false`). New accounts default to role `patient`; role assignment is an admin task.
@@ -691,7 +691,7 @@ Authentication lives in `internal/core/auth` (transport-agnostic) with HTTP adap
 
 - Passwords are hashed with Argon2id (`golang.org/x/crypto/argon2`)
 - Sessions are PASETO v4.local (`aidanwoods.dev/go-paseto`): the payload is encrypted with XChaCha20-Poly1305 under a single server key and validated on every request. The sessions KV store holds only a keyed BLAKE2 fingerprint of the token id for revocation, logout, and account deactivation. The principal is loaded fresh each request and carries timezone and UI-theme preferences. Cookies are host-only (`HttpOnly`, `SameSite=Lax`, `Secure` in production; no `Domain=.{base_domain}`)
-- A clinic host requires `users.clinic_id` to match the Host slug. The apex authenticates only `platform_users`
+- A clinic host requires `users.clinic_id` to match the Host domain. The apex authenticates only `platform_users`
 - `LIBREVITA_PASETO_KEY` (base64, 32 bytes) is required outside `development`. Only `development` may use an ephemeral key (sessions reset on restart). Labels such as `staging` or `prod` are treated as persistent
 - Concurrent Argon2id operations are bounded by `--auth-max-concurrent-hashes` (default 4, ~64 MiB each)
 - CSRF uses double-submit. Forms post `_csrf`; HTMX and fetch send `X-CSRF-Token`

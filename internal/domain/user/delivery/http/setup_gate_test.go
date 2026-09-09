@@ -23,7 +23,7 @@ func attachClinic(onboarded bool) echo.MiddlewareFunc {
 			}
 			ctx := clinicctx.WithClinic(c.Request().Context(), &clinicctx.Clinic{
 				ID:          clinicctx.TestClinicID,
-				Slug:        "test",
+				Domain:      "test.local",
 				Name:        "Test Clinic",
 				Timezone:    "America/Sao_Paulo",
 				OnboardedAt: at,

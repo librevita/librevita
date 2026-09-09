@@ -26,7 +26,8 @@ const (
 // Clinic is the request-scoped clinic profile (not the full Ent row).
 type Clinic struct {
 	ID          ident.ClinicID
-	Slug        string
+	Domain      string
+	Slug        string // deprecated: alias for Domain
 	Name        string
 	Timezone    string
 	OnboardedAt *time.Time
@@ -34,6 +35,14 @@ type Clinic struct {
 
 // WithClinic stores c on ctx.
 func WithClinic(ctx context.Context, c *Clinic) context.Context {
+	if c != nil {
+		if c.Domain == "" && c.Slug != "" {
+			c.Domain = c.Slug
+		}
+		if c.Slug == "" && c.Domain != "" {
+			c.Slug = c.Domain
+		}
+	}
 	return context.WithValue(ctx, clinicKey, c)
 }
 
@@ -102,12 +111,12 @@ func IsReservedSlug(slug string) bool {
 // TestClinicID is a stable UUID for unit tests that need a clinic in context.
 var TestClinicID = ident.MustParseClinic("01990000-0000-7000-8000-0000000000c1")
 
-// WithTestClinic attaches a named onboarded clinic (slug "test") for tests.
+// WithTestClinic attaches a named onboarded clinic (domain "test.local") for tests.
 func WithTestClinic(ctx context.Context) context.Context {
 	now := time.Now()
 	return WithClinic(ctx, &Clinic{
 		ID:          TestClinicID,
-		Slug:        "test",
+		Domain:      "test.local",
 		Name:        "Test Clinic",
 		Timezone:    "America/Sao_Paulo",
 		OnboardedAt: &now,

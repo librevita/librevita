@@ -3824,7 +3824,7 @@ type ClinicMutation struct {
 	id                         *ident.ClinicID
 	created_at                 *time.Time
 	updated_at                 *time.Time
-	slug                       *string
+	domain                     *string
 	name                       *string
 	tax_id                     *string
 	phone                      *string
@@ -4063,40 +4063,40 @@ func (m *ClinicMutation) ResetUpdatedAt() {
 	m.updated_at = nil
 }
 
-// SetSlug sets the "slug" field.
-func (m *ClinicMutation) SetSlug(s string) {
-	m.slug = &s
+// SetDomain sets the "domain" field.
+func (m *ClinicMutation) SetDomain(s string) {
+	m.domain = &s
 }
 
-// Slug returns the value of the "slug" field in the mutation.
-func (m *ClinicMutation) Slug() (r string, exists bool) {
-	v := m.slug
+// Domain returns the value of the "domain" field in the mutation.
+func (m *ClinicMutation) Domain() (r string, exists bool) {
+	v := m.domain
 	if v == nil {
 		return
 	}
 	return *v, true
 }
 
-// OldSlug returns the old "slug" field's value of the Clinic entity.
+// OldDomain returns the old "domain" field's value of the Clinic entity.
 // If the Clinic object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *ClinicMutation) OldSlug(ctx context.Context) (v string, err error) {
+func (m *ClinicMutation) OldDomain(ctx context.Context) (v string, err error) {
 	if !m.op.Is(OpUpdateOne) {
-		return v, errors.New("OldSlug is only allowed on UpdateOne operations")
+		return v, errors.New("OldDomain is only allowed on UpdateOne operations")
 	}
 	if m.id == nil || m.oldValue == nil {
-		return v, errors.New("OldSlug requires an ID field in the mutation")
+		return v, errors.New("OldDomain requires an ID field in the mutation")
 	}
 	oldValue, err := m.oldValue(ctx)
 	if err != nil {
-		return v, fmt.Errorf("querying old value for OldSlug: %w", err)
+		return v, fmt.Errorf("querying old value for OldDomain: %w", err)
 	}
-	return oldValue.Slug, nil
+	return oldValue.Domain, nil
 }
 
-// ResetSlug resets all changes to the "slug" field.
-func (m *ClinicMutation) ResetSlug() {
-	m.slug = nil
+// ResetDomain resets all changes to the "domain" field.
+func (m *ClinicMutation) ResetDomain() {
+	m.domain = nil
 }
 
 // SetName sets the "name" field.
@@ -5450,8 +5450,8 @@ func (m *ClinicMutation) Fields() []string {
 	if m.updated_at != nil {
 		fields = append(fields, clinic.FieldUpdatedAt)
 	}
-	if m.slug != nil {
-		fields = append(fields, clinic.FieldSlug)
+	if m.domain != nil {
+		fields = append(fields, clinic.FieldDomain)
 	}
 	if m.name != nil {
 		fields = append(fields, clinic.FieldName)
@@ -5498,8 +5498,8 @@ func (m *ClinicMutation) Field(name string) (ent.Value, bool) {
 		return m.CreatedAt()
 	case clinic.FieldUpdatedAt:
 		return m.UpdatedAt()
-	case clinic.FieldSlug:
-		return m.Slug()
+	case clinic.FieldDomain:
+		return m.Domain()
 	case clinic.FieldName:
 		return m.Name()
 	case clinic.FieldTaxID:
@@ -5535,8 +5535,8 @@ func (m *ClinicMutation) OldField(ctx context.Context, name string) (ent.Value, 
 		return m.OldCreatedAt(ctx)
 	case clinic.FieldUpdatedAt:
 		return m.OldUpdatedAt(ctx)
-	case clinic.FieldSlug:
-		return m.OldSlug(ctx)
+	case clinic.FieldDomain:
+		return m.OldDomain(ctx)
 	case clinic.FieldName:
 		return m.OldName(ctx)
 	case clinic.FieldTaxID:
@@ -5582,12 +5582,12 @@ func (m *ClinicMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetUpdatedAt(v)
 		return nil
-	case clinic.FieldSlug:
+	case clinic.FieldDomain:
 		v, ok := value.(string)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
-		m.SetSlug(v)
+		m.SetDomain(v)
 		return nil
 	case clinic.FieldName:
 		v, ok := value.(string)
@@ -5772,8 +5772,8 @@ func (m *ClinicMutation) ResetField(name string) error {
 	case clinic.FieldUpdatedAt:
 		m.ResetUpdatedAt()
 		return nil
-	case clinic.FieldSlug:
-		m.ResetSlug()
+	case clinic.FieldDomain:
+		m.ResetDomain()
 		return nil
 	case clinic.FieldName:
 		m.ResetName()

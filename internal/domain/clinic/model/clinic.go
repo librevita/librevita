@@ -3,27 +3,34 @@ package model
 import (
 	"context"
 	"regexp"
+	"strings"
 	"time"
 
-	"librevita.org/internal/core/clinicctx"
 	"librevita.org/pkg/ident"
 )
 
-// clinicSlugRE is the DNS-safe hostname label used as the clinic subdomain.
-var clinicSlugRE = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
+// clinicDomainRE is the DNS-safe hostname or domain name for the clinic.
+var clinicDomainRE = regexp.MustCompile(`^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)*[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
 
-// ValidSlug reports whether slug is a DNS-safe, non-reserved clinic label.
-func ValidSlug(slug string) bool {
-	if !clinicSlugRE.MatchString(slug) {
+// ValidDomain reports whether domain is a valid DNS-safe clinic domain.
+func ValidDomain(domain string) bool {
+	d := strings.ToLower(strings.TrimSpace(domain))
+	if d == "" || len(d) > 253 {
 		return false
 	}
-	return !clinicctx.IsReservedSlug(slug)
+	return clinicDomainRE.MatchString(d)
+}
+
+// ValidSlug reports whether slug is a valid clinic identifier (alias for ValidDomain).
+func ValidSlug(slug string) bool {
+	return ValidDomain(slug)
 }
 
 // Clinic is the domain model representing a clinic profile.
 type Clinic struct {
 	ID          ident.ClinicID
-	Slug        string
+	Domain      string
+	Slug        string // deprecated: alias for Domain
 	Name        string
 	TaxID       string
 	Phone       string
@@ -47,6 +54,7 @@ func (c *Clinic) Onboarded() bool {
 // Repository defines the storage contract for clinic data.
 type Repository interface {
 	GetByID(ctx context.Context, id ident.ClinicID) (*Clinic, error)
+	GetByDomain(ctx context.Context, domain string) (*Clinic, error)
 	GetBySlug(ctx context.Context, slug string) (*Clinic, error)
 	CreateShell(ctx context.Context, c *Clinic) (*Clinic, error)
 	MarkOnboarded(ctx context.Context, id ident.ClinicID, at time.Time) error

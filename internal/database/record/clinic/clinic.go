@@ -19,8 +19,8 @@ const (
 	FieldCreatedAt = "created_at"
 	// FieldUpdatedAt holds the string denoting the updated_at field in the database.
 	FieldUpdatedAt = "updated_at"
-	// FieldSlug holds the string denoting the slug field in the database.
-	FieldSlug = "slug"
+	// FieldDomain holds the string denoting the domain field in the database.
+	FieldDomain = "domain"
 	// FieldName holds the string denoting the name field in the database.
 	FieldName = "name"
 	// FieldTaxID holds the string denoting the tax_id field in the database.
@@ -187,7 +187,7 @@ var Columns = []string{
 	FieldID,
 	FieldCreatedAt,
 	FieldUpdatedAt,
-	FieldSlug,
+	FieldDomain,
 	FieldName,
 	FieldTaxID,
 	FieldPhone,
@@ -218,8 +218,8 @@ var (
 	DefaultUpdatedAt func() time.Time
 	// UpdateDefaultUpdatedAt holds the default value on update for the "updated_at" field.
 	UpdateDefaultUpdatedAt func() time.Time
-	// SlugValidator is a validator for the "slug" field. It is called by the builders before save.
-	SlugValidator func(string) error
+	// DomainValidator is a validator for the "domain" field. It is called by the builders before save.
+	DomainValidator func(string) error
 	// NameValidator is a validator for the "name" field. It is called by the builders before save.
 	NameValidator func(string) error
 	// DefaultCountry holds the default value on creation for the "country" field.
@@ -248,9 +248,9 @@ func ByUpdatedAt(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldUpdatedAt, opts...).ToFunc()
 }
 
-// BySlug orders the results by the slug field.
-func BySlug(opts ...sql.OrderTermOption) OrderOption {
-	return sql.OrderByField(FieldSlug, opts...).ToFunc()
+// ByDomain orders the results by the domain field.
+func ByDomain(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldDomain, opts...).ToFunc()
 }
 
 // ByName orders the results by the name field.

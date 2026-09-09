@@ -1,6 +1,7 @@
 package acme
 
 import (
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"testing"
@@ -90,4 +91,50 @@ func TestProvideDNSProvider(t *testing.T) {
 	// Mock
 	cfg.ACME.DNS.Provider = "mock"
 	assert.IsType(t, &MockDNSProvider{}, ProvideDNSProvider(cfg))
+}
+
+func TestManager_GetCertificate_OnDemandAndAuthorization(t *testing.T) {
+	dir := t.TempDir()
+	cfg := &config.Config{
+		BaseDomain: "example.org",
+		ACME: config.ACMEConfig{
+			Enabled:         true,
+			Email:           "admin@example.org",
+			Challenge:       "http-01",
+			RenewBeforeDays: 30,
+			Storage: config.ACMEStorageConfig{
+				Backend: "file",
+				Dir:     dir,
+			},
+		},
+	}
+
+	store, err := NewFileCertStore(dir)
+	require.NoError(t, err)
+
+	mgr, err := NewManager(cfg, store, nil, log.Nop())
+	require.NoError(t, err)
+	defer mgr.Stop()
+
+	// Store a certificate for a custom clinic domain
+	customDomain := "clinicasaojose.com.br"
+	certPEM, keyPEM := generateTestCertAndKey(t, customDomain)
+	require.NoError(t, store.SaveCertificate(t.Context(), customDomain, certPEM, keyPEM))
+
+	// Configure authorizer
+	mgr.SetDomainAuthorizer(func(_ context.Context, domain string) (bool, error) {
+		return domain == customDomain, nil
+	})
+
+	// GetCertificate with authorized custom domain found in store
+	helloAuthorized := &tls.ClientHelloInfo{ServerName: customDomain}
+	cert, err := mgr.GetCertificate(helloAuthorized)
+	require.NoError(t, err)
+	assert.NotNil(t, cert)
+
+	// GetCertificate with unauthorized domain
+	helloUnauthorized := &tls.ClientHelloInfo{ServerName: "unauthorized.com"}
+	_, err = mgr.GetCertificate(helloUnauthorized)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "unauthorized domain")
 }

@@ -50,6 +50,20 @@ func (_u *ClinicUpdate) SetUpdatedAt(v time.Time) *ClinicUpdate {
 	return _u
 }
 
+// SetDomain sets the "domain" field.
+func (_u *ClinicUpdate) SetDomain(v string) *ClinicUpdate {
+	_u.mutation.SetDomain(v)
+	return _u
+}
+
+// SetNillableDomain sets the "domain" field if the given value is not nil.
+func (_u *ClinicUpdate) SetNillableDomain(v *string) *ClinicUpdate {
+	if v != nil {
+		_u.SetDomain(*v)
+	}
+	return _u
+}
+
 // SetName sets the "name" field.
 func (_u *ClinicUpdate) SetName(v string) *ClinicUpdate {
 	_u.mutation.SetName(v)
@@ -835,6 +849,11 @@ func (_u *ClinicUpdate) defaults() {
 
 // check runs all checks and user-defined validators on the builder.
 func (_u *ClinicUpdate) check() error {
+	if v, ok := _u.mutation.Domain(); ok {
+		if err := clinic.DomainValidator(v); err != nil {
+			return &ValidationError{Name: "domain", err: fmt.Errorf(`record: validator failed for field "Clinic.domain": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.Name(); ok {
 		if err := clinic.NameValidator(v); err != nil {
 			return &ValidationError{Name: "name", err: fmt.Errorf(`record: validator failed for field "Clinic.name": %w`, err)}
@@ -857,6 +876,9 @@ func (_u *ClinicUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if value, ok := _u.mutation.UpdatedAt(); ok {
 		_spec.SetField(clinic.FieldUpdatedAt, field.TypeTime, value)
+	}
+	if value, ok := _u.mutation.Domain(); ok {
+		_spec.SetField(clinic.FieldDomain, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.Name(); ok {
 		_spec.SetField(clinic.FieldName, field.TypeString, value)
@@ -1613,6 +1635,20 @@ type ClinicUpdateOne struct {
 // SetUpdatedAt sets the "updated_at" field.
 func (_u *ClinicUpdateOne) SetUpdatedAt(v time.Time) *ClinicUpdateOne {
 	_u.mutation.SetUpdatedAt(v)
+	return _u
+}
+
+// SetDomain sets the "domain" field.
+func (_u *ClinicUpdateOne) SetDomain(v string) *ClinicUpdateOne {
+	_u.mutation.SetDomain(v)
+	return _u
+}
+
+// SetNillableDomain sets the "domain" field if the given value is not nil.
+func (_u *ClinicUpdateOne) SetNillableDomain(v *string) *ClinicUpdateOne {
+	if v != nil {
+		_u.SetDomain(*v)
+	}
 	return _u
 }
 
@@ -2414,6 +2450,11 @@ func (_u *ClinicUpdateOne) defaults() {
 
 // check runs all checks and user-defined validators on the builder.
 func (_u *ClinicUpdateOne) check() error {
+	if v, ok := _u.mutation.Domain(); ok {
+		if err := clinic.DomainValidator(v); err != nil {
+			return &ValidationError{Name: "domain", err: fmt.Errorf(`record: validator failed for field "Clinic.domain": %w`, err)}
+		}
+	}
 	if v, ok := _u.mutation.Name(); ok {
 		if err := clinic.NameValidator(v); err != nil {
 			return &ValidationError{Name: "name", err: fmt.Errorf(`record: validator failed for field "Clinic.name": %w`, err)}
@@ -2453,6 +2494,9 @@ func (_u *ClinicUpdateOne) sqlSave(ctx context.Context) (_node *Clinic, err erro
 	}
 	if value, ok := _u.mutation.UpdatedAt(); ok {
 		_spec.SetField(clinic.FieldUpdatedAt, field.TypeTime, value)
+	}
+	if value, ok := _u.mutation.Domain(); ok {
+		_spec.SetField(clinic.FieldDomain, field.TypeString, value)
 	}
 	if value, ok := _u.mutation.Name(); ok {
 		_spec.SetField(clinic.FieldName, field.TypeString, value)

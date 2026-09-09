@@ -151,19 +151,19 @@ func init() {
 	clinic.DefaultUpdatedAt = clinicDescUpdatedAt.Default.(func() time.Time)
 	// clinic.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
 	clinic.UpdateDefaultUpdatedAt = clinicDescUpdatedAt.UpdateDefault.(func() time.Time)
-	// clinicDescSlug is the schema descriptor for slug field.
-	clinicDescSlug := clinicFields[0].Descriptor()
-	// clinic.SlugValidator is a validator for the "slug" field. It is called by the builders before save.
-	clinic.SlugValidator = func() func(string) error {
-		validators := clinicDescSlug.Validators
+	// clinicDescDomain is the schema descriptor for domain field.
+	clinicDescDomain := clinicFields[0].Descriptor()
+	// clinic.DomainValidator is a validator for the "domain" field. It is called by the builders before save.
+	clinic.DomainValidator = func() func(string) error {
+		validators := clinicDescDomain.Validators
 		fns := [...]func(string) error{
 			validators[0].(func(string) error),
 			validators[1].(func(string) error),
 			validators[2].(func(string) error),
 		}
-		return func(slug string) error {
+		return func(domain string) error {
 			for _, fn := range fns {
-				if err := fn(slug); err != nil {
+				if err := fn(domain); err != nil {
 					return err
 				}
 			}

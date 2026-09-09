@@ -22,8 +22,8 @@ type Clinic struct {
 	CreatedAt time.Time `json:"created_at,omitempty"`
 	// UpdatedAt holds the value of the "updated_at" field.
 	UpdatedAt time.Time `json:"updated_at,omitempty"`
-	// DNS-safe subdomain label; immutable after creation
-	Slug string `json:"slug,omitempty"`
+	// Clinic fully qualified domain name; unique across clinics
+	Domain string `json:"domain,omitempty"`
 	// Clinic legal or trade name
 	Name string `json:"name,omitempty"`
 	// CNPJ / NIF / Tax identification
@@ -231,7 +231,7 @@ func (*Clinic) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case clinic.FieldID:
 			values[i] = new(ident.ClinicID)
-		case clinic.FieldSlug, clinic.FieldName, clinic.FieldTaxID, clinic.FieldPhone, clinic.FieldEmail, clinic.FieldStreet, clinic.FieldCity, clinic.FieldState, clinic.FieldPostalCode, clinic.FieldCountry, clinic.FieldTimezone:
+		case clinic.FieldDomain, clinic.FieldName, clinic.FieldTaxID, clinic.FieldPhone, clinic.FieldEmail, clinic.FieldStreet, clinic.FieldCity, clinic.FieldState, clinic.FieldPostalCode, clinic.FieldCountry, clinic.FieldTimezone:
 			values[i] = new(sql.NullString)
 		case clinic.FieldCreatedAt, clinic.FieldUpdatedAt, clinic.FieldOnboardedAt:
 			values[i] = new(sql.NullTime)
@@ -268,11 +268,11 @@ func (_m *Clinic) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.UpdatedAt = value.Time
 			}
-		case clinic.FieldSlug:
+		case clinic.FieldDomain:
 			if value, ok := values[i].(*sql.NullString); !ok {
-				return fmt.Errorf("unexpected type %T for field slug", values[i])
+				return fmt.Errorf("unexpected type %T for field domain", values[i])
 			} else if value.Valid {
-				_m.Slug = value.String
+				_m.Domain = value.String
 			}
 		case clinic.FieldName:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -458,8 +458,8 @@ func (_m *Clinic) String() string {
 	builder.WriteString("updated_at=")
 	builder.WriteString(_m.UpdatedAt.Format(time.ANSIC))
 	builder.WriteString(", ")
-	builder.WriteString("slug=")
-	builder.WriteString(_m.Slug)
+	builder.WriteString("domain=")
+	builder.WriteString(_m.Domain)
 	builder.WriteString(", ")
 	builder.WriteString("name=")
 	builder.WriteString(_m.Name)

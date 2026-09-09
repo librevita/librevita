@@ -39,7 +39,7 @@ func openIndexDB(t *testing.T) (*sql.DB, *record.Client) {
 
 	_, err = client.Clinic.Create().
 		SetID(clinicctx.TestClinicID).
-		SetSlug("test").
+		SetDomain("test.local").
 		SetName("Test Clinic").
 		SetCountry("BR").
 		SetTimezone("UTC").

@@ -9,17 +9,23 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"net"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
 	"golang.org/x/crypto/acme"
+	"golang.org/x/sync/singleflight"
 
 	"librevita.org/internal/core/config"
 	"librevita.org/pkg/errors"
 	"librevita.org/pkg/log"
 )
+
+// DomainAuthorizer reports whether a custom domain is authorized to obtain an on-demand TLS certificate.
+type DomainAuthorizer func(ctx context.Context, domain string) (bool, error)
 
 // Manager coordinates ACME client lifecycle, challenges, issuance, and renewal.
 type Manager struct {
@@ -31,6 +37,9 @@ type Manager struct {
 	acmeClient  *acme.Client
 	accountKey  crypto.Signer
 	activeCert  atomic.Pointer[tls.Certificate]
+	authorizer  atomic.Pointer[DomainAuthorizer]
+	certCache   sync.Map
+	sfGroup     singleflight.Group
 	stopWorker  chan struct{}
 }
 
@@ -67,13 +76,129 @@ func (m *Manager) HTTP01Registry() *HTTP01Registry {
 	return m.http01
 }
 
-// GetCertificate implements tls.Config.GetCertificate for zero-downtime dynamic TLS handshakes.
-func (m *Manager) GetCertificate(_ *tls.ClientHelloInfo) (*tls.Certificate, error) {
+// SetDomainAuthorizer installs the authorization callback for on-demand TLS certificates.
+func (m *Manager) SetDomainAuthorizer(fn DomainAuthorizer) {
+	m.authorizer.Store(&fn)
+}
+
+// GetCertificate implements tls.Config.GetCertificate for zero-downtime dynamic TLS handshakes
+// with on-demand certificate issuance for authorized custom clinic domains.
+func (m *Manager) GetCertificate(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
+	if hello == nil || strings.TrimSpace(hello.ServerName) == "" {
+		return m.getFallbackCert()
+	}
+
+	domain := normalizeHelloDomain(hello.ServerName)
+	if cert := m.getMatchingCert(hello.Context(), domain); cert != nil {
+		return cert, nil
+	}
+
+	if !m.isDomainAuthorized(hello.Context(), domain) {
+		m.logger.WarnContext(hello.Context(), "acme: unauthorized domain requested in tls handshake",
+			log.String("domain", domain),
+		)
+		return nil, errors.Newf("acme: unauthorized domain %s", domain)
+	}
+
+	return m.obtainOnDemand(domain)
+}
+
+func (m *Manager) getFallbackCert() (*tls.Certificate, error) {
 	cert := m.activeCert.Load()
 	if cert == nil {
 		return nil, errors.New("acme: no certificate available yet")
 	}
 	return cert, nil
+}
+
+func normalizeHelloDomain(raw string) string {
+	domain := strings.ToLower(strings.TrimSpace(raw))
+	if h, _, err := net.SplitHostPort(domain); err == nil {
+		return h
+	}
+	return domain
+}
+
+func (m *Manager) getMatchingCert(ctx context.Context, domain string) *tls.Certificate {
+	if active := m.activeCert.Load(); active != nil && active.Leaf != nil {
+		if active.Leaf.VerifyHostname(domain) == nil {
+			return active
+		}
+	}
+
+	if val, ok := m.certCache.Load(domain); ok {
+		if cert, ok := val.(*tls.Certificate); ok && !m.needsRenewal(cert) {
+			return cert
+		}
+	}
+
+	if cachedCert, err := m.store.LoadCertificate(ctx, domain); err == nil && cachedCert != nil {
+		if cachedCert.Leaf == nil && len(cachedCert.Certificate) > 0 {
+			if leaf, err := x509.ParseCertificate(cachedCert.Certificate[0]); err == nil {
+				cachedCert.Leaf = leaf
+			}
+		}
+		m.certCache.Store(domain, cachedCert)
+		if !m.needsRenewal(cachedCert) {
+			return cachedCert
+		}
+	}
+
+	return nil
+}
+
+func (m *Manager) obtainOnDemand(domain string) (*tls.Certificate, error) {
+	res, err, _ := m.sfGroup.Do(domain, func() (any, error) {
+		if val, ok := m.certCache.Load(domain); ok {
+			if cert, ok := val.(*tls.Certificate); ok && !m.needsRenewal(cert) {
+				return cert, nil
+			}
+		}
+
+		issueCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		defer cancel()
+
+		m.logger.InfoContext(issueCtx, "acme: obtaining on-demand certificate", log.String("domain", domain))
+		cert, err := m.ObtainCertificateHTTP01(issueCtx, domain)
+		if err != nil {
+			m.logger.ErrorContext(issueCtx, "acme: on-demand issuance failed",
+				log.String("domain", domain),
+				log.Error(err),
+			)
+			return nil, err
+		}
+		m.certCache.Store(domain, cert)
+		return cert, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return res.(*tls.Certificate), nil
+}
+
+func (m *Manager) isDomainAuthorized(ctx context.Context, domain string) bool {
+	if domain == m.primaryDomain() {
+		return true
+	}
+	for _, d := range m.cfg.ACME.Domains {
+		if strings.EqualFold(d, domain) {
+			return true
+		}
+	}
+	if strings.EqualFold(m.cfg.BaseDomain, domain) {
+		return true
+	}
+
+	authFnPtr := m.authorizer.Load()
+	if authFnPtr == nil || *authFnPtr == nil {
+		return false
+	}
+	allowed, err := (*authFnPtr)(ctx, domain)
+	if err != nil {
+		m.logger.ErrorContext(ctx, "acme: domain authorizer error", log.String("domain", domain), log.Error(err))
+		return false
+	}
+	return allowed
 }
 
 // Start initializes the ACME account and loads or provisions certificates.
@@ -161,7 +286,7 @@ func (m *Manager) initAccount(ctx context.Context) error {
 	return nil
 }
 
-// IssueCertificate coordinates the full ACME order authorization, challenge, and finalization.
+// IssueCertificate coordinates the full ACME order authorization, challenge, and finalization for configured domains.
 func (m *Manager) IssueCertificate(ctx context.Context) error {
 	domains := m.cfg.ACME.Domains
 	if len(domains) == 0 {
@@ -177,7 +302,66 @@ func (m *Manager) IssueCertificate(ctx context.Context) error {
 		return err
 	}
 
-	return m.finalizeOrder(ctx, order, domains)
+	cert, err := m.finalizeOrder(ctx, order, domains)
+	if err != nil {
+		return err
+	}
+	if err := m.setActiveCert(cert); err != nil {
+		return err
+	}
+
+	m.logger.InfoContext(ctx, "acme: certificate issued and activated",
+		log.String("domain", domains[0]),
+	)
+	return nil
+}
+
+// ObtainCertificateHTTP01 orders and provisions a certificate for domain using HTTP-01 on-demand.
+func (m *Manager) ObtainCertificateHTTP01(ctx context.Context, domain string) (*tls.Certificate, error) {
+	if m.acmeClient == nil {
+		return nil, errors.New("acme: client not initialized")
+	}
+
+	order, err := m.acmeClient.AuthorizeOrder(ctx, acme.DomainIDs(domain))
+	if err != nil {
+		return nil, errors.Wrapf(err, "acme: authorize order for %s", domain)
+	}
+
+	for _, authzURL := range order.AuthzURLs {
+		authz, err := m.acmeClient.GetAuthorization(ctx, authzURL)
+		if err != nil {
+			return nil, errors.Wrapf(err, "acme: get authz %s", authzURL)
+		}
+		if authz.Status == acme.StatusValid {
+			continue
+		}
+
+		var chal *acme.Challenge
+		for _, c := range authz.Challenges {
+			if c.Type == config.ACMEChallengeHTTP01 {
+				chal = c
+				break
+			}
+		}
+		if chal == nil {
+			return nil, errors.Newf("acme: http-01 challenge not offered for domain %s", authz.Identifier.Value)
+		}
+
+		if err := m.solveHTTP01(ctx, chal); err != nil {
+			return nil, err
+		}
+
+		if _, err := m.acmeClient.WaitAuthorization(ctx, authzURL); err != nil {
+			return nil, errors.Wrapf(err, "acme: wait authorization %s", authzURL)
+		}
+	}
+
+	cert, err := m.finalizeOrder(ctx, order, []string{domain})
+	if err != nil {
+		return nil, err
+	}
+	m.logger.InfoContext(ctx, "acme: on-demand certificate issued", log.String("domain", domain))
+	return cert, nil
 }
 
 func (m *Manager) fulfillAuthorizations(ctx context.Context, authzURLs []string) error {
@@ -264,10 +448,10 @@ func (m *Manager) solveHTTP01(ctx context.Context, chal *acme.Challenge) error {
 	return nil
 }
 
-func (m *Manager) finalizeOrder(ctx context.Context, order *acme.Order, domains []string) error {
+func (m *Manager) finalizeOrder(ctx context.Context, order *acme.Order, domains []string) (*tls.Certificate, error) {
 	certKey, err := GeneratePrivateKey()
 	if err != nil {
-		return errors.Wrap(err, "acme: generate cert key")
+		return nil, errors.Wrap(err, "acme: generate cert key")
 	}
 
 	csrReq := &x509.CertificateRequest{
@@ -276,36 +460,36 @@ func (m *Manager) finalizeOrder(ctx context.Context, order *acme.Order, domains 
 	}
 	csr, err := x509.CreateCertificateRequest(rand.Reader, csrReq, certKey)
 	if err != nil {
-		return errors.Wrap(err, "acme: create csr")
+		return nil, errors.Wrap(err, "acme: create csr")
 	}
 
 	derCerts, certURL, err := m.acmeClient.CreateOrderCert(ctx, order.FinalizeURL, csr, true)
 	if err != nil {
-		return errors.Wrap(err, "acme: finalize order")
+		return nil, errors.Wrap(err, "acme: finalize order")
 	}
 
 	if len(derCerts) == 0 && certURL != "" {
 		if _, err := m.acmeClient.WaitOrder(ctx, order.URI); err != nil {
-			return errors.Wrap(err, "acme: wait order")
+			return nil, errors.Wrap(err, "acme: wait order")
 		}
 		certs, err := m.acmeClient.FetchCert(ctx, certURL, true)
 		if err != nil {
-			return errors.Wrap(err, "acme: fetch cert")
+			return nil, errors.Wrap(err, "acme: fetch cert")
 		}
 		derCerts = certs
 	}
 
-	return m.persistAndActivate(ctx, domains[0], derCerts, certKey)
+	return m.persistAndBuildCert(ctx, domains[0], derCerts, certKey)
 }
 
-func (m *Manager) persistAndActivate(ctx context.Context, primaryDomain string, derCerts [][]byte, certKey crypto.Signer) error {
+func (m *Manager) persistAndBuildCert(ctx context.Context, primaryDomain string, derCerts [][]byte, certKey crypto.Signer) (*tls.Certificate, error) {
 	var certPEM bytes.Buffer
 	for _, b := range derCerts {
 		_ = pem.Encode(&certPEM, &pem.Block{Type: "CERTIFICATE", Bytes: b})
 	}
 	keyPEM, err := encodePrivateKey(certKey)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	if err := m.store.SaveCertificate(ctx, primaryDomain, certPEM.Bytes(), keyPEM); err != nil {
@@ -314,17 +498,16 @@ func (m *Manager) persistAndActivate(ctx context.Context, primaryDomain string, 
 
 	tlsCert, err := tls.X509KeyPair(certPEM.Bytes(), keyPEM)
 	if err != nil {
-		return errors.Wrap(err, "acme: build tls keypair")
+		return nil, errors.Wrap(err, "acme: build tls keypair")
 	}
-
-	if err := m.setActiveCert(&tlsCert); err != nil {
-		return err
+	if tlsCert.Leaf == nil && len(tlsCert.Certificate) > 0 {
+		leaf, err := x509.ParseCertificate(tlsCert.Certificate[0])
+		if err != nil {
+			return nil, errors.Wrap(err, "acme: parse leaf cert")
+		}
+		tlsCert.Leaf = leaf
 	}
-
-	m.logger.InfoContext(ctx, "acme: certificate issued and activated",
-		log.String("domain", primaryDomain),
-	)
-	return nil
+	return &tlsCert, nil
 }
 
 func (m *Manager) setActiveCert(cert *tls.Certificate) error {
@@ -357,16 +540,42 @@ func (m *Manager) startRenewalWorker() {
 			case <-m.stopWorker:
 				return
 			case <-ticker.C:
-				cert := m.activeCert.Load()
-				if m.needsRenewal(cert) {
-					ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
-					m.logger.InfoContext(ctx, "acme: starting scheduled certificate renewal")
-					if err := m.IssueCertificate(ctx); err != nil {
-						m.logger.ErrorContext(ctx, "acme: certificate renewal failed", log.Error(err))
-					}
-					cancel()
-				}
+				m.renewExpiringCerts()
 			}
 		}
 	}()
+}
+
+func (m *Manager) renewExpiringCerts() {
+	cert := m.activeCert.Load()
+	if m.needsRenewal(cert) {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+		m.logger.InfoContext(ctx, "acme: starting scheduled certificate renewal")
+		if err := m.IssueCertificate(ctx); err != nil {
+			m.logger.ErrorContext(ctx, "acme: certificate renewal failed", log.Error(err))
+		}
+		cancel()
+	}
+
+	m.certCache.Range(func(key, value any) bool {
+		domain, ok := key.(string)
+		if !ok {
+			return true
+		}
+		cachedCert, ok := value.(*tls.Certificate)
+		if !ok {
+			return true
+		}
+		if m.needsRenewal(cachedCert) {
+			renewCtx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+			m.logger.InfoContext(renewCtx, "acme: renewing on-demand certificate", log.String("domain", domain))
+			if newCert, err := m.ObtainCertificateHTTP01(renewCtx, domain); err == nil {
+				m.certCache.Store(domain, newCert)
+			} else {
+				m.logger.ErrorContext(renewCtx, "acme: on-demand renewal failed", log.String("domain", domain), log.Error(err))
+			}
+			cancel()
+		}
+		return true
+	})
 }

@@ -57,7 +57,8 @@ func (p *ClockProvider) fromContext(ctx context.Context) (*model.Clinic, bool) {
 	}
 	return &model.Clinic{
 		ID:          c.ID,
-		Slug:        c.Slug,
+		Domain:      c.Domain,
+		Slug:        c.Domain,
 		Name:        c.Name,
 		Timezone:    c.Timezone,
 		OnboardedAt: c.OnboardedAt,

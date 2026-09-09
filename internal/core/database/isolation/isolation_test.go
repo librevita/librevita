@@ -47,9 +47,9 @@ func TestCrossClinicUsersAndFLE(t *testing.T) {
 	seed := clinicctx.WithSkipIsolation(context.Background())
 	norteID := ident.MustParseClinic("01990000-0000-7000-8000-0000000000a1")
 	sulID := ident.MustParseClinic("01990000-0000-7000-8000-0000000000a2")
-	_, err = client.Clinic.Create().SetID(norteID).SetSlug("norte").SetName("Norte").SetCountry("BR").SetTimezone("America/Sao_Paulo").Save(seed)
+	_, err = client.Clinic.Create().SetID(norteID).SetDomain("norte.local").SetName("Norte").SetCountry("BR").SetTimezone("America/Sao_Paulo").Save(seed)
 	require.NoError(t, err)
-	_, err = client.Clinic.Create().SetID(sulID).SetSlug("sul").SetName("Sul").SetCountry("BR").SetTimezone("America/Sao_Paulo").Save(seed)
+	_, err = client.Clinic.Create().SetID(sulID).SetDomain("sul.local").SetName("Sul").SetCountry("BR").SetTimezone("America/Sao_Paulo").Save(seed)
 	require.NoError(t, err)
 
 	keyA := make([]byte, 32)
@@ -154,7 +154,7 @@ func TestIsolationEdgeCases(t *testing.T) {
 	require.NoError(t, err)
 
 	// 2. Non-clinic scoped mutation without clinic in context passes through
-	_, err = client.Clinic.Create().SetID(cID1).SetSlug("c1").SetName("C1").Save(context.Background())
+	_, err = client.Clinic.Create().SetID(cID1).SetDomain("c1.local").SetName("C1").Save(context.Background())
 	require.NoError(t, err)
 
 	// 3. Mutation on clinic-scoped entity without clinic in context fails with ErrMissingClinic
@@ -162,7 +162,7 @@ func TestIsolationEdgeCases(t *testing.T) {
 	assert.ErrorIs(t, err, clinicctx.ErrMissingClinic)
 
 	// 4. Create with explicit mismatched clinic_id fails
-	ctx1 := clinicctx.WithClinic(context.Background(), &clinicctx.Clinic{ID: cID1, Slug: "c1", Name: "C1"})
+	ctx1 := clinicctx.WithClinic(context.Background(), &clinicctx.Clinic{ID: cID1, Domain: "c1.local", Name: "C1"})
 	_, err = client.Role.Create().SetClinicID(cID2).SetName("custom").Save(ctx1)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "isolation: clinic_id mismatch")

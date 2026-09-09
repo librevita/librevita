@@ -1,4 +1,4 @@
-h1:vq3G8xITmDRf2kt2Vth+SNOclZqlJm2saRmnpT9yXVQ=
+h1:gD7BFfivKN9qZuyMmhoLKwgJ0ABV6nt2/vChq0Ydpaw=
 20260824163227_init.sql h1:EOoOq9ugCLOTUdi5qJnc8vWrpXCCarJExQu6aVM0qSM=
 20260824220101_multi_clinic.sql h1:9LgLuYYZWME7T+AUzvdbczvkhu9Q1BFxTvZrd7326FI=
 20260828205134_soap_episode.sql h1:EUzv21ZJr7sI0d6Lqx7Ew/fmFhUdEoV4Fc5Gu/KpUh0=
@@ -6,3 +6,4 @@ h1:vq3G8xITmDRf2kt2Vth+SNOclZqlJm2saRmnpT9yXVQ=
 20260829000500_episode_predecessor.sql h1:pHI73BB4ZwGSr3UNZEnZAjPgzDip7pyN+KsmhvaMxSQ=
 20260901035643_drop_meta_sessions.sql h1:yDkEkRd4AaVb2M5U/u+nNYI13Kho7TBKqrp+LVB9TWM=
 20260901192000_identifier_key_scope_envelope.sql h1:dcQcGpDVRUhZUmWkxowY8nBfcSntJA0nsG1TDJtgLZs=
+20260909170000_clinic_domain.sql h1:XVCHr/SdFDRVV8xyOpaDTvpZLpvCpaBdypvul7luoRU=

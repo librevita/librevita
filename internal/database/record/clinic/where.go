@@ -66,9 +66,9 @@ func UpdatedAt(v time.Time) predicate.Clinic {
 	return predicate.Clinic(sql.FieldEQ(FieldUpdatedAt, v))
 }
 
-// Slug applies equality check predicate on the "slug" field. It's identical to SlugEQ.
-func Slug(v string) predicate.Clinic {
-	return predicate.Clinic(sql.FieldEQ(FieldSlug, v))
+// Domain applies equality check predicate on the "domain" field. It's identical to DomainEQ.
+func Domain(v string) predicate.Clinic {
+	return predicate.Clinic(sql.FieldEQ(FieldDomain, v))
 }
 
 // Name applies equality check predicate on the "name" field. It's identical to NameEQ.
@@ -206,69 +206,69 @@ func UpdatedAtLTE(v time.Time) predicate.Clinic {
 	return predicate.Clinic(sql.FieldLTE(FieldUpdatedAt, v))
 }
 
-// SlugEQ applies the EQ predicate on the "slug" field.
-func SlugEQ(v string) predicate.Clinic {
-	return predicate.Clinic(sql.FieldEQ(FieldSlug, v))
+// DomainEQ applies the EQ predicate on the "domain" field.
+func DomainEQ(v string) predicate.Clinic {
+	return predicate.Clinic(sql.FieldEQ(FieldDomain, v))
 }
 
-// SlugNEQ applies the NEQ predicate on the "slug" field.
-func SlugNEQ(v string) predicate.Clinic {
-	return predicate.Clinic(sql.FieldNEQ(FieldSlug, v))
+// DomainNEQ applies the NEQ predicate on the "domain" field.
+func DomainNEQ(v string) predicate.Clinic {
+	return predicate.Clinic(sql.FieldNEQ(FieldDomain, v))
 }
 
-// SlugIn applies the In predicate on the "slug" field.
-func SlugIn(vs ...string) predicate.Clinic {
-	return predicate.Clinic(sql.FieldIn(FieldSlug, vs...))
+// DomainIn applies the In predicate on the "domain" field.
+func DomainIn(vs ...string) predicate.Clinic {
+	return predicate.Clinic(sql.FieldIn(FieldDomain, vs...))
 }
 
-// SlugNotIn applies the NotIn predicate on the "slug" field.
-func SlugNotIn(vs ...string) predicate.Clinic {
-	return predicate.Clinic(sql.FieldNotIn(FieldSlug, vs...))
+// DomainNotIn applies the NotIn predicate on the "domain" field.
+func DomainNotIn(vs ...string) predicate.Clinic {
+	return predicate.Clinic(sql.FieldNotIn(FieldDomain, vs...))
 }
 
-// SlugGT applies the GT predicate on the "slug" field.
-func SlugGT(v string) predicate.Clinic {
-	return predicate.Clinic(sql.FieldGT(FieldSlug, v))
+// DomainGT applies the GT predicate on the "domain" field.
+func DomainGT(v string) predicate.Clinic {
+	return predicate.Clinic(sql.FieldGT(FieldDomain, v))
 }
 
-// SlugGTE applies the GTE predicate on the "slug" field.
-func SlugGTE(v string) predicate.Clinic {
-	return predicate.Clinic(sql.FieldGTE(FieldSlug, v))
+// DomainGTE applies the GTE predicate on the "domain" field.
+func DomainGTE(v string) predicate.Clinic {
+	return predicate.Clinic(sql.FieldGTE(FieldDomain, v))
 }
 
-// SlugLT applies the LT predicate on the "slug" field.
-func SlugLT(v string) predicate.Clinic {
-	return predicate.Clinic(sql.FieldLT(FieldSlug, v))
+// DomainLT applies the LT predicate on the "domain" field.
+func DomainLT(v string) predicate.Clinic {
+	return predicate.Clinic(sql.FieldLT(FieldDomain, v))
 }
 
-// SlugLTE applies the LTE predicate on the "slug" field.
-func SlugLTE(v string) predicate.Clinic {
-	return predicate.Clinic(sql.FieldLTE(FieldSlug, v))
+// DomainLTE applies the LTE predicate on the "domain" field.
+func DomainLTE(v string) predicate.Clinic {
+	return predicate.Clinic(sql.FieldLTE(FieldDomain, v))
 }
 
-// SlugContains applies the Contains predicate on the "slug" field.
-func SlugContains(v string) predicate.Clinic {
-	return predicate.Clinic(sql.FieldContains(FieldSlug, v))
+// DomainContains applies the Contains predicate on the "domain" field.
+func DomainContains(v string) predicate.Clinic {
+	return predicate.Clinic(sql.FieldContains(FieldDomain, v))
 }
 
-// SlugHasPrefix applies the HasPrefix predicate on the "slug" field.
-func SlugHasPrefix(v string) predicate.Clinic {
-	return predicate.Clinic(sql.FieldHasPrefix(FieldSlug, v))
+// DomainHasPrefix applies the HasPrefix predicate on the "domain" field.
+func DomainHasPrefix(v string) predicate.Clinic {
+	return predicate.Clinic(sql.FieldHasPrefix(FieldDomain, v))
 }
 
-// SlugHasSuffix applies the HasSuffix predicate on the "slug" field.
-func SlugHasSuffix(v string) predicate.Clinic {
-	return predicate.Clinic(sql.FieldHasSuffix(FieldSlug, v))
+// DomainHasSuffix applies the HasSuffix predicate on the "domain" field.
+func DomainHasSuffix(v string) predicate.Clinic {
+	return predicate.Clinic(sql.FieldHasSuffix(FieldDomain, v))
 }
 
-// SlugEqualFold applies the EqualFold predicate on the "slug" field.
-func SlugEqualFold(v string) predicate.Clinic {
-	return predicate.Clinic(sql.FieldEqualFold(FieldSlug, v))
+// DomainEqualFold applies the EqualFold predicate on the "domain" field.
+func DomainEqualFold(v string) predicate.Clinic {
+	return predicate.Clinic(sql.FieldEqualFold(FieldDomain, v))
 }
 
-// SlugContainsFold applies the ContainsFold predicate on the "slug" field.
-func SlugContainsFold(v string) predicate.Clinic {
-	return predicate.Clinic(sql.FieldContainsFold(FieldSlug, v))
+// DomainContainsFold applies the ContainsFold predicate on the "domain" field.
+func DomainContainsFold(v string) predicate.Clinic {
+	return predicate.Clinic(sql.FieldContainsFold(FieldDomain, v))
 }
 
 // NameEQ applies the EQ predicate on the "name" field.
