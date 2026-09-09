@@ -346,10 +346,10 @@ export LIBREVITA_PASETO_KEY=...
 export LIBREVITA_MASTER_KEY=...
 ```
 
-Minimal Caddy site block (obtain a wildcard certificate however your CA requires; DNS-01 for `*.example.org`):
+Minimal Caddy site block (covering the apex, wildcards, and custom clinic domains):
 
 ```
-example.org, www.example.org, *.example.org {
+example.org, www.example.org, *.example.org, clinicasaojose.com.br, caxiasmed.com {
 	reverse_proxy 127.0.0.1:8080
 }
 ```
@@ -400,6 +400,34 @@ auth:
 paseto_key: ... # base64, 32 bytes; required outside development
 master_key: ... # base64, 32 bytes; required outside development
 base_domain: lv.test # platform apex host; required in production
+tls:
+  enabled: false # enable native HTTPS listener (default false)
+  https_bind: "0.0.0.0"
+  https_port: 443
+  redirect_http: true # redirect plain HTTP to HTTPS
+  cert_file: "" # optional static TLS certificate
+  key_file: "" # optional static TLS private key
+acme:
+  enabled: false # automated Let's Encrypt certificates
+  directory: production # production, staging, or ACME directory URL
+  email: admin@example.org # required when ACME is enabled
+  challenge: dns-01 # dns-01 or http-01
+  on_demand: true # on-demand TLS for clinic custom domains via HTTP-01
+  renew_before_days: 30
+  storage:
+    backend: file # file or kv
+    dir: ./data/acme # default: <data_dir>/acme
+  dns:
+    provider: cloudflare # cloudflare, rfc2136, exec, or mock
+    cloudflare_api_token: ...
+    cloudflare_zone_id: "" # optional, auto-discovered if empty
+    # rfc2136_nameserver: 127.0.0.1:53
+    # rfc2136_zone: example.org.
+    # rfc2136_tsig_key_name: ...
+    # rfc2136_tsig_secret: ...
+    # rfc2136_tsig_algorithm: hmac-sha256
+    # exec_script: /usr/local/bin/acme-dns-hook.sh
+    # propagation_timeout_sec: 60
 crypto:
   hash_algorithm: blake2s # blake2s (default) or blake2b
   encryption_cipher: xchacha20-poly1305 # xchacha20-poly1305 (default)
@@ -533,9 +561,33 @@ All configuration flags:
 | `--sessions-nats-bucket`       | `LIBREVITA_SESSIONS_NATS_BUCKET`             | NATS JetStream KeyValue bucket (default `sessions`)                                                                                                          |
 | `--sessions-etcd-endpoints`    | `LIBREVITA_SESSIONS_ETCD_ENDPOINTS`          | Comma-separated etcd v3 endpoints                                                                                                                            |
 | `--sessions-etcd-prefix`       | `LIBREVITA_SESSIONS_ETCD_PREFIX`             | etcd key prefix (default `/librevita/sessions/`)                                                                                                             |
+| `--tls-enabled`                | `LIBREVITA_TLS_ENABLED`                      | Enable native HTTPS listener                                                                                                                                 |
+| `--tls-https-bind`             | `LIBREVITA_TLS_HTTPS_BIND`                   | HTTPS bind address (default `0.0.0.0`)                                                                                                                       |
+| `--tls-https-port`             | `LIBREVITA_TLS_HTTPS_PORT`                   | HTTPS listen port (default `443` or `8443`)                                                                                                                  |
+| `--tls-redirect-http`          | `LIBREVITA_TLS_REDIRECT_HTTP`                | Redirect plain HTTP traffic to HTTPS (default `true`)                                                                                                        |
+| `--tls-cert-file`              | `LIBREVITA_TLS_CERT_FILE`                    | Path to static TLS certificate file                                                                                                                          |
+| `--tls-key-file`               | `LIBREVITA_TLS_KEY_FILE`                     | Path to static TLS private key file                                                                                                                          |
+| `--acme-enabled`               | `LIBREVITA_ACME_ENABLED`                     | Enable Let's Encrypt / ACME automatic TLS certificates                                                                                                       |
+| `--acme-directory`             | `LIBREVITA_ACME_DIRECTORY`                   | ACME directory: `production`, `staging`, or custom URL                                                                                                        |
+| `--acme-email`                 | `LIBREVITA_ACME_EMAIL`                       | ACME account contact email (required when ACME is enabled)                                                                                                    |
+| `--acme-challenge`             | `LIBREVITA_ACME_CHALLENGE`                   | ACME challenge type: `dns-01` or `http-01`                                                                                                                    |
+| `--acme-domains`               | `LIBREVITA_ACME_DOMAINS`                     | Comma-separated list of domains to certify at boot                                                                                                           |
+| `--acme-renew-before-days`     | `LIBREVITA_ACME_RENEW_BEFORE_DAYS`           | Days before certificate expiry to renew (default `30`)                                                                                                       |
 | `--acme-on-demand`             | `LIBREVITA_ACME_ON_DEMAND`                   | Enable on-demand TLS certificate issuance for clinic domains (default `true`)                                                                                |
+| `--acme-storage-backend`       | `LIBREVITA_ACME_STORAGE_BACKEND`             | ACME persistence backend: `file` or `kv`                                                                                                                      |
+| `--acme-storage-dir`           | `LIBREVITA_ACME_STORAGE_DIR`                 | ACME storage directory (default `<data-dir>/acme`)                                                                                                           |
+| `--acme-dns-provider`          | `LIBREVITA_ACME_DNS_PROVIDER`                | DNS-01 provider: `cloudflare`, `rfc2136`, `exec`, or `mock`                                                                                                  |
+| `--acme-dns-cloudflare-api-token` | `LIBREVITA_ACME_DNS_CLOUDFLARE_API_TOKEN` | Cloudflare API token with Zone:DNS edit permission                                                                                                           |
+| `--acme-dns-cloudflare-zone-id`   | `LIBREVITA_ACME_DNS_CLOUDFLARE_ZONE_ID`   | Cloudflare Zone ID (optional, auto-discovered if empty)                                                                                                     |
+| `--acme-dns-rfc2136-nameserver`   | `LIBREVITA_ACME_DNS_RFC2136_NAMESERVER`   | RFC 2136 nameserver address (e.g. `192.168.1.1:53`)                                                                                                         |
+| `--acme-dns-rfc2136-zone`         | `LIBREVITA_ACME_DNS_RFC2136_ZONE`         | RFC 2136 DNS zone (e.g. `example.org.`)                                                                                                                      |
+| `--acme-dns-rfc2136-tsig-key-name` | `LIBREVITA_ACME_DNS_RFC2136_TSIG_KEY_NAME` | RFC 2136 TSIG key name                                                                                                                                      |
+| `--acme-dns-rfc2136-tsig-secret`   | `LIBREVITA_ACME_DNS_RFC2136_TSIG_SECRET`   | RFC 2136 TSIG secret                                                                                                                                         |
+| `--acme-dns-rfc2136-tsig-algorithm` | `LIBREVITA_ACME_DNS_RFC2136_TSIG_ALGORITHM` | RFC 2136 TSIG algorithm (default `hmac-sha256`)                                                                                                            |
+| `--acme-dns-exec-script`       | `LIBREVITA_ACME_DNS_EXEC_SCRIPT`             | Path to external script for DNS-01 present/cleanup                                                                                                           |
+| `--acme-dns-propagation-timeout-sec` | `LIBREVITA_ACME_DNS_PROPAGATION_TIMEOUT_SEC` | Seconds to wait for DNS propagation (default `60`)                                                                                                           |
 
-Environment variables are the config keys with `_` separators, always in the full section form (`LIBREVITA_CRYPTO_*`, `LIBREVITA_DATABASE_*`, `LIBREVITA_LOGGING_*`, `LIBREVITA_STORAGE_*`, `LIBREVITA_KEYSTORE_*`, `LIBREVITA_META_*`, `LIBREVITA_SESSIONS_*`); no short aliases are accepted.
+Environment variables are the config keys with `_` separators, always in the full section form (`LIBREVITA_CRYPTO_*`, `LIBREVITA_DATABASE_*`, `LIBREVITA_LOGGING_*`, `LIBREVITA_STORAGE_*`, `LIBREVITA_KEYSTORE_*`, `LIBREVITA_META_*`, `LIBREVITA_SESSIONS_*`, `LIBREVITA_TLS_*`, `LIBREVITA_ACME_*`); no short aliases are accepted.
 
 ## File storage
 
