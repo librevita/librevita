@@ -302,6 +302,8 @@ export LIBREVITA_MASTER_KEY=...
 
 When native TLS is enabled, LibreVita listens on `tls_https_port` (e.g. 443) with dynamic certificate reloading via `tls.Config.GetCertificate`, runs an automatic renewal worker in the background, and redirects plain HTTP traffic on `http_port` (e.g. 80) to HTTPS while answering in-flight HTTP-01 challenges.
 
+In `development` mode (`--mode=development`), ACME requests to Let's Encrypt are disabled: LibreVita runs over plain HTTP by default (`http://<domain>:8080`), and if TLS is explicitly enabled in dev, self-signed certificates are generated locally on-demand for authorized clinic domains without contacting external ACME servers.
+
 ### Keys
 
 Generate two **independent** 32-byte values, standard Base64 (RFC 4648, not URL-safe):

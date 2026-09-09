@@ -158,6 +158,18 @@ func (m *Manager) obtainOnDemand(domain string) (*tls.Certificate, error) {
 		issueCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 		defer cancel()
 
+		if m.cfg.IsDevelopment() {
+			m.logger.InfoContext(issueCtx, "acme: generating self-signed certificate for development mode",
+				log.String("domain", domain),
+			)
+			cert, err := GenerateSelfSignedCert(domain)
+			if err != nil {
+				return nil, err
+			}
+			m.certCache.Store(domain, cert)
+			return cert, nil
+		}
+
 		m.logger.InfoContext(issueCtx, "acme: obtaining on-demand certificate", log.String("domain", domain))
 		cert, err := m.ObtainCertificateHTTP01(issueCtx, domain)
 		if err != nil {
@@ -204,6 +216,17 @@ func (m *Manager) isDomainAuthorized(ctx context.Context, domain string) bool {
 // Start initializes the ACME account and loads or provisions certificates.
 func (m *Manager) Start(ctx context.Context) error {
 	if !m.cfg.ACME.Enabled {
+		return nil
+	}
+
+	if m.cfg.IsDevelopment() {
+		m.logger.InfoContext(ctx, "acme: development mode active, skipping ACME directory registration and issuance")
+		if m.activeCert.Load() == nil {
+			cert, err := GenerateSelfSignedCert(m.primaryDomain())
+			if err == nil {
+				_ = m.setActiveCert(cert)
+			}
+		}
 		return nil
 	}
 
@@ -523,6 +546,9 @@ func (m *Manager) setActiveCert(cert *tls.Certificate) error {
 }
 
 func (m *Manager) needsRenewal(cert *tls.Certificate) bool {
+	if m.cfg.IsDevelopment() {
+		return false
+	}
 	if cert == nil || cert.Leaf == nil {
 		return true
 	}
@@ -547,6 +573,9 @@ func (m *Manager) startRenewalWorker() {
 }
 
 func (m *Manager) renewExpiringCerts() {
+	if m.cfg.IsDevelopment() {
+		return
+	}
 	cert := m.activeCert.Load()
 	if m.needsRenewal(cert) {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)

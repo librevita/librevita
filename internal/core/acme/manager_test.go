@@ -138,3 +138,75 @@ func TestManager_GetCertificate_OnDemandAndAuthorization(t *testing.T) {
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "unauthorized domain")
 }
+
+func TestManager_GetCertificate_DevelopmentMode_SelfSigned(t *testing.T) {
+	dir := t.TempDir()
+	cfg := &config.Config{
+		Mode:       "development",
+		BaseDomain: "lv.test",
+		ACME: config.ACMEConfig{
+			Enabled: true,
+			Storage: config.ACMEStorageConfig{
+				Backend: "file",
+				Dir:     dir,
+			},
+		},
+	}
+
+	store, err := NewFileCertStore(dir)
+	require.NoError(t, err)
+
+	mgr, err := NewManager(cfg, store, nil, log.Nop())
+	require.NoError(t, err)
+	defer mgr.Stop()
+
+	// Start in development mode skips ACME registration and generates self-signed fallback cert for lv.test
+	err = mgr.Start(t.Context())
+	require.NoError(t, err)
+
+	// Fallback cert check for empty/nil ClientHello
+	fallbackCert, err := mgr.GetCertificate(nil)
+	require.NoError(t, err)
+	assert.NotNil(t, fallbackCert)
+	assert.NoError(t, fallbackCert.Leaf.VerifyHostname("lv.test"))
+
+	// Configure authorizer for local clinic domain
+	customDomain := "clinica1.local"
+	mgr.SetDomainAuthorizer(func(_ context.Context, domain string) (bool, error) {
+		return domain == customDomain, nil
+	})
+
+	// On-demand GetCertificate in dev generates self-signed certificate dynamically
+	helloAuthorized := &tls.ClientHelloInfo{ServerName: customDomain}
+	cert, err := mgr.GetCertificate(helloAuthorized)
+	require.NoError(t, err)
+	require.NotNil(t, cert)
+	assert.NoError(t, cert.Leaf.VerifyHostname(customDomain))
+	assert.False(t, mgr.needsRenewal(cert))
+
+	// Second request should hit memory cache
+	cert2, err := mgr.GetCertificate(helloAuthorized)
+	require.NoError(t, err)
+	assert.Same(t, cert, cert2)
+
+	// Unauthorized domain in dev is rejected
+	helloUnauthorized := &tls.ClientHelloInfo{ServerName: "unknown.local"}
+	_, err = mgr.GetCertificate(helloUnauthorized)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "unauthorized domain")
+}
+
+func TestGenerateSelfSignedCert(t *testing.T) {
+	// DNS domain
+	cert, err := GenerateSelfSignedCert("clinica.local")
+	require.NoError(t, err)
+	require.NotNil(t, cert)
+	assert.Contains(t, cert.Leaf.DNSNames, "clinica.local")
+	assert.NoError(t, cert.Leaf.VerifyHostname("clinica.local"))
+
+	// IP address
+	ipCert, err := GenerateSelfSignedCert("127.0.0.1")
+	require.NoError(t, err)
+	require.NotNil(t, ipCert)
+	assert.NoError(t, ipCert.Leaf.VerifyHostname("127.0.0.1"))
+}

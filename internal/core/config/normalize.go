@@ -386,6 +386,9 @@ func (c *Config) validateACME() error {
 	if !c.ACME.Enabled {
 		return nil
 	}
+	if c.IsDevelopment() {
+		return nil
+	}
 	if c.ACME.Email == "" {
 		return errors.New("config: acme.email is required when acme is enabled")
 	}
