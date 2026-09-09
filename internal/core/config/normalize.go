@@ -345,7 +345,7 @@ func (c *Config) normalizeACME() {
 
 	c.ACME.Storage.Backend = strings.ToLower(strings.TrimSpace(c.ACME.Storage.Backend))
 	if c.ACME.Storage.Backend == "" {
-		c.ACME.Storage.Backend = "file"
+		c.ACME.Storage.Backend = "keystore"
 	}
 	c.ACME.Storage.Dir = strings.TrimSpace(c.ACME.Storage.Dir)
 	if c.ACME.Storage.Dir == "" {
@@ -401,9 +401,9 @@ func (c *Config) validateACME() error {
 		return err
 	}
 	switch c.ACME.Storage.Backend {
-	case "file", "kv":
+	case "file", "keystore":
 	default:
-		return errors.Newf("config: invalid acme.storage.backend %q (must be \"file\" or \"kv\")", c.ACME.Storage.Backend)
+		return errors.Newf("config: invalid acme.storage.backend %q (must be \"file\" or \"keystore\")", c.ACME.Storage.Backend)
 	}
 	return nil
 }

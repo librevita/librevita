@@ -206,7 +206,7 @@ type ACMEConfig struct {
 
 // ACMEStorageConfig controls certificate and account persistence.
 type ACMEStorageConfig struct {
-	// Backend is "file" (default) or "kv".
+	// Backend is "keystore" (default) or "file".
 	Backend string `koanf:"backend"`
 
 	// Dir is the directory for file storage (default <data_dir>/acme).

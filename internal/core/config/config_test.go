@@ -433,7 +433,7 @@ func TestACMEConfigAndValidation(t *testing.T) {
 	assert.Equal(t, ACMEDirectoryProduction, cfg.ACME.Directory)
 	assert.Equal(t, []string{"example.org", "*.example.org"}, cfg.ACME.Domains)
 	assert.Equal(t, 30, cfg.ACME.RenewBeforeDays)
-	assert.Equal(t, "file", cfg.ACME.Storage.Backend)
+	assert.Equal(t, "keystore", cfg.ACME.Storage.Backend)
 	assert.Equal(t, filepath.Join(defaultDataDir, "acme"), cfg.ACME.Storage.Dir)
 	assert.NoError(t, cfg.validate())
 
@@ -467,6 +467,19 @@ func TestACMEConfigAndValidation(t *testing.T) {
 	assert.Error(t, execCfg.validate())
 	execCfg.ACME.DNS.ExecScript = "/usr/local/bin/hook.sh"
 	assert.NoError(t, execCfg.validate())
+
+	// Storage backend validation
+	fileStorageCfg := *cfg
+	fileStorageCfg.ACME.Storage.Backend = "file"
+	assert.NoError(t, fileStorageCfg.validate())
+
+	keystoreStorageCfg := *cfg
+	keystoreStorageCfg.ACME.Storage.Backend = "keystore"
+	assert.NoError(t, keystoreStorageCfg.validate())
+
+	invalidStorageCfg := *cfg
+	invalidStorageCfg.ACME.Storage.Backend = "redis"
+	assert.Error(t, invalidStorageCfg.validate())
 }
 
 func TestACMEFlagsAndEnvMappings(t *testing.T) {

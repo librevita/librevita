@@ -2,6 +2,8 @@ package acme
 
 import (
 	"context"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"go.uber.org/fx"
@@ -24,21 +26,48 @@ var Module = fx.Module("acme",
 
 // ProvideCertStore creates a CertStore based on configuration.
 func ProvideCertStore(cfg *config.Config, lc fx.Lifecycle, logger log.Logger) (CertStore, error) {
-	if cfg.ACME.Storage.Backend == "kv" {
-		kvCfg := cfg.Meta
-		logger.Info("initializing acme kv store", log.String("backend", kvCfg.Backend))
-		store, err := kv.Open(kvCfg)
-		if err != nil {
-			return nil, errors.Wrap(err, "acme: open kv store")
-		}
-		lc.Append(fx.Hook{
-			OnStop: func(context.Context) error {
-				return store.Close()
-			},
-		})
-		return NewKVCertStore(store), nil
+	backend := strings.ToLower(strings.TrimSpace(cfg.ACME.Storage.Backend))
+	if backend == "file" {
+		return NewFileCertStore(cfg.ACME.Storage.Dir)
 	}
-	return NewFileCertStore(cfg.ACME.Storage.Dir)
+
+	// Default is "keystore"
+	keystoreBackend := strings.ToLower(strings.TrimSpace(cfg.Keystore.Backend))
+	if keystoreBackend == "" || keystoreBackend == config.BackendBBolt {
+		return openDedicatedBBoltCertStore(cfg, lc, logger)
+	}
+	return openKeystoreKVCertStore(cfg, lc, logger, keystoreBackend)
+}
+
+func openDedicatedBBoltCertStore(cfg *config.Config, lc fx.Lifecycle, logger log.Logger) (CertStore, error) {
+	bboltPath := filepath.Join(cfg.DataDir, "acme.db")
+	logger.Info("initializing acme dedicated bbolt store", log.String("path", bboltPath))
+	store, err := kv.OpenBBolt(bboltPath)
+	if err != nil {
+		return nil, errors.Wrap(err, "acme: open dedicated bbolt store")
+	}
+	lc.Append(fx.Hook{
+		OnStop: func(context.Context) error {
+			logger.Info("closing acme dedicated bbolt store")
+			return store.Close()
+		},
+	})
+	return NewKVCertStore(store), nil
+}
+
+func openKeystoreKVCertStore(cfg *config.Config, lc fx.Lifecycle, logger log.Logger, backend string) (CertStore, error) {
+	logger.Info("initializing acme store from keystore backend", log.String("backend", backend))
+	store, err := kv.Open(cfg.Keystore, kv.AllowVault())
+	if err != nil {
+		return nil, errors.Wrap(err, "acme: open keystore kv store")
+	}
+	lc.Append(fx.Hook{
+		OnStop: func(context.Context) error {
+			logger.Info("closing acme kv store")
+			return store.Close()
+		},
+	})
+	return NewKVCertStore(store), nil
 }
 
 // ProvideDNSProvider creates the appropriate DNSProvider for DNS-01 challenges.
