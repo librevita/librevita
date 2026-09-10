@@ -120,8 +120,9 @@ func (m *Manager) getFallbackCert() (*tls.Certificate, error) {
 
 func normalizeHelloDomain(raw string) string {
 	domain := strings.ToLower(strings.TrimSpace(raw))
+	domain = strings.TrimSuffix(domain, ".")
 	if h, _, err := net.SplitHostPort(domain); err == nil {
-		return h
+		return strings.TrimSuffix(h, ".")
 	}
 	return domain
 }

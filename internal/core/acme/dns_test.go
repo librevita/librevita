@@ -51,3 +51,9 @@ func TestMockDNSProvider(t *testing.T) {
 	_, ok = p.GetRecord("example.org")
 	assert.False(t, ok)
 }
+
+func TestDefaultResolverLookup(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	_, _ = DefaultResolverLookup(ctx, "invalid.local.test")
+}

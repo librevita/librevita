@@ -1,14 +1,26 @@
 package server
 
 import (
+	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
+	"math/big"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/labstack/echo/v4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/fx/fxtest"
 
 	"librevita.org/internal/core/acme"
 	"librevita.org/internal/core/config"
@@ -103,4 +115,122 @@ func TestBuildTLSConfig(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, uint16(tls.VersionTLS12), tlsConfig.MinVersion)
 	assert.NotNil(t, tlsConfig.GetCertificate)
+}
+
+func TestBuildTLSConfig_StaticCerts(t *testing.T) {
+	dir := t.TempDir()
+	certFile := filepath.Join(dir, "server.crt")
+	keyFile := filepath.Join(dir, "server.key")
+
+	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	require.NoError(t, err)
+
+	template := x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject:      pkix.Name{CommonName: "localhost"},
+		NotBefore:    time.Now().Add(-time.Hour),
+		NotAfter:     time.Now().Add(time.Hour),
+	}
+	certDER, err := x509.CreateCertificate(rand.Reader, &template, &template, &priv.PublicKey, priv)
+	require.NoError(t, err)
+
+	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: certDER})
+	keyDER, err := x509.MarshalECPrivateKey(priv)
+	require.NoError(t, err)
+	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER})
+
+	require.NoError(t, os.WriteFile(certFile, certPEM, 0o600))
+	require.NoError(t, os.WriteFile(keyFile, keyPEM, 0o600))
+
+	cfg := &config.Config{
+		TLS: config.TLSConfig{
+			Enabled:  true,
+			CertFile: certFile,
+			KeyFile:  keyFile,
+		},
+	}
+	p := serverParams{
+		Config: cfg,
+	}
+	tlsConfig, err := buildTLSConfig(p)
+	require.NoError(t, err)
+	assert.Len(t, tlsConfig.Certificates, 1)
+
+	// Invalid cert files
+	pBad := serverParams{
+		Config: &config.Config{
+			TLS: config.TLSConfig{
+				Enabled:  true,
+				CertFile: "/nonexistent.crt",
+				KeyFile:  "/nonexistent.key",
+			},
+		},
+	}
+	_, err = buildTLSConfig(pBad)
+	assert.Error(t, err)
+}
+
+func TestRegisterLifecycle_Hooks(t *testing.T) {
+	lc := fxtest.NewLifecycle(t)
+	cfg := &config.Config{
+		HTTPBind: "127.0.0.1",
+		HTTPPort: 0,
+		TLS: config.TLSConfig{
+			Enabled:   true,
+			HTTPSBind: "127.0.0.1",
+			HTTPSPort: 0,
+		},
+	}
+	acmeMgr, err := acme.NewManager(cfg, nil, acme.NewMockDNSProvider(), log.Nop())
+	require.NoError(t, err)
+
+	p := serverParams{
+		Lifecycle:   lc,
+		Echo:        echo.New(),
+		Config:      cfg,
+		Logger:      log.Nop(),
+		ACMEManager: acmeMgr,
+	}
+
+	registerLifecycle(p)
+
+	// Plain HTTP lifecycle
+	lcPlain := fxtest.NewLifecycle(t)
+	cfgPlain := &config.Config{
+		HTTPBind: "127.0.0.1",
+		HTTPPort: 0,
+		TLS: config.TLSConfig{
+			Enabled: false,
+		},
+	}
+	pPlain := serverParams{
+		Lifecycle: lcPlain,
+		Echo:      echo.New(),
+		Config:    cfgPlain,
+		Logger:    log.Nop(),
+	}
+	registerLifecycle(pPlain)
+
+	ctx := context.Background()
+	require.NoError(t, lcPlain.Start(ctx))
+	time.Sleep(50 * time.Millisecond)
+	require.NoError(t, lcPlain.Stop(ctx))
+
+	// TLS lifecycle with error in buildTLSConfig
+	lcErr := fxtest.NewLifecycle(t)
+	cfgErr := &config.Config{
+		TLS: config.TLSConfig{Enabled: true},
+	}
+	pErr := serverParams{
+		Lifecycle: lcErr,
+		Echo:      echo.New(),
+		Config:    cfgErr,
+		Logger:    log.Nop(),
+	}
+	registerLifecycle(pErr)
+
+	// TLS lifecycle start and stop
+	require.NoError(t, lc.Start(ctx))
+	time.Sleep(50 * time.Millisecond)
+	require.NoError(t, lc.Stop(ctx))
 }

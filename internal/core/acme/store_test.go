@@ -5,6 +5,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/rsa"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
@@ -133,4 +134,59 @@ func TestKVCertStore(t *testing.T) {
 	loadedCert, err := store.LoadCertificate(ctx, "example.org")
 	require.NoError(t, err)
 	assert.NotNil(t, loadedCert)
+
+	// Corrupted PEM in KV store
+	require.NoError(t, bboltStore.Put(ctx, "urn:librevita:acme:account_key", []byte("not-pem-data")))
+	_, err = store.LoadAccountKey(ctx)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid PEM")
+
+	require.NoError(t, bboltStore.Put(ctx, "urn:librevita:acme:cert:corrupt.org", []byte("invalid-cert")))
+	require.NoError(t, bboltStore.Put(ctx, "urn:librevita:acme:key:corrupt.org", []byte("invalid-key")))
+	_, err = store.LoadCertificate(ctx, "corrupt.org")
+	assert.Error(t, err)
+}
+
+func TestStore_RSAAndPKCSKeys(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	store, err := NewFileCertStore(dir)
+	require.NoError(t, err)
+
+	// RSA key
+	rsaKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	require.NoError(t, err)
+
+	err = store.SaveAccountKey(ctx, rsaKey)
+	require.NoError(t, err)
+
+	loadedKey, err := store.LoadAccountKey(ctx)
+	require.NoError(t, err)
+	assert.NotNil(t, loadedKey)
+
+	// Corrupted account key file on disk
+	err = os.WriteFile(filepath.Join(dir, "account.key"), []byte("invalid-data"), 0o600)
+	require.NoError(t, err)
+	_, err = store.LoadAccountKey(ctx)
+	assert.Error(t, err)
+
+	// Invalid cert/key PEM on disk
+	err = os.WriteFile(filepath.Join(dir, "bad.org.crt"), []byte("bad-cert"), 0o600)
+	require.NoError(t, err)
+	err = os.WriteFile(filepath.Join(dir, "bad.org.key"), []byte("bad-key"), 0o600)
+	require.NoError(t, err)
+	_, err = store.LoadCertificate(ctx, "bad.org")
+	assert.Error(t, err)
+
+	// sanitizeDomain checks
+	assert.Equal(t, "wildcard.example.org", sanitizeDomain("*.example.org"))
+	assert.Equal(t, "sub_domain", sanitizeDomain("sub/domain"))
+
+	// parsePrivateKey unsupported type
+	_, err = parsePrivateKey([]byte{0x01, 0x02})
+	assert.Error(t, err)
+
+	// NewFileCertStore invalid path
+	_, err = NewFileCertStore("/dev/null/forbidden")
+	assert.Error(t, err)
 }

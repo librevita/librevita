@@ -497,3 +497,16 @@ func TestACMEFlagsAndEnvMappings(t *testing.T) {
 	assert.Equal(t, "acme.email", mapEnvironmentKey("acme_email"))
 	assert.Equal(t, "acme.dns.cloudflare_api_token", mapEnvironmentKey("acme_dns_cloudflare_api_token"))
 }
+
+func TestIsACMEOnDemand(t *testing.T) {
+	cfg := &Config{}
+	assert.True(t, cfg.IsACMEOnDemand())
+
+	f := false
+	cfg.ACME.OnDemand = &f
+	assert.False(t, cfg.IsACMEOnDemand())
+
+	tr := true
+	cfg.ACME.OnDemand = &tr
+	assert.True(t, cfg.IsACMEOnDemand())
+}

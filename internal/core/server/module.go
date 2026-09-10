@@ -56,7 +56,9 @@ func registerPlainHTTPLifecycle(p serverParams) {
 				p.Logger.Info("HTTP server listening", log.String("addr", httpAddr))
 				if err := p.Echo.Start(httpAddr); err != nil && !errors.Is(err, http.ErrServerClosed) {
 					p.Logger.Error("HTTP server failed", log.Error(err))
-					_ = p.Shutdown.Shutdown()
+					if p.Shutdown != nil {
+						_ = p.Shutdown.Shutdown()
+					}
 				}
 			}()
 			return nil
@@ -72,7 +74,9 @@ func registerTLSLifecycle(p serverParams) {
 	tlsConfig, err := buildTLSConfig(p)
 	if err != nil {
 		p.Logger.Error("failed to build TLS config", log.Error(err))
-		_ = p.Shutdown.Shutdown()
+		if p.Shutdown != nil {
+			_ = p.Shutdown.Shutdown()
+		}
 		return
 	}
 
@@ -90,28 +94,8 @@ func registerTLSLifecycle(p serverParams) {
 
 	p.Lifecycle.Append(fx.Hook{
 		OnStart: func(context.Context) error {
-			go func() {
-				p.Logger.Info("HTTPS server listening", log.String("addr", httpsAddr))
-				ln, err := net.Listen("tcp", httpsAddr)
-				if err != nil {
-					p.Logger.Error("HTTPS listen failed", log.Error(err))
-					_ = p.Shutdown.Shutdown()
-					return
-				}
-				tlsListener := tls.NewListener(ln, tlsConfig)
-				if err := httpsServer.Serve(tlsListener); err != nil && !errors.Is(err, http.ErrServerClosed) {
-					p.Logger.Error("HTTPS server failed", log.Error(err))
-					_ = p.Shutdown.Shutdown()
-				}
-			}()
-
-			go func() {
-				p.Logger.Info("HTTP listener running", log.String("addr", httpAddr))
-				if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-					p.Logger.Error("HTTP server failed", log.Error(err))
-					_ = p.Shutdown.Shutdown()
-				}
-			}()
+			go startHTTPSServer(p, httpsServer, httpsAddr, tlsConfig)
+			go startHTTPRedirectServer(p, httpServer, httpAddr)
 			return nil
 		},
 		OnStop: func(ctx context.Context) error {
@@ -120,6 +104,35 @@ func registerTLSLifecycle(p serverParams) {
 			return httpsServer.Shutdown(ctx)
 		},
 	})
+}
+
+func startHTTPSServer(p serverParams, httpsServer *http.Server, addr string, tlsConfig *tls.Config) {
+	p.Logger.Info("HTTPS server listening", log.String("addr", addr))
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		p.Logger.Error("HTTPS listen failed", log.Error(err))
+		if p.Shutdown != nil {
+			_ = p.Shutdown.Shutdown()
+		}
+		return
+	}
+	tlsListener := tls.NewListener(ln, tlsConfig)
+	if err := httpsServer.Serve(tlsListener); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		p.Logger.Error("HTTPS server failed", log.Error(err))
+		if p.Shutdown != nil {
+			_ = p.Shutdown.Shutdown()
+		}
+	}
+}
+
+func startHTTPRedirectServer(p serverParams, httpServer *http.Server, addr string) {
+	p.Logger.Info("HTTP redirect server listening", log.String("addr", addr))
+	if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		p.Logger.Error("HTTP redirect server failed", log.Error(err))
+		if p.Shutdown != nil {
+			_ = p.Shutdown.Shutdown()
+		}
+	}
 }
 
 func buildTLSConfig(p serverParams) (*tls.Config, error) {
