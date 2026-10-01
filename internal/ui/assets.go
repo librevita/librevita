@@ -7,10 +7,10 @@ package ui
 // can be cached immutably and the templates render them with the
 // integrity attribute (Subresource Integrity).
 const (
-	AppCSS          = "/static/css/app-1a38a3199d.css"
-	AppCSSIntegrity = "sha256-GjijGZ3j2GLYw2vPWb1LQyaKjCqwqFj7ZpRfu9yRaDE="
-	AppJS           = "/static/js/app-01ac20f4e8.js"
-	AppJSIntegrity  = "sha256-Aawg9OgoPS+1p9dVESPEjfSq/8pJnUQemeHWcR0tyI4="
+	AppCSS          = "/static/css/app-d9591c8e6a.css"
+	AppCSSIntegrity = "sha256-2Vkcjmr3mi06RmzHrGMp7TkcKUIc+TRb7982NWBI6aM="
+	AppJS           = "/static/js/app-dd07830514.js"
+	AppJSIntegrity  = "sha256-3QeDBRSie8cEZijxEo1eDYwrd/vNHPsHcd7zbYQNzt4="
 	ThemeScript     = `"use strict";(()=>{function n(){var e;return(e=document.documentElement.getAttribute("data-ui-theme"))!=null?e:"system"}function i(){return typeof window.matchMedia!="function"?!1:window.matchMedia("(prefers-color-scheme: dark)").matches}function o(){let e=n();document.documentElement.classList.toggle("dark",e==="dark"||e==="system"&&i())}o();if(typeof window.matchMedia=="function"){let e=window.matchMedia("(prefers-color-scheme: dark)"),t=()=>{n()==="system"&&o()};typeof e.addEventListener=="function"?e.addEventListener("change",t):typeof e.addListener=="function"&&e.addListener(t)}})();
 `
 	ThemeScriptHash = "sha256-VInRuk1fhhr7QqJTi6g8f2I17gD0ZXhLaUh3zAXXYis="
