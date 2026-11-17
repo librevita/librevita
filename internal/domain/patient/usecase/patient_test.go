@@ -591,7 +591,7 @@ func TestListOptimized(t *testing.T) {
 	st := patientmodel.PatientStatusActive
 
 	// 1. Empty query (q == "")
-	repoMock.EXPECT().ListCandidates(ctx, testClinicID, &st, []string(nil), "", 10, 0).
+	repoMock.EXPECT().ListCandidates(ctx, testClinicID, &st, [][]string(nil), "", 10, 0).
 		Return([]patientmodel.PatientCandidate{
 			{ID: pID1, ClinicID: testClinicID, Status: st},
 			{ID: pID2, ClinicID: testClinicID, Status: st},
@@ -610,7 +610,7 @@ func TestListOptimized(t *testing.T) {
 	assert.Equal(t, "Carlos Silva", pts[0].DisplayName)
 
 	// 2. Name search query (q == "Carlos")
-	repoMock.EXPECT().ListCandidates(ctx, testClinicID, &st, mock.MatchedBy(func(tokens []string) bool {
+	repoMock.EXPECT().ListCandidates(ctx, testClinicID, &st, mock.MatchedBy(func(tokens [][]string) bool {
 		return len(tokens) > 0
 	}), "", 10, 0).
 		Return([]patientmodel.PatientCandidate{
@@ -628,7 +628,7 @@ func TestListOptimized(t *testing.T) {
 	assert.Len(t, pts, 1)
 
 	// 3. Email search query (field == "email")
-	repoMock.EXPECT().ListCandidates(ctx, testClinicID, &st, []string(nil), mock.MatchedBy(func(bIndex string) bool {
+	repoMock.EXPECT().ListCandidates(ctx, testClinicID, &st, [][]string(nil), mock.MatchedBy(func(bIndex string) bool {
 		return bIndex != ""
 	}), 10, 0).
 		Return([]patientmodel.PatientCandidate{
@@ -716,4 +716,73 @@ func TestGetMany(t *testing.T) {
 	res, err = svc.GetMany(ctx, testClinicID.String(), []string{pID.String()})
 	require.NoError(t, err)
 	assert.Len(t, res, 1)
+}
+
+func TestListAndSearch_PhoneticVariants(t *testing.T) {
+	repoMock, svc := setupPatientTest(t)
+
+	var patients []patientmodel.Patient
+	repoMock.EXPECT().Create(mock.Anything, mock.Anything).RunAndReturn(func(ctx context.Context, p patientmodel.Patient) (*patientmodel.Patient, error) {
+		p.CreatedAt = time.Now()
+		p.UpdatedAt = time.Now()
+		patients = append(patients, p)
+		return &p, nil
+	}).Times(4)
+
+	sampleNames := []string{
+		"Carlos Schmidt",
+		"Valter Silva",
+		"Ana Souza",
+		"Rossi Chiari",
+	}
+
+	for _, name := range sampleNames {
+		in := validInput()
+		in.DisplayName = name
+		_, err := svc.Create(context.Background(), testClinicID.String(), testUserID.String(), in)
+		require.NoError(t, err)
+	}
+
+	testCases := []struct {
+		query        string
+		expectedName string
+	}{
+		{"Shimit", "Carlos Schmidt"},
+		{"Walter", "Valter Silva"},
+		{"Sousa", "Ana Souza"},
+		{"Kiari", "Rossi Chiari"},
+	}
+
+	repoMock.EXPECT().ListByClinicAndStatus(mock.Anything, testClinicID, (*patientmodel.PatientStatus)(nil)).Return(patients, nil).Times(len(testCases))
+
+	for _, tc := range testCases {
+		hits, _, err := svc.List(context.Background(), testClinicID.String(), tc.query, "", "", 10, 0)
+		require.NoError(t, err)
+		require.NotEmptyf(t, hits, "Expected query %q to find patient %q", tc.query, tc.expectedName)
+		assert.Equal(t, tc.expectedName, hits[0].DisplayName)
+	}
+}
+
+func TestMatchesNameFuzzy_MultiWordAND(t *testing.T) {
+	assert.True(t, usecase.MatchesNameFuzzy("Arthur Zimmermann", "Arthur"))
+	assert.True(t, usecase.MatchesNameFuzzy("Arthur Zimmermann", "artur"))
+	assert.True(t, usecase.MatchesNameFuzzy("Arthur Zimmermann", "artur zimmerman"))
+	assert.True(t, usecase.MatchesNameFuzzy("Arthur Zimmermann", "artur zim"))
+	assert.True(t, usecase.MatchesNameFuzzy("Arthur Zimmermann", "Zimmermann"))
+
+	// Every word in query MUST match the patient - partial mismatch must be rejected
+	assert.False(t, usecase.MatchesNameFuzzy("Arthur Zimmermann", "arthur francisco"))
+	assert.False(t, usecase.MatchesNameFuzzy("Arthur Zimmermann", "artur francisco"))
+	assert.False(t, usecase.MatchesNameFuzzy("Arthur Zimmermann", "francisco"))
+	assert.False(t, usecase.MatchesNameFuzzy("Arthur Zimmermann", "arthur silva"))
+
+	// Initials and short prefixes in multi-word queries
+	assert.True(t, usecase.MatchesNameFuzzy("Maria Joana da Silva", "maria j"))
+	assert.True(t, usecase.MatchesNameFuzzy("Maria Joana da Silva", "maria jo"))
+	assert.True(t, usecase.MatchesNameFuzzy("Maria Joana da Silva", "maria joa"))
+	assert.True(t, usecase.MatchesNameFuzzy("Maria Joana da Silva", "maria s"))
+	assert.True(t, usecase.MatchesNameFuzzy("Maria Joana da Silva", "maria sil"))
+	assert.True(t, usecase.MatchesNameFuzzy("Maria Joana da Silva", "maria da silva"))
+	assert.False(t, usecase.MatchesNameFuzzy("Maria Joana da Silva", "maria x"))
+	assert.False(t, usecase.MatchesNameFuzzy("Maria Joana da Silva", "maria joana x"))
 }

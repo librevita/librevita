@@ -5,6 +5,7 @@ package usecase
 import (
 	"context"
 	"strings"
+	"unicode"
 
 	"librevita.org/internal/core/auth"
 	"librevita.org/internal/core/crypto"
@@ -353,7 +354,7 @@ func filterPatients(patients []Patient, trimmedQ, field string) []Patient {
 }
 
 func patientMatches(pt Patient, trimmedQ, field string) bool {
-	matchesName := matchWordPrefix(pt.DisplayName, trimmedQ)
+	matchesName := matchesNameFuzzy(pt.DisplayName, trimmedQ)
 	matchesEmail := pt.Email != nil && strings.HasPrefix(strings.ToLower(*pt.Email), trimmedQ)
 	switch field {
 	case "name":
@@ -363,6 +364,138 @@ func patientMatches(pt Patient, trimmedQ, field string) bool {
 	default:
 		return matchesName || matchesEmail
 	}
+}
+
+// MatchesNameFuzzy reports whether displayName satisfies all query words under phonetic and prefix matching.
+func MatchesNameFuzzy(displayName, query string) bool {
+	return matchesNameFuzzy(displayName, query)
+}
+
+func matchesNameFuzzy(displayName, query string) bool {
+	queryWords := strings.Fields(strings.ToLower(query))
+	if len(queryWords) == 0 {
+		return true
+	}
+	displayWords := strings.Fields(strings.ToLower(displayName))
+	if len(displayWords) == 0 {
+		return false
+	}
+
+	type wordProfile struct {
+		raw      string
+		norm     string
+		phonetic []string
+	}
+
+	dProfiles := make([]wordProfile, 0, len(displayWords))
+	for _, dw := range displayWords {
+		clean := strings.TrimFunc(dw, func(r rune) bool {
+			return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+		})
+		if clean == "" || normalizer.IsStopWord(clean) {
+			continue
+		}
+		norm := normalizer.NormalizeBrazilian(clean)
+		var phs []string
+		if len(clean) >= 3 {
+			phs = append(phs, normalizer.PhoneticTokens(clean, 4)...)
+			if norm != clean {
+				phs = append(phs, normalizer.PhoneticTokens(norm, 4)...)
+			}
+		}
+		dProfiles = append(dProfiles, wordProfile{
+			raw:      clean,
+			norm:     norm,
+			phonetic: phs,
+		})
+	}
+
+	if len(dProfiles) == 0 {
+		return false
+	}
+
+	hasNonStopWords := false
+	for _, qw := range queryWords {
+		cleanQ := strings.TrimFunc(qw, func(r rune) bool {
+			return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+		})
+		if cleanQ != "" && !normalizer.IsStopWord(cleanQ) {
+			hasNonStopWords = true
+			break
+		}
+	}
+
+	for _, qw := range queryWords {
+		cleanQ := strings.TrimFunc(qw, func(r rune) bool {
+			return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+		})
+		if cleanQ == "" {
+			continue
+		}
+		if hasNonStopWords && normalizer.IsStopWord(cleanQ) {
+			continue
+		}
+
+		normQ := normalizer.NormalizeBrazilian(cleanQ)
+		var qPhs []string
+		if len(cleanQ) >= 3 {
+			qPhs = append(qPhs, normalizer.PhoneticTokens(cleanQ, 4)...)
+			if normQ != cleanQ {
+				qPhs = append(qPhs, normalizer.PhoneticTokens(normQ, 4)...)
+			}
+		}
+
+		wordMatched := false
+		for _, dp := range dProfiles {
+			// 1. Literal prefix match (handles "j" -> "joana", "jo" -> "joana", "maria" -> "maria")
+			if strings.HasPrefix(dp.raw, cleanQ) {
+				wordMatched = true
+				break
+			}
+
+			// 2. Brazilian normalized prefix match (handles "yara" -> "iara", "iar" -> "iara", "artur" -> "arthur", "walter" -> "valter")
+			if normQ != "" && (strings.HasPrefix(dp.norm, normQ) || strings.HasPrefix(dp.norm, cleanQ) || strings.HasPrefix(dp.raw, normQ)) {
+				wordMatched = true
+				break
+			}
+
+			// 3. Sousa / Souza vowel equivalence (souza <-> sousa, soza <-> sosa)
+			if (strings.HasPrefix(cleanQ, "sou") || strings.HasPrefix(cleanQ, "so")) &&
+				(strings.HasPrefix(dp.raw, "sou") || strings.HasPrefix(dp.raw, "so")) {
+				sQ := strings.ReplaceAll(strings.ReplaceAll(cleanQ, "sou", "so"), "z", "s")
+				sD := strings.ReplaceAll(strings.ReplaceAll(dp.raw, "sou", "so"), "z", "s")
+				if strings.HasPrefix(sD, sQ) {
+					wordMatched = true
+					break
+				}
+			}
+
+			// 4. Beider-Morse phonetic match (strictly for len >= 3)
+			if len(cleanQ) >= 3 && len(qPhs) > 0 && len(dp.phonetic) > 0 {
+				phMatch := false
+				for _, qp := range qPhs {
+					for _, dpp := range dp.phonetic {
+						if qp == dpp {
+							phMatch = true
+							break
+						}
+					}
+					if phMatch {
+						break
+					}
+				}
+				if phMatch {
+					wordMatched = true
+					break
+				}
+			}
+		}
+
+		if !wordMatched {
+			return false
+		}
+	}
+	return true
 }
 
 func paginatePatients(filtered []Patient, limit, offset int) []Patient {
@@ -392,7 +525,7 @@ func (s *Service) listOptimized(
 	if sq.empty {
 		return []Patient{}, 0, nil
 	}
-	candidates, total, err := repo.ListCandidates(ctx, clinicID, status, sq.nameTokens, sq.emailBlindIndex, limit, offset)
+	candidates, total, err := repo.ListCandidates(ctx, clinicID, status, sq.nameTokenGroups, sq.emailBlindIndex, limit, offset)
 	if err != nil {
 		return nil, 0, errors.Wrap(err, "usecase: list patient candidates")
 	}
@@ -400,7 +533,7 @@ func (s *Service) listOptimized(
 }
 
 type searchQuery struct {
-	nameTokens      []string
+	nameTokenGroups [][]string
 	emailBlindIndex string
 	empty           bool
 }
@@ -424,22 +557,109 @@ func searchBlindIndexes(ctx context.Context, q, field string) (searchQuery, erro
 }
 
 func nameSearchTokens(hasher crypto.Hasher, q string) (searchQuery, error) {
-	var nameTokens []string
-	for _, word := range strings.Fields(normalizer.Text(q)) {
-		tokens := normalizer.NameTokens(word)
-		if len(tokens) == 0 {
-			continue
-		}
-		hash, err := hasher.BlindIndex("patient.token", tokens[len(tokens)-1])
-		if err != nil {
-			return searchQuery{}, errors.Wrap(err, "usecase: hash patient name search")
-		}
-		nameTokens = append(nameTokens, hash)
-	}
-	if len(nameTokens) == 0 {
+	words := strings.Fields(normalizer.Text(q))
+	if len(words) == 0 {
 		return searchQuery{empty: true}, nil
 	}
-	return searchQuery{nameTokens: nameTokens}, nil
+
+	hasNonStopWords := false
+	for _, word := range words {
+		if !normalizer.IsStopWord(word) {
+			hasNonStopWords = true
+			break
+		}
+	}
+
+	var tokenGroups [][]string
+
+	for _, word := range words {
+		if hasNonStopWords && normalizer.IsStopWord(word) {
+			continue
+		}
+
+		var group []string
+		seen := make(map[string]struct{})
+
+		addHash := func(tok string) error {
+			tok = strings.TrimSpace(tok)
+			if tok == "" {
+				return nil
+			}
+			h, err := hasher.BlindIndexRaw("patient.token", tok)
+			if err != nil {
+				return err
+			}
+			if _, exists := seen[h]; !exists {
+				seen[h] = struct{}{}
+				group = append(group, h)
+			}
+			return nil
+		}
+
+		// 1. Prefix token
+		tokens := normalizer.NameTokens(word)
+		if len(tokens) > 0 {
+			if err := addHash(tokens[len(tokens)-1]); err != nil {
+				return searchQuery{}, errors.Wrap(err, "usecase: hash patient name search prefix")
+			}
+		}
+
+		// 2. Beider-Morse multi-language phonetic tokens (only for words len >= 3)
+		if len(word) >= 3 {
+			for _, ph := range normalizer.PhoneticTokens(word, 4) {
+				if err := addHash(ph); err != nil {
+					return searchQuery{}, errors.Wrap(err, "usecase: hash patient name search phonetic")
+				}
+			}
+		}
+
+		// 3. Brazilian Portuguese normalized tokens
+		br := normalizer.NormalizeBrazilian(word)
+		if br != "" && br != word {
+			brTokens := normalizer.NameTokens(br)
+			if len(brTokens) > 0 {
+				if err := addHash(brTokens[len(brTokens)-1]); err != nil {
+					return searchQuery{}, errors.Wrap(err, "usecase: hash patient name search br norm prefix")
+				}
+			}
+			if len(br) >= 3 {
+				for _, ph := range normalizer.PhoneticTokens(br, 4) {
+					if err := addHash(ph); err != nil {
+						return searchQuery{}, errors.Wrap(err, "usecase: hash patient name search br phonetic")
+					}
+				}
+			}
+		}
+
+		// 4. Souza / Sousa equivalence
+		if strings.Contains(word, "ou") {
+			oVar := strings.ReplaceAll(word, "ou", "o")
+			oTokens := normalizer.NameTokens(oVar)
+			if len(oTokens) > 0 {
+				if err := addHash(oTokens[len(oTokens)-1]); err != nil {
+					return searchQuery{}, errors.Wrap(err, "usecase: hash patient name search ou prefix")
+				}
+			}
+		}
+		if strings.Contains(word, "sou") {
+			zVar := strings.ReplaceAll(word, "sou", "souz")
+			zTokens := normalizer.NameTokens(zVar)
+			if len(zTokens) > 0 {
+				if err := addHash(zTokens[len(zTokens)-1]); err != nil {
+					return searchQuery{}, errors.Wrap(err, "usecase: hash patient name search souz prefix")
+				}
+			}
+		}
+
+		if len(group) > 0 {
+			tokenGroups = append(tokenGroups, group)
+		}
+	}
+
+	if len(tokenGroups) == 0 {
+		return searchQuery{empty: true}, nil
+	}
+	return searchQuery{nameTokenGroups: tokenGroups}, nil
 }
 
 func hydrateCandidates(

@@ -1,0 +1,13 @@
+// Brazilian Portuguese phonetic and orthographic normalization rules.
+// Evaluated through a sandboxed, non-Turing complete Expr pipeline.
+Word
+  | stripDiacritics()
+  | replaceAll({
+      "ph": "f",
+      "th": "t",
+      "y":  "i",
+      "z":  "s"
+    })
+  | replaceInitialW()
+  | replacePrefix("shim", "shm")
+  | replacePrefix("chim", "chm")

@@ -9,11 +9,14 @@ import (
 
 	"librevita.org/internal/core/audit"
 	"librevita.org/internal/core/auth"
+	"librevita.org/internal/core/config"
+	"librevita.org/internal/core/normalize"
 	"librevita.org/internal/core/policy"
 	"librevita.org/internal/core/server"
 	"librevita.org/internal/domain/patient/delivery/http"
 	patientrepository "librevita.org/internal/domain/patient/repository"
 	"librevita.org/internal/domain/patient/usecase"
+	"librevita.org/pkg/errors"
 	"librevita.org/pkg/log"
 )
 
@@ -30,7 +33,21 @@ var Module = fx.Module("patient",
 		),
 	),
 	fx.Invoke(registerHTTPRoutes),
+	fx.Invoke(initSearchEngine),
 )
+
+func initSearchEngine(cfg *config.Config, logger log.Logger) error {
+	if cfg == nil || cfg.Search.RulesFile == "" {
+		return nil
+	}
+	engine, err := normalize.LoadRuleEngineFromFile(cfg.Search.RulesFile)
+	if err != nil {
+		return errors.Wrapf(err, "patient: load search rules from %s", cfg.Search.RulesFile)
+	}
+	normalize.SetActiveRuleEngine(engine)
+	logger.Info("custom search phonetic rules loaded", log.String("path", cfg.Search.RulesFile))
+	return nil
+}
 
 func bodyLimitSkipper() middleware.Skipper {
 	return func(c echo.Context) bool {

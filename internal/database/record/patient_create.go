@@ -10,6 +10,7 @@ import (
 
 	"entgo.io/ent/dialect/sql/sqlgraph"
 	"entgo.io/ent/schema/field"
+	"librevita.org/internal/core/database/fle"
 	"librevita.org/internal/database/record/appointment"
 	"librevita.org/internal/database/record/clinic"
 	"librevita.org/internal/database/record/episode"
@@ -222,8 +223,16 @@ func (_c *PatientCreate) SetNillableCreatedBy(v *ident.UserID) *PatientCreate {
 }
 
 // SetDisplayNameTokenIndex sets the "display_name_token_index" field.
-func (_c *PatientCreate) SetDisplayNameTokenIndex(v []string) *PatientCreate {
+func (_c *PatientCreate) SetDisplayNameTokenIndex(v fle.NameTokenIndex) *PatientCreate {
 	_c.mutation.SetDisplayNameTokenIndex(v)
+	return _c
+}
+
+// SetNillableDisplayNameTokenIndex sets the "display_name_token_index" field if the given value is not nil.
+func (_c *PatientCreate) SetNillableDisplayNameTokenIndex(v *fle.NameTokenIndex) *PatientCreate {
+	if v != nil {
+		_c.SetDisplayNameTokenIndex(*v)
+	}
 	return _c
 }
 

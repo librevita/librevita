@@ -126,20 +126,22 @@ func TestPatientRepository_CRUD(t *testing.T) {
 	assert.Equal(t, expectedEmailBlind, rawRow.EmailBlindIndex)
 	assert.Equal(t, expectedPhoneBlind, rawRow.PhoneBlindIndex)
 
-	// Verify tokenized search n-grams generated in JSON column
-	expectedTokens := normalize.NameTokens("Maria Joana")
-	require.NotEmpty(t, rawRow.DisplayNameTokenIndex)
-	require.Equal(t, len(expectedTokens), len(rawRow.DisplayNameTokenIndex))
+	// Verify tokenized search n-grams and multi-language phonetic tokens generated in JSON column
+	expectedTokens := normalize.MultiLanguageNameTokens("Maria Joana")
+	expectedHeader, _ := hasher.Header()
+	assert.Equal(t, expectedHeader, rawRow.DisplayNameTokenIndex.Header)
+	require.NotEmpty(t, rawRow.DisplayNameTokenIndex.Tokens)
+	require.Equal(t, len(expectedTokens), len(rawRow.DisplayNameTokenIndex.Tokens))
 	for _, tok := range expectedTokens {
-		h, _ := hasher.BlindIndex("patient.token", tok)
-		assert.Contains(t, rawRow.DisplayNameTokenIndex, h)
+		h, _ := hasher.BlindIndexRaw("patient.token", tok)
+		assert.Contains(t, rawRow.DisplayNameTokenIndex.Tokens, h)
 	}
 
 	optimized, ok := repo.(patientmodel.PatientQueryRepository)
 	require.True(t, ok)
-	nameHash, err := hasher.BlindIndex("patient.token", "maria")
+	nameHash, err := hasher.BlindIndexRaw("patient.token", "maria")
 	require.NoError(t, err)
-	candidates, totalCandidates, err := optimized.ListCandidates(ctx, clinicID, nil, []string{nameHash}, "", 10, 0)
+	candidates, totalCandidates, err := optimized.ListCandidates(ctx, clinicID, nil, [][]string{{nameHash}}, "", 10, 0)
 	require.NoError(t, err)
 	require.Equal(t, 1, totalCandidates)
 	require.Len(t, candidates, 1)

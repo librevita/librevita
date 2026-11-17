@@ -685,16 +685,23 @@ func encryptPatientMutation(ctx context.Context, hasher crypto.Hasher, enc crypt
 	}
 	aad := fle.ResolveMutationAAD(ctx, clinicID, patientID)
 	if val, ok := m.DisplayName(); ok && val != "" && !crypto.IsCiphertextString(val) && hasher != nil {
-		tokens := normalize.NameTokens(val)
+		tokens := normalize.MultiLanguageNameTokens(val)
+		header, err := hasher.Header()
+		if err != nil {
+			return err
+		}
 		tokenHashes := make([]string, 0, len(tokens))
 		for _, tok := range tokens {
-			h, err := hasher.BlindIndex("patient.token", tok)
+			h, err := hasher.BlindIndexRaw("patient.token", tok)
 			if err != nil {
 				return err
 			}
 			tokenHashes = append(tokenHashes, h)
 		}
-		m.SetDisplayNameTokenIndex(tokenHashes)
+		m.SetDisplayNameTokenIndex(fle.NameTokenIndex{
+			Header: header,
+			Tokens: tokenHashes,
+		})
 	}
 	if val, ok := m.DisplayName(); ok && val != "" && !crypto.IsCiphertextString(val) && enc != nil {
 		ctBytes, err := fle.EncryptString(enc, val, aad)

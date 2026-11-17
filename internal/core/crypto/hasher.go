@@ -54,6 +54,13 @@ type Hasher interface {
 	// returning "<algorithm>$<scope><purpose>$<kid>$<hex_encoded_hash>".
 	BlindIndex(system, value string) (string, error)
 
+	// BlindIndexRaw computes a deterministic blind index for exact matching,
+	// returning only the hex_encoded_hash without the envelope prefix.
+	BlindIndexRaw(system, value string) (string, error)
+
+	// Header returns the envelope prefix "<algorithm>$<scope><purpose>$<kid>".
+	Header() (string, error)
+
 	// Verify checks if the provided data matches an encoded hash string.
 	// Encoded hashes must be "<algorithm>$<scope><purpose>$<kid>$<hex_hash>".
 	// Scope, purpose, and key id must match this Hasher. Uses constant-time comparison.
@@ -232,13 +239,43 @@ func (h *KeyedHasher) HashString(s string) (string, error) {
 	return h.Hash([]byte(s))
 }
 
-// BlindIndex computes a deterministic blind index for exact matching.
-func (h *KeyedHasher) BlindIndex(system, value string) (string, error) {
+// Header returns the standard "<algorithm>$<scope><purpose>$<kid>" header stamped by this Hasher.
+func (h *KeyedHasher) Header() (string, error) {
+	contextToken, err := keyContextToken(h.scope, h.purpose)
+	if err != nil {
+		return "", err
+	}
+	kidToken, err := keyIDToken(h.kid)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%s$%s$%s", h.algorithm, contextToken, kidToken), nil
+}
+
+// BlindIndexRaw computes a deterministic blind index without the envelope header.
+func (h *KeyedHasher) BlindIndexRaw(system, value string) (string, error) {
 	payload := make([]byte, 0, len(system)+1+len(value))
 	payload = append(payload, []byte(system)...)
 	payload = append(payload, 0)
 	payload = append(payload, []byte(value)...)
-	return h.Hash(payload)
+	digest, err := h.computeDigest(h.algorithm, payload)
+	if err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(digest), nil
+}
+
+// BlindIndex computes a deterministic blind index for exact matching.
+func (h *KeyedHasher) BlindIndex(system, value string) (string, error) {
+	hdr, err := h.Header()
+	if err != nil {
+		return "", err
+	}
+	raw, err := h.BlindIndexRaw(system, value)
+	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%s$%s", hdr, raw), nil
 }
 
 // Verify checks if data matches encodedHash.

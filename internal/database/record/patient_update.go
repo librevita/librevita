@@ -10,8 +10,8 @@ import (
 
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
-	"entgo.io/ent/dialect/sql/sqljson"
 	"entgo.io/ent/schema/field"
+	"librevita.org/internal/core/database/fle"
 	"librevita.org/internal/database/record/appointment"
 	"librevita.org/internal/database/record/clinic"
 	"librevita.org/internal/database/record/episode"
@@ -295,14 +295,16 @@ func (_u *PatientUpdate) ClearCreatedBy() *PatientUpdate {
 }
 
 // SetDisplayNameTokenIndex sets the "display_name_token_index" field.
-func (_u *PatientUpdate) SetDisplayNameTokenIndex(v []string) *PatientUpdate {
+func (_u *PatientUpdate) SetDisplayNameTokenIndex(v fle.NameTokenIndex) *PatientUpdate {
 	_u.mutation.SetDisplayNameTokenIndex(v)
 	return _u
 }
 
-// AppendDisplayNameTokenIndex appends value to the "display_name_token_index" field.
-func (_u *PatientUpdate) AppendDisplayNameTokenIndex(v []string) *PatientUpdate {
-	_u.mutation.AppendDisplayNameTokenIndex(v)
+// SetNillableDisplayNameTokenIndex sets the "display_name_token_index" field if the given value is not nil.
+func (_u *PatientUpdate) SetNillableDisplayNameTokenIndex(v *fle.NameTokenIndex) *PatientUpdate {
+	if v != nil {
+		_u.SetDisplayNameTokenIndex(*v)
+	}
 	return _u
 }
 
@@ -790,11 +792,6 @@ func (_u *PatientUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if value, ok := _u.mutation.DisplayNameTokenIndex(); ok {
 		_spec.SetField(patient.FieldDisplayNameTokenIndex, field.TypeJSON, value)
-	}
-	if value, ok := _u.mutation.AppendedDisplayNameTokenIndex(); ok {
-		_spec.AddModifier(func(u *sql.UpdateBuilder) {
-			sqljson.Append(u, patient.FieldDisplayNameTokenIndex, value)
-		})
 	}
 	if _u.mutation.DisplayNameTokenIndexCleared() {
 		_spec.ClearField(patient.FieldDisplayNameTokenIndex, field.TypeJSON)
@@ -1416,14 +1413,16 @@ func (_u *PatientUpdateOne) ClearCreatedBy() *PatientUpdateOne {
 }
 
 // SetDisplayNameTokenIndex sets the "display_name_token_index" field.
-func (_u *PatientUpdateOne) SetDisplayNameTokenIndex(v []string) *PatientUpdateOne {
+func (_u *PatientUpdateOne) SetDisplayNameTokenIndex(v fle.NameTokenIndex) *PatientUpdateOne {
 	_u.mutation.SetDisplayNameTokenIndex(v)
 	return _u
 }
 
-// AppendDisplayNameTokenIndex appends value to the "display_name_token_index" field.
-func (_u *PatientUpdateOne) AppendDisplayNameTokenIndex(v []string) *PatientUpdateOne {
-	_u.mutation.AppendDisplayNameTokenIndex(v)
+// SetNillableDisplayNameTokenIndex sets the "display_name_token_index" field if the given value is not nil.
+func (_u *PatientUpdateOne) SetNillableDisplayNameTokenIndex(v *fle.NameTokenIndex) *PatientUpdateOne {
+	if v != nil {
+		_u.SetDisplayNameTokenIndex(*v)
+	}
 	return _u
 }
 
@@ -1941,11 +1940,6 @@ func (_u *PatientUpdateOne) sqlSave(ctx context.Context) (_node *Patient, err er
 	}
 	if value, ok := _u.mutation.DisplayNameTokenIndex(); ok {
 		_spec.SetField(patient.FieldDisplayNameTokenIndex, field.TypeJSON, value)
-	}
-	if value, ok := _u.mutation.AppendedDisplayNameTokenIndex(); ok {
-		_spec.AddModifier(func(u *sql.UpdateBuilder) {
-			sqljson.Append(u, patient.FieldDisplayNameTokenIndex, value)
-		})
 	}
 	if _u.mutation.DisplayNameTokenIndexCleared() {
 		_spec.ClearField(patient.FieldDisplayNameTokenIndex, field.TypeJSON)

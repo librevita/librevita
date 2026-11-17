@@ -10,6 +10,7 @@ import (
 
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
+	"librevita.org/internal/core/database/fle"
 	"librevita.org/internal/database/record/clinic"
 	"librevita.org/internal/database/record/patient"
 	"librevita.org/internal/database/record/user"
@@ -54,7 +55,7 @@ type Patient struct {
 	// User ID who registered this patient
 	CreatedBy *ident.UserID `json:"created_by,omitempty"`
 	// Blind index token hashes of n-grams for fast tokenized search on display_name
-	DisplayNameTokenIndex []string `json:"display_name_token_index,omitempty"`
+	DisplayNameTokenIndex fle.NameTokenIndex `json:"display_name_token_index,omitempty"`
 	// Keyed hash index for exact search on phone
 	PhoneBlindIndex string `json:"phone_blind_index,omitempty"`
 	// Keyed hash index for exact search on email

@@ -11,6 +11,7 @@ import (
 
 	"entgo.io/ent"
 	"entgo.io/ent/dialect/sql"
+	"librevita.org/internal/core/database/fle"
 	"librevita.org/internal/database/record/accesspolicy"
 	"librevita.org/internal/database/record/accesspolicyversion"
 	"librevita.org/internal/database/record/appointment"
@@ -11604,53 +11605,52 @@ func (m *IdentifierSystemMutation) ResetEdge(name string) error {
 // PatientMutation represents an operation that mutates the Patient nodes in the graph.
 type PatientMutation struct {
 	config
-	op                             Op
-	typ                            string
-	id                             *ident.PatientID
-	created_at                     *time.Time
-	updated_at                     *time.Time
-	status                         *patient.Status
-	display_name                   *string
-	phone                          *string
-	email                          *string
-	birth_date                     *string
-	sex                            *string
-	street                         *string
-	city                           *string
-	state                          *string
-	postal_code                    *string
-	notes                          *string
-	created_by                     *ident.UserID
-	display_name_token_index       *[]string
-	appenddisplay_name_token_index []string
-	phone_blind_index              *string
-	email_blind_index              *string
-	clearedFields                  map[string]struct{}
-	clinic                         *ident.ClinicID
-	clearedclinic                  bool
-	portal_user                    *ident.UserID
-	clearedportal_user             bool
-	identifiers                    map[ident.PatientIdentifierID]struct{}
-	removedidentifiers             map[ident.PatientIdentifierID]struct{}
-	clearedidentifiers             bool
-	appointments                   map[ident.AppointmentID]struct{}
-	removedappointments            map[ident.AppointmentID]struct{}
-	clearedappointments            bool
-	episodes                       map[ident.EpisodeID]struct{}
-	removedepisodes                map[ident.EpisodeID]struct{}
-	clearedepisodes                bool
-	findings                       map[ident.FindingID]struct{}
-	removedfindings                map[ident.FindingID]struct{}
-	clearedfindings                bool
-	problems                       map[ident.ProblemID]struct{}
-	removedproblems                map[ident.ProblemID]struct{}
-	clearedproblems                bool
-	plan_items                     map[ident.PlanItemID]struct{}
-	removedplan_items              map[ident.PlanItemID]struct{}
-	clearedplan_items              bool
-	done                           bool
-	oldValue                       func(context.Context) (*Patient, error)
-	predicates                     []predicate.Patient
+	op                       Op
+	typ                      string
+	id                       *ident.PatientID
+	created_at               *time.Time
+	updated_at               *time.Time
+	status                   *patient.Status
+	display_name             *string
+	phone                    *string
+	email                    *string
+	birth_date               *string
+	sex                      *string
+	street                   *string
+	city                     *string
+	state                    *string
+	postal_code              *string
+	notes                    *string
+	created_by               *ident.UserID
+	display_name_token_index *fle.NameTokenIndex
+	phone_blind_index        *string
+	email_blind_index        *string
+	clearedFields            map[string]struct{}
+	clinic                   *ident.ClinicID
+	clearedclinic            bool
+	portal_user              *ident.UserID
+	clearedportal_user       bool
+	identifiers              map[ident.PatientIdentifierID]struct{}
+	removedidentifiers       map[ident.PatientIdentifierID]struct{}
+	clearedidentifiers       bool
+	appointments             map[ident.AppointmentID]struct{}
+	removedappointments      map[ident.AppointmentID]struct{}
+	clearedappointments      bool
+	episodes                 map[ident.EpisodeID]struct{}
+	removedepisodes          map[ident.EpisodeID]struct{}
+	clearedepisodes          bool
+	findings                 map[ident.FindingID]struct{}
+	removedfindings          map[ident.FindingID]struct{}
+	clearedfindings          bool
+	problems                 map[ident.ProblemID]struct{}
+	removedproblems          map[ident.ProblemID]struct{}
+	clearedproblems          bool
+	plan_items               map[ident.PlanItemID]struct{}
+	removedplan_items        map[ident.PlanItemID]struct{}
+	clearedplan_items        bool
+	done                     bool
+	oldValue                 func(context.Context) (*Patient, error)
+	predicates               []predicate.Patient
 }
 
 var _ ent.Mutation = (*PatientMutation)(nil)
@@ -12451,13 +12451,12 @@ func (m *PatientMutation) ResetCreatedBy() {
 }
 
 // SetDisplayNameTokenIndex sets the "display_name_token_index" field.
-func (m *PatientMutation) SetDisplayNameTokenIndex(s []string) {
-	m.display_name_token_index = &s
-	m.appenddisplay_name_token_index = nil
+func (m *PatientMutation) SetDisplayNameTokenIndex(fti fle.NameTokenIndex) {
+	m.display_name_token_index = &fti
 }
 
 // DisplayNameTokenIndex returns the value of the "display_name_token_index" field in the mutation.
-func (m *PatientMutation) DisplayNameTokenIndex() (r []string, exists bool) {
+func (m *PatientMutation) DisplayNameTokenIndex() (r fle.NameTokenIndex, exists bool) {
 	v := m.display_name_token_index
 	if v == nil {
 		return
@@ -12468,7 +12467,7 @@ func (m *PatientMutation) DisplayNameTokenIndex() (r []string, exists bool) {
 // OldDisplayNameTokenIndex returns the old "display_name_token_index" field's value of the Patient entity.
 // If the Patient object wasn't provided to the builder, the object is fetched from the database.
 // An error is returned if the mutation operation is not UpdateOne, or the database query fails.
-func (m *PatientMutation) OldDisplayNameTokenIndex(ctx context.Context) (v []string, err error) {
+func (m *PatientMutation) OldDisplayNameTokenIndex(ctx context.Context) (v fle.NameTokenIndex, err error) {
 	if !m.op.Is(OpUpdateOne) {
 		return v, errors.New("OldDisplayNameTokenIndex is only allowed on UpdateOne operations")
 	}
@@ -12482,23 +12481,9 @@ func (m *PatientMutation) OldDisplayNameTokenIndex(ctx context.Context) (v []str
 	return oldValue.DisplayNameTokenIndex, nil
 }
 
-// AppendDisplayNameTokenIndex adds s to the "display_name_token_index" field.
-func (m *PatientMutation) AppendDisplayNameTokenIndex(s []string) {
-	m.appenddisplay_name_token_index = append(m.appenddisplay_name_token_index, s...)
-}
-
-// AppendedDisplayNameTokenIndex returns the list of values that were appended to the "display_name_token_index" field in this mutation.
-func (m *PatientMutation) AppendedDisplayNameTokenIndex() ([]string, bool) {
-	if len(m.appenddisplay_name_token_index) == 0 {
-		return nil, false
-	}
-	return m.appenddisplay_name_token_index, true
-}
-
 // ClearDisplayNameTokenIndex clears the value of the "display_name_token_index" field.
 func (m *PatientMutation) ClearDisplayNameTokenIndex() {
 	m.display_name_token_index = nil
-	m.appenddisplay_name_token_index = nil
 	m.clearedFields[patient.FieldDisplayNameTokenIndex] = struct{}{}
 }
 
@@ -12511,7 +12496,6 @@ func (m *PatientMutation) DisplayNameTokenIndexCleared() bool {
 // ResetDisplayNameTokenIndex resets all changes to the "display_name_token_index" field.
 func (m *PatientMutation) ResetDisplayNameTokenIndex() {
 	m.display_name_token_index = nil
-	m.appenddisplay_name_token_index = nil
 	delete(m.clearedFields, patient.FieldDisplayNameTokenIndex)
 }
 
@@ -13311,7 +13295,7 @@ func (m *PatientMutation) SetField(name string, value ent.Value) error {
 		m.SetCreatedBy(v)
 		return nil
 	case patient.FieldDisplayNameTokenIndex:
-		v, ok := value.([]string)
+		v, ok := value.(fle.NameTokenIndex)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}

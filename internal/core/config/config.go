@@ -151,6 +151,16 @@ type Config struct {
 
 	// ACME configures automatic certificate management via Let's Encrypt.
 	ACME ACMEConfig `koanf:"acme"`
+
+	// Search configures phonetic and token search rules.
+	Search SearchConfig `koanf:"search"`
+}
+
+// SearchConfig tunes search tokenization and normalization rules.
+type SearchConfig struct {
+	// RulesFile is the path to an external .expr file containing custom phonetic normalization rules.
+	// If omitted or empty, the embedded Brazilian Portuguese rules (pt-br.expr) are used by default.
+	RulesFile string `koanf:"rules_file"`
 }
 
 // TLSConfig controls HTTPS server settings.

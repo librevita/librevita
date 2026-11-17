@@ -170,6 +170,6 @@ type PatientDeletionRepository interface {
 // limited to the returned page.
 type PatientQueryRepository interface {
 	PatientRepository
-	ListCandidates(ctx context.Context, clinicID ident.ClinicID, status *PatientStatus, nameTokens []string, emailBlindIndex string, limit, offset int) ([]PatientCandidate, int, error)
+	ListCandidates(ctx context.Context, clinicID ident.ClinicID, status *PatientStatus, nameTokenGroups [][]string, emailBlindIndex string, limit, offset int) ([]PatientCandidate, int, error)
 	GetMany(ctx context.Context, clinicID ident.ClinicID, patientIDs []ident.PatientID) ([]Patient, error)
 }

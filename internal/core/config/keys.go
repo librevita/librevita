@@ -115,6 +115,9 @@ var configKeys = []string{
 	"acme.dns.rfc2136_tsig_algorithm",
 	"acme.dns.exec_script",
 	"acme.dns.propagation_timeout_sec",
+
+	// Search
+	"search.rules_file",
 }
 
 // Specific CLI flag aliases.

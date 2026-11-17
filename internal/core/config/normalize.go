@@ -17,6 +17,11 @@ func (c *Config) normalize() {
 	c.normalizeCrypto()
 	c.normalizeTLS()
 	c.normalizeACME()
+	c.normalizeSearch()
+}
+
+func (c *Config) normalizeSearch() {
+	c.Search.RulesFile = strings.TrimSpace(c.Search.RulesFile)
 }
 
 func (c *Config) normalizeHTTP() {

@@ -441,9 +441,9 @@ func (_c *MockPatientQueryRepository_ListByClinicAndStatus_Call) RunAndReturn(ru
 	return _c
 }
 
-// ListCandidates provides a mock function with given fields: ctx, clinicID, status, nameTokens, emailBlindIndex, limit, offset
-func (_m *MockPatientQueryRepository) ListCandidates(ctx context.Context, clinicID ident.ClinicID, status *model.PatientStatus, nameTokens []string, emailBlindIndex string, limit int, offset int) ([]model.PatientCandidate, int, error) {
-	ret := _m.Called(ctx, clinicID, status, nameTokens, emailBlindIndex, limit, offset)
+// ListCandidates provides a mock function with given fields: ctx, clinicID, status, nameTokenGroups, emailBlindIndex, limit, offset
+func (_m *MockPatientQueryRepository) ListCandidates(ctx context.Context, clinicID ident.ClinicID, status *model.PatientStatus, nameTokenGroups [][]string, emailBlindIndex string, limit int, offset int) ([]model.PatientCandidate, int, error) {
+	ret := _m.Called(ctx, clinicID, status, nameTokenGroups, emailBlindIndex, limit, offset)
 
 	if len(ret) == 0 {
 		panic("no return value specified for ListCandidates")
@@ -452,25 +452,25 @@ func (_m *MockPatientQueryRepository) ListCandidates(ctx context.Context, clinic
 	var r0 []model.PatientCandidate
 	var r1 int
 	var r2 error
-	if rf, ok := ret.Get(0).(func(context.Context, ident.ClinicID, *model.PatientStatus, []string, string, int, int) ([]model.PatientCandidate, int, error)); ok {
-		return rf(ctx, clinicID, status, nameTokens, emailBlindIndex, limit, offset)
+	if rf, ok := ret.Get(0).(func(context.Context, ident.ClinicID, *model.PatientStatus, [][]string, string, int, int) ([]model.PatientCandidate, int, error)); ok {
+		return rf(ctx, clinicID, status, nameTokenGroups, emailBlindIndex, limit, offset)
 	}
-	if rf, ok := ret.Get(0).(func(context.Context, ident.ClinicID, *model.PatientStatus, []string, string, int, int) []model.PatientCandidate); ok {
-		r0 = rf(ctx, clinicID, status, nameTokens, emailBlindIndex, limit, offset)
+	if rf, ok := ret.Get(0).(func(context.Context, ident.ClinicID, *model.PatientStatus, [][]string, string, int, int) []model.PatientCandidate); ok {
+		r0 = rf(ctx, clinicID, status, nameTokenGroups, emailBlindIndex, limit, offset)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).([]model.PatientCandidate)
 		}
 	}
 
-	if rf, ok := ret.Get(1).(func(context.Context, ident.ClinicID, *model.PatientStatus, []string, string, int, int) int); ok {
-		r1 = rf(ctx, clinicID, status, nameTokens, emailBlindIndex, limit, offset)
+	if rf, ok := ret.Get(1).(func(context.Context, ident.ClinicID, *model.PatientStatus, [][]string, string, int, int) int); ok {
+		r1 = rf(ctx, clinicID, status, nameTokenGroups, emailBlindIndex, limit, offset)
 	} else {
 		r1 = ret.Get(1).(int)
 	}
 
-	if rf, ok := ret.Get(2).(func(context.Context, ident.ClinicID, *model.PatientStatus, []string, string, int, int) error); ok {
-		r2 = rf(ctx, clinicID, status, nameTokens, emailBlindIndex, limit, offset)
+	if rf, ok := ret.Get(2).(func(context.Context, ident.ClinicID, *model.PatientStatus, [][]string, string, int, int) error); ok {
+		r2 = rf(ctx, clinicID, status, nameTokenGroups, emailBlindIndex, limit, offset)
 	} else {
 		r2 = ret.Error(2)
 	}
@@ -487,17 +487,17 @@ type MockPatientQueryRepository_ListCandidates_Call struct {
 //   - ctx context.Context
 //   - clinicID ident.ClinicID
 //   - status *model.PatientStatus
-//   - nameTokens []string
+//   - nameTokenGroups [][]string
 //   - emailBlindIndex string
 //   - limit int
 //   - offset int
-func (_e *MockPatientQueryRepository_Expecter) ListCandidates(ctx interface{}, clinicID interface{}, status interface{}, nameTokens interface{}, emailBlindIndex interface{}, limit interface{}, offset interface{}) *MockPatientQueryRepository_ListCandidates_Call {
-	return &MockPatientQueryRepository_ListCandidates_Call{Call: _e.mock.On("ListCandidates", ctx, clinicID, status, nameTokens, emailBlindIndex, limit, offset)}
+func (_e *MockPatientQueryRepository_Expecter) ListCandidates(ctx interface{}, clinicID interface{}, status interface{}, nameTokenGroups interface{}, emailBlindIndex interface{}, limit interface{}, offset interface{}) *MockPatientQueryRepository_ListCandidates_Call {
+	return &MockPatientQueryRepository_ListCandidates_Call{Call: _e.mock.On("ListCandidates", ctx, clinicID, status, nameTokenGroups, emailBlindIndex, limit, offset)}
 }
 
-func (_c *MockPatientQueryRepository_ListCandidates_Call) Run(run func(ctx context.Context, clinicID ident.ClinicID, status *model.PatientStatus, nameTokens []string, emailBlindIndex string, limit int, offset int)) *MockPatientQueryRepository_ListCandidates_Call {
+func (_c *MockPatientQueryRepository_ListCandidates_Call) Run(run func(ctx context.Context, clinicID ident.ClinicID, status *model.PatientStatus, nameTokenGroups [][]string, emailBlindIndex string, limit int, offset int)) *MockPatientQueryRepository_ListCandidates_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context), args[1].(ident.ClinicID), args[2].(*model.PatientStatus), args[3].([]string), args[4].(string), args[5].(int), args[6].(int))
+		run(args[0].(context.Context), args[1].(ident.ClinicID), args[2].(*model.PatientStatus), args[3].([][]string), args[4].(string), args[5].(int), args[6].(int))
 	})
 	return _c
 }
@@ -507,7 +507,7 @@ func (_c *MockPatientQueryRepository_ListCandidates_Call) Return(_a0 []model.Pat
 	return _c
 }
 
-func (_c *MockPatientQueryRepository_ListCandidates_Call) RunAndReturn(run func(context.Context, ident.ClinicID, *model.PatientStatus, []string, string, int, int) ([]model.PatientCandidate, int, error)) *MockPatientQueryRepository_ListCandidates_Call {
+func (_c *MockPatientQueryRepository_ListCandidates_Call) RunAndReturn(run func(context.Context, ident.ClinicID, *model.PatientStatus, [][]string, string, int, int) ([]model.PatientCandidate, int, error)) *MockPatientQueryRepository_ListCandidates_Call {
 	_c.Call.Return(run)
 	return _c
 }

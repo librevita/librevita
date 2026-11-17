@@ -219,19 +219,28 @@ func (r *patientRepository) ListByClinicAndStatus(ctx context.Context, clinicID 
 
 // ListCandidates selects only identifiers, status, and timestamps so the
 // database can paginate before any Patient DEK is loaded.
-func (r *patientRepository) ListCandidates(ctx context.Context, clinicID ident.ClinicID, status *patientmodel.PatientStatus, nameTokens []string, emailBlindIndex string, limit, offset int) ([]patientmodel.PatientCandidate, int, error) {
+func (r *patientRepository) ListCandidates(ctx context.Context, clinicID ident.ClinicID, status *patientmodel.PatientStatus, nameTokenGroups [][]string, emailBlindIndex string, limit, offset int) ([]patientmodel.PatientCandidate, int, error) {
 	query := r.client.Patient.Query().Where(patient.ClinicIDEQ(clinicID))
 	if status != nil {
 		query = query.Where(patient.StatusEQ(patient.Status(*status)))
 	}
-	if len(nameTokens) > 0 {
-		predicates := make([]*entsql.Predicate, 0, len(nameTokens))
-		for _, token := range nameTokens {
-			predicates = append(predicates, sqljson.ValueContains(patient.FieldDisplayNameTokenIndex, token))
+	if len(nameTokenGroups) > 0 {
+		groupPredicates := make([]*entsql.Predicate, 0, len(nameTokenGroups))
+		for _, group := range nameTokenGroups {
+			if len(group) == 0 {
+				continue
+			}
+			wordPredicates := make([]*entsql.Predicate, 0, len(group))
+			for _, token := range group {
+				wordPredicates = append(wordPredicates, sqljson.ValueContains(patient.FieldDisplayNameTokenIndex, token, sqljson.Path("t")))
+			}
+			groupPredicates = append(groupPredicates, entsql.Or(wordPredicates...))
 		}
-		query = query.Where(func(s *entsql.Selector) {
-			s.Where(entsql.Or(predicates...))
-		})
+		if len(groupPredicates) > 0 {
+			query = query.Where(func(s *entsql.Selector) {
+				s.Where(entsql.And(groupPredicates...))
+			})
+		}
 	}
 	if emailBlindIndex != "" {
 		query = query.Where(patient.EmailBlindIndexEQ(emailBlindIndex))

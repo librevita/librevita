@@ -244,16 +244,23 @@ func encrypt{{ $n.Name }}Mutation(ctx context.Context, hasher crypto.Hasher, enc
 	if val, ok := m.{{ $f.MutationGet }}(); ok && val != "" && !crypto.IsCiphertextString(val) && hasher != nil {
 		{{- if isNameField $f }}
 		{{- if hasTokenIndex $n $f }}
-		tokens := normalize.NameTokens(val)
+		tokens := normalize.MultiLanguageNameTokens(val)
+		header, err := hasher.Header()
+		if err != nil {
+			return err
+		}
 		tokenHashes := make([]string, 0, len(tokens))
 		for _, tok := range tokens {
-			h, err := hasher.BlindIndex("{{ lower $n.Name }}.token", tok)
+			h, err := hasher.BlindIndexRaw("{{ lower $n.Name }}.token", tok)
 			if err != nil {
 				return err
 			}
 			tokenHashes = append(tokenHashes, h)
 		}
-		m.Set{{ $f.StructField }}TokenIndex(tokenHashes)
+		m.Set{{ $f.StructField }}TokenIndex(fle.NameTokenIndex{
+			Header: header,
+			Tokens: tokenHashes,
+		})
 		{{- end }}
 		{{- else }}
 		domainTag := "{{ lower $n.Name }}.{{ $f.Name }}"

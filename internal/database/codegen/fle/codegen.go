@@ -121,7 +121,7 @@ func injectNameTokens(schema *load.Schema, f *load.Field) error {
 	if schemaHasField(schema, tokenFieldName) {
 		return nil
 	}
-	tokensDesc := field.JSON(tokenFieldName, []string{}).
+	tokensDesc := field.JSON(tokenFieldName, fle.NameTokenIndex{}).
 		Optional().
 		Comment("Blind index token hashes of n-grams for fast tokenized search on " + f.Name).
 		Descriptor()

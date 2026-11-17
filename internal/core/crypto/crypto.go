@@ -382,6 +382,29 @@ func (e *Engine) BlindIndex(system, value string) (string, error) {
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
+// BlindIndexRaw returns the raw hex-encoded keyed digest without the envelope prefix.
+func (e *Engine) BlindIndexRaw(system, value string) (string, error) {
+	if e.hasher != nil {
+		return e.hasher.BlindIndexRaw(system, value)
+	}
+	h, err := NewDigestWithKey(e.blindKey)
+	if err != nil {
+		return "", errors.Wrap(err, "crypto: blind index raw")
+	}
+	h.Write([]byte(system))
+	h.Write([]byte{0})
+	h.Write([]byte(value))
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// Header returns the envelope prefix of the active hasher.
+func (e *Engine) Header() (string, error) {
+	if e.hasher != nil {
+		return e.hasher.Header()
+	}
+	return "", errors.New("crypto: engine hasher is unconfigured")
+}
+
 func hkdfExpand(ikm []byte, info string) []byte {
 	reader := hkdf.New(func() hash.Hash {
 		h, err := NewDigest()
